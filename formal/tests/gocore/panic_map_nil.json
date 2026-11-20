@@ -1,0 +1,242 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 2,
+            "col": 1
+          },
+          "name": "panic_map_nil.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 6,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 6,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 6,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 7,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 7,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "m"
+                          ],
+                          "type": {
+                            "kind": "map-type",
+                            "pos": {
+                              "line": 7,
+                              "col": 8
+                            },
+                            "key": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 7,
+                                "col": 12
+                              },
+                              "name": "string"
+                            },
+                            "value": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 7,
+                                "col": 19
+                              },
+                              "name": "int"
+                            }
+                          },
+                          "values": []
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 8,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 8,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 8,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 8,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 8,
+                            "col": 14
+                          },
+                          "value": "before"
+                        },
+                        {
+                          "kind": "index",
+                          "pos": {
+                            "line": 8,
+                            "col": 24
+                          },
+                          "x": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 8,
+                              "col": 24
+                            },
+                            "name": "m"
+                          },
+                          "indices": [
+                            {
+                              "kind": "string-lit",
+                              "pos": {
+                                "line": 8,
+                                "col": 26
+                              },
+                              "value": "k"
+                            }
+                          ]
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "inc-dec",
+                    "pos": {
+                      "line": 9,
+                      "col": 2
+                    },
+                    "op": "++",
+                    "x": {
+                      "kind": "index",
+                      "pos": {
+                        "line": 9,
+                        "col": 2
+                      },
+                      "x": {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 9,
+                          "col": 2
+                        },
+                        "name": "m"
+                      },
+                      "indices": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 9,
+                            "col": 4
+                          },
+                          "value": "k"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 10,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 10,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 10,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 10,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 10,
+                            "col": 14
+                          },
+                          "value": "never"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

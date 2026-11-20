@@ -11,7 +11,7 @@
             "line": 3,
             "col": 1
           },
-          "name": "unsupported_map.go",
+          "name": "unsupported_map_key.go",
           "imports": [
             {
               "name": "",
@@ -122,13 +122,13 @@
                               "line": 9,
                               "col": 11
                             },
-                            "name": "string"
+                            "name": "float64"
                           },
                           "value": {
                             "kind": "ident",
                             "pos": {
                               "line": 9,
-                              "col": 18
+                              "col": 19
                             },
                             "name": "int"
                           }
@@ -138,21 +138,21 @@
                             "kind": "key-value",
                             "pos": {
                               "line": 9,
-                              "col": 22
+                              "col": 23
                             },
                             "key": {
-                              "kind": "string-lit",
+                              "kind": "float-lit",
                               "pos": {
                                 "line": 9,
-                                "col": 22
+                                "col": 23
                               },
-                              "value": "a"
+                              "value": "3/2"
                             },
                             "value": {
                               "kind": "int-lit",
                               "pos": {
                                 "line": 9,
-                                "col": 27
+                                "col": 28
                               },
                               "value": "1"
                             }
@@ -191,29 +191,12 @@
                       },
                       "args": [
                         {
-                          "kind": "index",
+                          "kind": "ident",
                           "pos": {
                             "line": 10,
                             "col": 14
                           },
-                          "x": {
-                            "kind": "ident",
-                            "pos": {
-                              "line": 10,
-                              "col": 14
-                            },
-                            "name": "m"
-                          },
-                          "indices": [
-                            {
-                              "kind": "string-lit",
-                              "pos": {
-                                "line": 10,
-                                "col": 16
-                              },
-                              "value": "a"
-                            }
-                          ]
+                          "name": "m"
                         }
                       ],
                       "ellipsis": false

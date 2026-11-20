@@ -43,6 +43,8 @@ inductive Expr
   | funcType (sig : Sig)
   /-- `[len]elt`, or the slice type `[]elt` when `len` is `none`. -/
   | arrayType (len : Option Expr) (elt : Expr)
+  /-- `map[key]value` (Go spec, "Map types"). -/
+  | mapType (key value : Expr)
   /-- The `...` length of `[...]T{...}`. -/
   | ellipsis
   | unsupported (what : String)

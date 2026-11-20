@@ -229,6 +229,7 @@ def unify (tps : List String) : Nat → Expr → Ty → List (String × Ty)
     | .paren e, t => unify tps k e t
     | .arrayType none e, .slice t => unify tps k e t
     | .arrayType (some _) e, .array _ t => unify tps k e t
+    | .mapType ke ve, .map kt vt => unify tps k ke kt ++ unify tps k ve vt
     -- A function type, parameter by parameter and result by result; a final `...T`
     -- parameter has type `[]T` (Go spec, "Function types").
     | .funcType (.mk ps rs v), .func_ pts rts _ =>
@@ -252,6 +253,7 @@ def mayMention (x : String) : Nat → Expr → Bool
     | .star e | .paren e | .selector e _ => mayMention x k e
     | .index e es => mayMention x k e || es.any (mayMention x k)
     | .arrayType l e => (l.map (mayMention x k)).getD false || mayMention x k e
+    | .mapType a b => mayMention x k a || mayMention x k b
     | .funcType (.mk ps rs _) => (fieldTypes ps ++ fieldTypes rs).any (mayMention x k)
     | .structType fs | .interfaceType fs => (fieldTypes fs).any (mayMention x k)
     | .intLit _ | .strLit _ | .charLit _ | .ellipsis => false
@@ -483,7 +485,7 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
       | none => return none
     | .star x => return (← typeOf? c n env x).map .ptr
     | .paren x => typeOf? c n env x
-    | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. =>
+    | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. | .mapType .. =>
       return some (← evalType c n env e)
     | .unsupported k => unsupported k
     | _ => return none
@@ -533,6 +535,20 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
       let k ← asInt (← evalExpr c n env len)
       if k < 0 then stuck "negative array length"
       return .array k.toNat (← evalType c n env elt)
+    | .mapType k v =>
+      let kt ← evalType c n env k
+      -- GoCore runs maps of integer, string and boolean keys only (`MapKey`): no NaN or
+      -- signed-zero float keys, and no interface keys whose dynamic type could make
+      -- hashing panic.
+      match ← underlying c n kt with
+      | .int _ | .string | .bool => pure ()
+      | .float _ => unsupported "map-key-float"
+      | .ptr _ => unsupported "map-key-pointer"
+      | .iface _ => unsupported "map-key-interface"
+      | .struct_ _ => unsupported "map-key-struct"
+      | .array .. => unsupported "map-key-array"
+      | u => unsupported s!"map-key-{u}"
+      return .map kt (← evalType c n env v)
     | .unsupported k => unsupported k
     -- So that a pointer to, or a parenthesized, type GoCore does not hold reaches the
     -- checks below.
@@ -588,6 +604,7 @@ def zero (c : Ctx) : Nat → Ty → GM Val
     | .func_ .. => pure (.func_ t none)
     | .iface _ => pure (.nilIface t)
     | .slice _ => pure (.slice t none)
+    | .map .. => pure (.map t none)
     | .float _ => pure (.float t 0.0)
     | .array k et =>
       if k > maxSliceCap then unsupported "array-large"
@@ -631,6 +648,8 @@ def convert (c : Ctx) : Nat → Ty → Val → GM Val
     | .ptr _, .nilIface (.untyped .nil) => pure (.ptr t none)
     | .func_ .., .nilIface (.untyped .nil) => pure (.func_ t none)
     | .slice _, .nilIface (.untyped .nil) => pure (.slice t none)
+    | .map .., .nilIface (.untyped .nil) => pure (.map t none)
+    | _, .map vt r => if (← underlying c n vt) == u then pure (.map t r) else stuck s!"cannot use {vt} as {t}"
     | _, .slice vt r => if (← underlying c n vt) == u then pure (.slice t r) else stuck s!"cannot use {vt} as {t}"
     | _, .array vt es => if (← underlying c n vt) == u then pure (.array t es) else stuck s!"cannot use {vt} as {t}"
     -- An untyped numeric constant given a float type: the nearest float (`constTo`);
@@ -781,7 +800,7 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
       binary c n op a b
     | .unsupported k => unsupported k
     | .keyValue .. => stuck "key: value outside a composite literal"
-    | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. => stuck "a type as a value"
+    | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. | .mapType .. => stuck "a type as a value"
     | .ellipsis => stuck "... outside an array type"
 
 /-- A package-level name of package `path`: a variable, constant or function (Go
@@ -894,6 +913,15 @@ def composite (c : Ctx) : Nat → Env → Ty → List Expr → GM Val
       let es ← elements c n env et elts
       if es.size > k then stuck "an index out of an array literal's bounds"
       pure (.array t (es ++ Array.replicate (k - es.size) (← zero c n et)))
+    -- A map literal: each key, then its element, left to right, stored in turn (Go
+    -- spec, "Composite literals"; two equal constant keys are a compile error).
+    | .map kt et =>
+      let m ← newMap
+      for e in elts do
+        let .keyValue ke ve := e | stuck "a map literal element without a key"
+        let k ← literalElement c n env kt ke
+        mapStore (some m) k (← literalElement c n env et ve)
+      pure (.map t (some m))
     | _ => unsupported s!"composite-{t}"
 
 /-- A new underlying array of `size` elements of type `et`: `es`, then zero values. A
@@ -944,21 +972,28 @@ def elements (c : Ctx) : Nat → Env → Ty → List Expr → GM (Array Val)
     let mut es := Array.replicate (keys.foldl (fun m k => max m (k + 1)) 0) z
     for (k, e) in keys.zip elts do
       let ve := match e with | .keyValue _ v => v | v => v
-      let elided := match ve with
-        | .composite none inner => some (false, inner)
-        | .unary "&" (.composite none inner) => some (true, inner)
-        | _ => none
-      let v ← match elided with
-        | some (amp, inner) =>
-          match ← underlying c n et, amp with
-          | .ptr pt, _ => do
-            let w ← composite c n env pt inner
-            pure (.ptr et (some ⟨← alloc w, []⟩))
-          | _, false => composite c n env et inner
-          | _, true => stuck "&{...} for a non-pointer element"
-        | none => do convert c n et (← evalExpr c n env ve)
-      es := es.set! k v
+      es := es.set! k (← literalElement c n env et ve)
     pure es
+
+/-- An element `ve` of type `et` of an array, slice or map literal. It may elide its
+    composite literal's type, `&T` for a pointer element type (Go spec, "Composite
+    literals"). -/
+def literalElement (c : Ctx) : Nat → Env → Ty → Expr → GM Val
+  | 0, _, _, _ => throw .fuel
+  | n + 1, env, et, ve => do
+    let elided := match ve with
+      | .composite none inner => some (false, inner)
+      | .unary "&" (.composite none inner) => some (true, inner)
+      | _ => none
+    match elided with
+    | some (amp, inner) =>
+      match ← underlying c n et, amp with
+      | .ptr pt, _ => do
+        let w ← composite c n env pt inner
+        pure (.ptr et (some ⟨← alloc w, []⟩))
+      | _, false => composite c n env et inner
+      | _, true => stuck "&{...} for a non-pointer element"
+    | none => convert c n et (← evalExpr c n env ve)
 
 /-- The operand of `len`, `cap`, or a `range` with at most one iteration variable.
     Go does not evaluate it when it is an array, or a pointer to one, without function
@@ -979,6 +1014,12 @@ def constantOperand (c : Ctx) : Nat → Env → Expr → GM Val
 def element (c : Ctx) : Nat → Val → Option Loc → Val → GM (Val × Option Loc × Ty)
   | 0, _, _, _ => throw .fuel
   | n + 1, v, l, iv => do
+    -- A map's element: the key's, else the element type's zero value, of a nil map too
+    -- (Go spec, "Index expressions"). It is not addressable.
+    if let .map t r := v then
+      let .map kt et ← underlying c n t | stuck "a map of a non-map type"
+      let k ← mapKeyOf (← convert c n kt iv)
+      return ((← mapLookup r k).getD (← zero c n et), none, et)
     let i ← asInt iv
     match v with
     | .slice t r =>
@@ -1226,6 +1267,40 @@ def evalAddr (c : Ctx) : Nat → Env → Expr → GM (Loc × Ty)
       | _ => stuck "an element of an unaddressable value"
     | _ => stuck "not addressable"
 
+/-- Where the target `e` of `x op= y` or `x++` stores: its location (`evalAddr`), or, for
+    `m[k]`, the map's entry, `m` and `k` evaluated in the same order (Go spec,
+    "Assignment statements", "IncDec statements"). -/
+def evalPlace (c : Ctx) : Nat → Env → Expr → GM Place
+  | 0, _, _ => throw .fuel
+  | n + 1, env, e => do
+    if let .index x [i] := e then
+      let (v, l) ← operand c n env x
+      let iv ← evalExpr c n env i
+      if let .map t r := v then
+        let .map kt et ← underlying c n t | stuck "a map of a non-map type"
+        return .entry r (← convert c n kt iv) et
+      match ← element c n v l iv with
+      | (_, some el, t) => return .loc el t
+      | _ => stuck "an element of an unaddressable value"
+    let (l, t) ← evalAddr c n env e
+    pure (.loc l t)
+
+/-- The value at a place: a map entry's element, else the element type's zero value. -/
+def loadPlace (c : Ctx) : Nat → Place → GM Val
+  | 0, _ => throw .fuel
+  | _, .loc l _ => load l
+  | n + 1, .entry r k t => do
+    match ← mapLookup r (← mapKeyOf k) with
+    | some v => pure v
+    | none => zero c n t
+
+/-- `v` stored at a place, converted to its type; into a nil map's entry it panics
+    (`mapStore`). -/
+def storePlace (c : Ctx) : Nat → Place → Val → GM Unit
+  | 0, _, _ => throw .fuel
+  | n + 1, .loc l t, v => do store l (← convert c n t v)
+  | n + 1, .entry r k t, v => do mapStore r k (← convert c n t v)
+
 /-- `x.(T)` (Go spec, "Type assertions"): the value if its dynamic type is `T`, or
     implements the interface `T`; `none` if not. -/
 def assertType (c : Ctx) : Nat → Val → Ty → GM (Option Val)
@@ -1385,6 +1460,7 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     -- them (not modelled).
     match a, b with
     | .boxed _ (.slice ..), _ | _, .boxed _ (.slice ..) => unsupported "uncomparable"
+    | .boxed _ (.map ..), _ | _, .boxed _ (.map ..) => unsupported "uncomparable"
     | _, _ => pure ()
     let (a, b) := (a.dyn, b.dyn)
     -- A float constant compared with a variable (through an interface) is a float.
@@ -1398,6 +1474,7 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
     | .ptr _ l, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .ptr _ l => pure l.isNone
     | .func_ _ f, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .func_ _ f => pure f.isNone
     | .slice _ r, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .slice _ r => pure r.isNone
+    | .map _ r, .nilIface (.untyped .nil) | .nilIface (.untyped .nil), .map _ r => pure r.isNone
     | .nilIface _, .nilIface _ => pure true
     | .nilIface _, _ | _, .nilIface _ => pure false
     -- Go compiles `==` on functions only against nil, which `binary` has converted to
@@ -1407,6 +1484,9 @@ def equal (c : Ctx) : Nat → Val → Val → GM Bool
       if f.isNone || g.isNone then pure (f.isNone && g.isNone) else unsupported "uncomparable"
     -- A slice compares only with nil, likewise.
     | .slice _ r, .slice _ q =>
+      if r.isNone || q.isNone then pure (r.isNone && q.isNone) else unsupported "uncomparable"
+    -- A map too.
+    | .map _ r, .map _ q =>
       if r.isNone || q.isNone then pure (r.isNone && q.isNone) else unsupported "uncomparable"
     | _, _ =>
       if !same then return false
@@ -1640,6 +1720,9 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
           else if r.alt.isSome then unsupported "cap-escape-dependent"
           else pure r.cap
         | .array _ es => pure es.size
+        -- A map's number of entries; a nil map has none (`cap` of a map does not compile).
+        | .map _ none => pure 0
+        | .map _ (some i) => pure (← mapEntries i).size
         -- A pointer to an array, nil too: the array type's length.
         | v@(.ptr t _) => do
           let .ptr pt ← underlying c n t | stuck s!"{b} of {v.ty}"
@@ -1650,6 +1733,12 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
     -- (Go spec, "Making slices, maps and channels".)
     | "make", te :: sizes =>
       let t ← evalType c n env te
+      -- A map: a new, empty one. Its size is only a hint; a negative one panics, which
+      -- GoCore does not imitate (a constant one does not compile).
+      if let .map .. ← underlying c n t then
+        for e in sizes do
+          if (← asInt (← evalExpr c n env e)) < 0 then unsupported "make-map-negative-size"
+        return [.map t (some (← newMap))]
       let .slice et ← underlying c n t | unsupported s!"make-{t}"
       let sizes ← sizes.mapM fun e => do asInt (← evalExpr c n env e)
       let (len, cap) ← match sizes with
@@ -1717,6 +1806,16 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
         modify fun s => { s with recoverable := none }
         pure [← convert c n (.iface []) v]
       | none => pure [.nilIface (.iface [])]
+    -- (Go spec, "Deletion of map elements".) Of a nil map, or a key it does not hold,
+    -- nothing.
+    | "delete", [m, k] =>
+      let mv ← evalExpr c n env m
+      let kv ← evalExpr c n env k
+      let .map t r := mv | stuck "delete of a non-map"
+      let .map kt _ ← underlying c n t | stuck "a map of a non-map type"
+      let key ← mapKeyOf (← convert c n kt kv)
+      if let some i := r then modifyMap i (·.erase key)
+      pure []
     | "print", _ | "println", _ =>
       -- They write to standard error, which the comparison leaves out (Go spec,
       -- "Bootstrapping").
@@ -1973,7 +2072,11 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
       let mut env := env
       for spec in specs do
         let .mk names te values := spec
-        let vs ← if values.isEmpty then pure [] else evalArgs c n env values
+        let vs ← match values, names with
+          | [], _ => pure []
+          -- `var v, ok = m[k]` (`rhsValues`).
+          | [.index _ [_]], [_, _] => rhsValues c n env 2 values
+          | _, _ => evalArgs c n env values
         let t? ← te.mapM (evalType c n env)
         for (x, i) in names.zipIdx do
           let v ← declValue c n t? vs[i]?
@@ -2002,9 +2105,9 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
     | .decl (.type _) => unsupported "local-type"
     | .decl (.func ..) | .decl (.unsupported _) => unsupported "local-decl"
     | .incDec op x => do
-      let (l, _) ← evalAddr c n env x
-      let v ← load l
-      store l (← binary c n (if op == "++" then "+" else "-") v (.int (.untyped .int) 1))
+      let p ← evalPlace c n env x
+      let v ← loadPlace c n p
+      storePlace c n p (← binary c n (if op == "++" then "+" else "-") v (.int (.untyped .int) 1))
       pure env
     | .assign tok lhs rhs => assign c n env tok lhs rhs
     | .ret es =>
@@ -2187,7 +2290,23 @@ def rangeLoop (c : Ctx) : Nat → Env → Option Expr → Option Expr → String
       | .int _ m => do
         let t := (defaultVal xv).ty
         pure (m.toNat, fun i => pure (.int t i, .tuple []))
+      -- A map's iteration order is not specified, and gc's differs from run to run (Go
+      -- spec, "For statements with range clause"): a map of two or more entries ends
+      -- the run, as no order can be told. A nil or empty one ranges zero times, one of
+      -- a single entry once.
+      | .map _ none => pure (0, fun _ => pure (.tuple [], .tuple []))
+      | .map _ (some m) => do
+        match (← mapEntries m).toList with
+        | [] => pure (0, fun _ => pure (.tuple [], .tuple []))
+        | [(_, (kv, ev))] => pure (1, fun _ => pure (kv, ev))
+        | _ => unsupported "map-range-order"
       | v => unsupported s!"range-{v.ty}"
+    -- An entry added to a map while it is ranged over "may be produced during the
+    -- iteration or may be skipped" (same section): a run that adds one, deleted
+    -- before or not, and goes on ranging ends.
+    let added? ← match xv with
+      | .map _ (some m) => pure (some (m, ← mapAdded m))
+      | _ => pure none
     for i in [0:count] do
       tick
       let (kv, vv) ← item i
@@ -2205,6 +2324,8 @@ def rangeLoop (c : Ctx) : Nat → Env → Option Expr → Option Expr → String
         | .cont => pure true
         | e => throw e
       if !r then break
+      if let some (m, a) := added? then
+        if (← mapAdded m) != a then unsupported "map-range-insert"
 
 /-- An assignment (Go spec, "Assignment statements", "Short variable declarations"):
     the operands of the left side's indirections and the right side are evaluated
@@ -2240,6 +2361,10 @@ def assign (c : Ctx) : Nat → Env → String → List Expr → List Expr → GM
         match t with
         | none => pure ()
         | some (.inl (l, ty)) => store l (← convert c n ty v)
+        -- A map entry is stored now, and a nil map panics now (`mapStore`).
+        | some (.inr (.map t r, _, iv)) =>
+          let .map kt et ← underlying c n t | stuck "a map of a non-map type"
+          mapStore r (← convert c n kt iv) (← convert c n et v)
         | some (.inr (av, al, iv)) =>
           match ← element c n av al iv with
           | (_, some el, ty) => store el (← convert c n ty v)
@@ -2249,10 +2374,10 @@ def assign (c : Ctx) : Nat → Env → String → List Expr → List Expr → GM
     let op := String.ofList tok.toList.dropLast
     let [x] := lhs | stuck s!"{tok} with several targets"
     let [y] := rhs | stuck s!"{tok} with several values"
-    let (l, ty) ← evalAddr c n env x
-    let a ← load l
+    let p ← evalPlace c n env x
+    let a ← loadPlace c n p
     let b ← evalExpr c n env y
-    store l (← convert c n ty (← binary c n op a b))
+    storePlace c n p (← binary c n op a b)
     return env
 
 /-- The values of an assignment's right side, `k` of them: one per expression, a
@@ -2269,6 +2394,17 @@ def rhsValues (c : Ctx) : Nat → Env → Nat → List Expr → GM (List Val)
         | some w => return [w, .bool (.untyped .bool) true]
         | none => return [← zero c n t, .bool (.untyped .bool) false]
       else return [← evalExpr c n env rhs.head!]
+    -- `v, ok := m[k]`: the element and whether the key is in the map (Go spec, "Index
+    -- expressions"); only a map's index has two values.
+    | [.index x [i]] =>
+      if k != 2 then return [← evalExpr c n env rhs.head!]
+      let (v, _) ← operand c n env x
+      let iv ← evalExpr c n env i
+      let .map t r := v | stuck "v, ok = x[i] of a non-map"
+      let .map kt et ← underlying c n t | stuck "a map of a non-map type"
+      match ← mapLookup r (← mapKeyOf (← convert c n kt iv)) with
+      | some e => return [e, .bool (.untyped .bool) true]
+      | none => return [← zero c n et, .bool (.untyped .bool) false]
     | [e] =>
       let v ← evalExpr c n env e
       let vs := v.results
@@ -2449,6 +2585,17 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
         | _ => sliceElems v
       let parts ← es.mapM fun e => fmtValue c n e verb (depth + 1) canIface
       pure ("[" ++ " ".intercalate parts ++ "]")
+    -- A map prints `map[k:v ...]`, its entries sorted by key (`printValue`'s
+    -- `reflect.Map`, `fmtsort.Sort`; `MapKey.lt`), each key and element printed with the
+    -- same verb; a nil map prints `map[]`.
+    | .map _ r =>
+      let es ← match r with
+        | none => pure []
+        | some i => pure (← mapEntries i).toList
+      let parts ← (es.mergeSort fun a b => !b.1.lt a.1).mapM fun (_, (k, e)) => do
+        pure ((← fmtValue c n k verb (depth + 1) canIface) ++ ":" ++
+          (← fmtValue c n e verb (depth + 1) canIface))
+      pure ("map[" ++ " ".intercalate parts ++ "]")
     | .ptr _ none => pure "<nil>"
     | .ptr _ (some l) =>
       let w ← load l

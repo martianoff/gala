@@ -1,0 +1,270 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 3,
+            "col": 1
+          },
+          "name": "unsupported_map_range_order.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 7,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 7,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 7,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 8,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 8,
+                          "col": 2
+                        },
+                        "name": "m"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "composite-lit",
+                        "pos": {
+                          "line": 8,
+                          "col": 7
+                        },
+                        "type": {
+                          "kind": "map-type",
+                          "pos": {
+                            "line": 8,
+                            "col": 7
+                          },
+                          "key": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 8,
+                              "col": 11
+                            },
+                            "name": "int"
+                          },
+                          "value": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 8,
+                              "col": 15
+                            },
+                            "name": "int"
+                          }
+                        },
+                        "elts": [
+                          {
+                            "kind": "key-value",
+                            "pos": {
+                              "line": 8,
+                              "col": 19
+                            },
+                            "key": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 8,
+                                "col": 19
+                              },
+                              "value": "1"
+                            },
+                            "value": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 8,
+                                "col": 22
+                              },
+                              "value": "1"
+                            }
+                          },
+                          {
+                            "kind": "key-value",
+                            "pos": {
+                              "line": 8,
+                              "col": 25
+                            },
+                            "key": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 8,
+                                "col": 25
+                              },
+                              "value": "2"
+                            },
+                            "value": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 8,
+                                "col": 28
+                              },
+                              "value": "2"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 9,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 9,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 9,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 9,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 9,
+                            "col": 14
+                          },
+                          "value": "before"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "range",
+                    "pos": {
+                      "line": 10,
+                      "col": 2
+                    },
+                    "key": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 10,
+                        "col": 6
+                      },
+                      "name": "k"
+                    },
+                    "value": null,
+                    "tok": ":=",
+                    "x": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 10,
+                        "col": 17
+                      },
+                      "name": "m"
+                    },
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 10,
+                        "col": 19
+                      },
+                      "stmts": [
+                        {
+                          "kind": "expr-stmt",
+                          "pos": {
+                            "line": 11,
+                            "col": 3
+                          },
+                          "x": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 11,
+                              "col": 3
+                            },
+                            "fun": {
+                              "kind": "selector",
+                              "pos": {
+                                "line": 11,
+                                "col": 3
+                              },
+                              "x": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 11,
+                                  "col": 3
+                                },
+                                "name": "fmt"
+                              },
+                              "sel": "Println"
+                            },
+                            "args": [
+                              {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 11,
+                                  "col": 15
+                                },
+                                "name": "k"
+                              }
+                            ],
+                            "ellipsis": false
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
