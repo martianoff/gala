@@ -854,6 +854,151 @@
                             "col": 23
                           },
                           "name": "bs"
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 24,
+                            "col": 27
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 24,
+                              "col": 27
+                            },
+                            "name": "string"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 24,
+                                "col": 34
+                              },
+                              "name": "bs"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 24,
+                            "col": 39
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 24,
+                              "col": 39
+                            },
+                            "name": "string"
+                          },
+                          "args": [
+                            {
+                              "kind": "slice-expr",
+                              "pos": {
+                                "line": 24,
+                                "col": 46
+                              },
+                              "x": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 24,
+                                  "col": 46
+                                },
+                                "name": "bs"
+                              },
+                              "low": {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 24,
+                                  "col": 49
+                                },
+                                "value": "1"
+                              },
+                              "high": {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 24,
+                                  "col": 51
+                                },
+                                "value": "3"
+                              },
+                              "max": null,
+                              "slice3": false
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 24,
+                            "col": 56
+                          },
+                          "op": "==",
+                          "x": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 24,
+                              "col": 56
+                            },
+                            "fun": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 24,
+                                "col": 56
+                              },
+                              "name": "string"
+                            },
+                            "args": [
+                              {
+                                "kind": "call",
+                                "pos": {
+                                  "line": 24,
+                                  "col": 63
+                                },
+                                "fun": {
+                                  "kind": "array-type",
+                                  "pos": {
+                                    "line": 24,
+                                    "col": 63
+                                  },
+                                  "len": null,
+                                  "elt": {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 24,
+                                      "col": 65
+                                    },
+                                    "name": "byte"
+                                  }
+                                },
+                                "args": [
+                                  {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 24,
+                                      "col": 70
+                                    },
+                                    "name": "nil"
+                                  }
+                                ],
+                                "ellipsis": false
+                              }
+                            ],
+                            "ellipsis": false
+                          },
+                          "y": {
+                            "kind": "string-lit",
+                            "pos": {
+                              "line": 24,
+                              "col": 79
+                            },
+                            "value": ""
+                          }
                         }
                       ],
                       "ellipsis": false

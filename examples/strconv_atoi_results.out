@@ -1,13 +1,5 @@
-0 true
-42 true
--7 true
-15 true
-7 true
-0 true
-9223372036854775807 true
--9223372036854775808 true
-123456789012345678 true
-64
+0 42 -7 15 7 0
+9223372036854775807 -9223372036854775808 123456789012345678
 0 strconv.Atoi: parsing "x": invalid syntax
 0 strconv.Atoi: parsing "": invalid syntax
 0 strconv.Atoi: parsing "-": invalid syntax

@@ -683,7 +683,16 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       if bs.size > maxSliceCap then unsupported "slice-of-string-large"
       pure (.slice t (some (← newArray c n et bs (GcRuntime.constStringBytesCap bs.size))))
     | .slice _, .str .. => unsupported "slice-of-string"
-    | .string, .slice .. => unsupported "string-of-slice"
+    -- `string(b)` of a byte slice: the string of its bytes (Go spec, "Conversions to
+    -- and from a string type"); a nil slice gives "". GoCore's strings hold valid
+    -- UTF-8 only, so other bytes are not modelled, nor is `string(runes)`.
+    | .string, .slice st _ =>
+      let .slice et ← underlying c n st | stuck "a slice of a non-slice type"
+      let .int .uint8 ← underlying c n et | unsupported "string-of-slice"
+      let bs ← (← sliceElems v).mapM fun e => do pure (← asInt e).toNat.toUInt8
+      match String.fromUTF8? ⟨bs.toArray⟩ with
+      | some s => pure (.str t s)
+      | none => unsupported "string-of-invalid-utf8"
     | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
     | _, _ => convert c n t v
 

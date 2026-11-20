@@ -124,6 +124,10 @@ func TestAddStdlib(t *testing.T) {
 		require.NoError(t, os.MkdirAll(sc, 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(sc, "atoi.go"),
 			[]byte("package strconv\n\nimport \"errors\"\n\nvar ErrRange = errors.New(\"r\")\n"), 0o644))
+		// The other files strconv lists, empty here.
+		for _, name := range gocoreexport.RunnableStdlib["strconv"][1:] {
+			require.NoError(t, os.WriteFile(filepath.Join(sc, name), []byte("package strconv\n"), 0o644))
+		}
 		got, err := gocoreexport.AddStdlib(goroot, main("package main\nimport \"strconv\"\nvar e = strconv.ErrRange\n"))
 		require.NoError(t, err)
 		require.Equal(t, []string{"main", "errors", "strconv"}, paths(got))
