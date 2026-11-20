@@ -1725,6 +1725,24 @@ func (t *galaASTTransformer) bareOpenInstance(typ transpiler.Type, open []string
 	case transpiler.FuncType:
 		v.Params, v.Results = t.bareOpenInstances(v.Params, open), t.bareOpenInstances(v.Results, open)
 		return v
+	case transpiler.StructType:
+		fields := make([]transpiler.StructField, len(v.Fields))
+		for i, f := range v.Fields {
+			f.Type = t.bareOpenInstance(f.Type, open)
+			fields[i] = f
+		}
+		v.Fields = fields
+		return v
+	case transpiler.InterfaceType:
+		methods := make([]transpiler.InterfaceMethod, len(v.Methods))
+		for i, m := range v.Methods {
+			if ft, ok := t.bareOpenInstance(m.Type, open).(transpiler.FuncType); ok {
+				m.Type = ft
+			}
+			methods[i] = m
+		}
+		v.Methods = methods
+		return v
 	}
 	return typ
 }

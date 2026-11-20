@@ -1597,6 +1597,16 @@ func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignatu
 	for i, r := range result.Returns {
 		result.Returns[i] = transpiler.SubstituteTypeParams(r, renames)
 	}
+	if len(result.CoreTypes) > 0 {
+		cores := make(map[string]transpiler.Type, len(result.CoreTypes))
+		for tp, core := range result.CoreTypes {
+			if to, ok := renames[tp]; ok {
+				tp = to.String()
+			}
+			cores[tp] = transpiler.SubstituteTypeParams(core, renames)
+		}
+		result.CoreTypes = cores
+	}
 	return result
 }
 
@@ -1697,12 +1707,47 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 
 // keepsTypeArgs reports whether convertGoType keeps the type arguments of
 // t, an instance of a generic type, outside exact mode: an instance of a
-// function, slice, map or channel type. A struct's or an interface's
-// stays the bare type name its fields and methods are looked up by.
+// function, slice, map or channel type whose type arguments that mode
+// converts without loss (no array, generic instance, channel, anonymous
+// struct or non-empty interface in them), so each is typed as it is
+// anywhere else. A struct's or an interface's stays the bare type name its
+// fields and methods are looked up by.
 func keepsTypeArgs(t *types.Named) bool {
 	switch t.Underlying().(type) {
 	case *types.Signature, *types.Slice, *types.Map, *types.Chan:
+	default:
+		return false
+	}
+	for i := 0; i < t.TypeArgs().Len(); i++ {
+		if arg := t.TypeArgs().At(i); inexactGoType(arg) || hasArrayType(arg) {
+			return false
+		}
+	}
+	return true
+}
+
+// hasArrayType reports whether t has a fixed-length array anywhere inside,
+// which convertGoType outside exact mode types as a slice.
+func hasArrayType(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Array:
 		return true
+	case *types.Alias:
+		return hasArrayType(types.Unalias(t))
+	case *types.Pointer:
+		return hasArrayType(t.Elem())
+	case *types.Slice:
+		return hasArrayType(t.Elem())
+	case *types.Map:
+		return hasArrayType(t.Key()) || hasArrayType(t.Elem())
+	case *types.Signature:
+		return hasArrayType(t.Params()) || hasArrayType(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if hasArrayType(t.At(i).Type()) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -1822,7 +1867,7 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 		}
 		args := make([]transpiler.Type, t.TypeArgs().Len())
 		for i := range args {
-			args[i] = convertGoType(t.TypeArgs().At(i), true)
+			args[i] = convertGoType(t.TypeArgs().At(i), exact)
 		}
 		return transpiler.GenericType{Base: named, Params: args}
 
