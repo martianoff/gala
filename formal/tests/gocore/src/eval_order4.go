@@ -8,6 +8,10 @@ import "fmt"
 
 type pair struct{ x, y int }
 
+type named struct{ n int }
+
+func (x named) String() string { return fmt.Sprint("named ", x.n) }
+
 type box struct {
 	v int
 	p pair
@@ -60,4 +64,8 @@ func main() {
 	b := &box{v: 1}
 	viaFuncValue(b, func() int { b.v = 7; return 1 })
 	h()
+	// A local of interface type is passed to fmt as it is: read after the call.
+	var st fmt.Stringer = named{1}
+	swap := func() int { st = named{2}; return 0 }
+	fmt.Println(st, swap())
 }

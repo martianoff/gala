@@ -49,7 +49,8 @@
   carry: a value converted to an interface whose type the runtime's conversion takes by
   address (`addrTemp`: `bool`, bytes, structs, arrays, pointers) is copied at its place
   when it is not addressable or is a local gc keeps in registers, and read late
-  otherwise. A place converts a value only if its declared type is an interface: the
+  otherwise; a value of interface type is never copied (a local declared with one is read
+  late). A place converts a value only if its declared type is an interface: the
   rewrite reads the parameter types of a declared function or of a local of function
   type, and the field or element types of a composite literal, and counts every other
   place as one that may. Where the copy can be observed (such a value in a place that
@@ -99,6 +100,8 @@ structure Scope where
   /-- Locals of function type (parameters declared `func(...) ...`), with their signatures,
       not shadowed since. -/
   funcTypes : List (String × Sig) := []
+  /-- Locals of interface type (parameters and `var`s declared so), not shadowed since. -/
+  ifaces : List String := []
   /-- The names of every struct field of the program. -/
   fields : Std.HashSet String := {}
   /-- The methods of the program, by name. -/
@@ -125,7 +128,8 @@ def qualified? (s : Scope) (q x : String) : Option Obj :=
 
 def bind (s : Scope) (xs : List String) : Scope :=
   { s with locals := xs ++ s.locals, pointers := s.pointers.filter (!xs.contains ·),
-           funcTypes := s.funcTypes.filter fun (x, _) => !xs.contains x }
+           funcTypes := s.funcTypes.filter fun (x, _) => !xs.contains x,
+           ifaces := s.ifaces.filter (!xs.contains ·) }
 
 /-- The scope of a function body: its signature's names bound, and its parameters of
     pointer and function type recorded. -/
@@ -310,7 +314,8 @@ def isONode (s : Scope) : Expr → Bool
     variable (addressable, not in a register), a local no call changes, a
     dereference, a temporary. -/
 def lateRoot (s : Scope) : Expr → Bool
-  | .ident x => !(s.isLocal x && s.changeable.contains x)
+  -- A value of interface type is never copied for a conversion (order.go returns early).
+  | .ident x => !(s.isLocal x && s.changeable.contains x) || s.ifaces.contains x
   -- A field through a pointer is addressable, whatever the pointer variable is.
   | .selector (.ident p) _ => s.pointers.contains p || !(s.isLocal p && s.changeable.contains p)
   -- So is a field through an assertion to a pointer type.
@@ -423,6 +428,30 @@ def nonIface (s : Scope) : Expr → Bool
   | .selector (.ident q) n => nonIfaceObj (s.qualified? q n)
   | .index (.selector (.ident q) n) _ => nonIfaceObj (s.qualified? q n)
   | _ => false
+
+/-- Whether the type written `te` is certainly an interface: an interface literal, `any`,
+    `error`, a declared interface type, or `fmt.Stringer`. -/
+def isIfaceType (s : Scope) : Expr → Bool
+  | .paren t => isIfaceType s t
+  | .interfaceType _ => true
+  | .ident x =>
+    !s.isLocal x && !s.tparams.contains x && match nameOwner s.c s.env x with
+      | some _ => match s.obj? x with
+        | some (.type _ (.mk _ _ false (.interfaceType _))) => true
+        | _ => false
+      | none => x == "any" || x == "error"
+  | .selector (.ident q) n => match s.import? q with
+    | some "fmt" => n == "Stringer" && !s.c.pkgs.contains "fmt"
+    | some _ => match s.qualified? q n with
+      | some (.type _ (.mk _ _ false (.interfaceType _))) => true
+      | _ => false
+    | none => false
+  | _ => false
+
+/-- The locals of interface type a signature's parameters declare. -/
+def Scope.withIfaces (s : Scope) (sig : Sig) : Scope :=
+  let .mk ps _ _ := sig
+  { s with ifaces := ps.flatMap (fun | .mk ns ty => if isIfaceType s ty then ns else []) ++ s.ifaces }
 
 /-- A declared type's parameters bound to the type arguments `te` writes, if it writes
     them all. -/
@@ -863,7 +892,7 @@ def hE (s : Scope) (on top : Bool) : Expr → HM Expr
       | _ => hE s on false k
     pure (.keyValue k' (← hE s on false v))
   | .funcLit sig body => do
-    pure (.funcLit sig (← hSs (s.enter sig) body))
+    pure (.funcLit sig (← hSs ((s.enter sig).withIfaces sig) body))
   | e => pure e
 def hEs (s : Scope) (on : Bool) : List Expr → HM (List Expr)
   | [] => pure []
@@ -1007,6 +1036,9 @@ def hSpecs (s : Scope) : List Spec → HM (List Stmt × Scope)
   | .mk names ty vals :: specs => do
     let evs := scanOperands s true vals
     let s1 := s.bind names
+    let s1 := match ty with
+      | some t => if isIfaceType s t then { s1 with ifaces := names ++ s1.ifaces } else s1
+      | none => s1
     let here ← match blocked evs with
       | some why => pure [stopStmt why]
       | none => do
@@ -1044,6 +1076,7 @@ def hDecl (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String 
                            tparams := fieldListNames tps ++ recvTParams,
                            changeable := Std.HashSet.ofList (chSs (takesAddress methods) false body),
                            pointers := pointerNames recv.toList, fields, methods } sig
+    let s := s.withIfaces sig
     pure (.func name recv tps sig (some (← hSs s body)))
   | .value false specs => do
     -- Its function literals' locals: those a nested literal assigns may change.
