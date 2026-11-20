@@ -121,6 +121,7 @@ GOCORE_SRCS = [
     "Gala/GoCore/Ops.lean",
     "Gala/GoCore/GcRuntime.lean",
     "Gala/GoCore/Eval.lean",
+    "Gala/GoCore/Hoist.lean",
     "Gala/GoCore/Run.lean",
     "Gala/GoCore/Cli.lean",
 ]

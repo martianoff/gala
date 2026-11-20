@@ -13,6 +13,8 @@
 # at panic(nil) (unsupported_panic_nil), at a struct that embeds an interface
 # (unsupported_embedded) or a type with methods, directly, through another
 # embedded type or of a package GoCore does not hold (unsupported_embedded_*),
+# at an operand whose order of evaluation gc decides by its static type
+# (unsupported_eval_order),
 # at what fmt prints as an error (unsupported_printf_*), and at a name a runnable
 # standard-library file lacks (unsupported_stdlib).
 # Their files are written by hand.

@@ -30,6 +30,11 @@
     that it is a new slice with a new underlying array (Go spec, "Passing arguments to
     ... parameters").
 
+  * **The order of evaluation.** The spec orders only the calls, method calls and
+    receives of an expression among themselves; gc's order pass evaluates them, and
+    builtins, slice expressions, `&&` and `||`, before the other operands. That is a
+    rewrite of the program, `Order.gc` in `Hoist.lean`, under the same version check.
+
   Nothing else in GoCore encodes these numbers. A proof about GoCore may rely only on
   what the spec guarantees about them (capacity at least the length, growth allocating
   a fresh array, an append within capacity sharing the array), never on their values.

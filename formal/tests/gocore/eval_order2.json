@@ -1,0 +1,751 @@
+{
+  "gocore": 1,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 1,
+            "col": 1
+          },
+          "name": "eval_order2.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "value-decl",
+              "pos": {
+                "line": 5,
+                "col": 1
+              },
+              "const": false,
+              "specs": [
+                {
+                  "names": [
+                    "a"
+                  ],
+                  "type": null,
+                  "values": [
+                    {
+                      "kind": "int-lit",
+                      "pos": {
+                        "line": 5,
+                        "col": 9
+                      },
+                      "value": "1"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 7,
+                "col": 1
+              },
+              "name": "bump",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 7,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 7,
+                        "col": 13
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 7,
+                  "col": 17
+                },
+                "stmts": [
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 8,
+                      "col": 2
+                    },
+                    "tok": "=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 8,
+                          "col": 2
+                        },
+                        "name": "a"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 8,
+                          "col": 6
+                        },
+                        "value": "10"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 9,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 9,
+                          "col": 9
+                        },
+                        "value": "100"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 12,
+                "col": 1
+              },
+              "name": "loud",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 12,
+                  "col": 1
+                },
+                "params": [],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 12,
+                        "col": 13
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 12,
+                  "col": 17
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 13,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 13,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 13,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 13,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "string-lit",
+                          "pos": {
+                            "line": 13,
+                            "col": 14
+                          },
+                          "value": "loud ran"
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 14,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 14,
+                          "col": 9
+                        },
+                        "value": "1"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 17,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 17,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 17,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 18,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 18,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 18,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 18,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 18,
+                            "col": 14
+                          },
+                          "name": "a"
+                        },
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 18,
+                            "col": 17
+                          },
+                          "op": "&&",
+                          "x": {
+                            "kind": "binary",
+                            "pos": {
+                              "line": 18,
+                              "col": 17
+                            },
+                            "op": ">",
+                            "x": {
+                              "kind": "call",
+                              "pos": {
+                                "line": 18,
+                                "col": 17
+                              },
+                              "fun": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 18,
+                                  "col": 17
+                                },
+                                "name": "bump"
+                              },
+                              "args": [],
+                              "ellipsis": false
+                            },
+                            "y": {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 18,
+                                "col": 26
+                              },
+                              "value": "0"
+                            }
+                          },
+                          "y": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 18,
+                              "col": 31
+                            },
+                            "name": "true"
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 19,
+                      "col": 2
+                    },
+                    "tok": "=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 19,
+                          "col": 2
+                        },
+                        "name": "a"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 19,
+                          "col": 6
+                        },
+                        "value": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 20,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 20,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 20,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 20,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 20,
+                            "col": 14
+                          },
+                          "op": "+",
+                          "x": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 20,
+                              "col": 14
+                            },
+                            "fun": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 20,
+                                "col": 14
+                              },
+                              "name": "int64"
+                            },
+                            "args": [
+                              {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 20,
+                                  "col": 20
+                                },
+                                "name": "a"
+                              }
+                            ],
+                            "ellipsis": false
+                          },
+                          "y": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 20,
+                              "col": 25
+                            },
+                            "fun": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 20,
+                                "col": 25
+                              },
+                              "name": "int64"
+                            },
+                            "args": [
+                              {
+                                "kind": "call",
+                                "pos": {
+                                  "line": 20,
+                                  "col": 31
+                                },
+                                "fun": {
+                                  "kind": "ident",
+                                  "pos": {
+                                    "line": 20,
+                                    "col": 31
+                                  },
+                                  "name": "bump"
+                                },
+                                "args": [],
+                                "ellipsis": false
+                              }
+                            ],
+                            "ellipsis": false
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 21,
+                      "col": 2
+                    },
+                    "tok": "=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 21,
+                          "col": 2
+                        },
+                        "name": "a"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 21,
+                          "col": 6
+                        },
+                        "value": "1"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "if",
+                    "pos": {
+                      "line": 22,
+                      "col": 2
+                    },
+                    "init": null,
+                    "cond": {
+                      "kind": "binary",
+                      "pos": {
+                        "line": 22,
+                        "col": 5
+                      },
+                      "op": ">",
+                      "x": {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 22,
+                          "col": 5
+                        },
+                        "op": "+",
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 22,
+                            "col": 5
+                          },
+                          "name": "a"
+                        },
+                        "y": {
+                          "kind": "call",
+                          "pos": {
+                            "line": 22,
+                            "col": 7
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 22,
+                              "col": 7
+                            },
+                            "name": "bump"
+                          },
+                          "args": [],
+                          "ellipsis": false
+                        }
+                      },
+                      "y": {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 22,
+                          "col": 16
+                        },
+                        "value": "105"
+                      }
+                    },
+                    "body": {
+                      "kind": "block",
+                      "pos": {
+                        "line": 22,
+                        "col": 20
+                      },
+                      "stmts": [
+                        {
+                          "kind": "expr-stmt",
+                          "pos": {
+                            "line": 23,
+                            "col": 3
+                          },
+                          "x": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 23,
+                              "col": 3
+                            },
+                            "fun": {
+                              "kind": "selector",
+                              "pos": {
+                                "line": 23,
+                                "col": 3
+                              },
+                              "x": {
+                                "kind": "ident",
+                                "pos": {
+                                  "line": 23,
+                                  "col": 3
+                                },
+                                "name": "fmt"
+                              },
+                              "sel": "Println"
+                            },
+                            "args": [
+                              {
+                                "kind": "string-lit",
+                                "pos": {
+                                  "line": 23,
+                                  "col": 15
+                                },
+                                "value": "if saw 110"
+                              }
+                            ],
+                            "ellipsis": false
+                          }
+                        }
+                      ]
+                    },
+                    "else": null
+                  },
+                  {
+                    "kind": "assign",
+                    "pos": {
+                      "line": 25,
+                      "col": 2
+                    },
+                    "tok": ":=",
+                    "lhs": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 25,
+                          "col": 2
+                        },
+                        "name": "x"
+                      },
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 25,
+                          "col": 5
+                        },
+                        "name": "z"
+                      }
+                    ],
+                    "rhs": [
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 25,
+                          "col": 10
+                        },
+                        "value": "7"
+                      },
+                      {
+                        "kind": "int-lit",
+                        "pos": {
+                          "line": 25,
+                          "col": 13
+                        },
+                        "value": "0"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 26,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 26,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 26,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 26,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "binary",
+                          "pos": {
+                            "line": 26,
+                            "col": 14
+                          },
+                          "op": "+",
+                          "x": {
+                            "kind": "binary",
+                            "pos": {
+                              "line": 26,
+                              "col": 14
+                            },
+                            "op": "/",
+                            "x": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 26,
+                                "col": 14
+                              },
+                              "name": "x"
+                            },
+                            "y": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 26,
+                                "col": 16
+                              },
+                              "name": "z"
+                            }
+                          },
+                          "y": {
+                            "kind": "call",
+                            "pos": {
+                              "line": 26,
+                              "col": 20
+                            },
+                            "fun": {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 26,
+                                "col": 20
+                              },
+                              "name": "loud"
+                            },
+                            "args": [],
+                            "ellipsis": false
+                          }
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
