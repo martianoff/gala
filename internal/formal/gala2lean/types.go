@@ -171,11 +171,11 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int, withDefaults bool) string 
 			if f.Type == nil {
 				unsup(f.Pos, "untyped-field")
 			}
-			if slices.Contains(typeNamesIn(f.Type), name) {
-				unsup(f.Pos, "sealed-zero-value")
-			}
 			if withDefaults && f.Default != nil {
 				unsup(f.Pos, "field-default-value")
+			}
+			if slices.Contains(typeNamesIn(f.Type), name) {
+				unsup(f.Pos, "sealed-zero-value")
 			}
 			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1, withDefaults))
 		}

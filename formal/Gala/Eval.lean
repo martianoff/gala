@@ -309,8 +309,7 @@ def Dflt.fill : Dflt → List Val → Val × List Val
   | .lit (.bool b), vs => (.bool b, vs)
   | .lit (.str s), vs => (.str s, vs)
   | .field .., v :: vs => (v, vs)
-  -- Not reached from `declare`: `bindDefaults`, when it succeeds, gives one value per
-  -- hole (not proved here).
+  -- Not reached: `declare` checks that there is a value for every hole.
   | .field .., [] => (.unit, [])
   | .struct_ t fs, vs => let r := Dflt.fillL fs vs; (.struct_ t r.1, r.2)
   | .sealed t c fs, vs => let r := Dflt.fillL fs vs; (.sealed t c r.1, r.2)
@@ -878,6 +877,9 @@ def declare (ds : Decls) : Nat → List String → Bool → Option Ty → List E
         let hs := Dflt.holesL dvs
         let vs ← bindDefaults ds d (hs.map (·.1)) (hs.map (·.2.2))
           (hs.map fun (x, j, _) => fieldDefault ds x j) true []
+        -- `bindDefaults` gives one value per hole when it succeeds; a run that broke
+        -- that would stop here rather than fill a hole with no value.
+        if vs.length != hs.length then stuck "a default value with a hole left unfilled"
         pure (names.zip (Dflt.fillL dvs vs).1)
       | none => stuck "declaration without a type or value"
     else

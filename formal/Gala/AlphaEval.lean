@@ -1521,6 +1521,10 @@ theorem declare_alpha_of (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds ds' 
             (fun j _ _ _ _ => ⟨[], by simp only [↓reduceIte]; exact .nil,
               optR_getD_map (fun _ => fieldDefault_rel hD _ _) _ j⟩)
             (fun _ => by simp only [List.lookup, OptValR])) fun _ _ hv => ?_
+          have hl := valsR_length hv.1
+          rw [List.length_map] at hv
+          rw [← hl, hv.2]
+          simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
           refine relM_pure (bindsR_zip hn (fillL_rel _ hv.1).1 ?_)
           rw [fillL_length, List.length_replicate]
       | cons he hes =>

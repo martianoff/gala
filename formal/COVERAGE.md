@@ -458,8 +458,8 @@ thing for it, nothing more.
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
 | AGREE | 29 | 1 | 75 | 3 |
-| DISAGREE | 1 | 0 | 0 | 0 |
-| UNSUPPORTED | 472 | 34 | 427 | 32 |
+| DISAGREE | 0 | 0 | 0 | 0 |
+| UNSUPPORTED | 474 | 34 | 428 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **29** (ratchet baseline 29).
@@ -477,33 +477,33 @@ when run as Lean and compared with Go.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
-| `file` | yes | no: 30 agree, 1 disagree, 0 inconclusive | no | translated: 78 agree |
+| `file` | yes | yes: 30 agree | no | translated: 78 agree |
 | `import` | yes | no: 1 agree | no | translated: 29 agree |
-| `val` | yes | no: 12 agree, 1 disagree, 0 inconclusive | no | translated: 53 agree |
-| `var` | yes | no: 4 agree, 1 disagree, 0 inconclusive | no | translated: 7 agree |
-| `func` | yes | no: 30 agree, 1 disagree, 0 inconclusive | no | translated: 78 agree |
+| `val` | yes | yes: 12 agree | no | translated: 53 agree |
+| `var` | yes | yes: 4 agree | no | translated: 7 agree |
+| `func` | yes | yes: 30 agree | no | translated: 78 agree |
 | `receiver` | not seen | no | no | translated: 7 agree |
 | `type-param` | not seen | no | no | translated: 16 agree |
 | `param` | yes | yes: 27 agree | no | translated: 65 agree |
-| `struct` | yes | no: 4 agree, 1 disagree, 0 inconclusive | no | translated: 20 agree |
-| `field` | yes | no: 8 agree, 1 disagree, 0 inconclusive | no | translated: 40 agree |
-| `sealed` | yes | no: 8 agree, 1 disagree, 0 inconclusive | no | translated: 27 agree |
-| `variant` | yes | no: 8 agree, 1 disagree, 0 inconclusive | no | translated: 27 agree |
-| `type-name` | yes | no: 28 agree, 1 disagree, 0 inconclusive | no | translated: 71 agree |
-| `block` | yes | no: 30 agree, 1 disagree, 0 inconclusive | no | translated: 78 agree |
+| `struct` | yes | yes: 4 agree | no | translated: 20 agree |
+| `field` | yes | yes: 8 agree | no | translated: 40 agree |
+| `sealed` | yes | yes: 8 agree | no | translated: 27 agree |
+| `variant` | yes | yes: 8 agree | no | translated: 27 agree |
+| `type-name` | yes | yes: 28 agree | no | translated: 71 agree |
+| `block` | yes | yes: 30 agree | no | translated: 78 agree |
 | `if` | yes | yes: 7 agree | no | translated: 11 agree |
 | `return` | yes | yes: 5 agree | no | translated: 19 agree |
 | `assign` | yes | yes: 4 agree | no | translated: 7 agree |
 | `incdec` | not seen | no | no | not translated |
-| `int` | yes | no: 27 agree, 1 disagree, 0 inconclusive | no | translated: 64 agree |
+| `int` | yes | yes: 27 agree | no | translated: 64 agree |
 | `bool` | yes | yes: 8 agree | no | translated: 16 agree |
-| `string` | yes | no: 22 agree, 1 disagree, 0 inconclusive | no | translated: 62 agree |
-| `name` | yes | no: 30 agree, 1 disagree, 0 inconclusive | no | translated: 78 agree |
+| `string` | yes | yes: 22 agree | no | translated: 62 agree |
+| `name` | yes | yes: 30 agree | no | translated: 78 agree |
 | `unary` | yes | yes: 6 agree | no | translated: 13 agree |
 | `address-of` | not seen | no | no | not translated |
 | `binary` | yes | yes: 23 agree | no | translated: 48 agree |
-| `call` | yes | no: 30 agree, 1 disagree, 0 inconclusive | no | translated: 78 agree |
-| `select` | yes | no: 4 agree, 1 disagree, 0 inconclusive | no | translated: 41 agree |
+| `call` | yes | yes: 30 agree | no | translated: 78 agree |
+| `select` | yes | yes: 4 agree | no | translated: 41 agree |
 | `paren` | yes | no: 2 agree | no | translated: 4 agree |
 | `tuple` | not seen | no | no | translated: 5 agree |
 | `if-expr` | yes | yes: 10 agree | no | translated: 13 agree |
@@ -523,7 +523,7 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (38 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (39 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
@@ -550,7 +550,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (38 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (90 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (92 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
@@ -566,10 +566,10 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `for` | 8 |
 | `slice-type` | 8 |
 | `bind` | 7 |
-| `composite-literal` | 7 |
 | `partial-function` | 7 |
 | `return-inside-expression` | 7 |
 | `collection-method` | 6 |
+| `composite-literal` | 6 |
 | `extractor` | 6 |
 | `go-results` | 6 |
 | `expression-pattern` | 5 |
