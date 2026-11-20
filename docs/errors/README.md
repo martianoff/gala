@@ -151,7 +151,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0136` | Argument given more than once | [GALA-E0136.md](GALA-E0136.md) |
 | `GALA-E0137` | A `_` inside an interpolated string | [GALA-E0137.md](GALA-E0137.md) |
 | `GALA-E0138` | Spread `xs...` of a value that is not a Go slice of the variadic parameter's element type | [GALA-E0138.md](GALA-E0138.md) |
-| `GALA-E0139` | A read of a `_` that a lambda parameter or typed pattern binds | [GALA-E0139.md](GALA-E0139.md) |
+| `GALA-E0139` | A read of `_`: a `_` binding, or `_++` and `_ += x` | [GALA-E0139.md](GALA-E0139.md) |
 
 ### Retired codes
 

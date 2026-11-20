@@ -108,6 +108,13 @@ func (t *galaASTTransformer) checkForbiddenStatementKeywordSrc(e exprSrc) error 
 
 // lowerIncDec lowers an increment or decrement.
 func (t *galaASTTransformer) lowerIncDec(d incDecDecl) (ast.Stmt, error) {
+	if d.expr.bareIdent() == "_" {
+		op := "_++"
+		if d.dec {
+			op = "_--"
+		}
+		return nil, underscoreWriteRead(d.expr.at(), op)
+	}
 	if err := t.immutableWriteError(d.at, d.expr, "increment/decrement"); err != nil {
 		return nil, err
 	}
@@ -211,7 +218,10 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	discards := make([]bool, len(targets))
 	lhsExprs := make([]ast.Expr, len(targets))
 	for i, target := range targets {
-		if d.op == "=" && target.bareIdent() == "_" {
+		if target.bareIdent() == "_" {
+			if d.op != "=" {
+				return nil, underscoreWriteRead(target.at(), "_ "+d.op+" ...")
+			}
 			discards[i], lhsExprs[i] = true, ast.NewIdent("_")
 			continue
 		}

@@ -53,3 +53,32 @@ func TestUnderscoreBindingRead(t *testing.T) {
 		})
 	}
 }
+
+// TestUnderscoreCompoundWrite pins GALA-E0139 at an increment, decrement or
+// compound assignment of `_`: each reads `_` first, with or without a `_`
+// binding in scope. `_ = x` stays a discard.
+func TestUnderscoreCompoundWrite(t *testing.T) {
+	const (
+		header = "package main\n\nfunc main() {\n    var n = 0\n"
+		hint   = "(hint: use a named variable; only `=` writes to `_`, and that discards the value)"
+	)
+	rejected := []struct{ name, body, want string }{
+		{"`_ += 1`", "    _ += 1\n", "line 5:4 `_ += ...` reads `_`, which names no value " + hint},
+		{"`_ -= 1`", "    _ -= 1\n", "line 5:4 `_ -= ...` reads `_`, which names no value " + hint},
+		{"`_++`", "    _++\n", "line 5:4 `_++` reads `_`, which names no value " + hint},
+		{"`_--`", "    _--\n", "line 5:4 `_--` reads `_`, which names no value " + hint},
+		{"`_ += 1` in a lambda with a `_` parameter", "    val f = (_ int) => {\n        _ += 1\n        0\n    }\n    Println(f(1))\n", "line 6:8 `_ += ...` reads `_`"},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.body+"    Println(n)\n}\n", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), string(galaerr.CodeUnderscoreBindingRead))
+			require.Contains(t, err.Error(), tc.want)
+		})
+	}
+	t.Run("`_ = x` stays a discard", func(t *testing.T) {
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    _ = n + 1\n    n += 1\n    n++\n    Println(n)\n}\n", "")
+		require.NoError(t, err)
+	})
+}
