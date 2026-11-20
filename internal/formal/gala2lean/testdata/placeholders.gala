@@ -16,7 +16,8 @@ func scaled(rs Array[R], n int) Array[int] = rs.Map(_.Lo * n + 1)
 
 func kind(r R) string = r match {
     case R(lo, _, _) if lo > 2 => {
-        val big = ArrayOf(lo, r.Hi).Filter(_ > 4)
+        val cut = lo + 1
+        val big = ArrayOf(lo, r.Hi, 7).Filter(_ > cut)
         s"big ${big}"
     }
     case _ => "small"
@@ -37,7 +38,9 @@ func main() {
     }
     val l = ListOf(4, 1, 3)
     val total = l.Filter(_ % 2 == 1).FoldLeft(0, (a, b) => a + b)
+    val off = 10
+    val shifted = l.Map(_ + off)
     val negs = l.Map(-_)
     val hasOne = l.Exists(_ == 1)
-    Println(total, negs, hasOne)
+    Println(total, negs, hasOne, shifted)
 }

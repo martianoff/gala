@@ -265,6 +265,12 @@ galaspec models them, except as listed below):
   reference cell in the program state (one heap per type), so the lambda and the code
   around it share it, as GALA's capture by reference says; a `func() T` parameter turns
   a plain argument into a thunk;
+- a placeholder lambda of one `_`, `rs.Map(_.Lo)`, as the lambda the transformer makes
+  of it (`(p) => p.Lo`), where no other slot could take the `_`: it is not in the
+  arguments of a call inside the argument, and that call is not itself inside a call
+  argument, up to the nearest lambda or case. Every other `_` is reported
+  (`placeholder-lambda`): two or more in one argument, one inside an interpolated string,
+  one for a slot that is not a function type of one parameter;
 - `Some`, `None`, `Left` and `Right`, as the prelude's `GOption` and `GEither`, with
   their patterns, and the methods std declares for them (`IsDefined`, `IsEmpty`, `Get`,
   `GetOrElse`, `OrElse`, `OnSome`, `OnNone`, `ForEach`, `Map`, `FlatMap`, `Filter`,
