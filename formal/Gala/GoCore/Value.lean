@@ -99,6 +99,8 @@ inductive Ty
   | array (n : Nat) (elem : Ty)
   /-- `float32` or `float64`, by its width (Go spec, "Numeric types"). -/
   | float (bits : Nat)
+  /-- `map[key]value` (Go spec, "Map types"). -/
+  | map (key value : Ty)
 end
 
 instance : Inhabited Ty := ⟨.bool⟩
@@ -117,6 +119,7 @@ def Ty.beq : Ty → Ty → Bool
   | .slice a, .slice b => a.beq b
   | .array n a, .array m b => n == m && a.beq b
   | .float a, .float b => a == b
+  | .map a b, .map c d => a.beq c && b.beq d
   | _, _ => false
 def Ty.beqs : List Ty → List Ty → Bool
   | [], [] => true
@@ -157,6 +160,7 @@ def Ty.text : Ty → String
   | .slice t => "[]" ++ t.text
   | .array n t => s!"[{n}]" ++ t.text
   | .float b => s!"float{b}"
+  | .map k v => "map[" ++ k.text ++ "]" ++ v.text
 def Ty.texts : List Ty → List String
   | [] => []
   | t :: ts => t.text :: Ty.texts ts
@@ -229,6 +233,9 @@ inductive Val
       float type `t`, whose value it is exactly. A constant stored in a variable, or
       meeting one in an operation, becomes a `float` (`defaultVal`). -/
   | rat (t : Ty) (size : Nat) (num : Int) (den : Nat)
+  /-- A map: a reference to map object `i` of the run (`St.maps`), or `none` for nil
+      (Go spec, "Map types": a map value refers to its map, which copies share). -/
+  | map (t : Ty) (ref : Option Nat)
   /-- A value GoCore cannot know, reading or writing into it stopping the run with
       `what`: a package-level variable of an imported package whose initializer GoCore
       could not run (it reached `what`), or the array an append left behind when gc
@@ -238,9 +245,36 @@ inductive Val
 
 def Val.ty : Val → Ty
   | .int t _ | .bool t _ | .str t _ | .struct_ t _ | .ptr t _ | .func_ t _ | .nilIface t
-  | .boxed t _ | .array t _ | .slice t _ | .float t _ | .rat t _ _ _ => t
+  | .boxed t _ | .array t _ | .slice t _ | .float t _ | .rat t _ _ _ | .map t _ => t
   | .tuple vs => .tuple (vs.map fun _ => .bool)
   | .poison _ => .tuple []
+
+/-- A map key of a key type GoCore runs maps of (`mapKeyKind?`: an integer, string
+    or boolean type), encoded exactly. A map's keys all have its key type, so two keys
+    are `==` (Go spec, "Comparison operators") exactly when their encodings are equal. -/
+inductive MapKey
+  | int (n : Int)
+  | str (s : String)
+  | bool (b : Bool)
+  deriving BEq, Hashable, Inhabited
+
+/-- `fmt`'s order of map keys (`internal/fmtsort/sort.go`, `compare`): integers by value
+    (an unsigned one is held as its non-negative value, so one order serves both), strings
+    by `cmp.Compare`, which is byte order, and `false` before `true`. GoCore's strings are
+    Lean strings, valid UTF-8, whose code-point order is their UTF-8 byte order. -/
+def MapKey.lt : MapKey → MapKey → Bool
+  | .int a, .int b => a < b
+  | .str a, .str b => a < b
+  | .bool a, .bool b => !a && b
+  | _, _ => false
+
+/-- A map's contents: each key's encoding, to the key's value and the element. -/
+structure MapObj where
+  entries : Std.HashMap MapKey (Val × Val) := {}
+  /-- How many times a key the map did not hold was added: a range over the map stops
+      when one is added while it runs (`rangeLoop`). -/
+  added : Nat := 0
+  deriving Inhabited
 
 /-- The dynamic value of an interface value; any other value itself. -/
 def Val.dyn : Val → Val
@@ -297,6 +331,8 @@ structure St where
       the panic, which `recover` called by it directly stops (Go spec, "Handling
       panics"). -/
   recoverable : Option (Nat × Val × Bool) := none
+  /-- The run's maps, which map values refer to by index (`Val.map`). -/
+  maps : Array MapObj := #[]
 
 abbrev GM := ExceptT Stop (StateM St)
 
@@ -376,5 +412,60 @@ def store (l : Loc) (w : Val) : GM Unit := do
   | some _ => pure ()
   -- `modify` on the cell, so an unshared value is updated in place.
   modify fun s => { s with cells := s.cells.modify l.cell (·.setAt l.path w) }
+
+/-! ## Maps -/
+
+/-- A new, empty map; its index. -/
+def newMap : GM Nat := do
+  let i := (← get).maps.size
+  modify fun s => { s with maps := s.maps.push {} }
+  pure i
+
+/-- Map `i`. -/
+def getMap (i : Nat) : GM MapObj := do
+  match (← get).maps[i]? with
+  | some m => pure m
+  | none => stuck "no such map"
+
+/-- Map `i` with `f` applied to its entries; `modify`, so an unshared map is updated in
+    place. -/
+def modifyMap (i : Nat) (f : Std.HashMap MapKey (Val × Val) → Std.HashMap MapKey (Val × Val)) : GM Unit :=
+  modify fun s => { s with maps := s.maps.modify i fun m => { m with entries := f m.entries } }
+
+/-- Where an assignment stores: a variable or element at `l`, of type `t`; element `i`
+    of `v` (at `l` if addressable), whose bounds are checked when it is stored or loaded
+    (Go spec, "Assignment statements": `x[1], x[3] = 4, 5` sets `x[1]`, then panics);
+    or a map's entry, which is not addressable (Go spec, "Address operators"): the map,
+    the key (already of the map's key type) and its encoding, and the element type. -/
+inductive Place
+  | loc (l : Loc) (t : Ty)
+  | elem (v : Val) (l : Option Loc) (i : Val)
+  | entry (ref : Option Nat) (key : Val) (k : MapKey) (t : Ty)
+
+/-- The encoding of a key already of its map's key type. -/
+def mapKeyOf : Val → GM MapKey
+  | .int _ x => pure (.int x)
+  | .str _ s => pure (.str s)
+  | .bool _ b => pure (.bool b)
+  | v => stuck s!"a map key of type {v.ty}"
+
+/-- The element of the map `ref` refers to at key `k`, if it has one; a nil map has none
+    (Go spec, "Index expressions"). -/
+def mapLookup (ref : Option Nat) (k : MapKey) : GM (Option Val) := do
+  match ref with
+  | none => pure none
+  | some i => pure (((← getMap i).entries.get? k).map (·.2))
+
+/-- `m[k] = v` on the map `ref` refers to, `key` encoded as `k` (Go spec, "Index
+    expressions"): a nil map panics with the runtime error gc raises, whose text has no
+    `runtime error: ` prefix (Go 1.25's runtime/map_swiss.go: `maps_errNilAssign`, a
+    `plainError`). -/
+def mapStore (ref : Option Nat) (key : Val) (k : MapKey) (v : Val) : GM Unit := do
+  match ref with
+  | none => throw (.panic (.str .string "assignment to entry in nil map") true)
+  | some i =>
+    modify fun s => { s with maps := s.maps.modify i fun m =>
+      let (had, entries) := m.entries.containsThenInsert k (key, v)
+      { entries, added := if had then m.added else m.added + 1 } }
 
 end Gala.GoCore.Full

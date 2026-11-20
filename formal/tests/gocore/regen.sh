@@ -7,8 +7,10 @@
 #
 # Some fixtures are about GoCore's own outcomes, which Go does not share, and are
 # not regenerated from Go: fuel (Go aborts with a stack overflow, GoCore ends in
-# fuel) and the unsupported_* ones, where GoCore stops: at a map
-# (unsupported_map), at a capacity that depends on gc's escape analysis
+# fuel) and the unsupported_* ones, where GoCore stops: at a range over a map of two or
+# more entries or one that gains a key while it is ranged over
+# (unsupported_map_range_*), at a map of a key type it does not run (unsupported_map_key),
+# at a capacity that depends on gc's escape analysis
 # (unsupported_escape), at constraint type inference (unsupported_inference),
 # at panic(nil) (unsupported_panic_nil), at a struct that embeds an interface
 # (unsupported_embedded) or a type with methods, directly, through another

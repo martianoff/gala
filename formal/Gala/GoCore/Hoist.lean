@@ -160,7 +160,7 @@ def isType (s : Scope) : Expr → Bool
   | .index (.selector (.ident q) t) _ => isTypeObj (s.qualified? q t)
   | .star x => isType s x
   | .paren x => isType s x
-  | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. => true
+  | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. | .mapType .. => true
   | _ => false
 
 /-- Whether `x[args]` instantiates a generic function or type (no index is read). -/
@@ -397,7 +397,7 @@ def isBoolOp : Expr → Bool
 
 /-- Whether a type definition `type T def` makes `T` certainly not an interface. -/
 def concreteDef : Expr → Bool
-  | .structType _ | .star _ | .arrayType .. | .funcType _ => true
+  | .structType _ | .star _ | .arrayType .. | .funcType _ | .mapType .. => true
   | .ident x => match universeType? x with
     | some (.iface _) => false
     | some _ => true
@@ -414,7 +414,7 @@ def nonIfaceObj : Option Obj → Bool
     Unknown types are not. -/
 def nonIface (s : Scope) : Expr → Bool
   | .paren t => nonIface s t
-  | .star _ | .arrayType .. | .funcType _ | .structType _ => true
+  | .star _ | .arrayType .. | .funcType _ | .structType _ | .mapType .. => true
   | .ident x =>
     if s.isLocal x then false
     else if s.tparams.contains x then true

@@ -1,0 +1,22 @@
+map[] 0 true 0
+0 false
+map[a:1 b:2 c:3]
+map[a:1 b:2 c:3]|3
+map[a:11 c:3 z:1] 3 11 0
+1 true
+map[-3:x 2:z 10:y] z true
+map[false:0 true:1]
+map[k:{1 x}]
+map[T1:T2 T3:T4]
+map[a:map[] o:map[x:2 y:1]] true 2
+&map[a:1] map[p:[1 2]]
+map[1:2 2:5 3:1]
+false false false
+[map[0:0] map[1:1] map[2:2] map[3:3] map[4:4]] 5
+map[3:2 200:1]
+7 4
+map[q:1 r:2] 2
+range 1 1
+map[]
+map[] false
+map[a:11 c:3 shared:7 z:1]

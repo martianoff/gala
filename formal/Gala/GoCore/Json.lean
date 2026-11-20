@@ -64,7 +64,7 @@ private def unsupportedOf (j : Json) : D (Option String) :=
 /-- The kinds of the schema GoCore does not run: they decode to `unsupported <kind>`,
     without their children. A kind the schema does not have is malformed. -/
 def outsideExprs : List String :=
-  ["map-type", "chan-type", "imag-lit"]
+  ["chan-type", "imag-lit"]
 def outsideStmts : List String := ["labeled", "select", "send", "go"]
 
 private def kindOf (j : Json) : D String := str j "kind"
@@ -121,6 +121,7 @@ partial def decodeExpr (j : Json) : D Expr := do
   | "interface-type" => return .interfaceType (← (← arr j "elems").mapM decodeField)
   | "func-type" => return .funcType (← decodeSig j)
   | "array-type" => return .arrayType (← optExpr j "len") (← decodeExpr (← field j "elt"))
+  | "map-type" => return .mapType (← decodeExpr (← field j "key")) (← decodeExpr (← field j "value"))
   | "ellipsis" => return .ellipsis
   | "slice-expr" =>
     return .sliceExpr (← decodeExpr (← field j "x")) (← optExpr j "low") (← optExpr j "high")
