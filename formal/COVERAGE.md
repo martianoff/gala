@@ -575,13 +575,13 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 311 | 31 |
+| AGREE | 316 | 31 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 97 | 4 |
+| UNSUPPORTED | 92 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **342** (ratchet baseline 342).
+Programs GoCore agrees with go run on: **347** (ratchet baseline 347).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **29** (ratchet baseline 29).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
@@ -590,16 +590,16 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 
 | Construct | Programs |
 |---|---|
-| `fmt.Stringer` | 8 |
 | `map-type` | 8 |
 | `runtime.Callers` | 7 |
+| `slices.SortFunc` | 6 |
 | `strconv.Atoi` | 6 |
 | `local-type` | 5 |
-| `slices.SortFunc` | 5 |
 | `recover-runtime-error` | 3 |
 | `type-inference` | 3 |
 | `fmt-verb-T` | 2 |
 | `fmt.Errorf` | 2 |
+| `fmt.Formatter` | 2 |
 | `net/url.URL` | 2 |
 | `os.TempDir` | 2 |
 | `regexp.MustCompile` | 2 |
