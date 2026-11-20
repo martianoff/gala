@@ -2,7 +2,8 @@ package gala2lean
 
 import (
 	"fmt"
-	"math/big"
+	"go/constant"
+	"go/token"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -306,8 +307,8 @@ func safeExpr(n coreexport.Node) bool {
 // isZeroLit reports whether integer literal text is 0, in any base, or is not
 // an integer literal at all (then nothing is known of it).
 func isZeroLit(text string) bool {
-	v, ok := new(big.Int).SetString(strings.ReplaceAll(strings.ToLower(text), "_", ""), 0)
-	return !ok || v.Sign() == 0
+	v := constant.MakeFromLiteral(text, token.INT, 0)
+	return v.Kind() != constant.Int || constant.Sign(v) == 0
 }
 
 // seqParamType is the GALA type a parameter of kind p wants: elem's GALA

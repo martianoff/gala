@@ -9,6 +9,7 @@ go_library(
         "bracket.go",
         "call.go",
         "collections.go",
+        "constfold.go",
         "deps.go",
         "expr.go",
         "gala2lean.go",
@@ -27,7 +28,6 @@ go_library(
         "stdfuncs.go",
         "stmt.go",
         "types.go",
-        "untypedconst.go",
         "variadic.go",
     ],
     importpath = "martianoff/gala/internal/formal/gala2lean",
@@ -67,7 +67,6 @@ go_test(
         "prelude_internal_test.go",
         "run_internal_test.go",
         "stdnames_internal_test.go",
-        "untypedconst_internal_test.go",
     ],
     data = [
         "//collection_immutable:gala_sources",
