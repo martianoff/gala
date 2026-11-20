@@ -781,7 +781,7 @@ const (
 
 	// E0078: an interface literal `Repo(Find = (id) => ...)` is invalid: an
 	// argument is positional or names no method of the interface, a method is
-	// given twice or left out, the interface is generic and its type
+	// left out (one given twice is E0136), the interface is generic and its type
 	// arguments are neither written nor expected, it has a method a literal
 	// cannot implement (a generic method, or an unexported method of another
 	// package), or it is a Go interface that is generic or uses a type GALA
@@ -1160,6 +1160,14 @@ const (
 	// the defaults of other declarations, would be expanded without end. It
 	// used to crash the compiler with a Go stack overflow.
 	CodeDefaultCycle ErrorCode = "GALA-E0135"
+
+	// E0136: a call gives one argument twice: it names the same parameter,
+	// field or method in two named arguments (`f(a = 1, a = 2)`), or names
+	// one a positional argument already fills (`f(1, a = 2)`). It applies to
+	// every call form: functions and methods, GALA and Go, constructors,
+	// interface literals and Copy. A name given twice used to keep the last
+	// value silently on most of them.
+	CodeDuplicateArgument ErrorCode = "GALA-E0136"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

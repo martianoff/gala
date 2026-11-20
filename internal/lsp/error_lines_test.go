@@ -466,7 +466,7 @@ func main() {
 	assertErrorHasLine(t, diags, "unknown parameter")
 }
 
-// calls.go:1366 — parameter specified both positionally and by name in func call
+// GALA-E0136 — parameter given both positionally and by name in func call
 func TestErrorLine_Calls_DuplicateParamFuncCall(t *testing.T) {
 	_, diags := getDiags(t, `package main
 
@@ -476,7 +476,7 @@ func main() {
     Println(greet("Alice", name = "Bob"))
 }
 `)
-	assertErrorHasLine(t, diags, "specified both positionally and by name")
+	assertErrorHasLine(t, diags, "is given both by position and by name")
 }
 
 // calls.go:1382 — missing required argument in func call (handleNamedArgsFuncCall gap fill)
@@ -528,7 +528,7 @@ func main() {
 	assertErrorHasLine(t, diags, "unknown parameter")
 }
 
-// calls.go:1428 — parameter specified both positionally and by name in method call
+// GALA-E0136 — parameter given both positionally and by name in method call
 func TestErrorLine_Calls_DuplicateParamMethodCall(t *testing.T) {
 	_, diags := getDiags(t, `package main
 
@@ -543,7 +543,7 @@ func main() {
     Println(g.Hello("Hey", greeting = "Yo"))
 }
 `)
-	assertErrorHasLine(t, diags, "specified both positionally and by name")
+	assertErrorHasLine(t, diags, "is given both by position and by name")
 }
 
 // calls.go:1440 — missing required argument in method call (handleNamedArgsMethodCall gap fill)

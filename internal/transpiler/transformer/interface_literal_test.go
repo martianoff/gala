@@ -169,14 +169,6 @@ func main() {
 			wantError: "an argument of an interface literal of Repo names the method it implements",
 		},
 		{
-			name: "a method given twice",
-			body: `func main() {
-    val r = Repo(Find = (id) => None(), Count = () => 1, Count = () => 2)
-    Println(r)
-}`,
-			wantError: "method Count of Repo is given twice",
-		},
-		{
 			name: "a generic interface without type arguments",
 			body: `func main() {
     val b = Box(Get = () => 1)

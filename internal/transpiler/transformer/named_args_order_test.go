@@ -112,7 +112,7 @@ func size(m map[string]int) int = go_interop.MapLen(m)
 		{
 			name:      "go method, name given twice",
 			body:      `func f(re *regexp.Regexp) string = re.ReplaceAllString(src = "a", src = "b", repl = "c")`,
-			wantError: `parameter "src" is given more than once in call to ReplaceAllString`,
+			wantError: "argument `src` is given more than once in call to `re.ReplaceAllString`",
 		},
 		{
 			name:     "generic go function, lambda before the value it is typed by",

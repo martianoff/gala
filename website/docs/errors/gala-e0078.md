@@ -1,10 +1,10 @@
 ---
 layout: default
 title: "GALA-E0078 — Invalid Interface Literal"
-description: "GALA-E0078 fires when an interface literal Repo(Find = ...) leaves out a method, names one the interface does not have, gives one twice or positionally, or targets a method a function cannot implement."
+description: "GALA-E0078 fires when an interface literal Repo(Find = ...) leaves out a method, names one the interface does not have, gives one positionally, or targets a method a function cannot implement."
 keywords: "gala-e0078, gala interface literal, gala anonymous interface implementation, gala implement interface with lambdas, gala fake interface test"
 permalink: /docs/errors/gala-e0078/
-last_modified_at: 2026-10-14
+last_modified_at: 2026-11-16
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0078</p>
@@ -15,8 +15,8 @@ last_modified_at: 2026-10-14
 invalid:
 
 - an argument is positional, or names no method of the interface;
-- a method is given twice, or left out: a literal gives every method of the
-  interface exactly once;
+- a method is left out: a literal gives every method of the interface (a
+  method given twice is [GALA-E0136](/docs/errors/gala-e0136/));
 - the interface is generic, and its type arguments are neither written
   (`Box[int](...)`) nor taken from an expected type;
 - the interface has a method a function cannot implement: an unexported

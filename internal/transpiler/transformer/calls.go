@@ -1108,7 +1108,7 @@ func bindMethodArguments(c callSrc, method string, methodMeta *transpiler.Method
 		}
 		nargs = len(args)
 	}
-	return layoutArgs(params, positional, byName, nargs, nil, line, col)
+	return layoutArgs(params, positional, byName, nargs, nil, c)
 }
 
 // methodDefaultArg is the default value of a method's i-th parameter at a call
@@ -1490,7 +1490,7 @@ func handleNamedArgsGoCall(fun ast.Expr, sig *transpiler.GoFuncSignature, params
 			return nil, err
 		}
 	}
-	args, err := layoutArgs(params, positional, named, -1, nil, line, col)
+	args, err := layoutArgs(params, positional, named, -1, nil, c)
 	if err != nil {
 		return nil, err
 	}
@@ -1630,8 +1630,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 				return nil, err
 			}
 		}
-		al, ac := c.anchor().start()
-		return t.handleNamedArgsMethodCall(fun, receiver, mArgs, named, hasSpread, methodMeta, recvType, typeSubst, al, ac)
+		return t.handleNamedArgsMethodCall(fun, receiver, mArgs, named, hasSpread, methodMeta, recvType, typeSubst, c)
 	}
 	return &ast.CallExpr{Fun: fun, Args: mArgs, Ellipsis: ellipsisPos(hasSpread)}, nil
 }
@@ -1705,7 +1704,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		}
 	}
 	if len(mNamedArgs) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, sortedNamedArgs(mNamedArgs), hasSpread, methodMeta, recvType, typeSubst, al, ac)
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, sortedNamedArgs(mNamedArgs), hasSpread, methodMeta, recvType, typeSubst, c)
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
 		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, al, ac)
@@ -3017,7 +3016,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil {
-			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, hasSpread, callCtx.funcMeta, callCtx.inferredTypeSubst, al, ac)
+			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, hasSpread, callCtx.funcMeta, callCtx.inferredTypeSubst, c)
 			// A result-only type parameter comes from the slot, as for a
 			// positional call (section 12.5), over the arguments in order.
 			if call, ok := expr.(*ast.CallExpr); ok && err == nil {
@@ -3171,7 +3170,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				}
 				// The positional arguments bind type parameters as the named
 				// ones do.
-				inferArgs, err := bindPositionalStructArgs(qualifiedName, variantFieldNames, args, namedArgs, c.args)
+				inferArgs, err := bindPositionalStructArgs(qualifiedName, variantFieldNames, args, namedArgs, c)
 				if err != nil {
 					return nil, err
 				}
@@ -3206,7 +3205,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		if len(args) > len(fields) {
 			return nil, structTooManyArgsError(qualifiedName, fields, len(c.args.list), line, col)
 		}
-		namedArgs, err := bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, c.args)
+		namedArgs, err := bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, c)
 		if err != nil {
 			return nil, err
 		}
@@ -3294,12 +3293,68 @@ func checkPositionalAfterNamed(args argsSrc, copyCall bool) error {
 	return nil
 }
 
+// checkDuplicateNamedArgs reports the second argument of c, any call, that
+// names the same parameter, field or method as an earlier one (GALA-E0136).
+// Every call form collects its named arguments by name, so without this a
+// later value would silently replace an earlier one. Like
+// checkPositionalAfterNamed it reads only the argument list, so it runs before
+// the callee is resolved, and every layout of named arguments (layoutArgs,
+// struct construction, interface literals) relies on it. It runs for every call,
+// and argument lists are short, so it compares names pairwise rather than
+// building a set.
+func checkDuplicateNamedArgs(c callSrc) error {
+	for i, arg := range c.args.list {
+		name, at := arg.name()
+		if name == "" {
+			continue
+		}
+		for _, earlier := range c.args.list[:i] {
+			if n, _ := earlier.name(); n == name {
+				return duplicateArgumentError(at, name, c.calleeText(), false)
+			}
+		}
+	}
+	return nil
+}
+
+// checkNamedFillsPositional reports the first named argument of c, as
+// written, that names one of the leading npos of params, which positional
+// arguments already fill (GALA-E0136).
+func checkNamedFillsPositional(c callSrc, params []string, npos int) error {
+	filled := params[:min(npos, len(params))]
+	for _, a := range c.args.list {
+		if name, at := a.name(); name != "" && slices.Contains(filled, name) {
+			return duplicateArgumentError(at, name, c.calleeText(), true)
+		}
+	}
+	return nil
+}
+
+// duplicateArgumentError is GALA-E0136 at at, the name of the argument that
+// gives the parameter, field or method name its second value: after a named
+// argument, or after a positional one when byPosition is set. callee is the
+// call's source text (calleeText), named in the message unless it is "", too
+// long to quote.
+func duplicateArgumentError(at srcNode, name, callee string, byPosition bool) error {
+	how := "more than once"
+	if byPosition {
+		how = "both by position and by name"
+	}
+	msg := fmt.Sprintf("argument `%s` is given %s", name, how)
+	if callee != "" {
+		msg += " in call to `" + callee + "`"
+	}
+	r := at.rng()
+	return spanErrorAt(galaerr.CodeDuplicateArgument, r, r, msg,
+		"remove the duplicate; each parameter, field or method takes one argument")
+}
+
 // bindPositionalStructArgs binds the positional arguments of a construction
 // that also names some fields to the struct's leading fields, the rule a
 // function call follows for its parameters, and returns them merged with the
 // named ones. A spread argument and a field given both ways are errors;
 // arguments beyond the fields are left for the caller to report.
-func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, list argsSrc) (map[string]ast.Expr, error) {
+func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, c callSrc) (map[string]ast.Expr, error) {
 	if len(args) == 0 {
 		return namedArgs, nil
 	}
@@ -3307,16 +3362,13 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 	// every call), so argument i of the list is args[i].
 	bound := maps.Clone(namedArgs)
 	for i, arg := range args[:min(len(args), len(fields))] {
-		if a := list.list[i]; a.spread() {
+		if a := c.args.list[i]; a.spread() {
 			return nil, spreadFieldError(a, fields[i], qualifiedName)
 		}
-		if _, twice := bound[fields[i]]; twice {
-			line, col := namedArgPos(list, fields[i])
-			return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
-				fmt.Sprintf("field %q of %q is given both by position and by name", fields[i], qualifiedName),
-				"give each field once")
-		}
 		bound[fields[i]] = arg
+	}
+	if err := checkNamedFillsPositional(c, fields, len(args)); err != nil {
+		return nil, err
 	}
 	return bound, nil
 }
@@ -3329,39 +3381,19 @@ func spreadFieldError(a argSrc, field, qualifiedName string) error {
 		fmt.Sprintf("a spread argument cannot fill field %q in construction of %q", field, qualifiedName))
 }
 
-// namedArgPos is the position of the argument naming field in args.
-func namedArgPos(args argsSrc, field string) (int, int) {
-	for _, a := range args.list {
-		if name, at := a.name(); name == field {
-			return at.start()
-		}
-	}
-	return args.at.start()
-}
-
 // checkUnknownStructFields reports named arguments that match no field of the
 // struct being constructed (a shorthand or block-form GALA struct, or a Go
-// struct the Go type info describes), pointing at the first one, and a field
-// named twice. Unlike the required-field check it applies to every struct: the
-// arguments are collected by name, so a second value for a field replaced the
-// first, and for a GALA struct the literal is built from its fields, so an
-// argument naming none of them was dropped.
+// struct the Go type info describes), pointing at the first one. Unlike the
+// required-field check it applies to every struct: for a GALA struct the
+// literal is built from its fields, so an argument naming none of them was
+// dropped. A field named twice is reported for every call
+// (checkDuplicateNamedArgs).
 func checkUnknownStructFields(qualifiedName string, fields []string, args argsSrc) error {
 	var unknown []string
 	var line, col int
-	seen := make(map[string]bool)
 	for _, arg := range args.list {
 		name, at := arg.name()
-		if name == "" {
-			continue
-		}
-		if seen[name] {
-			l, c := at.start()
-			return galaerr.NewSemanticErrorAt(l, c,
-				fmt.Sprintf("field %q is given more than once in construction of %q", name, qualifiedName))
-		}
-		seen[name] = true
-		if slices.Contains(fields, name) {
+		if name == "" || slices.Contains(fields, name) {
 			continue
 		}
 		if len(unknown) == 0 {
@@ -4696,12 +4728,13 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	spread bool,
 	funcMeta *transpiler.FunctionMetadata,
 	typeSubst typeSubstMap,
-	line, col int,
+	c callSrc,
 ) (ast.Expr, error) {
+	line, col := c.anchor().start()
 	fill := func(i int, args []ast.Expr) (ast.Expr, error) {
 		return t.funcDefaultArg(funcMeta, i, args, typeSubst, line, col)
 	}
-	args, err := layoutArgs(funcParamList(funcMeta.Name, funcMeta), positionalArgs, sortedNamedArgs(namedArgs), -1, fill, line, col)
+	args, err := layoutArgs(funcParamList(funcMeta.Name, funcMeta), positionalArgs, sortedNamedArgs(namedArgs), -1, fill, c)
 	if err != nil {
 		return nil, err
 	}
@@ -4720,12 +4753,13 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	methodMeta *transpiler.MethodMetadata,
 	recvType transpiler.Type,
 	typeSubst typeSubstMap,
-	line, col int,
+	c callSrc,
 ) (ast.Expr, error) {
+	line, col := c.anchor().start()
 	fill := func(i int, args []ast.Expr) (ast.Expr, error) {
 		return t.methodDefaultArg(methodMeta, i, args, callSiteReceiver, recvType, typeSubst, line, col)
 	}
-	args, err := layoutArgs(methodParamList(methodMeta.Name, methodMeta), positionalArgs, namedArgs, -1, fill, line, col)
+	args, err := layoutArgs(methodParamList(methodMeta.Name, methodMeta), positionalArgs, namedArgs, -1, fill, c)
 	if err != nil {
 		return nil, err
 	}
