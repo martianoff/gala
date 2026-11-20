@@ -147,8 +147,9 @@ formal/
      `DISAGREE`, `UNSUPPORTED` or `INCONCLUSIVE`. A run that stops `unsupported` after
      printing (galaspec's, gala2lean's or GoCore's) is `UNSUPPORTED` only when what it
      printed is a prefix of what Go printed, and `DISAGREE` otherwise, so a stop cannot
-     hide an earlier wrong line. When Go ended other than `ok` or with a panic, the stop
-     is `UNSUPPORTED`.
+     hide an earlier wrong line. When Go's output is not final (the program was
+     rejected, or Go ran past its time limit or out of stack or memory), the stop is
+     `UNSUPPORTED`.
   4. From M4, for a program that compiles: export the Go it ran, with the Go of the GALA
      packages it imports, to GoCore JSON, run `gocore`, and compare it with `go run` of the
      same Go: stdout, and how it ends, a panic by the exact text Go prints. This is GoCore's
