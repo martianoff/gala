@@ -246,7 +246,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 						// The slot's type binds a generic case's type
 						// parameters, as for a call with arguments.
 						pending := t.expectedArgTypes.takeFor(c.post.owner)
-						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, pending,
+						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, argsSrc{}, pending,
 							sl, sc)
 						if err != nil || handled {
 							return expr, err
@@ -259,7 +259,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 						// companion-Apply path as a call with arguments, which
 						// injects the metadata; otherwise it would read as
 						// constructing the empty struct.
-						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, nil,
+						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, argsSrc{}, nil,
 							sl, sc)
 						if err != nil || handled {
 							return expr, err
@@ -477,7 +477,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// A val whose type has a zero-argument Apply method is called through
 		// it, as section 12 of the dispatcher does for a call with arguments;
 		// any other value that is not a function is an error.
-		if expr, handled := t.tryTransformValWithApply(base, nil); handled {
+		if expr, handled := t.tryTransformValWithApply(base, nil, false); handled {
 			return expr, nil
 		}
 		if err := t.checkValueCalledAsFunction(base, c); err != nil {
@@ -815,6 +815,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 							}
 						}
 					}
+				}
+			}
+			if v.spread {
+				// Lowered here, not by lowerArg, so its check is run here. An
+				// element type naming the method's own type parameters is not
+				// known yet, and a spread at a parameter that is not variadic
+				// is reported by checkSpreads.
+				elem := substitutedParamType
+				if typeMentionsTypeParam(elem, methodMeta.TypeParams) || !isVariadicParam(len(methodMeta.ParamTypes), methodMeta.Variadic, i) {
+					elem = transpiler.NilType{}
+				}
+				if err := t.checkSpreadArg(v.expr, expr, elem); err != nil {
+					return true, nil, err
 				}
 			}
 			preTransformed[i] = expr
@@ -1450,6 +1463,8 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 			expected = goSigParamType(goSig, idx)
 		} else if typed && !v.lambda.ok() {
 			expected = t.goParamSlot(goSig, idx, v.expr)
+		} else if v.spread {
+			expected = spreadArgType(goVariadicElem(goSig, idx))
 		}
 		expr, err := t.lowerArg(v, typedSlot(expected), false)
 		if err != nil {
@@ -1668,7 +1683,8 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
 			if v.spread {
-				expectedType = spreadArgType(expectedType)
+				// checkSpreads reports a spread at another parameter.
+				expectedType = namedSpreadType(expectedType, len(methodMeta.ParamTypes), methodMeta.Variadic, slices.Index(methodMeta.ParamNames, argName))
 			}
 			expr, err := t.lowerArg(v, typedSlot(expectedType), false)
 			if err != nil {
@@ -1729,16 +1745,20 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 // Also handles type-parameter inference for generic Apply paths from both
 // argument types (unification) and the enclosing function's return
 // type. Returns handled=false if the type is not known, so the
-// caller can fall through to the later sections.
+// caller can fall through to the later sections. list is the call's
+// arguments as written: a spread among them fills Apply's variadic parameter
+// only (checkSpreads), and the Apply call keeps it.
 //
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	fun ast.Expr,
 	typeName string,
 	args []ast.Expr,
+	list argsSrc,
 	slotType transpiler.Type,
 	line, col int,
 ) (handled bool, result ast.Expr, err error) {
+	spread := slices.ContainsFunc(list.list, argSrc.spread)
 	// Tuple → TupleN arity rewrite for the bare positional constructor.
 	// Routes through the unified helper (B2) so every site agrees. Without
 	// this rewrite, `Tuple(a, b, c)` falls through to the Apply path and
@@ -1856,6 +1876,11 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	if !isType {
 		return false, nil, nil
 	}
+	if spread {
+		if err := methodParamList(origTypeName+".Apply", t.writtenApplyParams(methodMeta)).checkSpreads(list); err != nil {
+			return true, nil, err
+		}
+	}
 
 	isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 
@@ -1880,12 +1905,22 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				inferredMap[tp] = typ
 			}
 		}
-		// Then the Apply method's arguments.
+		// Then the Apply method's arguments, each against the parameter it
+		// fills: the metadata a codec's Apply takes first is injected after
+		// them. A spread last one is a slice of the variadic parameter's type
+		// (checkSpreads has put it there).
+		params := t.writtenApplyParams(methodMeta)
 		for i, arg := range args {
-			if pi := methodParamIndex(methodMeta, i); pi >= 0 {
+			if pi := methodParamIndex(params, i); pi >= 0 {
 				argType := t.getExprTypeName(arg)
 				if argType != nil && !argType.IsNil() && !argType.IsAny() {
-					t.unifyForInference(methodMeta.ParamTypes[pi], argType, typeMeta.TypeParams, inferredMap)
+					paramType := params.ParamTypes[pi]
+					if spread && i == len(args)-1 && isVariadicParam(len(params.ParamTypes), params.Variadic, i) {
+						// The slice under a GALA alias or an Immutable.
+						paramType = spreadArgType(paramType)
+						argType = t.followAliasChain(unwrapValueMarkers(argType))
+					}
+					t.unifyForInference(paramType, argType, typeMeta.TypeParams, inferredMap)
 				}
 			}
 		}
@@ -1986,8 +2021,9 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 			funExpr = t.ident(fullName)
 		}
 		return true, &ast.CallExpr{
-			Fun:  withTypeArgs(funExpr, typeArgs),
-			Args: append([]ast.Expr{&ast.CompositeLit{Type: fun}}, args...),
+			Fun:      withTypeArgs(funExpr, typeArgs),
+			Args:     append([]ast.Expr{&ast.CompositeLit{Type: fun}}, args...),
+			Ellipsis: ellipsisPos(spread),
 		}, nil
 	}
 
@@ -1998,7 +2034,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 			X:   receiver,
 			Sel: ast.NewIdent("Apply"),
 		},
-		Args: args,
+		Args:     args,
+		Ellipsis: ellipsisPos(spread),
 	}, nil
 }
 
@@ -2103,7 +2140,16 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			return nil, cerr
 		}
 		expectedType := t.expectedArgType(funcCallCtx, slotIdx, v.spread)
-		if transpiler.IsUnusable(expectedType) && !v.spread {
+		switch {
+		case v.spread && goSig != nil:
+			// A Go callee's spread fills its variadic parameter only.
+			expectedType = spreadArgType(goVariadicElem(goSig, slotIdx))
+		case v.spread && callCtx.funcMeta == nil && callCtx.applyMethodMeta == nil:
+			// The Apply a value is called through (Sections 11 and 12).
+			if meta := t.valueApplyType(fun); meta != nil {
+				expectedType = spreadArgType(applyVariadicElem(meta, slotIdx))
+			}
+		case transpiler.IsUnusable(expectedType) && !v.spread:
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
 		if genericGo && readsGenericGoSlot(v, expectedType) {
@@ -2181,11 +2227,16 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			if expErr != nil {
 				return nil, nil, false, expErr
 			}
-			if v.spread && callCtx.funcMeta != nil {
+			if v.spread {
 				// A named spread fills the variadic parameter with a whole
 				// slice, as a positional one does (expectedArgType). One
-				// naming a field is rejected by handleNamedArgsCall.
-				namedExpectedType = spreadArgType(namedExpectedType)
+				// naming another parameter is reported by checkSpreads, and
+				// one naming a field by handleNamedArgsCall.
+				if fm := callCtx.funcMeta; fm != nil {
+					namedExpectedType = namedSpreadType(namedExpectedType, len(fm.ParamTypes), fm.Variadic, slices.Index(fm.ParamNames, argName))
+				} else {
+					namedExpectedType = transpiler.NilType{}
+				}
 			}
 
 			// Concurrency boundary: enforce capture-safety when this named
@@ -2744,12 +2795,35 @@ func explicitTypeArgSubst(typeParams, typeArgs []string) typeSubstMap {
 // tryTransformCompositeLitApply handles Section 11: when `fun` is already a
 // composite literal (e.g., `Append{...}` produced by an earlier partial
 // application) whose type has an Apply method, rewrite `fun(args)` as
-// `fun.Apply(args)`. Returns handled=false for all other shapes of `fun`.
+// `fun.Apply(args)`, keeping the spread of its last argument when spread is
+// set. Returns handled=false for all other shapes of `fun`.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
-func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []ast.Expr) (ast.Expr, bool) {
-	compLit, ok := fun.(*ast.CompositeLit)
+func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []ast.Expr, spread bool) (ast.Expr, bool) {
+	// By the type the literal names, `alias.T` too, else by its bare name.
+	cl, ok := fun.(*ast.CompositeLit)
 	if !ok {
 		return nil, false
+	}
+	if t.litApplyType(cl) == nil {
+		// A bare name was looked up already; any other type falls back to
+		// the bare name of its selector.
+		if name, qualified := qualifiedLitType(cl); !qualified && name != "" || t.compositeLitApplyType(fun) == nil {
+			return nil, false
+		}
+	}
+	return &ast.CallExpr{
+		Fun:      &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")},
+		Args:     args,
+		Ellipsis: ellipsisPos(spread),
+	}, true
+}
+
+// compositeLitApplyType is the metadata of the type of fun, a composite
+// literal of a type with an Apply method; nil for any other fun.
+func (t *galaASTTransformer) compositeLitApplyType(fun ast.Expr) *transpiler.TypeMetadata {
+	compLit, ok := fun.(*ast.CompositeLit)
+	if !ok {
+		return nil
 	}
 	var litTypeName string
 	switch lt := compLit.Type.(type) {
@@ -2771,49 +2845,108 @@ func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []
 		}
 	}
 	if litTypeName == "" {
-		return nil, false
+		return nil
 	}
-	typeMeta := t.getTypeMeta(litTypeName)
+	return t.applyTypeMeta(litTypeName)
+}
+
+// applyTypeMeta is the metadata of the type named name when it has an Apply
+// method, nil otherwise.
+func (t *galaASTTransformer) applyTypeMeta(name string) *transpiler.TypeMetadata {
+	typeMeta := t.getTypeMeta(name)
 	if typeMeta == nil {
-		return nil, false
+		return nil
 	}
 	if _, hasApply := typeMeta.Methods["Apply"]; !hasApply {
-		return nil, false
+		return nil
 	}
-	return &ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: compLit, Sel: ast.NewIdent("Apply")},
-		Args: args,
-	}, true
+	return typeMeta
 }
 
 // tryTransformValWithApply handles Section 12: when `fun` reads a val/var —
 // `name`, or an imported `pkg.Name` — whose type has an Apply method, rewrite
 // `fun(args)` as `fun.Apply(args)`. This enables `val add5 = Adder(5); add5(10)`.
-// Returns handled=false for all other shapes of `fun`.
+// The spread of the last argument is kept when spread is set. Returns
+// handled=false for all other shapes of `fun`.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
-func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.Expr) (ast.Expr, bool) {
-	b, ok := t.bindingRef(fun)
-	if !ok || b.typ.IsNil() {
-		return nil, false
-	}
-	varTypeName := b.typ.BaseName()
-	typeMeta := t.getTypeMeta(varTypeName)
+func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.Expr, spread bool) (ast.Expr, bool) {
+	typeMeta := t.bindingApplyType(fun)
 	if typeMeta == nil {
-		return nil, false
-	}
-	apply, hasApply := typeMeta.Methods["Apply"]
-	if !hasApply {
 		return nil, false
 	}
 	// An empty call, `v()`, goes through Apply only when Apply takes no
 	// parameters; otherwise it is left as written, for Go to report.
-	if len(args) == 0 && apply != nil && len(apply.ParamTypes) > 0 {
+	if apply := typeMeta.Methods["Apply"]; len(args) == 0 && apply != nil && len(apply.ParamTypes) > 0 {
 		return nil, false
 	}
 	return &ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")},
-		Args: args,
+		Fun:      &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")},
+		Args:     args,
+		Ellipsis: ellipsisPos(spread),
 	}, true
+}
+
+// bindingApplyType is the metadata of the type of fun, a val or var whose
+// type has an Apply method; nil for any other fun.
+func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMetadata {
+	b, ok := t.bindingRef(fun)
+	if !ok || b.typ.IsNil() {
+		return nil
+	}
+	return t.applyTypeMeta(b.typ.BaseName())
+}
+
+// valueApplyType is the metadata of the type whose Apply a call of fun calls
+// through a value (Sections 11 and 12), nil when it calls none.
+func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetadata {
+	if cl, ok := fun.(*ast.CompositeLit); ok {
+		return t.litApplyType(cl)
+	}
+	return t.bindingApplyType(fun)
+}
+
+// litApplyType is the metadata of the type of the composite literal cl when
+// it has an Apply method, looked up by the name the literal writes, its
+// package included (`pkg.T{...}`); compositeLitApplyType goes by the bare
+// name alone.
+func (t *galaASTTransformer) litApplyType(cl *ast.CompositeLit) *transpiler.TypeMetadata {
+	switch name, qualified := qualifiedLitType(cl); {
+	case qualified:
+		// The qualifier names an import first, under its alias too, then a
+		// type key of that name.
+		pkg, bare, _ := strings.Cut(name, ".")
+		if actual, ok := t.importManager.ResolveAlias(pkg); ok {
+			if meta := t.applyTypeMeta(actual + "." + bare); meta != nil {
+				return meta
+			}
+		}
+		return t.applyTypeMeta(name)
+	case name == "":
+		return nil
+	}
+	return t.compositeLitApplyType(cl)
+}
+
+// qualifiedLitType is the name of the type of the composite literal cl, its
+// type arguments left out, as the literal writes it: `pkg.T` (qualified) or
+// `T`; "" for any other type expression.
+func qualifiedLitType(cl *ast.CompositeLit) (name string, qualified bool) {
+	typ := cl.Type
+	switch x := typ.(type) {
+	case *ast.IndexExpr:
+		typ = x.X
+	case *ast.IndexListExpr:
+		typ = x.X
+	}
+	switch x := typ.(type) {
+	case *ast.Ident:
+		return x.Name, false
+	case *ast.SelectorExpr:
+		if pkg, ok := x.X.(*ast.Ident); ok {
+			return pkg.Name + "." + x.Sel.Name, true
+		}
+	}
+	return "", false
 }
 
 // transformCallWithArgsCtx is the primary entry point for transforming GALA
@@ -3057,7 +3190,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 
 	// --- Section 10: Companion Apply / positional struct construction ---
 	if typeName != "" && !ownFunc {
-		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args, pendingExpected,
+		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args, c.args, pendingExpected,
 			al, ac)
 		if err != nil {
 			return nil, err
@@ -3070,13 +3203,19 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// --- Section 11: CompositeLit with Apply method ---
 	// Handles `Append("cherry")("apple")` where the left side is already a
 	// struct literal produced by an earlier partial-application step.
-	if expr, handled := t.tryTransformCompositeLitApply(fun, args); handled {
+	if expr, handled := t.tryTransformCompositeLitApply(fun, args, hasSpread); handled {
+		if err := t.checkValueApplySpread(fun, c, hasSpread); err != nil {
+			return nil, err
+		}
 		return expr, nil
 	}
 
 	// --- Section 12: Variable whose type has an Apply method ---
 	// Handles `val add5 = Adder(5); add5(10)` → `add5.Apply(10)`.
-	if expr, handled := t.tryTransformValWithApply(fun, args); handled {
+	if expr, handled := t.tryTransformValWithApply(fun, args, hasSpread); handled {
+		if err := t.checkValueApplySpread(fun, c, hasSpread); err != nil {
+			return nil, err
+		}
 		return expr, nil
 	}
 
@@ -4796,6 +4935,9 @@ func (t *galaASTTransformer) lowerArg(v argValue, s slot, strict bool) (ast.Expr
 		expr, err = t.lowerLambdaArg(v.lambda, s, strict)
 	} else {
 		expr, err = t.transformArgument(v.expr, s, strict)
+	}
+	if err == nil && v.spread {
+		err = t.checkSpreadArg(v.expr, expr, spreadSlotElem(s))
 	}
 	if err == nil {
 		t.recordCallArg(v, expr)

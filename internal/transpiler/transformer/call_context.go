@@ -103,13 +103,39 @@ func funcParamIndex(f *transpiler.FunctionMetadata, argIdx int) int {
 
 // expectedArgType is resolveExpectedArgType for an argument that may be a
 // spread `xs...`, which fills the variadic parameter with a whole slice
-// (spreadArgType).
+// (spreadArgType). A spread at any other parameter of a GALA callee has no
+// expected type: checkSpreads reports it.
 func (t *galaASTTransformer) expectedArgType(ctx callContext, argIdx int, spread bool) transpiler.Type {
+	if spread && !ctx.variadicAt(argIdx) {
+		return transpiler.NilType{}
+	}
 	expected := t.resolveExpectedArgType(ctx, argIdx)
 	if spread {
 		return spreadArgType(expected)
 	}
 	return expected
+}
+
+// variadicAt reports whether argument argIdx fills the variadic last
+// parameter of the GALA callee ctx describes, as boundaryParamAt picks it;
+// true for a callee with no GALA metadata, whose slot is typed from its Go
+// signature (goVariadicElem).
+func (ctx callContext) variadicAt(argIdx int) bool {
+	switch {
+	case ctx.methodMeta != nil:
+		return isVariadicParam(len(ctx.methodMeta.ParamTypes), ctx.methodMeta.Variadic, argIdx)
+	case ctx.applyMethodMeta != nil:
+		return isVariadicParam(len(ctx.applyMethodMeta.ParamTypes), ctx.applyMethodMeta.Variadic, argIdx)
+	case ctx.funcMeta != nil:
+		return isVariadicParam(len(ctx.funcMeta.ParamTypes), ctx.funcMeta.Variadic, argIdx)
+	}
+	return true
+}
+
+// isVariadicParam reports whether parameter or argument i of a callee with n
+// parameters fills its variadic last one.
+func isVariadicParam(n int, variadic bool, i int) bool {
+	return variadic && n > 0 && i >= n-1
 }
 
 // resolveExpectedArgType resolves the expected type for a positional argument

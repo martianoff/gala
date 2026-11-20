@@ -237,9 +237,16 @@ func unknownParamNamesError(name, callee string, line, col int) error {
 
 // checkSpreads reports a spread argument `xs...` of args that fills a
 // parameter other than the variadic last one, the only one Go spreads a slice
-// into, whether it is passed by position or by name. Callers run it only for
-// a call that spreads one.
+// into, whether it is passed by position or by name, or that another
+// positional argument follows. Callers run it only for a call that spreads
+// one.
 func (p paramList) checkSpreads(args argsSrc) error {
+	positional := 0
+	for _, a := range args.list {
+		if !a.named() {
+			positional++
+		}
+	}
 	pos := 0
 	for _, a := range args.list {
 		name, _ := a.name()
@@ -250,12 +257,14 @@ func (p paramList) checkSpreads(args argsSrc) error {
 			idx = slices.Index(p.names, name)
 		}
 		// An unknown name is reported as the call's arguments are laid out.
-		if !a.spread() || idx < 0 || p.isVariadicSlot(idx) {
+		// A spread at the variadic parameter is its only argument: no
+		// positional one follows it.
+		if !a.spread() || idx < 0 || p.isVariadicSlot(idx) && (name != "" || pos == positional) {
 			continue
 		}
 		line, col := a.at().start()
 		switch {
-		case idx < len(p.names):
+		case idx < len(p.names) && !p.isVariadicSlot(idx):
 			return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"a spread argument cannot fill parameter %q of %s: only a variadic last parameter takes one", p.names[idx], p.callee))
 		case p.variadic:

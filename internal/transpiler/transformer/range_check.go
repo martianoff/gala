@@ -25,16 +25,7 @@ import (
 // opaque type (a scalar underneath, and Go ranges over an integer) and an
 // unresolved type are left to Go, so valid code is never rejected.
 func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.Type) error {
-	// Immutable and Sendable wrap the value Go ranges over, in either order.
-	for {
-		if elem, ok := transpiler.ImmutableElem(xType); ok {
-			xType = elem
-		} else if elem, ok := transpiler.UnwrapSendable(xType); ok {
-			xType = elem
-		} else {
-			break
-		}
-	}
+	xType = unwrapValueMarkers(xType)
 	impl, ok := t.implTypeOf(xType)
 	if !ok || impl.meta.IsOpaque {
 		return nil
@@ -46,6 +37,20 @@ func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.
 	return spanErrorAt(galaerr.CodeRangeOverGalaType, at, at,
 		fmt.Sprintf("cannot range over `%s`: it is a %s, and `range` takes a Go slice, array, map, string, integer, channel or function", x, displayType(xType)),
 		t.rangeOverGalaTypeHint(impl.meta, x))
+}
+
+// unwrapValueMarkers is typ without the Immutable and Sendable markers that
+// wrap the value Go sees, in either order: the type Go ranges over or spreads.
+func unwrapValueMarkers(typ transpiler.Type) transpiler.Type {
+	for {
+		if elem, ok := transpiler.ImmutableElem(typ); ok {
+			typ = elem
+		} else if elem, ok := transpiler.UnwrapSendable(typ); ok {
+			typ = elem
+		} else {
+			return typ
+		}
+	}
 }
 
 // rangeLoopForms lists, per job a range loop does — visiting each element,

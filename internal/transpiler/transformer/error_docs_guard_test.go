@@ -2406,6 +2406,42 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "spread an Array",
+			code: galaerr.CodeSpreadNotSlice, // GALA-E0138
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func count(xs ...int) int = xs.Size()
+
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+    Println(count(xs...))
+}
+`)
+			},
+		},
+		{
+			name: "spread a slice of strings into ...any",
+			code: galaerr.CodeSpreadNotSlice, // GALA-E0138
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import (
+    "fmt"
+
+    "martianoff/gala/go_interop"
+)
+
+func main() {
+    val names = go_interop.SliceOf("a", "b")
+    fmt.Println(names...)
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
