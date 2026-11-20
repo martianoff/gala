@@ -2915,7 +2915,7 @@ func (t *galaASTTransformer) callsGenericValueApply(fun ast.Expr) bool {
 		return false
 	}
 	apply := meta.Methods["Apply"]
-	return apply.IsGeneric || len(apply.TypeParams) > 0
+	return apply != nil && (apply.IsGeneric || len(apply.TypeParams) > 0)
 }
 
 // litApplyType is the metadata of the type of the composite literal cl when
