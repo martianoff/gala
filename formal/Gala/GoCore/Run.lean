@@ -21,17 +21,11 @@
     other package the run stops there, since that initializer might have printed.
   * **`init` functions** run after their package's variables, in source order.
 -/
-import Gala.GoCore.Eval
+import Gala.GoCore.Hoist
 
 namespace Gala.GoCore.Full
 
 open Std (HashMap)
-
-/-- The names `:=` declares. -/
-def declaredBy : List Expr → List String
-  | [] => []
-  | .ident x :: es => x :: declaredBy es
-  | _ :: es => declaredBy es
 
 mutual
 /-- The names an expression refers to, those in `bound` (locals) left out: free
@@ -42,7 +36,7 @@ def refsE (bound : List String) : Expr → List String
   | .composite t es => refsOE bound t ++ refsEs bound es
   | .keyValue (.ident _) v => refsE bound v
   | .keyValue k v => refsE bound k ++ refsE bound v
-  | .funcLit (.mk ps rs _) body => (refsSs (bound ++ fieldListNames ps ++ fieldListNames rs) body).1
+  | .funcLit sig body => (refsSs (bound ++ sigNames sig) body).1
   | .paren x | .star x | .unary _ x => refsE bound x
   | .index x is => refsE bound x ++ refsEs bound is
   | .sliceExpr x l h m => refsE bound x ++ refsOE bound l ++ refsOE bound h ++ refsOE bound m
@@ -125,8 +119,7 @@ def quietInitPackages : List String :=
     bound, which only a program with more than a million references reaches. -/
 def varDeps (p : PkgCtx) (es : List Expr) : Option (List String) := Id.run do
   let body (sig : Sig) (extra : List String) (ss : List Stmt) : List String :=
-    let .mk ps rs _ := sig
-    (refsSs (extra ++ fieldListNames ps ++ fieldListNames rs) ss).1
+    (refsSs (extra ++ sigNames sig) ss).1
   let mut seen : Std.HashSet String := {}
   let mut todo := es.flatMap (refsE [])
   let mut vars : List String := []
@@ -223,12 +216,13 @@ inductive Outcome
 def maxDepth : Nat := 1000000
 
 /-- Run a program: initialize its packages, then call the main package's `main`, with
-    `depth` nested evaluation levels and `fuel` steps (calls and loop iterations).
-    Unlike `runProgram`, the depth is not capped by a constant: galaspec bounds its
-    depth by the fuel alone, and M5's theorems relate the two runs at depth and fuel
-    equal (docs/FORMAL_SEMANTICS.MD, "M5"). -/
-def runProgramAt (prog : Program) (depth fuel : Nat) : Outcome × String :=
-  let c := buildCtx prog
+    `depth` nested evaluation levels and `fuel` steps (calls and loop iterations), its
+    operands evaluated in the order `ord` (`Hoist.lean`). Unlike `runProgram`, the
+    depth is not capped by a constant: galaspec bounds its depth by the fuel alone, and
+    M5's theorems relate the two runs at depth and fuel equal (docs/FORMAL_SEMANTICS.MD,
+    "M5"). -/
+def runProgramAt (ord : Order) (prog : Program) (depth fuel : Nat) : Outcome × String :=
+  let c := buildCtx (ord prog)
   let go : GM (Option String) := do
     tryCatch (do
         for path in pkgOrder c do
@@ -254,10 +248,10 @@ def runProgramAt (prog : Program) (depth fuel : Nat) : Outcome × String :=
     | .error .brk | .error .cont => .stuck "break or continue outside a loop"
   (o, s.out)
 
-/-- Run a program: initialize its packages, then call the main package's `main`.
-    `fuel` bounds the steps (calls and loop iterations), and the depth up to
-    `maxDepth`. -/
+/-- Run a program: initialize its packages, then call the main package's `main`, in
+    gc 1.25.5's order of evaluation (`Order.gc`). `fuel` bounds the steps (calls and
+    loop iterations), and the depth up to `maxDepth`. -/
 def runProgram (prog : Program) (fuel : Nat) : Outcome × String :=
-  runProgramAt prog (min fuel maxDepth) fuel
+  runProgramAt .gc prog (min fuel maxDepth) fuel
 
 end Gala.GoCore.Full

@@ -185,6 +185,7 @@ Go is tested, not proved.
 | `std.FormatStruct`, `Copy`, `Equal`, `EvalOperand`, `Immutable.Format` (hand-written, reflective) | yes (models, `libFuncs` in `Gala/GoCore/Eval.lean`) |
 | Slices and arrays: slices sharing an underlying array, `len`, `cap`, `make`, `append`, `copy` (from a string too), index and slice expressions (the full `a[l:h:m]` too) with Go's runtime panic text, literals with keys, `[...]T`, elided element types; arrays compared element by element, slices only with `nil` ("Slice types", "Array types", "Index expressions", "Slice expressions", "Appending to and copying slices") | yes |
 | The capacity `append` gives a growing slice, which the spec leaves open | yes: gc's (Go 1.25.5, amd64), `Gala/GoCore/GcRuntime.lean`; where gc's choice depends on escape analysis, a run that would tell the two apart ends `unsupported` (`cap-escape-dependent`, `append-escape-dependent`, `slice-escape-dependent`) |
+| The order of evaluation of operands, which the spec leaves open beyond the order of calls among themselves ("Order of evaluation") | yes: gc's (Go 1.25.5), `Gala/GoCore/Hoist.lean`. Calls, builtins, slice expressions, type assertions, `[]byte(s)` and `&&`/`\|\|` are evaluated at their place, the other operands after them, as gc's order pass does; a statement where gc's choice depends on a static type (a value converted to an interface, which gc copies early or reads late by its type), or whose place cannot hold the rewrite (a `for` condition or post statement, a `switch` case, a package-level initializer), ends `unsupported` (`eval-order-*`) when the two orders could be told apart there |
 | `range` over slices, arrays (through a pointer too), strings and integers; variadic functions, `f(xs...)` ("For statements with range clause", "Passing arguments to ... parameters") | yes |
 | `slices.Clip` | yes (a model) |
 | `fmt.Stringer`, the defined interface type `interface { String() string }`, kept distinct from an identical literal interface ("Type identity") | yes (`libType?`) |
@@ -225,7 +226,12 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
 - interface values: a nil pointer in an `error` that is not nil, comparison by dynamic
   type, reassignment to another dynamic type, method values, `init` functions, `<nil>` for
   a nil receiver;
-- generics, two panics, fuel and an unsupported construct.
+- generics, two panics, fuel and an unsupported construct;
+- gc's order of evaluation (`eval_order`, `eval_order2`, `eval_order3`): a variable read
+  after a call in the same statement changes it, nested calls, `&&` and `||`, `len`, slice
+  expressions, method calls, `:=`, `var`, `op=`, `if` conditions, `return` and `defer`
+  arguments, output from a call before an earlier operand's panic; and the type-dependent
+  case that stops (`unsupported_eval_order`).
 
 The differential run (`internal/formal/difftest`) runs every compiled program's Go through
 GoCore and compares it with `go run`; its results are in the "GoCore" part of the
