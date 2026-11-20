@@ -2492,6 +2492,17 @@ gala_exec_test(
     ],
 )
 
+# SortWith calls its comparator in the order Go's sort does
+gala_exec_test(
+    name = "sort_comparator_calls",
+    src = "sort_comparator_calls.gala",
+    expected = "sort_comparator_calls.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 # Tuple String() methods
 gala_exec_test(
     name = "tuple_string",

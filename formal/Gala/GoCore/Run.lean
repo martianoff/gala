@@ -111,7 +111,8 @@ end
     shares, kept equal to them by a test (`TestNoOutputInitImportsInStep`), which also
     checks the assumption for the GALA packages in it (`TestQuietInitPackages`). -/
 def quietInitPackages : List String :=
-  ["bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+  ["bytes", "cmp", "errors", "fmt", "math", "math/bits", "os", "slices", "sort", "strconv", "strings",
+   "sync", "time",
    "unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable"]
 
 /-- The package-level variables of `p` the expressions `es` depend on, transitively

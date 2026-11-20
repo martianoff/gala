@@ -198,7 +198,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 // (Json.noOutputInitImports in formal/Gala/Json.lean;
 // TestNoOutputInitImportsInStep keeps them equal).
 var noOutputInitImports = []string{
-	"bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+	"bytes", "cmp", "errors", "fmt", "math", "math/bits", "os", "slices", "sort", "strconv", "strings", "sync", "time",
 	"unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable",
 }
 

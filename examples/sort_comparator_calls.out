@@ -1,0 +1,24 @@
+less fig pear
+less pear fig
+less apple pear
+less pear apple
+less apple fig
+less fig apple
+less kiwi pear
+less pear kiwi
+less kiwi fig
+less fig kiwi
+less date pear
+less pear date
+less date kiwi
+less kiwi date
+less date fig
+less fig date
+less date apple
+less apple date
+Array(apple, date, fig, kiwi, pear)
+random n=60 calls=722 hash=901317 sorted=true
+reversed n=60 calls=142 hash=598789 sorted=true
+sorted n=60 calls=142 hash=387191 sorted=true
+duplicates n=60 calls=766 hash=504466 sorted=true
+t0,t4,t8,t12,t16,t20,t24,t28,t32,t36,t1,t5

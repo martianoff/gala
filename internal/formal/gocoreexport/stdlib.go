@@ -20,6 +20,9 @@ import (
 // passing.
 var RunnableStdlib = map[string][]string{
 	"errors":       {"errors.go"},
+	"cmp":          {"cmp.go"},
+	"math/bits":    {"bits.go", "bits_tables.go"},
+	"slices":       {"sort.go", "zsortanyfunc.go"},
 	"strconv":      {"atoi.go", "isprint.go", "quote.go"},
 	"unicode/utf8": {"utf8.go"},
 }

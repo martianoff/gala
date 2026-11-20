@@ -1,0 +1,34 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    m "martianoff/gala/collection_mutable"
+)
+
+// SortWith calls its comparison function in the order Go's sort does. Each line
+// pins one input shape by the number of calls and a hash of the pairs compared,
+// in order: random input (pivot by Tukey's ninther), reversed and already sorted
+// input, many duplicates, and equal keys, which keep their order.
+
+struct Item(Key int, Tag string)
+
+func report(name string, xs Array[int]) {
+    val log = m.EmptyArray[int]()
+    val sorted = xs.SortWith((x, y) => { log.Append(x * 1000 + y); x < y })
+    val hash = log.FoldLeft(0, (h, p) => (h * 31 + p) % 1000003)
+    Println(s"$name n=${xs.Size()} calls=${log.Size()} hash=$hash sorted=${sorted == xs.Sorted()}")
+}
+
+func main() {
+    val words = ArrayOf("pear", "fig", "apple", "kiwi", "date")
+    Println(words.SortWith((x, y) => { Println(s"less $x $y"); x < y }))
+
+    report("random", ArrayTabulate(60, (i) => (i * 37 + 11) % 61))
+    report("reversed", ArrayTabulate(60, (i) => 60 - i))
+    report("sorted", ArrayTabulate(60, (i) => i))
+    report("duplicates", ArrayTabulate(60, (i) => (i * 7) % 3))
+
+    val items = ArrayTabulate(40, (i) => Item(i % 4, s"t$i"))
+    val stable = items.SortWith((a, b) => a.Key < b.Key)
+    Println(stable.Take(12).Map((it) => it.Tag).MkString(","))
+}

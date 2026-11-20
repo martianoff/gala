@@ -283,7 +283,8 @@ def decodeField (j : Json) : D Field := do
     none matches. Using a name of such a package still stops the run when it is
     reached. gala2lean exempts the same list (`TestNoOutputInitImportsInStep`). -/
 def noOutputInitImports : List String :=
-  ["bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
+  ["bytes", "cmp", "errors", "fmt", "math", "math/bits", "os", "slices", "sort", "strconv", "strings",
+   "sync", "time",
    "unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable"]
 
 /-- A top-level declaration. -/
