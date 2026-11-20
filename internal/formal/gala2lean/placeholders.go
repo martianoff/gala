@@ -9,14 +9,15 @@ import (
 // Placeholder lambdas. A call argument whose slot wants a function and that
 // contains `_` is a lambda of one parameter per `_` (docs/GALA.MD,
 // "Placeholder Lambda Shorthand"). The rules here follow the transformer's
-// code (internal/transpiler/transformer): tryRewriteAsPlaceholderLambda
-// (lambdas.go) rewrites an argument when its expected type is a function
-// type and countPlaceholders (args_source.go) finds a `_` in it, counting
-// through the whole argument, nested call arguments included but not
-// nested lambdas or case clauses; transformArgument tries it on an argument
-// before lowering what is inside, so the outermost argument whose slot is a
-// function type takes the `_`. The Core exporter marks each `_` in place, as
-// the unsupported construct placeholder-lambda.
+// code (internal/transpiler/transformer; lines at the time of writing):
+// tryRewriteAsPlaceholderLambda (lambdas.go:1551) rewrites an argument when
+// its expected type is a function type and countPlaceholders
+// (args_source.go:223) finds a `_` in it, counting through the whole
+// argument, nested call arguments included but not nested lambdas or case
+// clauses; transformArgument (calls.go:4944) tries it on an argument before
+// lowering what is inside, so the outermost argument whose slot is a
+// function type takes the `_`. The Core exporter marks each `_` in place,
+// as the unsupported construct placeholder-lambda.
 //
 // lowerPlaceholders rewrites an argument A of a call C into an untyped
 // lambda of one parameter p, its `_` replaced by p, only where that choice
@@ -40,7 +41,7 @@ func isPlaceholder(n coreexport.Node) bool {
 }
 
 // placeholderCount counts the `_` of argument a as the transformer does
-// (countPlaceholders, internal/transpiler/transformer/args_source.go): every
+// (countPlaceholders, transformer/args_source.go:223): every
 // `_` token outside lambdas and case clauses. A `_` in an interpolated
 // string is inside a string token there, and is not counted (Go then
 // rejects it). A wildcard pattern or a `_` type counts, as its token does.
