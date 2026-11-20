@@ -490,8 +490,9 @@ theorem stmts_correct_instance : ∀ (ds : Spec.Decls) (steps d : Nat),
 
 open Gala Gala.M5 in
 theorem inst_gocore_ok : ∀ (N : Nat), N ≥ sdepthL instBody →
-    ∃ env' g', (GoCore.Full.execStmts instCtx N instEnv instLowered).run.run instSt = (.ok env', g') ∧
-      ∃ s', Inv instCtx (upd instKinds "y" .int) s' g' env' :=
+    ∃ v s', (Spec.evalBlock default 6 instBody).run.run { instCore with steps := 100 } = (.ok v, s') ∧
+      ∃ env' g', (GoCore.Full.execStmts instCtx N instEnv instLowered).run.run instSt = (.ok env', g') ∧
+        Inv instCtx (upd instKinds "y" .int) s'.toCore g' env' :=
   Gala.M5.inst_gocore_ok
 
 open Gala Gala.M5 GoCore.Full Hoist in

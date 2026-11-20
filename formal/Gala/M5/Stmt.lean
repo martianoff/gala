@@ -18,7 +18,8 @@
     depth; the claim is for every depth from `sdepthL` on. The proof is by strong
     induction on that depth, for statement lists, blocks and `if`s together.
   * **Evaluation order.** Proved for GoCore's evaluator as it is; `Gala/M5/StmtOrder.lean`
-    shows gc's order and left to right run these statements as written.
+    shows GoCore's model of gc's order (`Order.gc`) and left to right run these statements
+    as written; no theorem links that to a run of the program before step 3.
   * **Unused locals.** GALA rejects a local that is never used (GALA-E0102), so the
     transformer never emits one and adds no `_ = x`; galaspec does not check it. The
     theorem covers such programs too: it is about GoCore's semantics, which runs them.
@@ -416,7 +417,8 @@ theorem results_of_vrel {v : Spec.Val} {w : Val} (h : VRel v w) : w.results = [w
     galaspec run that ends normally is matched by a GoCore run ending normally in related
     states (with the kinds `κ'` the list declared), the locals only extended and the
     cells only added to; a galaspec panic by the same panic, with equal outputs. Nothing
-    is claimed of a galaspec run that runs out of fuel or stops `stuck` or `unsupported`. -/
+    is claimed of a galaspec run that runs out of fuel, stops `stuck` or `unsupported`, or ends
+    with a `return` on its way out (step 2 has none). -/
 def ResL (cx : Ctx) (κ' : String → Option Kind) (c : Spec.Core) (g : St) :
     Except Spec.Stop Spec.Val × Spec.St → Except Stop Env × St → Prop
   | (.ok _, s'), r => ∃ env' g', r = (.ok env', g') ∧ Inv cx κ' s'.toCore g' env' ∧
@@ -825,15 +827,16 @@ theorem sim_all (ds : Spec.Decls) (cx : Ctx) :
     lowering, at every depth from `sdepthL ss` on, ends normally too, in related states
     with the kinds `κ'` the list declared, galaspec's locals only extended and both sides'
     cells only added to; wherever galaspec's run panics, GoCore's panics the same way, with
-    equal outputs. Nothing is claimed when galaspec runs out of fuel or stops `stuck` or
-    `unsupported`.
+    equal outputs. Nothing is claimed when galaspec runs out of fuel, stops `stuck` or
+    `unsupported`, or ends with a `return` (step 2 has none).
 
     Covered: `val x = e` and `var x = e` of one name and no type, lowered to `var x = e`;
     `if` statements whose branches are blocks, an `else` being a block or another `if`,
     lowered to Go's `if` and `else if`; blocks. The expressions are step 2a's
     (`expr_correct`). Not covered: assignments, expression statements, calls (step 3).
-    Stated for GoCore's evaluator as it is; `RunsStep2AsWritten` (`Gala/M5/StmtOrder.lean`)
-    is what makes it hold for an order of evaluation, and gc's and left to right meet it. -/
+    Stated for GoCore's evaluator as it is. `RunsStep2AsWritten` (`Gala/M5/StmtOrder.lean`)
+    is the hypothesis step 3's theorem will take on an order: left to right and GoCore's
+    model of gc's order meet it. -/
 theorem stmts_correct (ds : Spec.Decls) (cx : Ctx) (κ κ' : String → Option Kind)
     (ss : List Spec.Expr) (lss : List Stmt) (hl : lowerSs κ ss = some (κ', lss)) (s : Spec.St)
     (g : St) (env : Env) (hloc : LocRel κ s.toCore g.cells env) (hout : s.out = g.out)
@@ -858,25 +861,33 @@ theorem block_correct (ds : Spec.Decls) (cx : Ctx) (κ κ' : String → Option K
 
 end Sim
 
+
 /-! ### The hypotheses can be met
 
 `x` holds `5` on both sides (step 2a's instance), and the body
-`val y = x + 1; if (y > 5) { var z = y } else { val w = 0 }`. -/
+`val y = x + 1; if (y > 5) { var z = y; if (z > 0) {} } else { val w = 0; if (w > 1) {} }`,
+a program GALA and Go accept: every local is read. -/
 
 section Instance
 open Gala.GoCore.Full
 
+/-- `if (c) {}` -/
+def emptyIf (c : Spec.Expr) : Spec.Expr := .ifStmt c (.block []) none
+
 def instBody : List Spec.Expr :=
   [.decl .val ["y"] false none [instExpr],
    .ifStmt (.binary ">" (.name "y") (.lit (.int 5)))
-     (.block [.decl .var ["z"] false none [.name "y"]])
-     (some (.block [.decl .val ["w"] false none [.lit (.int 0)]]))]
+     (.block [.decl .var ["z"] false none [.name "y"], emptyIf (.binary ">" (.name "z") (.lit (.int 0)))])
+     (some (.block [.decl .val ["w"] false none [.lit (.int 0)],
+       emptyIf (.binary ">" (.name "w") (.lit (.int 1)))]))]
 
 def instLowered : List Stmt :=
   [.decl (.value false [.mk ["y"] none [.binary "+" (.ident "x") (.intLit 1)]]),
    .if_ none (.binary ">" (.ident "y") (.intLit 5))
-     [.decl (.value false [.mk ["z"] none [.ident "y"]])]
-     (some (.block [.decl (.value false [.mk ["w"] none [.intLit 0]])]))]
+     [.decl (.value false [.mk ["z"] none [.ident "y"]]),
+      .if_ none (.binary ">" (.ident "z") (.intLit 0)) [] none]
+     (some (.block [.decl (.value false [.mk ["w"] none [.intLit 0]]),
+       .if_ none (.binary ">" (.ident "w") (.intLit 1)) [] none]))]
 
 theorem inst_lower : lowerSs instKinds instBody = some (upd instKinds "y" .int, instLowered) := by
   rfl
@@ -889,7 +900,7 @@ theorem inst_runs :
       #[.int intTy 5, .int intTy 6, .int intTy 6] := by
   exact ⟨rfl, rfl⟩
 
-/-- `stmts_correct` applied to the instance, every hypothesis discharged: it is not vacuous. -/
+/-- `stmts_correct` applied to the instance, every hypothesis discharged. -/
 theorem stmts_correct_instance (ds : Spec.Decls) (steps d : Nat) :
     ∀ N ≥ sdepthL instBody, ResL instCtx (upd instKinds "y" .int) instCore instSt
       ((Spec.evalBlock ds d instBody).run.run { instCore with steps })
@@ -900,11 +911,17 @@ theorem stmts_correct_instance (ds : Spec.Decls) (steps d : Nat) :
 /-! galaspec's side of the instance, step by step: `eval` is defined by well-founded
 recursion, so its runs are computed through its unfolding lemmas, not by `rfl`. -/
 
-private theorem id_pure {α : Type} (a : α) : (pure a : Id α) = a := rfl
+theorem id_pure {α : Type} (a : α) : (pure a : Id α) = a := rfl
+
+theorem spec_run_get (c : Spec.Core) : (get : Spec.H Spec.Core).run.run c = (.ok c, c) := rfl
 
 /-- galaspec's locals after `val y = x + 1`. -/
 def instCore₁ : Spec.Core :=
   { instCore with locals := [("y", ⟨.int 6, false⟩), ("x", ⟨.int 5, false⟩)] }
+
+/-- ... and after `var z = y`: `z` is a heap cell. -/
+def instCore₂ : Spec.Core :=
+  { instCore₁ with locals := ("z", ⟨.ref 0, true⟩) :: instCore₁.locals, heap := #[.int 6] }
 
 theorem inst_eval_y : (Spec.eval default 5 instExpr).run.run { instCore with steps := 99 } =
     (.ok (.int 6), { instCore with steps := 96 }) := by
@@ -932,36 +949,47 @@ theorem inst_eval_z : (Spec.eval default 3 (.name "y")).run.run { toCore := inst
   simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.run_getCore, instCore₁, instCore, Spec.resolve,
     Spec.lookupVar, Spec.lookup, Spec.deref, id_pure]
 
+theorem inst_eval_cz :
+    (Spec.eval default 3 (.binary ">" (.name "z") (.lit (.int 0)))).run.run { toCore := instCore₂, steps := 88 } =
+      (.ok (.bool true), { toCore := instCore₂, steps := 85 }) := by
+  rw [Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run]
+  rw [Spec.eval.eq_def, Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.run_getCore, instCore₂, instCore₁, instCore,
+    Spec.resolve, Spec.lookupVar, Spec.lookup, Spec.deref, Spec.intLit, Spec.binop, id_pure, minInt_eq,
+    maxInt_eq, spec_run_get]
+
 /-- **galaspec's run of the instance ends normally** (with enough fuel), so the conclusion
     of `stmts_correct_instance` is not vacuous there. -/
-theorem inst_spec_ok :
-    (((Spec.evalBlock default 6 instBody).run.run { instCore with steps := 100 }).1 matches .ok _) = true := by
+theorem inst_spec_ok : ∃ v s', (Spec.evalBlock default 6 instBody).run.run { instCore with steps := 100 } =
+    (.ok v, s') := by
   rw [instBody, evalBlock_cons, eval_decl_run _ 5 99 _ _ _ _ rfl, inst_eval_y]
   simp only
   rw [evalBlock_one, eval_ifStmt_some _ 5 95 _ _ _ true _ _ rfl inst_eval_cond]
   simp only [ite_true]
   rw [eval_block_run, tick_succ _ 91 rfl]
   simp only
-  rw [evalBlock_one, eval_decl_run _ 3 90 _ _ _ _ rfl, inst_eval_z]
+  rw [evalBlock_cons, eval_decl_run _ 3 90 _ _ _ _ rfl, inst_eval_z]
+  simp only
+  rw [evalBlock_one, emptyIf, eval_ifStmt_none _ 3 88 _ _ true _ _ rfl inst_eval_cz]
+  simp only [ite_true]
+  rw [eval_block_run, tick_succ _ 84 rfl]
+  simp only
+  rw [evalBlock_nil]
+  exact ⟨_, _, rfl⟩
 
-/-- What `stmts_correct` then says of the instance: GoCore's run ends normally too, in related
-    states. -/
+/-- What `stmts_correct` then says of the instance: galaspec's run ends normally, and GoCore's
+    run of the lowering ends normally too, in a state related to galaspec's. -/
 theorem inst_gocore_ok (N : Nat) (hN : N ≥ sdepthL instBody) :
-    ∃ env' g', (execStmts instCtx N instEnv instLowered).run.run instSt = (.ok env', g') ∧
-      ∃ s', Inv instCtx (upd instKinds "y" .int) s' g' env' := by
+    ∃ v s', (Spec.evalBlock default 6 instBody).run.run { instCore with steps := 100 } = (.ok v, s') ∧
+      ∃ env' g', (execStmts instCtx N instEnv instLowered).run.run instSt = (.ok env', g') ∧
+        Inv instCtx (upd instKinds "y" .int) s'.toCore g' env' := by
   have h := stmts_correct_instance default 100 6 N hN
-  revert h
-  rcases hr : (Spec.evalBlock default 6 instBody).run.run { instCore with steps := 100 } with ⟨r, s'⟩
-  have hok := inst_spec_ok
-  rw [hr] at hok
-  cases r with
-  | error e => simp at hok
-  | ok v =>
-    intro h
-    obtain ⟨env', g', hg, hinv, -⟩ := h
-    exact ⟨env', g', hg, s'.toCore, hinv⟩
+  obtain ⟨v, s', hv⟩ := inst_spec_ok
+  rw [hv] at h
+  obtain ⟨env', g', hg, hinv, -⟩ := h
+  exact ⟨v, s', hv, env', g', hg, hinv⟩
 
 end Instance
 
 end Gala.M5
-

@@ -3,9 +3,12 @@
 
   docs/FORMAL_SEMANTICS.MD, "Evaluation order". An order of evaluation is a rewrite of the
   program before it runs (`Order`). Step 2's theorem (`Gala/M5/Stmt.lean`) is about the
-  lowered statements as written, so it holds for every order that runs them as written:
-  `RunsStep2AsWritten`. Both orders GoCore has satisfy it: left to right (the identity),
-  and gc 1.25.5's (`Order.gc`), which rewrites a statement only where its operands'
+  lowered statements as written; `RunsStep2AsWritten` is the hypothesis on an order that
+  says it runs them as written. No theorem consumes it yet: linking a function body to a
+  run of the program (`runProgramAt ord`) needs calls, step 3, whose theorem will take it
+  (widened to the whole program). It only constrains step 2's function bodies. Both
+  orders GoCore has satisfy it: left to right (the identity), and GoCore's model of gc
+  1.25.5's order (`Order.gc`, the rewrite in `Gala/GoCore/Hoist.lean`), which rewrites a statement only where its operands'
   order can be observed (`Hoist.triggers`), and on step 2's statements it cannot be: they
   have no calls, nothing in them changes state, and the only panic is an integer division
   by zero, whose text is the same wherever it happens.
@@ -247,8 +250,6 @@ theorem hS_decl (s : Scope) (x : String) (le : Expr) (hc : CF le) (h : HState) :
   rw [isolated_run _ [le] (hOperands_one s true le hc) h]
   rfl
 
-private theorem id_pure' {α : Type} (a : α) : (pure a : Id α) = a := rfl
-
 private theorem id_bind_pure {α β : Type} (x : Id α) (g : α → β) :
     (x >>= fun p => pure (g p) : Id β) = g x := rfl
 
@@ -264,7 +265,7 @@ theorem hS_if (s : Scope) (lc : Expr) (la : List Stmt) (els : Option Stmt) (h : 
     (he : ∃ s', (hOS s els).run h = ((els.toList, s'), h)) :
     (hS s (.if_ none lc la els)).run h = (([.if_ none lc la els], s), h) := by
   obtain ⟨s', he⟩ := he
-  simp only [hS, hOS, StateT.run_bind, StateT.run_pure, id_bind', id_pure']
+  simp only [hS, hOS, StateT.run_bind, StateT.run_pure, id_bind', id_pure]
   simp only [blocked_CF s false lc hc, triggers_CF s false lc hc, StateT.run_bind,
     isolated_run _ lc (hE_off s false lc hc), id_bind', hb, he]
   cases els <;> rfl
@@ -393,8 +394,10 @@ theorem mapM_getElem {α β σ : Type} (f : α → StateM σ β) (P : β → Pro
       obtain ⟨y, hy, hPy⟩ := mapM_getElem f P as ((f a).run h).2 i x hx hP
       exact ⟨y, hy, hPy⟩
 
-/-- **gc 1.25.5's order is such an order:** its rewrite (`Hoist.gcOrder`) leaves every
-    function body of step 2 as it is. -/
+/-- **GoCore's model of gc 1.25.5's order is such an order:** its rewrite
+    (`Hoist.gcOrder`) leaves every function body of step 2 as it is. Real gc copies an `&&`
+    or `||` into a temporary, which the model leaves out where it cannot be observed; that
+    the two agree is not proved here (see the module header). -/
 theorem gc_runsStep2 : RunsStep2AsWritten Order.gc := by
   intro p pi fi i name recv tps sig body ⟨κ, ss, κ', hl⟩ hd
   simp only [declAt, Option.bind_eq_bind, Option.bind_eq_some_iff] at hd
@@ -416,9 +419,5 @@ theorem gc_runsStep2 : RunsStep2AsWritten Order.gc := by
       rfl)
   subst hP
   exact hd'
-
-/-- The instance's body (`instLowered`, `Gala/M5/Stmt.lean`) is one of step 2's, so in any
-    program holding it, gc's order runs it as written. -/
-theorem inst_step2Body : Step2Body instLowered := ⟨_, _, _, inst_lower⟩
 
 end Gala.M5
