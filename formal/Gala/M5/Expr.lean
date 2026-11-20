@@ -113,6 +113,7 @@ def binaryKind (op : String) (kl kr : Kind) : Option Kind :=
   | "&", .int, .int | "|", .int, .int | "^", .int, .int | "&^", .int, .int => some .int
   | "<<", .int, .int | ">>", .int, .int => some .int
   | "+", .str, .str => some .str
+  | "<", .str, .str | "<=", .str, .str | ">", .str, .str | ">=", .str, .str => some .bool
   | _, _, _ => none
 
 def unaryKind (op : String) (k : Kind) : Option Kind :=
@@ -417,18 +418,55 @@ theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
     | (simp [show (Ty.bool == Ty.bool) = true from rfl]; exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩)
 
-/-- `+`, `==` and `!=` on two strings of one type: Go's `string`, or two untyped ones. -/
+/-! String ordering: `compare` on `String` (GoCore's, byte order, which for UTF-8 is code-point order) against galaspec's `<`. -/
+
+theorem scmp_lt (x y : String) : (compare x y == .lt) = decide (x < y) := by
+  show (compareOfLessAndEq x y == .lt) = _
+  unfold compareOfLessAndEq
+  by_cases h : x < y
+  · simp [h]
+  · by_cases he : x = y <;> simp [h, he]
+
+theorem scmp_gt (x y : String) : (compare x y == .gt) = decide (y < x) := by
+  show (compareOfLessAndEq x y == .gt) = _
+  unfold compareOfLessAndEq
+  by_cases h : x < y
+  · simp [h, String.lt_asymm h]
+  · by_cases he : x = y
+    · subst he; simp [String.lt_irrefl]
+    · have : y < x := by
+        rcases String.le_total x y with h1 | h1
+        · exact absurd (String.le_antisymm h1 (String.not_lt.mp h)) he
+        · exact Classical.byContradiction fun hc => he (String.le_antisymm (String.not_lt.mp hc) h1)
+      simp [h, he, this]
+
+theorem scmp_le (x y : String) : (compare x y != .gt) = decide (x ≤ y) := by
+  have h := scmp_gt x y
+  simp only [bne, h]
+  by_cases hxy : y < x
+  · simp [hxy]
+  · simp [hxy]; exact String.not_lt.mp hxy
+
+theorem scmp_ge (x y : String) : (compare x y != .lt) = decide (y ≤ x) := by
+  have h := scmp_lt x y
+  simp only [bne, h]
+  by_cases hxy : x < y
+  · simp [hxy]
+  · simp [hxy]; exact String.not_lt.mp hxy
+
+/-- `+`, `==`, `!=` and the orderings on two strings of one type: Go's `string`, or two
+    untyped ones. -/
 theorem binary_str_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : String) (g : St)
     (c : Spec.Core) (k : Kind) (ht : t = .string ∨ t = .untyped .string)
     (hk : binaryKind op .str .str = some k) :
     RRel k g ((Spec.binop op (.str x) (.str y)).run.run c).1
       ((binary cx (n + 3) op (.str t x) (.str t y)).run.run g) := by
-  have hop : op = "==" ∨ op = "!=" ∨ op = "+" := by
+  have hop : op = "==" ∨ op = "!=" ∨ op = "+" ∨ op = "<" ∨ op = "<=" ∨ op = ">" ∨ op = ">=" := by
     unfold binaryKind at hk; split at hk <;> simp_all
-  rcases hop with rfl | rfl | rfl <;> simp only [binaryKind, ite_true, Option.some.injEq] at hk <;>
-    subst hk <;> rcases ht with rfl | rfl
+  rcases hop with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk <;> rcases ht with rfl | rfl
   all_goals simp [Spec.binop, binary, Val.ty, Val.materializeTyped, equal, Val.dyn, Ty.isUntyped,
-    RRel, Spec.valEq]
+    RRel, Spec.valEq, cmpOp, scmp_lt, scmp_gt, scmp_le, scmp_ge]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
     | exact ⟨_, rfl, .str _, rfl, by simp [UInt]⟩
@@ -979,9 +1017,10 @@ theorem pure_of_lower (κ : String → Option Kind) (c : Spec.Core) (cells : Arr
     Covered: `int`, `bool` and `string` literals, locals, parentheses, unary `-`, `+`,
     `^`, `!`, and binary `+ - * / %` and the bitwise `& | ^ &^` on `int`s (galaspec's
     through `Int64`, GoCore's exact bits reduced to `int`; `Gala/M5/Bits.lean`),
-    comparisons of `int`s, `==` and `!=` of any one kind, `+` of strings, `&&` and `||`.
+    comparisons of `int`s and of strings (byte order in Go, code-point order in Lean: the
+    same for UTF-8), `==` and `!=` of any one kind, `+` of strings, `&&` and `||`.
     Shifts `<< >>` of a typed `int` by an `int` count, a negative count panicking as in Go.
-    Not covered yet: the ordering of strings, and a shift of a literal (the lowering has
+    Not covered yet: a shift of a literal or by a negative constant (the lowering has
     neither). Stated for GoCore's order of evaluation, left to right, which is gc's for
     operands that are not calls. -/
 theorem expr_correct (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) (e : Spec.Expr)
@@ -1062,6 +1101,33 @@ theorem inst_bitwise :
       (.ok (.int intTy (-8)), instSt) ∧
     (evalExpr instCtx 8 instEnv (.binary "&^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
       (.ok (.int intTy 0), instSt) := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- A local `s : string` holding `"é"` on both sides, for the string orderings. -/
+def strEnv : Env := { pkg := "main", file := 0, scopes := [[("s", 0)]] }
+def strCore : Spec.Core := { locals := [("s", ⟨.str "é", false⟩)], globals := [], out := "" }
+def strSt : St := { cells := #[.str .string "é"], closures := #[], out := "", steps := 0 }
+def strKinds : String → Option Kind := fun x => if x = "s" then some .str else none
+
+/-- String ordering on the instance, `s = "é"`: `s < "z"` is false and `s > "z"` true (Go
+    compares bytes, `é` is `C3 A9`; Lean code points, `é` is `U+E9`: the same order for
+    UTF-8), `"a" <= s` is true, `s >= "é"` true, in galaspec and GoCore. The lowering
+    accepts each. -/
+theorem inst_strcmp :
+    ((pureEval default (.binary "<" (.name "s") (.lit (.str "z")))).run.run strCore).1 = .ok (.bool false) ∧
+    (evalExpr instCtx 10 strEnv (.binary "<" (.ident "s") (.strLit "z"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) false), strSt) ∧
+    ((pureEval default (.binary ">" (.name "s") (.lit (.str "z")))).run.run strCore).1 = .ok (.bool true) ∧
+    (evalExpr instCtx 10 strEnv (.binary ">" (.ident "s") (.strLit "z"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) true), strSt) ∧
+    ((pureEval default (.binary "<=" (.lit (.str "a")) (.name "s"))).run.run strCore).1 = .ok (.bool true) ∧
+    (evalExpr instCtx 10 strEnv (.binary "<=" (.strLit "a") (.ident "s"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) true), strSt) ∧
+    ((pureEval default (.binary ">=" (.name "s") (.lit (.str "é")))).run.run strCore).1 = .ok (.bool true) ∧
+    (evalExpr instCtx 10 strEnv (.binary ">=" (.ident "s") (.strLit "é"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) true), strSt) ∧
+    (["<", "<=", ">", ">="].all fun op =>
+      (lowerE strKinds (.binary op (.name "s") (.lit (.str "z")))).isSome) = true := by
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Shifts on the instance, `x = 5`: by a typed count `x << x` is `160`; `-x >> 1` is `-3`
