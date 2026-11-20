@@ -1,7 +1,1 @@
-[
-  {
-    "program": "examples/default_values.gala",
-    "issue": 1259,
-    "symptom": "galaspec=\"On(0, )\", go=\"On(30, Living)\""
-  }
-]
+[]

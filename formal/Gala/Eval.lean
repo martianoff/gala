@@ -22,6 +22,11 @@
   * **Named arguments and defaults** (S2; `bindArgs`): a call's arguments are evaluated
     as written, then the defaults of the parameters it leaves out, in parameter order,
     each in the callee's scope.
+  * **Default values** (docs/GALA.MD, "Default Values"; `declare`, `defaultOf`): `var x T`
+    with no value holds T's default value, built as the transpiler writes it out at each
+    use: each struct or default-case field at its declared default, else at its type's
+    default value. The declared defaults are evaluated anew for each name, in field order
+    and depth first, each with no local in scope.
   * **`match`** (docs/GALA.MD, "Match Expression"), with Scala's semantics: the subject is
     evaluated once; arms are tried in source order; a pattern's variables are in scope in
     its own guard and body only; sub-patterns are tried left to right and the first one
@@ -32,7 +37,8 @@
     Go: a count of 64 or more shifts every bit out, a negative count panics.
   * **Package-level `val`/`var`** are initialized before `main` in Go's order: repeatedly
     the earliest declaration whose initializer refers (directly, or through the functions
-    it names) to no uninitialized one.
+    it names) to no uninitialized one. A declaration with no value refers to what the
+    declared field defaults of its type's default value refer to.
 
   Static checks are the type checker's job, not this file's: a program GALA rejects can
   evaluate to anything here. Where evaluation meets something a type-correct S1 program
@@ -203,9 +209,12 @@ def checkOptTy (ds : Decls) (what : String) : Option Ty → H String
   | some t => checkTy ds t
   | none => stuck s!"{what} has no type"
 
-/-- The default value of a type (docs/GALA.MD, "Default Values"): Go's zero value for
-    `int`, `bool`, `string`; each field's default for a struct; the default case for a
-    sealed type, which must have one. `n` bounds the nesting of structs. -/
+/-- Go's zero value of the Go type the transpiler emits for a type: what a field of a
+    sealed type's Go struct holds when its active case has no such field (`getField`).
+    It is `0`, `false`, `""`; for a struct, each field's zero value; for a sealed type,
+    its default case (Go tag 0) with each field's zero value. Declared field defaults
+    play no part: GALA's default value of a type, which uses them, is `defaultOf`. `n`
+    bounds the nesting of structs. -/
 def zero (ds : Decls) : Nat → String → H Val
   | 0, _ => stuck "type nests too deep"
   | _ + 1, "int" | _ + 1, "int64" => pure (.int 0)
@@ -224,6 +233,96 @@ def zero (ds : Decls) : Nat → String → H Val
       | some v => do pure (.sealed t v.name (← zeroFields v.fields))
       | none => stuck s!"sealed type {t} has no default case"
     | none => unsup s!"type-{t}"
+
+/-- A type's default value (docs/GALA.MD, "Default Values") before its declared field
+    defaults are evaluated: the composite literal the transpiler writes for it at each use
+    (`var b B` becomes `var b B = B{P: A{X: f()}, Z: g()}`). Its leaves are Go zero values
+    and the declared defaults it evaluates, in field order, depth first. -/
+inductive Dflt where
+  /-- Go's zero value of `int`, `bool` or `string`. -/
+  | lit (l : Lit)
+  /-- Field `slot` of struct or case `owner` (`fieldsOf`), of type `ty`, at its declared
+      default. -/
+  | field (owner : String) (slot : Nat) (ty : Option Ty)
+  | struct_ (ty : String) (fs : List Dflt)
+  | sealed (ty c : String) (fs : List Dflt)
+
+/-- The fields of a struct, or of a sealed case, by name: a struct first, else a case.
+    Names do not collide in a program GALA accepts: it rejects two cases of one sealed
+    type with the same name, and a struct and a case, or cases of two sealed types,
+    with the same name are Go types of the package that Go rejects. -/
+def fieldsOf (ds : Decls) (x : String) : Option (List Field) :=
+  match ds.structs.lookup x with
+  | some fs => some fs
+  | none => (ds.variant? x).map (·.2.fields)
+
+/-- The declared default of field `j` of struct or case `x`. -/
+def fieldDefault (ds : Decls) (x : String) (j : Nat) : Option Expr :=
+  (fieldsOf ds x).bind fun fs => (fs.map (·.default)).getD j none
+
+/-- How a type's default value is built (docs/GALA.MD, "Default Values"): Go's zero value
+    for `int`, `bool`, `string`; for a struct, each field at its declared default, or else
+    at its type's default value; for a sealed type, its default case built the same way.
+    The field types are checked as a construction checks them (`construct`). A function
+    type's default value is `nil`, outside the subset; a sealed type without a default
+    case has none (GALA rejects the program, GALA-E0075). `n` bounds the nesting of
+    structs. -/
+def defaultOf (ds : Decls) : Nat → String → H Dflt
+  | 0, _ => stuck "type nests too deep"
+  | _ + 1, "int" | _ + 1, "int64" => pure (.lit (.int 0))
+  | _ + 1, "bool" => pure (.lit (.bool false))
+  | _ + 1, "func" => unsup "nil"
+  | _ + 1, "string" => pure (.lit (.str ""))
+  | n + 1, t =>
+    let fields (owner : String) (fs : List Field) : H (List Dflt) :=
+      fs.zipIdx.mapM fun (f, j) => do
+        let ft ← checkOptTy ds s!"field {f.name}" f.type
+        match f.default with
+        | some _ => pure (.field owner j f.type)
+        | none => defaultOf ds n ft
+    match ds.structs.lookup t with
+    | some fs => do pure (.struct_ t (← fields t fs))
+    | none =>
+    match ds.sealeds.lookup t with
+    | some vs =>
+      match vs.find? (·.isDefault) with
+      | some v => do pure (.sealed t v.name (← fields v.name v.fields))
+      | none => stuck s!"sealed type {t} has no default case"
+    | none => unsup s!"type-{t}"
+
+mutual
+/-- The declared defaults a default value evaluates, in order: each with its field's
+    owner, slot and type. -/
+def Dflt.holes : Dflt → List (String × Nat × Option Ty)
+  | .lit _ => []
+  | .field x j t => [(x, j, t)]
+  | .struct_ _ fs | .sealed _ _ fs => Dflt.holesL fs
+/-- `Dflt.holes` of each, in order. -/
+def Dflt.holesL : List Dflt → List (String × Nat × Option Ty)
+  | [] => []
+  | d :: ds => d.holes ++ Dflt.holesL ds
+end
+
+mutual
+/-- A default value with the values `vs` of its declared defaults filled in, in `holes`
+    order, and the values left over. -/
+def Dflt.fill : Dflt → List Val → Val × List Val
+  | .lit (.int n), vs => (.int n, vs)
+  | .lit (.bool b), vs => (.bool b, vs)
+  | .lit (.str s), vs => (.str s, vs)
+  | .field .., v :: vs => (v, vs)
+  -- Not reached: `declare` checks that there are as many values as holes.
+  | .field .., [] => (.unit, [])
+  | .struct_ t fs, vs => let r := Dflt.fillL fs vs; (.struct_ t r.1, r.2)
+  | .sealed t c fs, vs => let r := Dflt.fillL fs vs; (.sealed t c r.1, r.2)
+/-- `Dflt.fill` of each, in order. -/
+def Dflt.fillL : List Dflt → List Val → List Val × List Val
+  | [], vs => ([], vs)
+  | d :: ds, vs =>
+    let r := d.fill vs
+    let rs := Dflt.fillL ds r.2
+    (r.1 :: rs.1, rs.2)
+end
 
 /-- A unary operator on a value. -/
 def unop (op : String) (v : Val) : H Val :=
@@ -772,8 +871,18 @@ def declare (ds : Decls) : Nat → List String → Bool → Option Ty → List E
     else if values.isEmpty then
       match tyName with
       | some t => do
-        let z ← zero ds 64 t
-        pure (names.map (·, z))
+        -- Each name gets a default value of its own, as the transpiler writes it
+        -- (`var a, b T = T{...}, T{...}`): the declared defaults are evaluated anew for
+        -- each name, in order, each with no local in scope, as for a construction that
+        -- leaves the field out (`bindDefaults`).
+        let dvs := List.replicate names.length (← defaultOf ds 64 t)
+        let hs := Dflt.holesL dvs
+        let vs ← bindDefaults ds d (hs.map (·.1)) (hs.map (·.2.2))
+          (hs.map fun (x, j, _) => fieldDefault ds x j) true []
+        -- `bindDefaults` gives one value per hole when it succeeds; a run that broke
+        -- that would stop here rather than fill a hole with no value.
+        if vs.length != hs.length then stuck "a default value with a hole left unfilled"
+        pure (names.zip (Dflt.fillL dvs vs).1)
       | none => stuck "declaration without a type or value"
     else
       let vs ← evalList ds d values
@@ -825,10 +934,7 @@ def omittedDefaults (ds : Decls) (x : String) (as : List Expr) : List (Nat × Li
     let ps := f.params.map (·.name)
     omittedSlots (givenSlots ps as) f.defaults (ps.take ·)
   | none =>
-    let fields : Option (List Field) := match ds.structs.lookup x with
-      | some fs => some fs
-      | none => (ds.variant? x).map (·.2.fields)
-    match fields with
+    match fieldsOf ds x with
     | some fs => omittedSlots (givenSlots (fs.map (·.name)) as) (fs.map (·.default)) fun _ => []
     | none => []
 where
@@ -843,6 +949,19 @@ where
   omittedSlots (given : List Nat) (dflts : List (Option Expr)) (scope : Nat → List String) :
       List (Nat × List String × Expr) :=
     (dflts.zipIdx).filterMap fun (e, j) => if given.contains j then none else e.map (j, scope j, ·)
+
+/-- The declared field defaults a `val`/`var` declaration of type `ty` with no value
+    evaluates (`declare`): those of its type's default value (`defaultOf`), each with its
+    field's owner and slot. None if the type has no default value; then `declare` stops
+    before it evaluates any. -/
+def declDefaults (ds : Decls) (ty : Option Ty) : List (String × Nat × Expr) :=
+  match ty with
+  | none => []
+  | some t =>
+    let r := (do defaultOf ds 64 (← checkTy ds t) : H Dflt).run.run { locals := [], globals := [], out := "" }
+    match r.1 with
+    | .ok dv => dv.holes.filterMap fun (x, j, _) => (fieldDefault ds x j).map (x, j, ·)
+    | .error _ => []
 
 /-- The number of default values a program's declarations give: of function parameters and
     of struct and sealed case fields. -/
@@ -906,7 +1025,17 @@ def mentionsUpTo (ds : Decls) (k : Nat) (chain : List (String × Nat)) (bound : 
     ns.filter (!bound.contains ·) ++ mg ++ mentionsUpTo ds k chain (ns ++ bound) c.2.2
   | .assign _ ts vs =>
     ts.flatMap (mentionsUpTo ds k chain bound) ++ vs.flatMap (mentionsUpTo ds k chain bound)
-  | .decl _ _ _ _ vs => vs.flatMap (mentionsUpTo ds k chain bound)
+  | .decl _ _ _ ty vs => vs.flatMap (mentionsUpTo ds k chain bound) ++
+    -- A declaration with no value evaluates its type's declared field defaults, each with
+    -- no local in scope; they are expanded as a construction's omitted defaults are. (A
+    -- destructuring declaration with no value, which GALA rejects, lists them too;
+    -- `declare` stops on it before evaluating any.)
+    if !vs.isEmpty then [] else
+    (declDefaults ds ty).flatMap fun (x, j, e) =>
+      if chain.contains (x, j) then [] else
+      match k with
+      | 0 => []
+      | k + 1 => mentionsUpTo ds k ((x, j) :: chain) [] e
 termination_by e => (k, sizeOf e)
 decreasing_by
   all_goals first
@@ -951,9 +1080,11 @@ structure GlobalDecl where
 /-- Initialize the package-level variables in Go's order (see the module doc). -/
 def initGlobals (ds : Decls) (d : Nat) (gs : List GlobalDecl) : M Unit := do
   let all := gs.flatMap (·.names)
-  -- Each declaration with its position and the package-level variables it depends on.
+  -- Each declaration with its position and the package-level variables it depends on:
+  -- those its values mention or, with no value, its type's declared field defaults.
   let mut pending := (List.range gs.length).zip (gs.zip (gs.map fun g =>
-    (reach ds (g.values.flatMap (mentions ds []))).filter (all.contains ·)))
+    (reach ds (mentions ds [] (.decl .val g.names g.destructure g.type g.values))).filter
+      (all.contains ·)))
   let mut done : List String := []
   for _ in gs do
     match pending.find? (fun (_, _, deps) => deps.all done.contains) with

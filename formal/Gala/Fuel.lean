@@ -292,6 +292,7 @@ theorem declare_sim (ds : Decls) (k : Nat) :
   | d, d', ns, b, t, vs, h => by
     have ihE := fun e => eval_sim ds k d d' e h
     have ihL := fun es => evalList_sim ds k d d' es h
+    have ihBD := fun ns ts dfs fs g => bindDefaults_sim ds k d d' ns ts dfs fs g h
     rw [declare.eq_def ds d ns b t vs, declare.eq_def ds d' ns b t vs]
     sim_auto
   termination_by d _ _ _ _ _ => (d, 2, 0)

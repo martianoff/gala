@@ -289,7 +289,7 @@ func (g *gen) local(decl coreexport.Node, names []string, destructure bool, typ 
 			if typ == nil {
 				unsup(pos, "untyped-declaration")
 			}
-			vals[i] = g.zero(typ)
+			vals[i] = g.defaultValue(typ)
 			continue
 		}
 		if c, ok := values[i].(*coreexport.Call); ok && len(names) == 1 {

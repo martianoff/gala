@@ -159,6 +159,14 @@ theorem pureH_zero (ds : Decls) : ∀ n t, PureH (zero ds n t)
     rw [zero.eq_def]
     split <;> (try (injections; subst_vars)) <;> repeat' pure_step
 
+theorem pureH_defaultOf (ds : Decls) : ∀ n t, PureH (defaultOf ds n t)
+  | 0, _ => pureH_throw _
+  | n + 1, t => by
+    have ihZ := pureH_defaultOf ds n
+    have ihC := pureH_checkOptTy ds
+    rw [defaultOf.eq_def]
+    split <;> (try (injections; subst_vars)) <;> repeat' pure_step
+
 /-- An `H` step that never throws a `return`. -/
 def NoRetH (x : H α) : Prop := ∀ c v, (x.run.run c).1 ≠ .error (.ret v)
 
@@ -243,6 +251,20 @@ theorem checkOptTy_self {pkg : List String} {pm : String → Ren} (ds : Decls) (
     (w : String) (t : Option Ty) :
     ResR pkg pm Eq ((checkOptTy ds w t).run.run c).1 ((checkOptTy ds w t).run.run c).1 :=
   resR_self (fun _ _ => rfl) (noRet_checkOptTy ds w t c)
+
+theorem noRet_defaultOf (ds : Decls) : ∀ n t, NoRetH (defaultOf ds n t)
+  | 0, _ => noRet_throw (fun _ h => by cases h)
+  | n + 1, t => by
+    have ihZ := noRet_defaultOf ds n
+    have ihC := noRet_checkOptTy ds
+    rw [defaultOf.eq_def]
+    split <;> (try (injections; subst_vars)) <;> repeat' noret_step
+
+/-- How a type's default value is built is related to itself: the same `Dflt`, `stuck` or
+    `unsupported`. -/
+theorem defaultOf_self {pkg : List String} {pm : String → Ren} (ds : Decls) (n : Nat) (t : String)
+    (c : Core) : ResR pkg pm Eq ((defaultOf ds n t).run.run c).1 ((defaultOf ds n t).run.run c).1 :=
+  resR_self (fun _ _ => rfl) (noRet_defaultOf ds n t c)
 
 /-- A zero value is related to itself. -/
 theorem zero_self {pkg : List String} {pm : String → Ren} (ds : Decls) :
@@ -371,6 +393,15 @@ theorem zero_congr {ds ds' : Decls} (h : SameLayout ds ds') :
   | n + 1, t => by
     have ih := zero_congr h n
     rw [zero.eq_def, zero.eq_def]
+    split <;> (try rfl) <;> (try (injections; subst_vars)) <;>
+      simp only [h.structs, h.sealeds, ih, checkOptTy_congr h]
+
+theorem defaultOf_congr {ds ds' : Decls} (h : SameLayout ds ds') :
+    ∀ n t, defaultOf ds n t = defaultOf ds' n t
+  | 0, _ => rfl
+  | n + 1, t => by
+    have ih := defaultOf_congr h n
+    rw [defaultOf.eq_def, defaultOf.eq_def]
     split <;> (try rfl) <;> (try (injections; subst_vars)) <;>
       simp only [h.structs, h.sealeds, ih, checkOptTy_congr h]
 

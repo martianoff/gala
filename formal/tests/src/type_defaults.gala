@@ -1,0 +1,60 @@
+package main
+
+// A type's default value: what `var x T` holds. Each field is at its declared
+// default, evaluated anew for each value with no local in scope, in field order,
+// depth first; a field without one is at its type's default value.
+
+func note(s string, n int) int {
+    Println(s)
+    n
+}
+
+sealed type Light {
+    case Off()
+    default case On(Power int = note("power", 30), Room string = "Living")
+}
+
+struct Inner(X int = note("x", 1), Y int)
+
+struct Outer(In Inner, L Light, Z int = note("z", base), Flag bool, Name string)
+
+// A field whose declared default is a struct value: Inner's own defaults do not run.
+struct Holder(I Inner = Inner(5, 6), K int)
+
+// A default case with a struct-typed field and no declared default.
+sealed type Shape {
+    case Dot()
+    default case Box(In Inner)
+}
+
+// The default of `g`, a package-level variable, reads `seed` through a function:
+// Go initializes `seed` first, although it is declared after `g`.
+struct G(N int = fromSeed())
+
+func fromSeed() int = seed + note("fromSeed", 0)
+
+var g G
+
+val seed = note("seed", 7)
+
+val base = 3
+
+func twice() int {
+    var a, b Inner
+    a.X + b.X
+}
+
+func main() {
+    var l Light
+    Println(l)
+    // A local named like the package-level `base` that a default reads is not seen.
+    val base = 100
+    var o Outer
+    Println(o, base)
+    Println(twice())
+    Println(g)
+    var h Holder
+    Println(h)
+    var s Shape
+    Println(s)
+}

@@ -1,0 +1,1479 @@
+{
+  "core": 11,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 1429
+      },
+      "path": "formal/tests/src/type_defaults.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 7,
+            "col": 1,
+            "off": 244,
+            "end": 299
+          },
+          "name": "note",
+          "receiver": null,
+          "type-params": [],
+          "params": [
+            {
+              "kind": "param",
+              "pos": {
+                "line": 7,
+                "col": 11,
+                "off": 254,
+                "end": 262
+              },
+              "name": "s",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 7,
+                  "col": 13,
+                  "off": 256,
+                  "end": 262
+                },
+                "package": "",
+                "name": "string",
+                "args": []
+              },
+              "default": null
+            },
+            {
+              "kind": "param",
+              "pos": {
+                "line": 7,
+                "col": 21,
+                "off": 264,
+                "end": 269
+              },
+              "name": "n",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 7,
+                  "col": 23,
+                  "off": 266,
+                  "end": 269
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "default": null
+            }
+          ],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 7,
+              "col": 28,
+              "off": 271,
+              "end": 274
+            },
+            "package": "",
+            "name": "int",
+            "args": []
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 7,
+              "col": 32,
+              "off": 275,
+              "end": 299
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 8,
+                  "col": 5,
+                  "off": 281,
+                  "end": 291
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 8,
+                    "col": 5,
+                    "off": 281,
+                    "end": 288
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 8,
+                      "col": 13,
+                      "off": 289,
+                      "end": 290
+                    },
+                    "name": "s"
+                  }
+                ]
+              },
+              {
+                "kind": "name",
+                "pos": {
+                  "line": 9,
+                  "col": 5,
+                  "off": 296,
+                  "end": 297
+                },
+                "name": "n"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 12,
+            "col": 1,
+            "off": 301,
+            "end": 412
+          },
+          "name": "Light",
+          "type-params": [],
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 13,
+                "col": 5,
+                "off": 325,
+                "end": 335
+              },
+              "name": "Off",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 14,
+                "col": 5,
+                "off": 340,
+                "end": 410
+              },
+              "name": "On",
+              "default": true,
+              "fields": [
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 14,
+                    "col": 21,
+                    "off": 356,
+                    "end": 385
+                  },
+                  "name": "Power",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 14,
+                      "col": 27,
+                      "off": 362,
+                      "end": 365
+                    },
+                    "package": "",
+                    "name": "int",
+                    "args": []
+                  },
+                  "mutable": false,
+                  "default": {
+                    "kind": "call",
+                    "pos": {
+                      "line": 14,
+                      "col": 33,
+                      "off": 368,
+                      "end": 385
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 14,
+                        "col": 33,
+                        "off": 368,
+                        "end": 372
+                      },
+                      "name": "note"
+                    },
+                    "args": [
+                      {
+                        "kind": "string",
+                        "pos": {
+                          "line": 14,
+                          "col": 38,
+                          "off": 373,
+                          "end": 380
+                        },
+                        "text": "\"power\"",
+                        "value": "power",
+                        "raw": false
+                      },
+                      {
+                        "kind": "int",
+                        "pos": {
+                          "line": 14,
+                          "col": 47,
+                          "off": 382,
+                          "end": 384
+                        },
+                        "text": "30",
+                        "hint": {
+                          "type": "int"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 14,
+                    "col": 52,
+                    "off": 387,
+                    "end": 409
+                  },
+                  "name": "Room",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 14,
+                      "col": 57,
+                      "off": 392,
+                      "end": 398
+                    },
+                    "package": "",
+                    "name": "string",
+                    "args": []
+                  },
+                  "mutable": false,
+                  "default": {
+                    "kind": "string",
+                    "pos": {
+                      "line": 14,
+                      "col": 66,
+                      "off": 401,
+                      "end": 409
+                    },
+                    "text": "\"Living\"",
+                    "value": "Living",
+                    "raw": false
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 17,
+            "col": 1,
+            "off": 414,
+            "end": 455
+          },
+          "name": "Inner",
+          "type-params": [],
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 17,
+                "col": 14,
+                "off": 427,
+                "end": 447
+              },
+              "name": "X",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 17,
+                  "col": 16,
+                  "off": 429,
+                  "end": 432
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "mutable": false,
+              "default": {
+                "kind": "call",
+                "pos": {
+                  "line": 17,
+                  "col": 22,
+                  "off": 435,
+                  "end": 447
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 17,
+                    "col": 22,
+                    "off": 435,
+                    "end": 439
+                  },
+                  "name": "note"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 17,
+                      "col": 27,
+                      "off": 440,
+                      "end": 443
+                    },
+                    "text": "\"x\"",
+                    "value": "x",
+                    "raw": false
+                  },
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 17,
+                      "col": 32,
+                      "off": 445,
+                      "end": 446
+                    },
+                    "text": "1",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 17,
+                "col": 36,
+                "off": 449,
+                "end": 454
+              },
+              "name": "Y",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 17,
+                  "col": 38,
+                  "off": 451,
+                  "end": 454
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "mutable": false,
+              "default": null
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 19,
+            "col": 1,
+            "off": 457,
+            "end": 537
+          },
+          "name": "Outer",
+          "type-params": [],
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 19,
+                "col": 14,
+                "off": 470,
+                "end": 478
+              },
+              "name": "In",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 19,
+                  "col": 17,
+                  "off": 473,
+                  "end": 478
+                },
+                "package": "",
+                "name": "Inner",
+                "args": []
+              },
+              "mutable": false,
+              "default": null
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 19,
+                "col": 24,
+                "off": 480,
+                "end": 487
+              },
+              "name": "L",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 19,
+                  "col": 26,
+                  "off": 482,
+                  "end": 487
+                },
+                "package": "",
+                "name": "Light",
+                "args": []
+              },
+              "mutable": false,
+              "default": null
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 19,
+                "col": 33,
+                "off": 489,
+                "end": 512
+              },
+              "name": "Z",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 19,
+                  "col": 35,
+                  "off": 491,
+                  "end": 494
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "mutable": false,
+              "default": {
+                "kind": "call",
+                "pos": {
+                  "line": 19,
+                  "col": 41,
+                  "off": 497,
+                  "end": 512
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 19,
+                    "col": 41,
+                    "off": 497,
+                    "end": 501
+                  },
+                  "name": "note"
+                },
+                "args": [
+                  {
+                    "kind": "string",
+                    "pos": {
+                      "line": 19,
+                      "col": 46,
+                      "off": 502,
+                      "end": 505
+                    },
+                    "text": "\"z\"",
+                    "value": "z",
+                    "raw": false
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 19,
+                      "col": 51,
+                      "off": 507,
+                      "end": 511
+                    },
+                    "name": "base"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 19,
+                "col": 58,
+                "off": 514,
+                "end": 523
+              },
+              "name": "Flag",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 19,
+                  "col": 63,
+                  "off": 519,
+                  "end": 523
+                },
+                "package": "",
+                "name": "bool",
+                "args": []
+              },
+              "mutable": false,
+              "default": null
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 19,
+                "col": 69,
+                "off": 525,
+                "end": 536
+              },
+              "name": "Name",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 19,
+                  "col": 74,
+                  "off": 530,
+                  "end": 536
+                },
+                "package": "",
+                "name": "string",
+                "args": []
+              },
+              "mutable": false,
+              "default": null
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 22,
+            "col": 1,
+            "off": 625,
+            "end": 668
+          },
+          "name": "Holder",
+          "type-params": [],
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 22,
+                "col": 15,
+                "off": 639,
+                "end": 660
+              },
+              "name": "I",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 22,
+                  "col": 17,
+                  "off": 641,
+                  "end": 646
+                },
+                "package": "",
+                "name": "Inner",
+                "args": []
+              },
+              "mutable": false,
+              "default": {
+                "kind": "call",
+                "pos": {
+                  "line": 22,
+                  "col": 25,
+                  "off": 649,
+                  "end": 660
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 22,
+                    "col": 25,
+                    "off": 649,
+                    "end": 654
+                  },
+                  "name": "Inner"
+                },
+                "args": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 22,
+                      "col": 31,
+                      "off": 655,
+                      "end": 656
+                    },
+                    "text": "5",
+                    "hint": {
+                      "type": "int"
+                    }
+                  },
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 22,
+                      "col": 34,
+                      "off": 658,
+                      "end": 659
+                    },
+                    "text": "6",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "field",
+              "pos": {
+                "line": 22,
+                "col": 38,
+                "off": 662,
+                "end": 667
+              },
+              "name": "K",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 22,
+                  "col": 40,
+                  "off": 664,
+                  "end": 667
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "mutable": false,
+              "default": null
+            }
+          ]
+        },
+        {
+          "kind": "sealed",
+          "pos": {
+            "line": 25,
+            "col": 1,
+            "off": 739,
+            "end": 806
+          },
+          "name": "Shape",
+          "type-params": [],
+          "variants": [
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 26,
+                "col": 5,
+                "off": 763,
+                "end": 773
+              },
+              "name": "Dot",
+              "default": false,
+              "fields": []
+            },
+            {
+              "kind": "variant",
+              "pos": {
+                "line": 27,
+                "col": 5,
+                "off": 778,
+                "end": 804
+              },
+              "name": "Box",
+              "default": true,
+              "fields": [
+                {
+                  "kind": "field",
+                  "pos": {
+                    "line": 27,
+                    "col": 22,
+                    "off": 795,
+                    "end": 803
+                  },
+                  "name": "In",
+                  "type": {
+                    "kind": "type-name",
+                    "pos": {
+                      "line": 27,
+                      "col": 25,
+                      "off": 798,
+                      "end": 803
+                    },
+                    "package": "",
+                    "name": "Inner",
+                    "args": []
+                  },
+                  "mutable": false,
+                  "default": null
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "pos": {
+            "line": 32,
+            "col": 1,
+            "off": 957,
+            "end": 985
+          },
+          "name": "G",
+          "type-params": [],
+          "shorthand": true,
+          "fields": [
+            {
+              "kind": "field",
+              "pos": {
+                "line": 32,
+                "col": 10,
+                "off": 966,
+                "end": 984
+              },
+              "name": "N",
+              "type": {
+                "kind": "type-name",
+                "pos": {
+                  "line": 32,
+                  "col": 12,
+                  "off": 968,
+                  "end": 971
+                },
+                "package": "",
+                "name": "int",
+                "args": []
+              },
+              "mutable": false,
+              "default": {
+                "kind": "call",
+                "pos": {
+                  "line": 32,
+                  "col": 18,
+                  "off": 974,
+                  "end": 984
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 32,
+                    "col": 18,
+                    "off": 974,
+                    "end": 982
+                  },
+                  "name": "fromSeed"
+                },
+                "args": []
+              }
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 34,
+            "col": 1,
+            "off": 987,
+            "end": 1035
+          },
+          "name": "fromSeed",
+          "receiver": null,
+          "type-params": [],
+          "params": [],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 34,
+              "col": 17,
+              "off": 1003,
+              "end": 1006
+            },
+            "package": "",
+            "name": "int",
+            "args": []
+          },
+          "body": {
+            "kind": "binary",
+            "pos": {
+              "line": 34,
+              "col": 23,
+              "off": 1009,
+              "end": 1035
+            },
+            "op": "+",
+            "left": {
+              "kind": "name",
+              "pos": {
+                "line": 34,
+                "col": 23,
+                "off": 1009,
+                "end": 1013
+              },
+              "name": "seed"
+            },
+            "right": {
+              "kind": "call",
+              "pos": {
+                "line": 34,
+                "col": 30,
+                "off": 1016,
+                "end": 1035
+              },
+              "callee": {
+                "kind": "name",
+                "pos": {
+                  "line": 34,
+                  "col": 30,
+                  "off": 1016,
+                  "end": 1020
+                },
+                "name": "note"
+              },
+              "args": [
+                {
+                  "kind": "string",
+                  "pos": {
+                    "line": 34,
+                    "col": 35,
+                    "off": 1021,
+                    "end": 1031
+                  },
+                  "text": "\"fromSeed\"",
+                  "value": "fromSeed",
+                  "raw": false
+                },
+                {
+                  "kind": "int",
+                  "pos": {
+                    "line": 34,
+                    "col": 47,
+                    "off": 1033,
+                    "end": 1034
+                  },
+                  "text": "0",
+                  "hint": {
+                    "type": "int"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "kind": "var",
+          "pos": {
+            "line": 36,
+            "col": 1,
+            "off": 1037,
+            "end": 1044
+          },
+          "names": [
+            "g"
+          ],
+          "destructure": false,
+          "type": {
+            "kind": "type-name",
+            "pos": {
+              "line": 36,
+              "col": 7,
+              "off": 1043,
+              "end": 1044
+            },
+            "package": "",
+            "name": "G",
+            "args": []
+          },
+          "values": []
+        },
+        {
+          "kind": "val",
+          "pos": {
+            "line": 38,
+            "col": 1,
+            "off": 1046,
+            "end": 1072
+          },
+          "names": [
+            "seed"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "call",
+              "pos": {
+                "line": 38,
+                "col": 12,
+                "off": 1057,
+                "end": 1072
+              },
+              "callee": {
+                "kind": "name",
+                "pos": {
+                  "line": 38,
+                  "col": 12,
+                  "off": 1057,
+                  "end": 1061
+                },
+                "name": "note"
+              },
+              "args": [
+                {
+                  "kind": "string",
+                  "pos": {
+                    "line": 38,
+                    "col": 17,
+                    "off": 1062,
+                    "end": 1068
+                  },
+                  "text": "\"seed\"",
+                  "value": "seed",
+                  "raw": false
+                },
+                {
+                  "kind": "int",
+                  "pos": {
+                    "line": 38,
+                    "col": 25,
+                    "off": 1070,
+                    "end": 1071
+                  },
+                  "text": "7",
+                  "hint": {
+                    "type": "int"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "val",
+          "pos": {
+            "line": 40,
+            "col": 1,
+            "off": 1074,
+            "end": 1086
+          },
+          "names": [
+            "base"
+          ],
+          "destructure": false,
+          "type": null,
+          "values": [
+            {
+              "kind": "int",
+              "pos": {
+                "line": 40,
+                "col": 12,
+                "off": 1085,
+                "end": 1086
+              },
+              "text": "3",
+              "hint": {
+                "type": "int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 42,
+            "col": 1,
+            "off": 1088,
+            "end": 1141
+          },
+          "name": "twice",
+          "receiver": null,
+          "type-params": [],
+          "params": [],
+          "result": {
+            "kind": "type-name",
+            "pos": {
+              "line": 42,
+              "col": 14,
+              "off": 1101,
+              "end": 1104
+            },
+            "package": "",
+            "name": "int",
+            "args": []
+          },
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 42,
+              "col": 18,
+              "off": 1105,
+              "end": 1141
+            },
+            "stmts": [
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 43,
+                  "col": 5,
+                  "off": 1111,
+                  "end": 1125
+                },
+                "names": [
+                  "a",
+                  "b"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 43,
+                    "col": 14,
+                    "off": 1120,
+                    "end": 1125
+                  },
+                  "package": "",
+                  "name": "Inner",
+                  "args": []
+                },
+                "values": []
+              },
+              {
+                "kind": "binary",
+                "pos": {
+                  "line": 44,
+                  "col": 5,
+                  "off": 1130,
+                  "end": 1139
+                },
+                "op": "+",
+                "left": {
+                  "kind": "select",
+                  "pos": {
+                    "line": 44,
+                    "col": 5,
+                    "off": 1130,
+                    "end": 1133
+                  },
+                  "target": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 44,
+                      "col": 5,
+                      "off": 1130,
+                      "end": 1131
+                    },
+                    "name": "a"
+                  },
+                  "name": "X"
+                },
+                "right": {
+                  "kind": "select",
+                  "pos": {
+                    "line": 44,
+                    "col": 11,
+                    "off": 1136,
+                    "end": 1139
+                  },
+                  "target": {
+                    "kind": "name",
+                    "pos": {
+                      "line": 44,
+                      "col": 11,
+                      "off": 1136,
+                      "end": 1137
+                    },
+                    "name": "b"
+                  },
+                  "name": "X"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "func",
+          "pos": {
+            "line": 47,
+            "col": 1,
+            "off": 1143,
+            "end": 1429
+          },
+          "name": "main",
+          "receiver": null,
+          "type-params": [],
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 47,
+              "col": 13,
+              "off": 1155,
+              "end": 1429
+            },
+            "stmts": [
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 48,
+                  "col": 5,
+                  "off": 1161,
+                  "end": 1172
+                },
+                "names": [
+                  "l"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 48,
+                    "col": 11,
+                    "off": 1167,
+                    "end": 1172
+                  },
+                  "package": "",
+                  "name": "Light",
+                  "args": []
+                },
+                "values": []
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 49,
+                  "col": 5,
+                  "off": 1177,
+                  "end": 1187
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 49,
+                    "col": 5,
+                    "off": 1177,
+                    "end": 1184
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 49,
+                      "col": 13,
+                      "off": 1185,
+                      "end": 1186
+                    },
+                    "name": "l"
+                  }
+                ]
+              },
+              {
+                "kind": "val",
+                "pos": {
+                  "line": 51,
+                  "col": 5,
+                  "off": 1277,
+                  "end": 1291
+                },
+                "names": [
+                  "base"
+                ],
+                "destructure": false,
+                "type": null,
+                "values": [
+                  {
+                    "kind": "int",
+                    "pos": {
+                      "line": 51,
+                      "col": 16,
+                      "off": 1288,
+                      "end": 1291
+                    },
+                    "text": "100",
+                    "hint": {
+                      "type": "int"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 52,
+                  "col": 5,
+                  "off": 1296,
+                  "end": 1307
+                },
+                "names": [
+                  "o"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 52,
+                    "col": 11,
+                    "off": 1302,
+                    "end": 1307
+                  },
+                  "package": "",
+                  "name": "Outer",
+                  "args": []
+                },
+                "values": []
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 53,
+                  "col": 5,
+                  "off": 1312,
+                  "end": 1328
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 53,
+                    "col": 5,
+                    "off": 1312,
+                    "end": 1319
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 53,
+                      "col": 13,
+                      "off": 1320,
+                      "end": 1321
+                    },
+                    "name": "o"
+                  },
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 53,
+                      "col": 16,
+                      "off": 1323,
+                      "end": 1327
+                    },
+                    "name": "base"
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 54,
+                  "col": 5,
+                  "off": 1333,
+                  "end": 1349
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 54,
+                    "col": 5,
+                    "off": 1333,
+                    "end": 1340
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "call",
+                    "pos": {
+                      "line": 54,
+                      "col": 13,
+                      "off": 1341,
+                      "end": 1348
+                    },
+                    "callee": {
+                      "kind": "name",
+                      "pos": {
+                        "line": 54,
+                        "col": 13,
+                        "off": 1341,
+                        "end": 1346
+                      },
+                      "name": "twice"
+                    },
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 55,
+                  "col": 5,
+                  "off": 1354,
+                  "end": 1364
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 55,
+                    "col": 5,
+                    "off": 1354,
+                    "end": 1361
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 55,
+                      "col": 13,
+                      "off": 1362,
+                      "end": 1363
+                    },
+                    "name": "g"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 56,
+                  "col": 5,
+                  "off": 1369,
+                  "end": 1381
+                },
+                "names": [
+                  "h"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 56,
+                    "col": 11,
+                    "off": 1375,
+                    "end": 1381
+                  },
+                  "package": "",
+                  "name": "Holder",
+                  "args": []
+                },
+                "values": []
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 57,
+                  "col": 5,
+                  "off": 1386,
+                  "end": 1396
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 57,
+                    "col": 5,
+                    "off": 1386,
+                    "end": 1393
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 57,
+                      "col": 13,
+                      "off": 1394,
+                      "end": 1395
+                    },
+                    "name": "h"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "pos": {
+                  "line": 58,
+                  "col": 5,
+                  "off": 1401,
+                  "end": 1412
+                },
+                "names": [
+                  "s"
+                ],
+                "destructure": false,
+                "type": {
+                  "kind": "type-name",
+                  "pos": {
+                    "line": 58,
+                    "col": 11,
+                    "off": 1407,
+                    "end": 1412
+                  },
+                  "package": "",
+                  "name": "Shape",
+                  "args": []
+                },
+                "values": []
+              },
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 59,
+                  "col": 5,
+                  "off": 1417,
+                  "end": 1427
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 59,
+                    "col": 5,
+                    "off": 1417,
+                    "end": 1424
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "name",
+                    "pos": {
+                      "line": 59,
+                      "col": 13,
+                      "off": 1425,
+                      "end": 1426
+                    },
+                    "name": "s"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

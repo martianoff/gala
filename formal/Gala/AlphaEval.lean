@@ -995,75 +995,6 @@ end
 section
 variable {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {d : Nat}
 
-theorem declare_alpha_of (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds ds' d) {Γ : Ren}
-    {ns ns' : List String} (destr : Bool) (ty : Option Ty) {vs vs' : List Expr}
-    (hn : NamesR pkg ns ns') (hvs : AlphaL pkg pm Γ vs vs') :
-    RelM pkg pm Γ (· = Γ) (BindsR pkg pm ns ns') (declare ds d ns destr ty vs)
-      (declare ds' d ns' destr ty vs') := by
-  rw [declare.eq_def, declare.eq_def]
-  dsimp only
-  cases ty
-  case' none =>
-    dsimp only
-    refine relM_bind (relM_pure (R := Eq) rfl) fun tn _ h => ?_
-  case' some =>
-    dsimp only
-    refine relM_bind (relM_map (relM_checkTy hD.same _) fun a a' (h : a = a') => congrArg some h)
-      fun tn _ h => ?_
-  all_goals
-    subst h
-    have hnl := hn.1
-    cases destr
-    · simp only [Bool.false_eq_true, ↓reduceIte]
-      cases hvs with
-      | nil =>
-        simp only [List.isEmpty_nil, ↓reduceIte]
-        cases tn with
-        | none => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
-        | some t =>
-          dsimp only
-          refine relM_bind (relM_liftH_ro (pureH_zero ds 64 t).readOnly (pureH_zero ds' 64 t).readOnly
-            fun c c' _ => by rw [← zero_congr hD.same, (pureH_zero ds 64 t c c').1]; exact zero_self ds 64 t c')
-            fun z z' hz => relM_pure (bindsR_map hn hz)
-      | cons he hes =>
-        simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
-        refine relM_bind (evalList_alpha_of ih (.cons he (alphaL_fall2 hes))) fun vs vs' hv => ?_
-        rw [valsR_length hv, hnl]
-        split
-        · rename_i hl
-          exact relM_pure (bindsR_zip hn hv (by simpa [valsR_length hv, hnl] using hl))
-        · exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
-    · simp only [↓reduceIte]
-      cases hvs with
-      | nil => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
-      | cons he hes =>
-        cases hes with
-        | cons _ _ => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
-        | nil =>
-          dsimp only
-          refine relM_bind (ih.expr he) fun v v' hv => ?_
-          cases hv with
-          | tuple hvs =>
-            dsimp only
-            rw [valsR_length hvs, hnl]
-            split
-            · rename_i hl
-              exact relM_pure (bindsR_zip hn hvs (by simpa [valsR_length hvs, hnl] using hl))
-            · exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
-          | _ => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
-
-theorem eval_decl_alpha (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds ds' d) {Γ : Ren}
-    (m : Mut) {ns ns' : List String} (destr : Bool) (ty : Option Ty) {vs vs' : List Expr}
-    (hn : NamesR pkg ns ns') (hvs : AlphaL pkg pm Γ vs vs') :
-    RelM pkg pm Γ (· = Γ.pushAll (ns.zip ns')) (ValR pkg pm)
-      (eval ds (d + 1) (.decl m ns destr ty vs)) (eval ds' (d + 1) (.decl m ns' destr ty vs')) := by
-  rw [eval.eq_29, eval.eq_29]
-  refine relM_bind relM_tick fun _ _ _ => ?_
-  refine relM_bind (declare_alpha_of hD ih destr ty hn hvs) fun bs bs' ⟨hb, h1, h2⟩ => ?_
-  have hp := relM_pushAll (pkg := pkg) (pm := pm) (Γ := Γ) (m == .var) hb
-  rw [h1, h2] at hp
-  exact relM_bind_gen hp fun Γ' _ _ hq _ => by subst hq; exact relM_pure .unit
-
 theorem evalBlock_alpha_of (ih : EvalIH pkg pm ds ds' d) :
     ∀ {Γ : Ren} {ss ss' : List Expr}, BlockR pkg pm Γ ss ss' →
       RelM pkg pm Γ (fun Γ' => ∃ P, Γ' = P ++ Γ) (ValR pkg pm) (evalBlock ds d ss) (evalBlock ds' d ss')
@@ -1499,6 +1430,141 @@ theorem eval_call_alpha (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds ds' d
       eval.eq_21 _ _ _ _ (by intro _ h; cases h) (by intro _ _ h; cases h) (by intro _ h; cases h)]
     exact relM_bind relM_tick fun _ _ _ => relM_bind (ih.expr hc0) fun _ _ hv =>
       callValue_alpha_of hD ih hv ha
+
+theorem optR_getD_map {Γ : Ren} {f g : α → Option Expr} (h : ∀ a, OptR pkg pm Γ (f a) (g a)) :
+    ∀ (l : List α) (j : Nat), OptR pkg pm Γ ((l.map f).getD j none) ((l.map g).getD j none)
+  | [], _ => by simp only [List.map_nil, List.getD_nil]; exact .none
+  | a :: _, 0 => by simp only [List.map_cons, List.getD_cons_zero]; exact h a
+  | _ :: l, j + 1 => by simp only [List.map_cons, List.getD_cons_succ]; exact optR_getD_map h l j
+
+/-- A declared field default, looked up by its owner and slot, is related to itself with
+    no local in scope. -/
+theorem fieldDefault_rel (hD : DeclsR pkg pm ds ds') (x : String) (j : Nat) :
+    OptR pkg pm [] (fieldDefault ds x j) (fieldDefault ds' x j) := by
+  unfold fieldDefault fieldsOf
+  rcases lookup_fall2 (S := fun (a b : String × List Field) => a.1 = b.1 ∧ Fall2 (FieldR pkg pm) a.2 b.2)
+      (R := Fall2 (FieldR pkg pm)) (fun _ _ h => h) x hD.structs with
+    ⟨s1, s2⟩ | ⟨fs, fs', s1, s2, hfs⟩
+  · simp only [s1, s2]
+    rcases variant_rel hD x with ⟨v1, v2⟩ | ⟨ty, v, w, v1, v2, hvw⟩
+    · simp only [v1, v2, Option.map_none, Option.bind_none]; exact .none
+    · simp only [v1, v2, Option.map_some, Option.bind_some]
+      exact fieldDefaults_self hvw.2.2 j
+  · simp only [s1, s2, Option.bind_some]
+    exact fieldDefaults_self hfs j
+
+mutual
+/-- A default value filled with related values is related. -/
+theorem fill_rel : ∀ (dv : Dflt) {vs vs' : List Val}, ValsR pkg pm vs vs' →
+    ValR pkg pm (dv.fill vs).1 (dv.fill vs').1 ∧ ValsR pkg pm (dv.fill vs).2 (dv.fill vs').2
+  | .lit (.int n), _, _, h => by simp only [Dflt.fill]; exact ⟨.int n, h⟩
+  | .lit (.bool b), _, _, h => by simp only [Dflt.fill]; exact ⟨.bool b, h⟩
+  | .lit (.str s), _, _, h => by simp only [Dflt.fill]; exact ⟨.str s, h⟩
+  | .field .., _, _, .nil => by simp only [Dflt.fill]; exact ⟨.unit, .nil⟩
+  | .field .., _, _, .cons hv hs => by simp only [Dflt.fill]; exact ⟨hv, hs⟩
+  | .struct_ t fs, _, _, h => by
+    simp only [Dflt.fill]
+    exact ⟨.struct_ t (fillL_rel fs h).1, (fillL_rel fs h).2⟩
+  | .sealed t c fs, _, _, h => by
+    simp only [Dflt.fill]
+    exact ⟨.sealed t c (fillL_rel fs h).1, (fillL_rel fs h).2⟩
+/-- `fill_rel` of each. -/
+theorem fillL_rel : ∀ (l : List Dflt) {vs vs' : List Val}, ValsR pkg pm vs vs' →
+    ValsR pkg pm (Dflt.fillL l vs).1 (Dflt.fillL l vs').1 ∧
+      ValsR pkg pm (Dflt.fillL l vs).2 (Dflt.fillL l vs').2
+  | [], _, _, h => by simp only [Dflt.fillL]; exact ⟨.nil, h⟩
+  | dv :: l, _, _, h => by
+    simp only [Dflt.fillL]
+    exact ⟨.cons (fill_rel dv h).1 (fillL_rel l (fill_rel dv h).2).1,
+      (fillL_rel l (fill_rel dv h).2).2⟩
+end
+
+/-- `Dflt.fillL` gives one value per default value. -/
+theorem fillL_length : ∀ (l : List Dflt) (vs : List Val), (Dflt.fillL l vs).1.length = l.length
+  | [], _ => rfl
+  | _ :: l, vs => by simp only [Dflt.fillL, List.length_cons, fillL_length l]
+
+theorem declare_alpha_of (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds ds' d) {Γ : Ren}
+    {ns ns' : List String} (destr : Bool) (ty : Option Ty) {vs vs' : List Expr}
+    (hn : NamesR pkg ns ns') (hvs : AlphaL pkg pm Γ vs vs') :
+    RelM pkg pm Γ (· = Γ) (BindsR pkg pm ns ns') (declare ds d ns destr ty vs)
+      (declare ds' d ns' destr ty vs') := by
+  rw [declare.eq_def, declare.eq_def]
+  dsimp only
+  cases ty
+  case' none =>
+    dsimp only
+    refine relM_bind (relM_pure (R := Eq) rfl) fun tn _ h => ?_
+  case' some =>
+    dsimp only
+    refine relM_bind (relM_map (relM_checkTy hD.same _) fun a a' (h : a = a') => congrArg some h)
+      fun tn _ h => ?_
+  all_goals
+    subst h
+    have hnl := hn.1
+    cases destr
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+      cases hvs with
+      | nil =>
+        simp only [List.isEmpty_nil, ↓reduceIte]
+        cases tn with
+        | none => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
+        | some t =>
+          dsimp only
+          refine relM_bind (relM_liftH_ro (pureH_defaultOf ds 64 t).readOnly
+            (pureH_defaultOf ds' 64 t).readOnly fun c c' _ => by
+              rw [← defaultOf_congr hD.same, (pureH_defaultOf ds 64 t c c').1]
+              exact defaultOf_self ds 64 t c') fun dv _ h => ?_
+          subst h
+          rw [← hnl]
+          refine relM_bind (bindDefaults_alpha_of hD ih rfl
+            (fun j _ _ _ _ => ⟨[], by simp only [↓reduceIte]; exact .nil,
+              optR_getD_map (fun _ => fieldDefault_rel hD _ _) _ j⟩)
+            (fun _ => by simp only [List.lookup, OptValR])) fun _ _ hv => ?_
+          have hl := valsR_length hv.1
+          rw [List.length_map] at hv
+          rw [← hl, hv.2]
+          simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+          refine relM_pure (bindsR_zip hn (fillL_rel _ hv.1).1 ?_)
+          rw [fillL_length, List.length_replicate]
+      | cons he hes =>
+        simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
+        refine relM_bind (evalList_alpha_of ih (.cons he (alphaL_fall2 hes))) fun vs vs' hv => ?_
+        rw [valsR_length hv, hnl]
+        split
+        · rename_i hl
+          exact relM_pure (bindsR_zip hn hv (by simpa [valsR_length hv, hnl] using hl))
+        · exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
+    · simp only [↓reduceIte]
+      cases hvs with
+      | nil => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
+      | cons he hes =>
+        cases hes with
+        | cons _ _ => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
+        | nil =>
+          dsimp only
+          refine relM_bind (ih.expr he) fun v v' hv => ?_
+          cases hv with
+          | tuple hvs =>
+            dsimp only
+            rw [valsR_length hvs, hnl]
+            split
+            · rename_i hl
+              exact relM_pure (bindsR_zip hn hvs (by simpa [valsR_length hvs, hnl] using hl))
+            · exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
+          | _ => exact relM_stop fun _ _ => ⟨_, _, rfl, rfl, .stuck _ _⟩
+
+theorem eval_decl_alpha (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds ds' d) {Γ : Ren}
+    (m : Mut) {ns ns' : List String} (destr : Bool) (ty : Option Ty) {vs vs' : List Expr}
+    (hn : NamesR pkg ns ns') (hvs : AlphaL pkg pm Γ vs vs') :
+    RelM pkg pm Γ (· = Γ.pushAll (ns.zip ns')) (ValR pkg pm)
+      (eval ds (d + 1) (.decl m ns destr ty vs)) (eval ds' (d + 1) (.decl m ns' destr ty vs')) := by
+  rw [eval.eq_29, eval.eq_29]
+  refine relM_bind relM_tick fun _ _ _ => ?_
+  refine relM_bind (declare_alpha_of hD ih destr ty hn hvs) fun bs bs' ⟨hb, h1, h2⟩ => ?_
+  have hp := relM_pushAll (pkg := pkg) (pm := pm) (Γ := Γ) (m == .var) hb
+  rw [h1, h2] at hp
+  exact relM_bind_gen hp fun Γ' _ _ hq _ => by subst hq; exact relM_pure .unit
 
 end
 

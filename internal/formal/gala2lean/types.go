@@ -76,14 +76,27 @@ func typeName(t coreexport.Node) string {
 	return ""
 }
 
-// zero is the zero value of type t (docs/GALA.MD, "Default Values"): Go's
-// for int, string and bool, each field's zero for a struct, and the default
-// case for a sealed type.
+// zero is the zero value of type t: Go's for int, string and bool, each
+// field's zero for a struct, and the default case for a sealed type. It
+// leaves out the field defaults a type declares, which GALA's default value
+// takes (docs/GALA.MD, "Default Values"; defaultValue).
 func (g *gen) zero(t coreexport.Node) string {
-	return g.zeroDepth(t, 0)
+	return g.zeroDepth(t, 0, false)
 }
 
-func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
+// defaultValue is the value `var x T` with no value gives: type t's default
+// value. It is zero's unless it takes a declared field default, which is
+// outside the subset (field-default-value): the default would have to be
+// evaluated where the declaration is, and its references counted for the
+// initialization order. The walk stops at the first field outside the
+// subset, so another reason (nil, sealed-zero-value, ...) may come first.
+func (g *gen) defaultValue(t coreexport.Node) string {
+	return g.zeroDepth(t, 0, true)
+}
+
+// zeroDepth is zero at nesting depth; withDefaults stops at a field that
+// declares a default (defaultValue).
+func (g *gen) zeroDepth(t coreexport.Node, depth int, withDefaults bool) string {
 	if depth > 64 {
 		unsup(posOf(t), "zero-value-depth")
 	}
@@ -128,7 +141,7 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 		case "T2", "T3", "T4":
 			parts := []string{std + ".mk"}
 			for _, a := range t.(*coreexport.TypeName).Args {
-				parts = append(parts, g.zeroDepth(a, depth+1))
+				parts = append(parts, g.zeroDepth(a, depth+1, withDefaults))
 			}
 			return typed(strings.Join(parts, " "))
 		}
@@ -141,7 +154,10 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 			if f.Type == nil {
 				unsup(f.Pos, "untyped-field")
 			}
-			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1))
+			if withDefaults && f.Default != nil {
+				unsup(f.Pos, "field-default-value")
+			}
+			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1, withDefaults))
 		}
 		return typed(strings.Join(parts, " "))
 	}
@@ -156,10 +172,13 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 			if f.Type == nil {
 				unsup(f.Pos, "untyped-field")
 			}
+			if withDefaults && f.Default != nil {
+				unsup(f.Pos, "field-default-value")
+			}
 			if slices.Contains(typeNamesIn(f.Type), name) {
 				unsup(f.Pos, "sealed-zero-value")
 			}
-			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1))
+			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1, withDefaults))
 		}
 		if len(parts) == 1 {
 			return typed(parts[0])
