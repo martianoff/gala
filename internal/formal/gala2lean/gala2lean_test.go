@@ -149,7 +149,8 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"untyped global", "package main\nval g = h()\nfunc h() (int, int) = (1, 2)\nfunc main() { Println(g) }\n", "go-results"},
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},
 		{"a default value with a field default", "package main\nstruct S(N int = 1)\nfunc main() { var s S\n Println(s) }\n", "field-default-value"},
-		{"a default case with a field default, nested", "package main\nsealed type L { case Off()\n default case On(P int = 30) }\nstruct H(L L)\nvar h H\nfunc main() { Println(h) }\n", "field-default-value"},		{"stable identifier of a type with its own Equal", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
+		{"a default case with a field default, nested", "package main\nsealed type L { case Off()\n default case On(P int = 30) }\nstruct H(L L)\nvar h H\nfunc main() { Println(h) }\n", "field-default-value"},
+		{"stable identifier of a type with its own Equal", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
 			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "custom-equal"},
 		{"a function type argument", "package main\nfunc id[T any](x T) T = x\nfunc main() { val f = id((x int) => x)\n Println(f(1)) }\n", "func-type-arg"},
 		{"zero value of a type parameter", "package main\nfunc z[T any](x T) T { var y T\n y }\nfunc main() { Println(z(1)) }\n", "type-param-zero"},
