@@ -28,12 +28,14 @@
     count, each with one text. The claim is proved for GoCore's order, left to right,
     which is galaspec's; where two failing operands panic differently (a division and a
     shift), the first in that order decides on both sides. The GoCore fixtures
-    `panic_order_divide` and `panic_order_shift` pin gc 1.25.5 to the same order for
-    operands that are not calls.
+    `panic_order_divide` and `panic_order_shift` pin gc 1.25.5 to the same order on the
+    shapes they test; that gc's order agrees in general (with its `&&`/`||` temporaries)
+    is carried to step 3 (`Gala/M5/StmtOrder.lean`).
   * **Shifts.** A shift's left operand is a typed `int`: the lowering rejects a literal
     there, as Go gives an untyped constant shifted by a variable count the type its
     context would give it, which this lowering does not track. The count is a typed `int`
-    or an untyped constant.
+    or an untyped constant; a negative constant count, which Go does not compile, is not
+    lowered either. A galaspec `int` related to Go's is in int64's range (`VRel`).
 -/
 import Gala.M5.SpecPure
 import Gala.M5.Bits
@@ -129,6 +131,12 @@ def isLitE : Spec.Expr → Bool
 /-- A shift. -/
 def isShift (op : String) : Bool := op == "<<" || op == ">>"
 
+/-- A negative integer literal, through parentheses: a shift count Go rejects. -/
+def negLitE : Spec.Expr → Bool
+  | .lit (.int v) => decide (v < 0)
+  | .paren e => negLitE e
+  | _ => false
+
 /-- **The lowering** of a call-free expression, with its kind; `none` outside this step. -/
 def lowerE (κ : String → Option Kind) : Spec.Expr → Option (Kind × GoCore.Full.Expr)
   | .lit l => some (lowerLit l)
@@ -143,8 +151,9 @@ def lowerE (κ : String → Option Kind) : Spec.Expr → Option (Kind × GoCore.
     let (kr, lr) ← lowerE κ r
     let k ← binaryKind op kl kr
     -- A shift of an untyped constant takes the type its context would give the constant
-    -- (Go spec, "Operators"), which this lowering does not track.
-    if isShift op && isLitE l then none else pure (k, .binary op ll lr)
+    -- (Go spec, "Operators"), which this lowering does not track; a negative constant
+    -- count does not compile.
+    if isShift op && (isLitE l || negLitE r) then none else pure (k, .binary op ll lr)
   | _ => none
 
 /-- No operator node is a constant expression: what `foldConstants` leaves. -/
@@ -465,7 +474,7 @@ theorem binaryKind_shift {op : String} {k₁ k₂ k : Kind} (h : binaryKind op k
   simp only [isShift, Bool.or_eq_true, beq_iff_eq] at hs
   rcases hs with rfl | rfl <;> (unfold binaryKind at h; split at h <;> simp_all)
 
-/-- An `int` in Go's range, divided by `2 ^ s` with `s ≥ 64`, is `-1` or `0` by its sign. -/
+/-- An `int` of Go's is in int64's range (the converse of `represents_of_range`). -/
 theorem represents_bounds {x : Int} (hx : IntKind.int.represents x = true) :
     -9223372036854775808 ≤ x ∧ x < 9223372036854775808 := by
   simp only [IntKind.represents, IntKind.wrap, IntKind.signed, IntKind.bits, ite_true,
@@ -475,6 +484,7 @@ theorem represents_bounds {x : Int} (hx : IntKind.int.represents x = true) :
   rw [hx] at h1 h2
   constructor <;> omega
 
+/-- An `int` in Go's range, divided by `2 ^ s` with `s ≥ 64`, is `-1` or `0` by its sign. -/
 theorem ediv_big (x : Int) (hx : IntKind.int.represents x = true) (s : Nat) (hs : 64 ≤ s) :
     x / 2 ^ s = if x < 0 then -1 else 0 := by
   obtain ⟨h1, h2⟩ := represents_bounds hx
@@ -922,7 +932,7 @@ theorem pure_sim (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) :
             · exact hnur hr h2
             · exact hlits ⟨hl, hr⟩
         have hbs := binary_sim cx n op vl vr wl wr kl kr k' g c hvl hvr hkl hkr hb hand hor hnu
-          (fun hs => hnul (by simpa [hs] using hnsh))
+          (fun hs => hnul (by simp [hs] at hnsh; exact hnsh.1))
         revert hbs
         rcases ((Spec.binop op vl vr).run.run c) with ⟨rb, cb⟩
         intro hbs
@@ -1031,18 +1041,18 @@ theorem inst_values (ds : Spec.Decls) :
 
 /-- The bitwise operators on the instance: with `x = 5`, `x & -3`, `x | -3`, `x ^ -3` and
     `x &^ -3` are `5`, `-3`, `-8` and `0` in galaspec (through `Int64`) and in GoCore
-    (exact bits reduced to `int`), as in Go. The lowering accepts each. -/
+    (exact bits reduced to `int`), as in Go; the lowering accepts each, with `-3` the folded
+    literal galaspec runs and Go's `-` of `3` in GoCore. -/
 theorem inst_bitwise :
-    (["&", "|", "^", "&^"].map fun op =>
-      ((pureEval default (.binary op (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 matches
-        .ok (.int _)) = [true, true, true, true] ∧
-    ((pureEval default (.binary "&" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+    (["&", "|", "^", "&^"].all fun op =>
+      (lowerE instKinds (.binary op (.name "x") (.lit (.int (-3))))).isSome) = true ∧
+    ((pureEval default (.binary "&" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
       .ok (.int 5) ∧
-    ((pureEval default (.binary "^" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+    ((pureEval default (.binary "^" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
       .ok (.int (-8)) ∧
-    ((pureEval default (.binary "|" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+    ((pureEval default (.binary "|" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
       .ok (.int (-3)) ∧
-    ((pureEval default (.binary "&^" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+    ((pureEval default (.binary "&^" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
       .ok (.int 0) ∧
     (evalExpr instCtx 8 instEnv (.binary "&" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
       (.ok (.int intTy 5), instSt) ∧
@@ -1051,15 +1061,14 @@ theorem inst_bitwise :
     (evalExpr instCtx 8 instEnv (.binary "^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
       (.ok (.int intTy (-8)), instSt) ∧
     (evalExpr instCtx 8 instEnv (.binary "&^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
-      (.ok (.int intTy 0), instSt) ∧
-    (lowerE instKinds (.binary "&^" (.name "x") (.lit (.int (-3))))).isSome := by
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      (.ok (.int intTy 0), instSt) := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Shifts on the instance, `x = 5`: by a typed count `x << x` is `160`; `-x >> 1` is `-3`
     (an arithmetic shift rounds down); a count of `64` or more gives `x << 64 = 0` and
     `-x >> 70 = -1`; a negative count `x << -x` panics with Go's text. galaspec and GoCore
     give each of these. The lowering accepts them and rejects `1 << x`, whose untyped left
-    operand would take its type from the context. -/
+    operand would take its type from the context, and `x << -1`, which Go does not compile. -/
 theorem inst_shift :
     ((pureEval default (.binary "<<" (.name "x") (.name "x"))).run.run instCore).1 = .ok (.int 160) ∧
     (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.ident "x"))).run.run instSt =
@@ -1080,8 +1089,9 @@ theorem inst_shift :
     (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.unary "-" (.ident "x")))).run.run instSt =
       (.error (.panic (.str .string "runtime error: negative shift amount") true), instSt) ∧
     (lowerE instKinds (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 70)))).isSome ∧
-    lowerE instKinds (.binary "<<" (.lit (.int 1)) (.name "x")) = none := by
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    lowerE instKinds (.binary "<<" (.lit (.int 1)) (.name "x")) = none ∧
+    lowerE instKinds (.binary "<<" (.name "x") (.lit (.int (-1)))) = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- `expr_correct` applied to `x + 1`, every hypothesis discharged: it is not vacuous. -/
 theorem expr_correct_instance (ds : Spec.Decls) (steps d : Nat) :

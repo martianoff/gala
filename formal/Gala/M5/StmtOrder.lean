@@ -49,7 +49,7 @@ def CF : Expr → Prop
 def eNoShift : Expr → Bool
   | .paren x => eNoShift x
   | .unary _ x => eNoShift x
-  | .binary op x y => !(op == "<<" || op == ">>") && eNoShift x && eNoShift y
+  | .binary op x y => !isShift op && eNoShift x && eNoShift y
   | _ => true
 
 mutual
@@ -102,7 +102,7 @@ theorem lowerE_CF (κ : String → Option Kind) : ∀ (e : Spec.Expr) (k : Kind)
     · cases he
     simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at he
     obtain ⟨-, rfl⟩ := he
-    simp only [eNoShift, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_false_iff,
+    simp only [eNoShift, isShift, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_false_iff,
       beq_eq_false_iff_ne] at hn
     obtain ⟨⟨⟨h1, h2⟩, hnl⟩, hnr⟩ := hn
     exact ⟨h1, h2, lowerE_CF κ l kl ll hll hnl, lowerE_CF κ r kr lr hlr hnr⟩

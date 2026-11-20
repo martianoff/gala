@@ -473,13 +473,17 @@ column lists what each milestone's claim rests on beyond them.
   (`formal/Gala/M5/Bits.lean`). Shifts `<<` and `>>` of a typed `int` by an `int` count
   are covered, counts of 64 or more and negative counts included; a shift of a literal
   is not lowered (Go gives an untyped constant shifted by a variable count the type
-  its context would give it), nor is string ordering. The lowering is type-directed, as
+  its context would give it), nor is a negative constant count (Go does not compile
+  it), nor is string ordering. The relation on `int`s requires a value in int64's range
+  (`VRel`), so the theorems assume each local `int` is in range, as galaspec's always
+  are. The lowering is type-directed, as
   the transformer is: without types, galaspec's `x == "a"` on an `int` is `false` where
   Go rejects the program. The run-time panics in this subset are an integer division by
   zero and a negative shift count, each with one text. The claim is proved for GoCore's
   order, left to right, which is galaspec's; where a division and a shift both fail, the
-  first in that order decides on both sides, and the fixtures `panic_order_divide` and
-  `panic_order_shift` pin gc 1.25.5 to the same order for operands that are not calls.
+  first in that order decides on both sides. The fixtures `panic_order_divide` and
+  `panic_order_shift` pin gc 1.25.5 to the same order on the shapes they test; that gc's
+  order agrees in general (with its `&&`/`||` temporaries) is carried to step 3.
   Step 2b is proved: `val`/`var`, `if` statements and blocks (`stmts_correct` and
   `block_correct` in `formal/Gala/M5/Stmt.lean`). A local `val x = e` or `var x = e`
   lowers to Go's `var x = e`, an `if` with block branches (an `else` a block or another
