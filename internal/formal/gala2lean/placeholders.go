@@ -14,7 +14,7 @@ import (
 // its expected type is a function type and countPlaceholders
 // (args_source.go:223) finds a `_` in it, counting through the whole
 // argument, nested call arguments included but not nested lambdas or case
-// clauses; transformArgument (calls.go:4944) tries it on an argument before
+// clauses; transformArgument (calls.go:5116) tries it on an argument before
 // lowering what is inside, so the outermost argument whose slot is a
 // function type takes the `_`. The Core exporter marks each `_` in place,
 // as the unsupported construct placeholder-lambda.
