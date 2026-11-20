@@ -1054,10 +1054,11 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 func (t *galaASTTransformer) firstCallBuilds(meta *transpiler.TypeMetadata, args argsSrc) bool {
 	if len(args.list) == 0 {
 		// A sealed case's Apply is generated, never generic, so only the
-		// parameters, their defaults and an injected metadata one decide.
+		// parameters, their defaults and a sole injected metadata one decide
+		// (lowerCallSuffix).
 		apply := meta.Methods["Apply"]
 		return len(apply.ParamTypes) > 0 && len(apply.DefaultExprs) == 0 && !meta.IsSealed &&
-			t.injectedMetaParam(apply.ParamTypes[0]) == noInjectedMeta
+			!(len(apply.ParamTypes) == 1 && t.injectedMetaParam(apply.ParamTypes[0]) != noInjectedMeta)
 	}
 	if slices.ContainsFunc(args.list, argSrc.named) {
 		// Positional arguments fill the leading fields; each named one must
