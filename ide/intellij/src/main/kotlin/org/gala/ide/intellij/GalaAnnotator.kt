@@ -201,20 +201,34 @@ class GalaAnnotator : Annotator {
         var i = 0
 
         while (i < text.length) {
-            // Skip escaped dollars ($$)
-            if (text[i] == '$' && i + 1 < text.length && text[i + 1] == '$') {
+            // Skip an escape (read in pairs, as the lexer does, so `\\$x`
+            // still interpolates) and an escaped dollar ($$)
+            if (text[i] == '\\' || (text[i] == '$' && i + 1 < text.length && text[i + 1] == '$')) {
                 i += 2
                 continue
             }
-            if (text[i] == '$' && i + 1 < text.length && (i == 0 || text[i - 1] != '\\')) {
+            if (text[i] == '$' && i + 1 < text.length) {
                 if (text[i + 1] == '{') {
-                    // ${expression} — highlight the ${ and }
+                    // ${expression} — highlight the ${ and }. Walk it as the
+                    // lexer's BRACE_CONTENT does (and interpolation.EndOfEmbeddedExpr):
+                    // a `\` escapes the next character and a "string literal" is
+                    // opaque, so a brace in it neither nests nor closes.
                     val braceStart = i
                     var depth = 1
                     var j = i + 2
                     while (j < text.length && depth > 0) {
-                        if (text[j] == '{') depth++
-                        else if (text[j] == '}') depth--
+                        when (text[j]) {
+                            '\\' -> j++
+                            '"' -> {
+                                j++
+                                while (j < text.length && text[j] != '"') {
+                                    if (text[j] == '\\') j++
+                                    j++
+                                }
+                            }
+                            '{' -> depth++
+                            '}' -> depth--
+                        }
                         j++
                     }
                     if (depth == 0) {

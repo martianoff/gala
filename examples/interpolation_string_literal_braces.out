@@ -1,0 +1,6 @@
+close: a!b
+open: a!b
+path: C:/dir/file
+set: {x, y, z}
+padded:    42|
+ends with backslash: a\}

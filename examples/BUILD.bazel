@@ -2998,6 +2998,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A brace or an escaped backslash in a string literal inside ${...} neither
+# nests nor ends the embedded expression (#1294)
+gala_exec_test(
+    name = "interpolation_string_literal_braces",
+    src = "interpolation_string_literal_braces.gala",
+    expected = "interpolation_string_literal_braces.out",
+    deps = ["//collection_immutable"],
+)
+
 # String interpolation with escaped quotes inside ${...}
 gala_exec_test(
     name = "interpolation_escaped_quotes",

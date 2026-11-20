@@ -195,9 +195,13 @@ func Position(content string, offset, line, col int) (int, int) {
 }
 
 // EndOfEmbeddedExpr locates the `}` that closes the `${` beginning at
-// content[dollar], counting brace nesting and skipping escaped characters so a
-// brace written inside a nested literal does not close the block early. It
-// returns the index of that `}`, or len(content) when the block is unterminated.
+// content[dollar]. It returns the index of that `}`, or len(content) when the
+// block is unterminated.
+//
+// It walks the block as the lexer's BRACE_CONTENT rule in gala.g4 does, so the
+// two agree on where every embedded expression ends: a `\` escapes the
+// character after it, a `"`-quoted string literal is opaque (a brace in
+// `"}"` neither nests nor closes), and every other `{` and `}` nests.
 //
 // Split walks embedded expressions with it, and so does the transformer's
 // escape validation, which must skip exactly the regions Split treats as
@@ -205,27 +209,57 @@ func Position(content string, offset, line, col int) (int, int) {
 // "exactly" true.
 func EndOfEmbeddedExpr(content string, dollar int) int {
 	depth := 1
-	j := dollar + 2
-	for j < len(content) && depth > 0 {
-		switch {
-		case content[j] == '{':
+	for j := dollar + 2; j < len(content); j++ {
+		switch content[j] {
+		case '\\':
+			j++ // skip the escaped character
+		case '"':
+			j = endOfStringLiteral(content, j)
+		case '{':
 			depth++
-		case content[j] == '}':
+		case '}':
 			depth--
-		case content[j] == '\\' && j+1 < len(content):
-			j++ // skip escaped char
-		}
-		if depth > 0 {
-			j++
+			if depth == 0 {
+				return j
+			}
 		}
 	}
-	return j
+	return len(content)
 }
 
-// unescapeExpr converts escaped quotes inside `${}` expression blocks back to
-// regular quotes so the expression can be re-parsed by the GALA parser.
+// endOfStringLiteral is the index of the `"` that closes the string literal
+// whose opening `"` is content[open], skipping the literal's escapes, or
+// len(content) when it is unterminated.
+func endOfStringLiteral(content string, open int) int {
+	for j := open + 1; j < len(content); j++ {
+		switch content[j] {
+		case '\\':
+			j++
+		case '"':
+			return j
+		}
+	}
+	return len(content)
+}
+
+// unescapeExpr turns each `\"` in an embedded expression back into `"`, so an
+// expression written with escaped quotes (`${f(\"x\")}`) re-parses. It reads
+// escapes in pairs, as the lexer does, so any other escape is kept whole: the
+// `\\` in `"\\"` stays an escaped backslash rather than lending its second `\`
+// to the closing quote.
 func unescapeExpr(expr string) string {
-	return strings.ReplaceAll(expr, `\"`, `"`)
+	var b strings.Builder
+	b.Grow(len(expr))
+	for i := 0; i < len(expr); i++ {
+		if expr[i] == '\\' && i+1 < len(expr) {
+			i++
+			if expr[i] != '"' {
+				b.WriteByte('\\')
+			}
+		}
+		b.WriteByte(expr[i])
+	}
+	return b.String()
 }
 
 // extractFormatSpec extracts a Go printf format specifier starting at position i

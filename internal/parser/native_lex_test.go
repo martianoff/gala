@@ -120,6 +120,24 @@ func TestLexNativeAt(t *testing.T) {
 	}
 }
 
+// TestLexInterpolatedStringLiteralInExpr: a string literal inside `${...}`
+// is opaque to the lexer, so a brace or an escaped backslash in it leaves the
+// interpolated string one token (#1294). interpolation.EndOfEmbeddedExpr
+// walks the block the same way.
+func TestLexInterpolatedStringLiteralInExpr(t *testing.T) {
+	for _, src := range []string{
+		`s"${strings.ReplaceAll(s, "}", "!")}"`,
+		`s"${strings.ReplaceAll(s, "{", "!")}"`,
+		`s"${strings.ReplaceAll(p, "\\", "/")}"`,
+		`f"${f("\\", "}")}%v"`,
+	} {
+		ts := lexNative(src, 1, 0)
+		if len(ts.Errors) > 0 || len(ts.Tokens) != 2 || ts.Text(0) != src {
+			t.Errorf("%s: lexed as %v", src, printNative(ts))
+		}
+	}
+}
+
 // emptyLineInputs break the blank-line rule, or keep it in unusual ways.
 var emptyLineInputs = []string{
 	"package main\nval x = 1\n",
