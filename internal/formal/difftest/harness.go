@@ -89,19 +89,9 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 	}
 	rec.Comparison = Compare(spec, real)
 	if h.GoCore != nil && goProg != nil {
-		// A run Go could not finish is never compared, so GoCore does not
-		// run it: it could exhaust its own stack or time limit on it.
-		gr, resource := goResource(real)
-		if !resource {
-			doc, err := ExportGoCore(h.Dir, p.ID, *goProg)
-			if err != nil {
-				tb.Fatalf("%s: Go AST export: %v", p.ID, err)
-			}
-			g, err := h.GoCore.Run(doc)
-			if err != nil {
-				tb.Fatalf("%s: %v", p.ID, err)
-			}
-			gr = CompareGoCore(g, real, goPanicText(stderr))
+		gr, _, err := GoCoreLane(h.GoCore, h.Dir, p.ID, *goProg, real, stderr)
+		if err != nil {
+			tb.Fatalf("%s: %v", p.ID, err)
 		}
 		rec.GoCore = &gr
 	}
@@ -143,29 +133,41 @@ func realRun(tb testing.TB, p Program, withGo bool) (Run, string, *GoProgram) {
 	case res.Err != nil:
 		return rejected("the transpiler rejected it: " + firstLine(res.Err.Error()))
 	}
+	return RunGo(tb, p.ID, res.Go, withGo)
+}
+
+// RunGo builds and runs mainGo, a main package's Go, as realRun runs a
+// program's transpiled Go: what it did, its stderr, and, when withGo, its Go
+// with every GALA package it imports (nil otherwise, or for a program
+// rejected before it ran). id names it in failures.
+func RunGo(tb testing.TB, id, mainGo string, withGo bool) (Run, string, *GoProgram) {
+	tb.Helper()
+	rejected := func(detail string) (Run, string, *GoProgram) {
+		return Run{Outcome: Outcome{Kind: KindRejected, Detail: detail}}, "", nil
+	}
 	// Type-checking loads every GALA package the program imports into the
 	// importer, which progrun.Run then writes out as Go.
 	imp := progrun.OracleImporter(tb)
-	if tc := imp.TypeCheck("main.go", res.Go); tc.Skipped != "" || len(tc.Errors) > 0 {
+	if tc := imp.TypeCheck("main.go", mainGo); tc.Skipped != "" || len(tc.Errors) > 0 {
 		return rejected("go type-check: " + firstLine(tc.Skipped+strings.Join(tc.Errors, "\n")))
 	}
-	out, err := progrun.Run(tb, imp, res.Go)
+	out, err := progrun.Run(tb, imp, mainGo)
 	if err != nil {
 		var build *progrun.Error
 		if errors.As(err, &build) {
 			return rejected(build.Step + ": " + firstLine(build.Out))
 		}
-		tb.Fatalf("%s: %v", p.ID, err)
+		tb.Fatalf("%s: %v", id, err)
 	}
 	run := Run{Stdout: out.Stdout, Outcome: GoOutcome(out.ExitCode, out.Stderr, out.TimedOut)}
 	if !withGo {
 		return run, out.Stderr, nil
 	}
-	pkgs, err := progrun.ImportedSources(imp, res.Go)
+	pkgs, err := progrun.ImportedSources(imp, mainGo)
 	if err != nil {
-		tb.Fatalf("%s: %v", p.ID, err)
+		tb.Fatalf("%s: %v", id, err)
 	}
-	return run, out.Stderr, &GoProgram{Main: res.Go, Packages: pkgs, GoRoot: progrun.GoRoot(tb)}
+	return run, out.Stderr, &GoProgram{Main: mainGo, Packages: pkgs, GoRoot: progrun.GoRoot(tb)}
 }
 
 // firstLine is the first line of a diagnostic, past the "# package" header

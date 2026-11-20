@@ -190,7 +190,7 @@ func TestDifferential(t *testing.T) {
 	// .out, so an example whose .out mixes in stderr (complex.gala prints with
 	// the builtin println) needs no exclusion here.
 	requirePinnedGo(t)
-	h :=difftest.Harness{Spec: difftest.Spec{Bin: bin, Fuel: fuel}, Dir: t.TempDir(), Lean: lean,
+	h := difftest.Harness{Spec: difftest.Spec{Bin: bin, Fuel: fuel}, Dir: t.TempDir(), Lean: lean,
 		GoCore: difftest.GoCore{Bin: gocoreBin(t)}}
 	var records []difftest.Record
 	results := map[string]difftest.Comparison{}

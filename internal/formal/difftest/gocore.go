@@ -128,10 +128,10 @@ type GoCoreRecord struct {
 	Construct string
 }
 
-// CompareGoCore is the fidelity verdict: GoCore's run against Go's, on
+// compareGoCore is the fidelity verdict: GoCore's run against Go's, on
 // stdout and on how they end, a panic by the exact text Go prints after
 // `panic: `. real's outcome and goPanic are Go's.
-func CompareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
+func compareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
 	if r, ok := goResource(real); ok {
 		return r
 	}
@@ -210,9 +210,29 @@ type GoProgram struct {
 	GoRoot string
 }
 
-// ExportGoCore writes prog's GoCore JSON document under dir, named for id,
+// GoCoreLane is a program's GoCore lane: GoCore's run of prog, exported
+// under dir and named for id, compared with Go's run of it (real, and its
+// stderr). A run Go could not finish is never compared, so GoCore does not run
+// it (the zero GoCoreRun): it could exhaust its own stack or time limit on it.
+// The error is for an export or a gocore run that failed.
+func GoCoreLane(r GoCoreRunner, dir, id string, prog GoProgram, real Run, stderr string) (GoCoreRecord, GoCoreRun, error) {
+	if rec, ok := goResource(real); ok {
+		return rec, GoCoreRun{}, nil
+	}
+	doc, err := exportGoCore(dir, id, prog)
+	if err != nil {
+		return GoCoreRecord{}, GoCoreRun{}, fmt.Errorf("Go AST export: %w", err)
+	}
+	g, err := r.Run(doc)
+	if err != nil {
+		return GoCoreRecord{}, GoCoreRun{}, err
+	}
+	return compareGoCore(g, real, goPanicText(stderr)), g, nil
+}
+
+// exportGoCore writes prog's GoCore JSON document under dir, named for id,
 // and returns its path.
-func ExportGoCore(dir, id string, prog GoProgram) (string, error) {
+func exportGoCore(dir, id string, prog GoProgram) (string, error) {
 	pkgs := []gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "main.go", Text: prog.Main}}}}
 	paths := make([]string, 0, len(prog.Packages))
 	for p := range prog.Packages {
