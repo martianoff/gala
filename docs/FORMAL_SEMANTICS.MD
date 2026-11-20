@@ -470,14 +470,16 @@ column lists what each milestone's claim rests on beyond them.
   claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`.
   `expr_correct_instance` meets every hypothesis, on `x + 1`. It covers
   literals, locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %` and comparisons on
-  `int`s, the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, `&&`
-  and `||`. galaspec computes the bitwise operators through Lean's `Int64`, GoCore
+  `int`s, the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, the
+  orderings `< <= > >=` on strings, `&&` and `||`. galaspec and GoCore both order
+  strings by code point; that Go's byte order agrees on UTF-8 is an assumption of
+  GoCore's model, not proved here. galaspec computes the bitwise operators through Lean's `Int64`, GoCore
   exactly and then reduced to `int`; core's `BitVec` lemmas show they agree
   (`formal/Gala/M5/Bits.lean`). Shifts `<<` and `>>` of a typed `int` by an `int` count
   are covered, counts of 64 or more and negative counts included; a shift of a literal
   is not lowered (Go gives an untyped constant shifted by a variable count the type
   its context would give it), nor is a negative constant count (Go does not compile
-  it), nor is string ordering. The relation on `int`s requires a value in int64's range
+  it). The relation on `int`s requires a value in int64's range
   (`VRel`), so the theorems assume each local `int` is in range, as galaspec's always
   are. The lowering is type-directed, as
   the transformer is: without types, galaspec's `x == "a"` on an `int` is `false` where

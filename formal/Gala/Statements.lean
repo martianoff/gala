@@ -510,6 +510,25 @@ theorem inst_shift :
     lowerE instKinds (.binary "<<" (.name "x") (.lit (.int (-1)))) = none :=
   Gala.M5.inst_shift
 
+open Gala Gala.M5 GoCore.Full in
+theorem inst_strcmp :
+    ((pureEval default (.binary "<" (.name "s") (.lit (.str "z")))).run.run strCore).1 = .ok (.bool false) ∧
+    (evalExpr instCtx 10 strEnv (.binary "<" (.ident "s") (.strLit "z"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) false), strSt) ∧
+    ((pureEval default (.binary ">" (.name "s") (.lit (.str "z")))).run.run strCore).1 = .ok (.bool true) ∧
+    (evalExpr instCtx 10 strEnv (.binary ">" (.ident "s") (.strLit "z"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) true), strSt) ∧
+    ((pureEval default (.binary "<=" (.lit (.str "a")) (.name "s"))).run.run strCore).1 = .ok (.bool true) ∧
+    (evalExpr instCtx 10 strEnv (.binary "<=" (.strLit "a") (.ident "s"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) true), strSt) ∧
+    ((pureEval default (.binary ">=" (.name "s") (.lit (.str "é")))).run.run strCore).1 = .ok (.bool true) ∧
+    (evalExpr instCtx 10 strEnv (.binary ">=" (.ident "s") (.strLit "é"))).run.run strSt =
+      (.ok (.bool (.untyped .bool) true), strSt) ∧
+    (["<", "<=", ">", ">="].all fun op =>
+      (lowerE strKinds (.binary op (.name "s") (.lit (.str "z")))).isSome) = true ∧
+    (lowerE strKinds (.binary "<=" (.lit (.str "a")) (.name "s"))).isSome :=
+  Gala.M5.inst_strcmp
+
 open Gala Gala.M5 in
 theorem stmts_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ κ' : String → Option Kind)
     (ss : List Spec.Expr) (lss : List GoCore.Full.Stmt), lowerSs κ ss = some (κ', lss) →
