@@ -182,10 +182,6 @@ func (g *gen) expr(e coreexport.Node, sc *scope) term {
 	case *coreexport.Match:
 		return term{code: doTerm(g.matchItems(e, sc.term(), true))}
 	case *coreexport.Lambda:
-		if g.placeholders[e] {
-			// Its slot's type is not known here (placeholders.go).
-			unsup(e.Pos, "placeholder-lambda")
-		}
 		return g.lambda(e, sc, nil)
 	case *coreexport.Interp:
 		return g.interp(e, sc)
