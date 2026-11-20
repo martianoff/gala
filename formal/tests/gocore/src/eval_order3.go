@@ -33,6 +33,12 @@ func reset() {
 
 func show(x, y int) { fmt.Println("deferred", x, y) }
 
+type pt struct{ x, y int }
+
+// A struct passed to a parameter of struct type is not converted to an interface, so gc
+// reads it after the calls of the statement.
+func showPt(q pt, n int) { fmt.Println("pt", q, n) }
+
 func pairOf() (int, int) {
 	return a, bump()
 }
@@ -66,11 +72,16 @@ func main() {
 	reset()
 	fmt.Println(a + func() int { a = 5; return 1 }())
 	reset()
+	n := 1
+	inc := func() int { n = 7; return 1 }
+	fmt.Println(n + inc())
 	fmt.Println(p.n + p.inc())
 	reset()
 	fmt.Println(p.get() + p.inc())
 	reset()
 	fmt.Println(pairOf())
+	reset()
+	showPt(pt{a, 0}, bump())
 	reset()
 	t := make([]int, 11)
 	t[a] = bump()

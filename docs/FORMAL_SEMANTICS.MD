@@ -611,9 +611,11 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   (`untriggered_orders_agree`, the obligation step 2 of the steps below takes on);
   the differential run tests it meanwhile. One choice of gc depends on static types
   GoCore's syntax does not carry: a value converted to an interface is copied early or
-  read late by its type. Where that could be observed, and where the rewrite needs a
-  place for statements that the statement does not have (a `for` condition or post
-  statement, a `switch` case, a package-level initializer), the run ends `unsupported`
+  read late by its type; the rewrite settles it from the declared types the syntax shows
+  (a declared function's parameters, a composite literal's fields) where it can. Where
+  it cannot and the difference could be observed, and where the rewrite needs a place
+  for statements that the statement does not have (a `for` condition, a `switch` case, a
+  package-level initializer), the run ends `unsupported`
   (`eval-order-*`), not guessed. The fixtures `eval_order`, `eval_order2` and
   `eval_order3` pin it against `go run`.
 - **The theorem.** Proved for gc's order alone, it would hold for that gc release only;
