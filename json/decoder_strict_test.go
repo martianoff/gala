@@ -495,12 +495,14 @@ func TestDecoder_SeparatorsRequired(t *testing.T) {
 			if got := stdjson.Valid([]byte(tt.in)); got != tt.valid {
 				t.Fatalf("test table disagrees with encoding/json: Valid(%s) = %v", tt.in, got)
 			}
-			err := decodeDocument(tt.in, readValue)
-			if tt.valid && err != "" {
-				t.Fatalf("decode(%s) failed: %s", tt.in, err)
-			}
-			if !tt.valid && err == "" {
-				t.Fatalf("decode(%s) did not fail", tt.in)
+			for name, read := range map[string]func(*JsonDecoderImpl){"decode": readValue, "Skip": skipValue} {
+				err := decodeDocument(tt.in, read)
+				if tt.valid && err != "" {
+					t.Fatalf("%s(%s) failed: %s", name, tt.in, err)
+				}
+				if !tt.valid && err == "" {
+					t.Fatalf("%s(%s) did not fail", name, tt.in)
+				}
 			}
 		})
 	}
