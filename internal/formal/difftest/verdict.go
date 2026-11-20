@@ -36,19 +36,31 @@ type Comparison struct {
 	Reason  string
 }
 
-// NeedsReal reports whether the real run decides the verdict for spec's
-// outcome: an unsupported program or a run out of fuel is decided by the
-// spec alone, so the program need not be built.
-func NeedsReal(spec Outcome) bool {
-	return spec.Kind != KindUnsupported && spec.Kind != KindFuel
+// NeedsReal reports whether the verdict for spec's run needs the real one: a
+// run out of fuel is decided by the spec alone, and so is an unsupported one
+// that printed nothing, so the program need not be built. An unsupported run
+// that printed must have printed a prefix of what Go did (Compare).
+func NeedsReal(spec Run) bool {
+	switch spec.Outcome.Kind {
+	case KindFuel:
+		return false
+	case KindUnsupported:
+		return spec.Stdout != ""
+	}
+	return true
 }
 
 // Compare is the verdict for the spec's run and the real one. real is not
-// looked at when NeedsReal(spec.Outcome) is false. A malformed document is a
+// looked at when NeedsReal(spec) is false. An unsupported run is UNSUPPORTED
+// once what it printed before stopping is a prefix of what Go printed
+// (stoppedEarlyDiff), and a disagreement otherwise. A malformed document is a
 // disagreement: the exporter and the spec must agree on Core JSON.
 func Compare(spec, real Run) Comparison {
 	switch spec.Outcome.Kind {
 	case KindUnsupported:
+		if d := stoppedEarlyDiff("galaspec", spec.Outcome.String(), spec.Stdout, real); d != "" {
+			return Comparison{Disagree, d}
+		}
 		return Comparison{Unsupported, "outside the spec's subset: " + spec.Outcome.Detail}
 	case KindFuel:
 		return Comparison{Inconclusive, "galaspec ran out of fuel"}
@@ -59,6 +71,24 @@ func Compare(spec, real Run) Comparison {
 		return Comparison{Disagree, d}
 	}
 	return Comparison{Verdict: Agree}
+}
+
+// stoppedEarlyDiff checks a run that stopped with outcome (an `unsupported:`
+// one) after printing stdout against Go's: what it printed must be a prefix of
+// what Go printed, or the stop would hide a wrong line. name is the run's
+// (galaspec, gala2lean or gocore). It is "" when it is a prefix, and when Go
+// did not end ok or with a panic, whose output then says nothing about the
+// program's; otherwise the disagreement, with the first line that differs.
+func stoppedEarlyDiff(name, outcome, stdout string, real Run) string {
+	if real.Outcome.Kind != KindOK && real.Outcome.Kind != KindPanic {
+		return ""
+	}
+	goOut := strings.ReplaceAll(real.Stdout, "\r\n", "\n")
+	if strings.HasPrefix(goOut, stdout) {
+		return ""
+	}
+	return name + " stopped (" + outcome + ") after printing what Go did not: stdout: " +
+		firstDifference(name, stdout, "go", goOut)
 }
 
 // diff describes how run a (named na) differs from run b (named nb): the
@@ -115,12 +145,13 @@ const (
 )
 
 // ThreeWay triages the spec's run, the real run and the oracle's. It is
-// TriageNone when the spec's outcome does not decide a verdict (see
-// NeedsReal) or galaspec rejected the document. The spec and the real run
-// are compared exactly; each is compared with the oracle as an example's test
-// compares a run with its .out file, leading and trailing white space aside.
+// TriageNone when galaspec did not run the program to an end (it ran out of
+// fuel or stopped unsupported) or rejected the document. The spec and the real
+// run are compared exactly; each is compared with the oracle as an example's
+// test compares a run with its .out file, leading and trailing white space
+// aside.
 func ThreeWay(spec, real, oracle Run) Triage {
-	if !NeedsReal(spec.Outcome) || spec.Outcome.Kind == KindMalformed {
+	if k := spec.Outcome.Kind; k == KindFuel || k == KindUnsupported || k == KindMalformed {
 		return TriageNone
 	}
 	specGo, specOracle, goOracle := spec == real, matchesOracle(spec, oracle), matchesOracle(real, oracle)

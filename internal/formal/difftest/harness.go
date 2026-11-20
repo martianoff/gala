@@ -84,7 +84,7 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 		stderr string
 		goProg *GoProgram
 	)
-	if NeedsReal(spec.Outcome) || leanRes != nil || h.GoCore != nil {
+	if NeedsReal(spec) || leanRes != nil || h.GoCore != nil {
 		real, stderr, goProg = realRun(tb, p, h.GoCore != nil)
 	}
 	rec.Comparison = Compare(spec, real)

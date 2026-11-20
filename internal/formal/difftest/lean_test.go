@@ -49,7 +49,7 @@ func TestCompareLean(t *testing.T) {
 		},
 		{
 			name: "a case a model does not cover, after printing what Go did not", out: gala2lean.RunResult{Kind: gala2lean.RanOK, Stdout: "2\n", Outcome: "unsupported:replacer-empty-old"},
-			want: Disagree, reason: "after printing what Go did not",
+			want: Disagree, reason: `gala2lean stopped (unsupported:replacer-empty-old) after printing what Go did not: stdout: line 1: gala2lean="2", go="1"`,
 		},
 		{name: "timed out", out: gala2lean.RunResult{Kind: gala2lean.TimedOut}, want: Inconclusive, reason: "did not finish"},
 		{name: "diverged", out: gala2lean.RunResult{Kind: gala2lean.Diverged}, want: Inconclusive, reason: "diverged"},
