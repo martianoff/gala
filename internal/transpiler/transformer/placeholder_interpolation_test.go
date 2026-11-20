@@ -47,6 +47,18 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 		require.Contains(t, err.Error(), string(galaerr.CodePlaceholderInInterpolation))
 	})
 
+	// Typed patterns need an `any` subject, which the example corpus keeps
+	// out (TestNoTypeErasureInGeneratedGo), so they are checked here.
+	for _, body := range []string{
+		`    Println(s"${v match { case n: int => n case _ => 0 }}")`,
+		`    Println(s"${v match { case _: int => "int" case _ => "other" }}")`,
+	} {
+		t.Run("typed pattern accepted: "+body, func(t *testing.T) {
+			_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    val v any = xs.Size()\n"+body+"\n}\n", "")
+			require.NoError(t, err)
+		})
+	}
+
 	// A default is not written in the string it is expanded in.
 	t.Run("a default placeholder lambda expanded inside the string", func(t *testing.T) {
 		src := "package main\n\nfunc bump(x int, g func(int) int = _ + 1) int = g(x)\n\nfunc main() {\n    Println(s\"${bump(1)}\")\n}\n"
