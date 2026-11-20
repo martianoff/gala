@@ -1,0 +1,15 @@
+seed
+fromSeed
+power
+On(30, Living)
+x
+power
+z
+Outer(Inner(1, 0), On(30, Living), 3, false, ) 100
+x
+x
+2
+G(7)
+Holder(Inner(5, 6), 0)
+x
+Box(Inner(1, 0))

@@ -574,6 +574,50 @@ theorem menR_callTail (hD : DeclsR pkg pm ds ds') {k : Nat} (hk : ∀ j, k = j +
   · exact MenR.nil
   · exact MenR.all (menR_omitted hk f c hF hF' (omitted_rel hD f ha))
 
+/-- The declared field defaults a declaration with no value evaluates: the same fields on
+    both sides, each default related to itself with no local in scope. -/
+theorem declDefaults_rel (hD : DeclsR pkg pm ds ds') (ty : Option Ty) :
+    Fall2 (fun a b => a.1 = b.1 ∧ a.2.1 = b.2.1 ∧ AlphaE pkg pm [] a.2.2 b.2.2)
+      (declDefaults ds ty) (declDefaults ds' ty) := by
+  unfold declDefaults
+  cases ty with
+  | none => exact .nil
+  | some t =>
+    dsimp only
+    simp only [checkTy_congr hD.same, defaultOf_congr hD.same]
+    split
+    · refine fall2_filterMap (S := Eq) (fun h _ e => ?_) (fall2_refl (fun _ => rfl) _)
+      subst e
+      obtain ⟨x, j, _⟩ := h
+      have hr := fieldDefault_rel hD x j
+      generalize fieldDefault ds x j = o at hr ⊢
+      generalize fieldDefault ds' x j = o' at hr ⊢
+      cases hr with
+      | none => exact Or.inl ⟨rfl, rfl⟩
+      | some he => exact Or.inr ⟨_, _, rfl, rfl, rfl, rfl, he⟩
+    · exact .nil
+
+/-- What a declaration with no value adds to its mentions, on both sides: its type's
+    declared field defaults, each cut off on both sides or expanded one budget down. -/
+theorem menR_declDefaults (hD : DeclsR pkg pm ds ds') {k : Nat}
+    (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j) (c : List (String × Nat)) (ty : Option Ty) :
+    MenR pkg
+      ((declDefaults ds ty).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
+        match k with | 0 => [] | k + 1 => mentionsUpTo ds k ((x.1, x.2.1) :: c) [] x.2.2)
+      ((declDefaults ds' ty).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
+        match k with | 0 => [] | k + 1 => mentionsUpTo ds' k ((x.1, x.2.1) :: c) [] x.2.2) := by
+  refine MenR.all (fall2_map (fun a b ⟨h1, h2, he⟩ => ?_) (declDefaults_rel hD ty))
+  rw [h1, h2]
+  split
+  · exact MenR.nil
+  · cases k with
+    | zero => exact MenR.nil
+    | succ k => exact hk k rfl he (menScope_nil pkg)
+
+theorem alphaL_isEmpty {Γ : Ren} {es es' : List Expr} (h : AlphaL pkg pm Γ es es') :
+    es.isEmpty = es'.isEmpty := by
+  cases h <;> rfl
+
 theorem alphaE_not_decl {Γ : Ren} {e e' : Expr} (h : AlphaE pkg pm Γ e e') :
     ∀ m ns d ty vs, e ≠ .decl m ns d ty vs := by
   intro m ns d ty vs he; subst he; cases h
@@ -617,7 +661,8 @@ theorem mentions_argsR : ∀ {m Γ : Ren} {as as' : List Expr} {b b' : List Stri
     unfold mentionsUpTo; (try dsimp only)
     exact ih _ (by omega) h hs
 
-theorem mentions_blockR {F F' : List String × List String → Expr → List String × List String}
+theorem mentions_blockR (hD : DeclsR pkg pm ds ds') (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j)
+    {F F' : List String × List String → Expr → List String × List String}
     (hF1 : ∀ b acc m ns d ty vs, F (b, acc) (.decl m ns d ty vs) =
       (ns ++ b, acc ++ mentionsUpTo ds k c b (.decl m ns d ty vs)))
     (hF1' : ∀ b acc m ns d ty vs, F' (b, acc) (.decl m ns d ty vs) =
@@ -633,14 +678,18 @@ theorem mentions_blockR {F F' : List String × List String → Expr → List Str
   | _, _, _, _, _, _, _, hsz, .decl _ _ _ hn hvs hrest, hs, hacc => by
     simp only [List.cons.sizeOf_spec, Expr.decl.sizeOf_spec] at hsz
     simp only [List.foldl_cons, hF1, hF1']
-    refine mentions_blockR hF1 hF1' hF2 hF2' (by omega) hrest (hn.push hs) (hacc.cat ?_)
+    refine mentions_blockR hD hk hF1 hF1' hF2 hF2' (by omega) hrest (hn.push hs) (hacc.cat ?_)
     unfold mentionsUpTo; (try dsimp only)
-    exact MenR.all (mentions_alphaL ih (by omega) hvs hs)
+    refine (MenR.all (mentions_alphaL ih (by omega) hvs hs)).cat ?_
+    rw [alphaL_isEmpty hvs]
+    split
+    · exact MenR.nil
+    · exact menR_declDefaults hD hk c _
   | _, _, _, _, _, _, _, hsz, .stmt he hrest, hs, hacc => by
     simp only [List.cons.sizeOf_spec] at hsz
     simp only [List.foldl_cons]
     rw [hF2 _ _ _ (alphaE_not_decl he), hF2' _ _ _ (alphaE_not_decl_right he)]
-    exact mentions_blockR hF1 hF1' hF2 hF2' (by omega) hrest hs (hacc.cat (ih _ (by omega) he hs))
+    exact mentions_blockR hD hk hF1 hF1' hF2 hF2' (by omega) hrest hs (hacc.cat (ih _ (by omega) he hs))
 
 theorem mentions_casesR :
     ∀ {Γ : Ren} {cs cs' : List (Pat × Option Expr × Expr)} {b b' : List String}
@@ -734,7 +783,7 @@ theorem mentions_lt (hD : DeclsR pkg pm ds ds') {k : Nat} {c : List (String × N
     | block h =>
       simp only [Expr.block.sizeOf_spec] at hlt
       unfold mentionsUpTo; (try dsimp only)
-      exact mentions_blockR ih (fun _ _ _ _ _ _ _ => rfl) (fun _ _ _ _ _ _ _ => rfl)
+      exact mentions_blockR ih hD hk (fun _ _ _ _ _ _ _ => rfl) (fun _ _ _ _ _ _ _ => rfl)
         (fun _ _ e he => by cases e <;> first | rfl | exact absurd rfl (he _ _ _ _ _))
         (fun _ _ e he => by cases e <;> first | rfl | exact absurd rfl (he _ _ _ _ _))
         (by omega) h hs MenR.nil
@@ -1059,10 +1108,21 @@ theorem bindsR_same {ns : List String} {bs bs' : List (String × Val)} (h : Bind
 /-- The package-level variables a declaration depends on are the same on both sides. -/
 theorem deps_eq (hD : DeclsR pkg pm ds ds') {all : List String} (hall : ∀ x ∈ all, x ∈ pkg)
     {g g' : GlobalDecl} (hg : GlobalR pkg pm g g') :
-    (reach ds (g.values.flatMap (mentions ds []))).filter (all.contains ·) =
-      (reach ds' (g'.values.flatMap (mentions ds' []))).filter (all.contains ·) := by
-  have hm : MenR pkg (g.values.flatMap (mentions ds [])) (g'.values.flatMap (mentions ds' [])) :=
-    MenR.all (fall2_map (fun _ _ he => mentions_alpha hD he (menScope_nil pkg)) (alphaL_fall2 hg.values))
+    (reach ds (mentions ds [] (.decl .val g.names g.destructure g.type g.values))).filter
+        (all.contains ·) =
+      (reach ds' (mentions ds' [] (.decl .val g'.names g'.destructure g'.type g'.values))).filter
+        (all.contains ·) := by
+  have hm : MenR pkg (mentions ds [] (.decl .val g.names g.destructure g.type g.values))
+      (mentions ds' [] (.decl .val g'.names g'.destructure g'.type g'.values)) := by
+    unfold mentions
+    rw [← defaultCount_eq hD]
+    unfold mentionsUpTo
+    refine (MenR.all (fall2_map (fun _ _ he => mentionsUpTo_alpha hD _ he (menScope_nil pkg))
+      (alphaL_fall2 hg.values))).cat ?_
+    rw [alphaL_isEmpty hg.values, hg.type]
+    split
+    · exact MenR.nil
+    · exact menR_declDefaults hD (fun j _ => mentionsUpTo_alpha hD j) [] _
   have hr := reach_alpha hD hm
   have key : ∀ l : List String, l.filter (all.contains ·) = (inPkg pkg l).filter (all.contains ·) := by
     intro l
@@ -1174,9 +1234,9 @@ theorem initGlobals_alpha (hD : DeclsR pkg pm ds ds') (d : Nat) {gs gs' : List G
         l.length = (l.map fun g => (g, F g)).length := by simp
     rw [hl gs, hl gs', List.range_eq_range', List.range_eq_range']
     exact range_zip_pendR 0 (fall2_map
-      (f := fun g => (g, (reach ds (g.values.flatMap (mentions ds []))).filter
+      (f := fun g => (g, (reach ds (mentions ds [] (.decl .val g.names g.destructure g.type g.values))).filter
         ((gs.flatMap (·.names)).contains ·)))
-      (g := fun g => (g, (reach ds' (g.values.flatMap (mentions ds' []))).filter
+      (g := fun g => (g, (reach ds' (mentions ds' [] (.decl .val g.names g.destructure g.type g.values))).filter
         ((gs.flatMap (·.names)).contains ·)))
       (fun a b h => ⟨h, deps_eq hD hall h⟩) hg)
 

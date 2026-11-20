@@ -418,7 +418,7 @@ func (g *gen) initDecl(order []*globalVar) (code string, ok bool) {
 			if gv.value != nil {
 				v = g.expr(gv.value, sc).val()
 			} else {
-				v = g.zero(gv.typ)
+				v = g.defaultValue(gv.typ)
 			}
 			tmp := g.freshName("i")
 			items = append(items, "let "+tmp+" := "+v,
