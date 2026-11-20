@@ -1009,8 +1009,7 @@ func (t *galaASTTransformer) isResultGenericValueApply(name string) bool {
 // `T(...)(...)`, `pkg.T(...)(...)` or either with type arguments
 // (`T[int](...)(...)`), whose type's Apply has type parameters its result
 // mentions, as isResultGenericValueApply does for a val. The first call must
-// build the struct, not call that Apply as a companion
-// (positionalCallBuildsStructLiteral).
+// build the struct, not call that Apply as a companion (firstCallBuilds).
 func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 	if !t.resultGenericMethods["Apply"] {
 		return false
@@ -1024,8 +1023,9 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 		return false
 	}
 	var typ ast.Expr = ast.NewIdent(name)
-	// A function the package declares is called, never the same-named type.
-	if t.namesOwnFunction(typ) {
+	// A binding of the name, or a function the package declares, is called,
+	// never the same-named type.
+	if t.shadowingScope(name) != nil || t.namesOwnFunction(typ) {
 		return false
 	}
 	suffixes := p.suffixes()
@@ -1043,7 +1043,28 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 		return false
 	}
 	meta := t.valueApplyType(&ast.CompositeLit{Type: typ})
-	return resultGenericApply(meta) && t.positionalCallBuildsStructLiteral(meta, meta.FieldNames, len(suffixes[0].args().list))
+	return resultGenericApply(meta) && t.firstCallBuilds(meta, suffixes[0].args())
+}
+
+// firstCallBuilds reports whether a call of the type meta describes with args
+// builds the struct rather than calling its Apply as a companion: by name,
+// when every name is a field; with no arguments, when Apply takes parameters
+// none of which has a default (lowerCallSuffix); otherwise by position
+// (positionalCallBuildsStructLiteral).
+func (t *galaASTTransformer) firstCallBuilds(meta *transpiler.TypeMetadata, args argsSrc) bool {
+	if len(args.list) == 0 {
+		apply := meta.Methods["Apply"]
+		return len(apply.ParamTypes) > 0 && len(apply.DefaultExprs) == 0 && !meta.IsSealed
+	}
+	if slices.ContainsFunc(args.list, argSrc.named) {
+		for _, a := range args.list {
+			if name, _ := a.name(); !slices.Contains(meta.FieldNames, name) {
+				return false
+			}
+		}
+		return true
+	}
+	return t.positionalCallBuildsStructLiteral(meta, meta.FieldNames, len(args.list))
 }
 
 // firstMember is the member the first of suffixes selects, `.name`.

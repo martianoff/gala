@@ -47,6 +47,14 @@ struct Conv(n int)
 
 func (c Conv) Apply[A any](x int) Option[A] = None[A]()
 
+struct Unit()
+
+func (u Unit) Apply[A any](x int) Option[A] = None[A]()
+
+struct Opts(a int = 0, b int = 0)
+
+func (o Opts) Apply[A any](x int) Option[A] = None[A]()
+
 struct Cell[T any](v T)
 
 func (c Cell[T]) Apply[A any](x T) Option[A] = None[A]()
@@ -130,6 +138,18 @@ func main() {
 			`val q Option[string] = Cell(1)(2)
     Println(q)`,
 			[]string{`Cell_Apply[string, int](Cell[int]{`},
+		},
+		{
+			"the slot binding it for a construction with no arguments called at once",
+			`val q Option[string] = Unit()(2)
+    Println(q)`,
+			[]string{`Unit_Apply[string](Unit{}, 2)`},
+		},
+		{
+			"the slot binding it for a construction by name called at once",
+			`val q Option[string] = Opts(a = 1)(2)
+    Println(q)`,
+			[]string{`Opts_Apply[string](Opts{`},
 		},
 	}
 	// The import goes only where it is used: GALA reports an unused one.
