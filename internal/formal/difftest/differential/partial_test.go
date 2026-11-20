@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"martianoff/gala/internal/formal/difftest"
@@ -31,60 +32,29 @@ import (
 func TestPartialPackageUnsupported(t *testing.T) {
 	gc := difftest.GoCore{Bin: gocoreBin(t)}
 	requirePinnedGo(t)
+	// Each program prints before, then runs body, importing pkg.
+	const program = "package main\n\nimport (\n\t\"fmt\"\n\t\"PKG\"\n)\n\nfunc main() {\n\tfmt.Println(\"before\")\n\tBODY\n}\n"
+	const before = "before\n"
 	tests := []struct {
 		name string
-		src  string
-		// pkg is the partial package; construct is where GoCore stops.
-		pkg, construct string
-		// goOut is what go run prints, all of it.
-		goOut string
+		// pkg is the partial package; body uses its missing name, construct.
+		pkg, body, construct string
+		// goOut is what go run prints, all of it, and goKind how it ends.
+		goOut  string
+		goKind difftest.Kind
 	}{
-		{"errors.Is call", `package main
-
-import (
-	"errors"
-	"fmt"
-)
-
-func main() {
-	fmt.Println("before")
-	e := errors.New("x")
-	fmt.Println(errors.Is(e, e))
-}
-`, "errors", "errors.Is", "before\ntrue\n"},
-		{"errors.Is value", `package main
-
-import (
-	"errors"
-	"fmt"
-)
-
-func main() {
-	fmt.Println("before")
-	e := errors.New("x")
-	f := errors.Is
-	fmt.Println(f(e, e))
-}
-`, "errors", "errors.Is", "before\ntrue\n"},
-		{"math/bits sibling var", `package main
-
-import (
-	"fmt"
-	"math/bits"
-)
-
-func main() {
-	fmt.Println("before")
-	var y uint
-	q, r := bits.Div(0, 1, y)
-	fmt.Println(q, r)
-}
-`, "math/bits", "math/bits.divideError", "before\n"},
+		{"errors.Is call", "errors", "e := errors.New(\"x\")\n\tfmt.Println(errors.Is(e, e))",
+			"errors.Is", before + "true\n", difftest.KindOK},
+		{"errors.Is value", "errors", "e := errors.New(\"x\")\n\tf := errors.Is\n\tfmt.Println(f(e, e))",
+			"errors.Is", before + "true\n", difftest.KindOK},
+		{"math/bits sibling var", "math/bits", "var y uint\n\tq, r := bits.Div(0, 1, y)\n\tfmt.Println(q, r)",
+			"math/bits.divideError", before, difftest.KindPanic},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			real, stderr, prog := difftest.RunGo(t, "partial", tt.src, true)
-			if real.Stdout != tt.goOut || prog == nil {
+			src := strings.NewReplacer("PKG", tt.pkg, "BODY", tt.body).Replace(program)
+			real, stderr, prog := difftest.RunGo(t, "partial", src, true)
+			if real.Outcome.Kind != tt.goKind || real.Stdout != tt.goOut || prog == nil {
 				t.Fatalf("go run: %s, stdout %q\n%s", real.Outcome, real.Stdout, stderr)
 			}
 			dir := t.TempDir()
@@ -93,10 +63,10 @@ func main() {
 				t.Fatal(err)
 			}
 			requirePartial(t, dir, tt.pkg)
-			if run.Stdout != "before\n" || rec.Verdict != difftest.Unsupported || rec.Construct != tt.construct {
+			if run.Stdout != before || rec.Verdict != difftest.Unsupported || rec.Construct != tt.construct {
 				t.Fatalf("gocore: outcome %q, stdout %q, verdict %s (%s); want unsupported:%s after %q "+
 					"(it must stay out of gocoreexport.RunnableStdlib's files)",
-					run.Outcome, run.Stdout, rec.Verdict, rec.Reason, tt.construct, "before\n")
+					run.Outcome, run.Stdout, rec.Verdict, rec.Reason, tt.construct, before)
 			}
 		})
 	}

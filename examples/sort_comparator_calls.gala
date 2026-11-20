@@ -8,7 +8,8 @@ import (
 // SortWith calls its comparison function in the order Go's sort does. Each line
 // pins one input shape by the number of calls and a hash of the pairs compared,
 // in order: random input (pivot by Tukey's ninther), reversed and already sorted
-// input, many duplicates, and equal keys, which keep their order.
+// input, and repeated keys, which the sort breaks by position so that equal
+// elements keep their order.
 
 struct Item(Key int, Tag string)
 

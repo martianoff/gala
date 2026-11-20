@@ -867,6 +867,10 @@ def evalName (c : Ctx) : Nat → Env → String → String → GM Val
       | _ =>
         -- A name of a dot-imported package the document does not hold.
         if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
+        -- A name of the package's own that one of its files the document leaves out
+        -- declares (Go's runnable files: `bits.go` reads `divideError` of
+        -- `bits_errors.go`).
+        if partialPkg c env.pkg then unsupported s!"{env.pkg}.{x}"
         stuck s!"undefined: {x}"
 
 /-- A declared function as a value. -/

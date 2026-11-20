@@ -35,7 +35,8 @@ func readRunfiles(t *testing.T, env string) map[string]string {
 // TestNoOutputInitImportsInStep checks that gala2lean and galaspec exempt
 // the same imports (noOutputInitImports, Json.noOutputInitImports): both
 // rest on the assumption that those packages print nothing while they
-// initialize, and the two models must make it for the same packages.
+// initialize, and the two models must make it for the same packages. GoCore's
+// quietInitPackages must hold them all, and may hold more.
 func TestNoOutputInitImportsInStep(t *testing.T) {
 	data := readRunfiles(t, "GALASPEC_JSON_LEAN")[os.Getenv("GALASPEC_JSON_LEAN")]
 	def :=regexp.MustCompile(`(?s)def noOutputInitImports : List String :=\s*\[(.*?)\]`).FindStringSubmatch(data)
@@ -48,6 +49,10 @@ func TestNoOutputInitImportsInStep(t *testing.T) {
 
 	// GoCore (formal/Gala/GoCore/Run.lean) rests on the same assumption where it
 	// leaves an imported package's variable poisoned instead of stopping the run.
+	// Its list may be wider: it also holds the Go packages GoCore runs some of
+	// the files of (gocoreexport.RunnableStdlib, checked by
+	// TestRunnableStdlibIsQuiet), whose quietness its comment argues; the spec
+	// need not trust them.
 	gocore := readRunfiles(t, "GOCORE_RUN_LEAN")[os.Getenv("GOCORE_RUN_LEAN")]
 	def = regexp.MustCompile(`(?s)def quietInitPackages : List String :=\s*\[(.*?)\]`).FindStringSubmatch(gocore)
 	require.NotNil(t, def, "no quietInitPackages in formal/Gala/GoCore/Run.lean")
@@ -55,7 +60,9 @@ func TestNoOutputInitImportsInStep(t *testing.T) {
 	for _, m := range regexp.MustCompile(`"([^"]*)"`).FindAllStringSubmatch(def[1], -1) {
 		quiet = append(quiet, m[1])
 	}
-	require.Equal(t, lean, quiet, "GoCore's quietInitPackages differs from galaspec's noOutputInitImports")
+	for _, p := range lean {
+		require.Contains(t, quiet, p, "galaspec's noOutputInitImports has %s, GoCore's quietInitPackages does not", p)
+	}
 }
 
 // TestQuietInitPackages checks the assumption noOutputInitImports rests on
