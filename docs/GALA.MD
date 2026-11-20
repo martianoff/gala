@@ -2663,7 +2663,8 @@ from a function, or use it as a standalone expression.
 
 Only a `_` written outside string literals is a placeholder. A `_` inside the
 `${...}` of an `s"..."` or `f"..."` string is not a parameter of a lambda
-around the string, and reading it is an error, as is reading inside `${...}` a
+around the string, and reading it is an error unless a placeholder lambda
+written inside `${...}` takes it. So is reading inside `${...}` a
 `_` that a parameter or typed pattern binds inside or around the string
 ([GALA-E0137](errors/GALA-E0137.md)). Name the parameter in an explicit lambda
 instead:
