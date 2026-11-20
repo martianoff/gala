@@ -1,18 +1,25 @@
 package transformer_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
+// valueApplyMethodCall matches a call of the Go method Apply on a value the
+// cases below call.
+var valueApplyMethodCall = regexp.MustCompile(`\b(gg|b|sh|z|c|shower(\.Get\(\))?|Box\[string\]\{[^}]*\})\.Apply\(`)
+
 // TestValueCalledThroughGenericApply pins the call of a value whose type has a
 // generic Apply (one with its own type parameters). A generic method has no Go
 // method: it lowers to a free function `Type_Apply(receiver, args...)`. Calling
 // the value used to emit `v.Apply(...)`, which go build rejects ("v.Apply
 // undefined"), and a lambda argument was lowered with no type to take. The
-// call now goes where `v.Apply(...)` written out goes. See #1272.
+// call now goes where `v.Apply(...)` written out goes, with no arguments too,
+// and the slot it fills binds a type parameter only Apply's result mentions.
+// See #1272.
 func TestValueCalledThroughGenericApply(t *testing.T) {
 	const decls = `
 struct G[T any]()
@@ -30,6 +37,16 @@ func (s Show) Apply[A any](a A) string = s"<$a>"
 struct Plain(n int)
 
 func (p Plain) Apply(x int) int = p.n + x
+
+struct Zero(n int)
+
+func (z Zero) Apply[A any]() Option[A] = None[A]()
+
+struct Conv(n int)
+
+func (c Conv) Apply[A any](x int) Option[A] = None[A]()
+
+val shower = Show()
 
 func main() {
 `
@@ -72,6 +89,25 @@ func main() {
     Println(sh(3), sh("x"))`,
 			[]string{`Show_Apply(sh, 3)`, `Show_Apply(sh, "x")`},
 		},
+		{
+			"a package-level val",
+			`Println(shower(3))`,
+			[]string{`Show_Apply(shower.Get(), 3)`},
+		},
+		{
+			"no arguments, the slot binding Apply's type parameter",
+			`val z = Zero(1)
+    val o Option[int] = z()
+    Println(o)`,
+			[]string{`Zero_Apply[int](z)`},
+		},
+		{
+			"the slot binding a type parameter only Apply's result mentions",
+			`val c = Conv(1)
+    val q Option[string] = c(2)
+    Println(q)`,
+			[]string{`Conv_Apply[string](c, 2)`},
+		},
 	}
 	// The import goes only where it is used: GALA reports an unused one.
 	src := func(body string) string {
@@ -88,7 +124,9 @@ func main() {
 			for _, w := range tc.want {
 				require.Contains(t, out, w)
 			}
-			require.NotContains(t, out, ".Apply(")
+			// No value is called through a Go method Apply: `std.None[A]{}.Apply()`
+			// in the declarations is a companion call.
+			require.NotRegexp(t, valueApplyMethodCall, out)
 		})
 	}
 

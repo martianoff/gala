@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"martianoff/gala/internal/transpiler"
 	"slices"
+	"strings"
 )
 
 // unaryOperation builds `op expr` from the lowered operand expr of the unary
@@ -979,10 +980,31 @@ func (t *galaASTTransformer) consumesSlotType(e exprSrc, hint transpiler.Type) b
 		return true
 	}
 	name, typeArgs, noArgs := calleeOfCall(e)
-	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isResultGenericCall(name, noArgs)) {
+	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && (t.isResultGenericCall(name, noArgs) || t.isResultGenericValueApply(name))) {
 		return true
 	}
 	return t.isResultGenericMethodCall(e)
+}
+
+// isResultGenericValueApply reports whether name (see calleeOfCall) is a val
+// or var whose type's Apply has type parameters its result mentions: the
+// call is `name.Apply(...)` (Section 1.5 of transformCallWithArgsCtx), which
+// the slot it fills binds them for as for any such method call
+// (isResultGenericMethodCall).
+func (t *galaASTTransformer) isResultGenericValueApply(name string) bool {
+	if !t.resultGenericMethods["Apply"] {
+		return false
+	}
+	var ref ast.Expr = ast.NewIdent(name)
+	if pkg, member, qualified := strings.Cut(name, "."); qualified {
+		ref = &ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent(member)}
+	}
+	meta := t.bindingApplyType(ref)
+	if meta == nil {
+		return false
+	}
+	apply := meta.Methods["Apply"]
+	return apply != nil && typeMentionsTypeParam(apply.ReturnType, apply.TypeParams)
 }
 
 // isResultGenericMethodCall reports whether e is a method call written

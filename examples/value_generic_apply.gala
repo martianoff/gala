@@ -24,6 +24,14 @@ struct Show()
 // Apply brackets a.
 func (s Show) Apply[A any](a A) string = s"<$a>"
 
+// Missing yields an empty Option of the type the call's slot asks for.
+struct Missing(reason string)
+
+// Apply is an empty Option[A]; only its result names A.
+func (m Missing) Apply[A any]() Option[A] = None[A]()
+
+val shower = Show()
+
 func main() {
     val counted = Counted[string]()
     Println(counted(1, go_interop.SliceOf("a", "b")...))
@@ -38,4 +46,9 @@ func main() {
     val show = Show()
     Println(show(3))
     Println(show("x"))
+    Println(shower(2.5))
+
+    val missing = Missing("none yet")
+    val n Option[int] = missing()
+    Println(n.GetOrElse(7) + 1)
 }

@@ -282,6 +282,12 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			}
 		}
 
+		// A value whose Apply is generic is called as `v.Apply()` is (see
+		// Section 1.5 of transformCallWithArgsCtx).
+		if t.callsGenericValueApply(base) {
+			base = &ast.SelectorExpr{X: base, Sel: ast.NewIdent("Apply")}
+		}
+
 		// Check for zero-argument generic method call (e.g., p.Swap())
 		//
 		// The resolved receiver type is hoisted so the unknown-method check at
@@ -2801,17 +2807,8 @@ func explicitTypeArgSubst(typeParams, typeArgs []string) typeSubstMap {
 // set. Returns handled=false for all other shapes of `fun`.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []ast.Expr, spread bool) (ast.Expr, bool) {
-	// By the type the literal names, `alias.T` too, else by its bare name.
-	cl, ok := fun.(*ast.CompositeLit)
-	if !ok {
+	if !t.litCallsApply(fun) {
 		return nil, false
-	}
-	if t.litApplyType(cl) == nil {
-		// A bare name was looked up already; any other type falls back to
-		// the bare name of its selector.
-		if name, qualified := qualifiedLitType(cl); !qualified && name != "" || t.compositeLitApplyType(fun) == nil {
-			return nil, false
-		}
 	}
 	return &ast.CallExpr{
 		Fun:      &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")},
@@ -2907,15 +2904,31 @@ func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetada
 	return t.bindingApplyType(fun)
 }
 
-// callsGenericValueApply reports whether a call of fun calls a value through
-// its type's Apply (valueApplyType) and that Apply is generic.
-func (t *galaASTTransformer) callsGenericValueApply(fun ast.Expr) bool {
-	meta := t.valueApplyType(fun)
-	if meta == nil {
+// litCallsApply reports whether fun is a composite literal whose type has an
+// Apply method (Section 11): by the type the literal names, `alias.T` too,
+// else by the bare name of a qualified or other type. A bare name was looked
+// up already.
+func (t *galaASTTransformer) litCallsApply(fun ast.Expr) bool {
+	cl, ok := fun.(*ast.CompositeLit)
+	if !ok {
 		return false
 	}
-	apply := meta.Methods["Apply"]
-	return apply != nil && (apply.IsGeneric || len(apply.TypeParams) > 0)
+	if t.litApplyType(cl) != nil {
+		return true
+	}
+	name, qualified := qualifiedLitType(cl)
+	return (qualified || name == "") && t.compositeLitApplyType(fun) != nil
+}
+
+// callsGenericValueApply reports whether a call of fun calls a value through
+// its type's Apply (Sections 11 and 12) and that Apply is generic, by the
+// test Section 3 rewrites a generic method call by.
+func (t *galaASTTransformer) callsGenericValueApply(fun ast.Expr) bool {
+	if !t.litCallsApply(fun) && t.bindingApplyType(fun) == nil {
+		return false
+	}
+	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(fun, "Apply")
+	return t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), "Apply")
 }
 
 // litApplyType is the metadata of the type of the composite literal cl when
@@ -3050,7 +3063,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// --- Section 1.5: a value called through a generic Apply ---
 	// A generic method has no Go method to call: it lowers to a free function
 	// (Section 3). A value whose Apply is generic is called as `v.Apply(...)`
-	// is, rather than through Sections 11 and 12, which emit `v.Apply(...)`.
+	// written out is, rather than through Sections 11 and 12, which call the
+	// Go method `v.Apply(...)`. The zero-argument call does the same in
+	// lowerCallSuffix.
 	if t.callsGenericValueApply(fun) {
 		fun = &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")}
 	}

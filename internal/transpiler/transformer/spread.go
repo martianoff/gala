@@ -158,8 +158,7 @@ func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) erro
 // Apply of meta's type that argument i fills, with typeArgs, the value's
 // type arguments, substituted for the type's parameters; unknown for any
 // other argument, and when it still names a type parameter of the type (its
-// arguments not known). A generic Apply is called as a method (Section 1.5
-// of transformCallWithArgsCtx) and never reaches here.
+// arguments not known) or of Apply.
 func (t *galaASTTransformer) applyVariadicElem(meta *transpiler.TypeMetadata, typeArgs []transpiler.Type, i int) transpiler.Type {
 	apply := meta.Methods["Apply"]
 	if apply == nil {
@@ -175,7 +174,7 @@ func (t *galaASTTransformer) applyVariadicElem(meta *transpiler.TypeMetadata, ty
 	if len(typeArgs) == len(meta.TypeParams) && !slices.ContainsFunc(typeArgs, transpiler.ContainsUnusable) {
 		elem = t.substituteConcreteTypes(elem, meta.TypeParams, typeArgs)
 	}
-	if typeMentionsTypeParam(elem, meta.TypeParams) {
+	if typeMentionsTypeParam(elem, slices.Concat(meta.TypeParams, apply.TypeParams)) {
 		return transpiler.NilType{}
 	}
 	return elem
