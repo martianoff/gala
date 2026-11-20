@@ -807,7 +807,8 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 `formal/COVERAGE.md` is generated in CI and committed with each formal change. It holds:
 - a per-construct table with the three tiers;
 - the number of examples in each verdict;
-- every `UNSUPPORTED` construct, with how often it occurs;
+- every construct galaspec stopped at, with how often it occurs (an `UNSUPPORTED`
+  run, or a `DISAGREE` one that stopped after printing a line Go did not);
 - the list of known disagreements.
 
 The run writes this as the section between the `<!-- difftest:begin -->` and

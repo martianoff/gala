@@ -280,7 +280,7 @@ func TestRender(t *testing.T) {
 		{ID: "e7", Source: FromGenerator, Comparison: Comparison{Verdict: Inconclusive}, Spec: Outcome{Kind: KindFuel}, Constructs: map[string]int{"tuple": 1}},
 		// Stopped unsupported after a wrong line: still where galaspec
 		// stopped, and its disagreement still counts against its constructs.
-		{ID: "e8", Source: FromExample, Comparison: Comparison{Verdict: Disagree, Reason: "galaspec stopped"}, Spec: Outcome{Kind: KindUnsupported, Detail: "lambda"}, Constructs: map[string]int{"bool": 1}},
+		{ID: "e8", Source: FromExample, Comparison: Comparison{Verdict: Disagree, Reason: "galaspec stopped"}, Spec: Outcome{Kind: KindUnsupported, Detail: "composite-literal"}, Constructs: map[string]int{"bool": 1, "composite-literal": 1}},
 	}
 	out := Render(Coverage{
 		Records:  records,
@@ -301,14 +301,16 @@ func TestRender(t *testing.T) {
 		"| `if` | not seen | no | no |",
 		"| `tuple` | not seen | no: 0 agree, 0 disagree, 1 inconclusive | no |",
 		"| `bool` | not seen | no: 0 agree, 1 disagree, 0 inconclusive | no |",
-		"| `lambda` | 3 |",
+		"| `lambda` | 2 |",
+		"| `composite-literal` | 1 |",
 		"| `import` | 1 |",
 		"| `e3` | #1234 | a \\| b |",
 	} {
 		require.Contains(t, out, want)
 	}
 	require.NotContains(t, strings.ToLower(out), "verified")
-	require.Less(t, strings.Index(out, "`lambda` | 3"), strings.Index(out, "`import` | 1"), "most frequent first")
+	require.NotContains(t, out, "| `composite-literal` | not seen", "a stopped-at construct is not a row of the constructs table")
+	require.Less(t, strings.Index(out, "`lambda` | 2"), strings.Index(out, "`import` | 1"), "most frequent first")
 
 	tested := Render(Coverage{Records: []Record{
 		agree("a", FromExample, "bool"), agree("b", FromExample, "bool"), agree("c", FromGenerator, "bool"),
