@@ -248,8 +248,9 @@ inductive Dflt where
   | sealed (ty c : String) (fs : List Dflt)
 
 /-- The fields of a struct, or of a sealed case, by name: a struct first, else a case.
-    A program that names a struct and a case alike, or two cases alike, is one Go
-    rejects (each is a Go type of the package). -/
+    Names do not collide in a program GALA accepts: it rejects two cases of one sealed
+    type with the same name, and a struct and a case, or cases of two sealed types,
+    with the same name are Go types of the package that Go rejects. -/
 def fieldsOf (ds : Decls) (x : String) : Option (List Field) :=
   match ds.structs.lookup x with
   | some fs => some fs
@@ -1027,7 +1028,8 @@ def mentionsUpTo (ds : Decls) (k : Nat) (chain : List (String × Nat)) (bound : 
   | .decl _ _ _ ty vs => vs.flatMap (mentionsUpTo ds k chain bound) ++
     -- A declaration with no value evaluates its type's declared field defaults, each with
     -- no local in scope; they are expanded as a construction's omitted defaults are. (A
-    -- destructuring declaration with no value, which GALA rejects, lists them too.)
+    -- destructuring declaration with no value, which GALA rejects, lists them too;
+    -- `declare` stops on it before evaluating any.)
     if !vs.isEmpty then [] else
     (declDefaults ds ty).flatMap fun (x, j, e) =>
       if chain.contains (x, j) then [] else
