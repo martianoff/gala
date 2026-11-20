@@ -463,6 +463,16 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "spread_into_variadic",
+    src = "spread_into_variadic.gala",
+    expected = "spread_into_variadic.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
+gala_exec_test(
     name = "named_args_parameter_order",
     src = "named_args_parameter_order.gala",
     expected = "named_args_parameter_order.out",

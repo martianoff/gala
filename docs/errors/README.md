@@ -149,6 +149,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0134` | A Go-results body gives neither the Try nor the Tuple of its results | [GALA-E0134.md](GALA-E0134.md) |
 | `GALA-E0135` | A parameter or field default that depends on itself | [GALA-E0135.md](GALA-E0135.md) |
 | `GALA-E0136` | Argument given more than once | [GALA-E0136.md](GALA-E0136.md) |
+| `GALA-E0138` | Spread `xs...` of a value that is not a Go slice of the variadic parameter's element type | [GALA-E0138.md](GALA-E0138.md) |
 
 ### Retired codes
 

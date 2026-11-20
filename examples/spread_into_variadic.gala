@@ -1,0 +1,42 @@
+package main
+
+import (
+    "errors"
+    "path/filepath"
+
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+)
+
+// Only a Go slice of the parameter's element type can be spread into a
+// variadic parameter. A collection is spread through the Go slice it
+// converts to.
+
+func total(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (acc, x) => acc + x)
+
+func byteCount(bs ...byte) int = bs.Size()
+
+// Join is a companion object: `Join(parts...)` calls its Apply.
+struct Join()
+
+// Apply joins parts with "+".
+func (j Join) Apply(parts ...string) string = ArrayOf(parts...).MkString("+")
+
+// Joiner joins with its separator: `Joiner(",")(parts...)` calls its Apply.
+struct Joiner(Sep string)
+
+// Apply joins parts with the separator.
+func (j Joiner) Apply(parts ...string) string = ArrayOf(parts...).MkString(j.Sep)
+
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+    Println(total(xs.ToGoSlice()...))
+    Println(total(go_interop.SliceOf(4, 5)...))
+    Println(byteCount(go_interop.ToBytes("héllo")...))
+    Println(Join(ArrayOf("a", "b").ToGoSlice()...))
+    Println(Joiner(",")(go_interop.SliceOf("c", "d")...))
+    val dash = Joiner("-")
+    Println(dash(go_interop.SliceOf("e", "f")...))
+    Println(filepath.ToSlash(filepath.Join(ListOf("x", "y").ToGoSlice()...)))
+    Println(errors.Join(go_interop.SliceOf(errors.New("first"), errors.New("second"))...))
+}

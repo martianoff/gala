@@ -1168,6 +1168,16 @@ const (
 	// interface literals and Copy. A name given twice used to keep the last
 	// value silently on most of them.
 	CodeDuplicateArgument ErrorCode = "GALA-E0136"
+
+	// E0138: a spread argument `xs...` that is not a Go slice of the
+	// variadic parameter's element type: a GALA collection or other struct,
+	// a string, a number, a map, a function or a fixed-size array, or a Go
+	// slice of another element type (`[]string` spread into `...any`). Go
+	// spreads only a slice assignable to the parameter's `[]T`, so the call
+	// used to pass every GALA check and fail `go build` with "cannot use xs
+	// (variable of struct type collection_immutable.Array[int]) as []int
+	// value".
+	CodeSpreadNotSlice ErrorCode = "GALA-E0138"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

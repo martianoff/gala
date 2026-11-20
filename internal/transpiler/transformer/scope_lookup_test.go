@@ -24,7 +24,7 @@ func TestTypelessBindingLookup(t *testing.T) {
 		t.Fatalf("getValType(g) = %v, want NilType", got)
 	}
 	// Calling the binding (`g(1)`) must not crash the Apply-call rewrite.
-	if _, handled := tr.tryTransformValWithApply(ast.NewIdent("g"), []ast.Expr{&ast.BasicLit{Value: "1"}}); handled {
+	if _, handled := tr.tryTransformValWithApply(ast.NewIdent("g"), []ast.Expr{&ast.BasicLit{Value: "1"}}, false); handled {
 		t.Fatalf("a typeless binding has no Apply to rewrite to")
 	}
 	// Only bindings with a recorded type count for the concurrency check.
