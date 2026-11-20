@@ -1042,7 +1042,7 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 	if len(suffixes) != 2 || suffixes[0].opener() != "(" || suffixes[1].opener() != "(" {
 		return false
 	}
-	meta := t.valueApplyType(&ast.CompositeLit{Type: typ})
+	meta := t.litApplyTarget(&ast.CompositeLit{Type: typ})
 	return resultGenericApply(meta) && t.firstCallBuilds(meta, suffixes[0].args())
 }
 

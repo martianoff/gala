@@ -2874,7 +2874,9 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 		return nil, false
 	}
 	// An empty call, `v()`, goes through Apply only when Apply takes no
-	// parameters; otherwise it is left as written, for Go to report.
+	// parameters; otherwise it is left as written, for Go to report. A
+	// generic Apply never reaches here: lowerCallSuffix calls it as
+	// `v.Apply()`, whose missing arguments GALA reports.
 	if apply := typeMeta.Methods["Apply"]; len(args) == 0 && apply != nil && len(apply.ParamTypes) > 0 {
 		return nil, false
 	}
