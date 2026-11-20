@@ -1,6 +1,7 @@
 package yaml
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -407,7 +408,7 @@ func TestDecoder_EmptyDocumentIsNull(t *testing.T) {
 func readValueOf(value string) (s string, err string) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = r.(string)
+			err = fmt.Sprint(r)
 		}
 	}()
 	d := NewYamlDecoder("k: " + value)
@@ -480,16 +481,24 @@ func TestDecoder_QuotedScalarContexts(t *testing.T) {
 }
 
 // A comment after a quoted key's value is not part of the value, as it is
-// not after a plain key's.
+// not after a plain key's. A '#' with no white space before it is text.
 func TestDecoder_QuotedKeyValueComment(t *testing.T) {
-	for _, src := range []string{`"k": "v" # note`, `"k": v # note`, `'k': 'v' # note`} {
-		d := NewYamlDecoder(src)
+	tests := []struct{ src, want string }{
+		{`"k": "v" # note`, "v"},
+		{`"k": v # note`, "v"},
+		{`'k': 'v' # note`, "v"},
+		{`"k":v # note`, "v"},
+		{`"k":#v`, "#v"},
+		{`"k": v#w`, "v#w"},
+	}
+	for _, tt := range tests {
+		d := NewYamlDecoder(tt.src)
 		d.StartObject()
 		if k := d.ReadKey(); k != "k" {
-			t.Errorf("%s: key = %q, want %q", src, k, "k")
+			t.Errorf("%s: key = %q, want %q", tt.src, k, "k")
 		}
-		if s := d.ReadString(); s != "v" {
-			t.Errorf("%s: value = %q, want %q", src, s, "v")
+		if s := d.ReadString(); s != tt.want {
+			t.Errorf("%s: value = %q, want %q", tt.src, s, tt.want)
 		}
 		d.EndObject()
 	}

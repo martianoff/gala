@@ -1153,7 +1153,12 @@ func parseQuotedKey(line string) (string, string, bool) {
 		}
 		rest := ""
 		if j+1 < len(line) {
-			rest = withoutComment(trimYamlSpace(line[j+1:]))
+			rest = trimYamlSpace(line[j+1:])
+			// A '#' starts a comment only after white space, as for a
+			// plain key's value: in "k":#x it is text.
+			if hi := findUnquotedHash(rest); hi > 0 || hi == 0 && (line[j+1] == ' ' || line[j+1] == '\t') {
+				rest = trimYamlSpace(rest[:hi])
+			}
 		}
 		key := line[1:i]
 		if quote == '"' {
@@ -1300,9 +1305,10 @@ var yamlCodePointEscapes = map[byte]int{'x': 2, 'u': 4, 'U': 8}
 // text between the quotes). A code-point escape names a Unicode character and
 // is written out as UTF-8, so `\xe9` and `é` both decode to "é".
 //
-// The parser reports no errors, so an escape that cannot be decoded (an
-// unknown letter, too few or invalid hex digits, a surrogate or out-of-range
-// code point) is kept as written rather than silently dropped.
+// An escape that cannot be decoded (an unknown letter, too few or invalid
+// hex digits, a surrogate or out-of-range code point) is kept as written
+// rather than silently dropped; unlike a malformed quote, it does not fail
+// the decode.
 func unescapeDoubleQuoted(body string) string {
 	if strings.IndexByte(body, '\\') < 0 {
 		return body
