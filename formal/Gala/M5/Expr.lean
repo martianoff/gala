@@ -418,7 +418,8 @@ theorem binary_bool_same (cx : Ctx) (n : Nat) (op : String) (t : Ty) (x y : Bool
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
     | (simp [show (Ty.bool == Ty.bool) = true from rfl]; exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩)
 
-/-! String ordering: `compare` on `String` (GoCore's, byte order, which for UTF-8 is code-point order) against galaspec's `<`. -/
+/-! String ordering: GoCore's `compare` on `String` is code-point order, which equals Go's
+    byte order on UTF-8 (GoCore's fidelity, tested); galaspec's `<` is the same order. -/
 
 theorem scmp_lt (x y : String) : (compare x y == .lt) = decide (x < y) := by
   show (compareOfLessAndEq x y == .lt) = _
@@ -429,16 +430,11 @@ theorem scmp_lt (x y : String) : (compare x y == .lt) = decide (x < y) := by
 
 theorem scmp_gt (x y : String) : (compare x y == .gt) = decide (y < x) := by
   show (compareOfLessAndEq x y == .gt) = _
-  unfold compareOfLessAndEq
-  by_cases h : x < y
-  · simp [h, String.lt_asymm h]
-  · by_cases he : x = y
-    · subst he; simp [String.lt_irrefl]
-    · have : y < x := by
-        rcases String.le_total x y with h1 | h1
-        · exact absurd (String.le_antisymm h1 (String.not_lt.mp h)) he
-        · exact Classical.byContradiction fun hc => he (String.le_antisymm (String.not_lt.mp hc) h1)
-      simp [h, he, this]
+  have := compareOfLessAndEq_eq_gt String.le_antisymm String.le_total String.not_le x y
+  by_cases h : y < x
+  · simp_all
+  · simp only [h, decide_false, beq_eq_false_iff_ne, ne_eq]
+    exact fun e => h (this.mp e)
 
 theorem scmp_le (x y : String) : (compare x y != .gt) = decide (x ≤ y) := by
   have h := scmp_gt x y
