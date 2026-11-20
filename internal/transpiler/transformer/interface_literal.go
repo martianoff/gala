@@ -210,8 +210,8 @@ func (t *galaASTTransformer) checkInterfaceLiteralTarget(lit interfaceLiteral, l
 }
 
 // interfaceLiteralMethods lowers the literal's arguments, each against the
-// function type of the method it names, and checks that they give every method
-// once.
+// function type of the method it names, and checks that they give every
+// method.
 func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, args argsSrc, line, col int) (map[string]ast.Expr, error) {
 	name := t.displayTypeName(lit.meta)
 	subst := make(typeSubstMap, len(lit.typeArgs))
@@ -231,10 +231,8 @@ func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, args 
 			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("%s has no method %s", name, method),
 				fmt.Sprintf("the methods of %s are %s", name, strings.Join(lit.methods, ", ")))
 		}
-		if _, dup := given[method]; dup {
-			return nil, invalidInterfaceLiteral(argLine, argCol, fmt.Sprintf("method %s of %s is given twice", method, name),
-				fmt.Sprintf("give %s once", method))
-		}
+		// A method given twice is reported for every call
+		// (checkDuplicateNamedArgs).
 		v, err := t.argContent(arg)
 		if err != nil {
 			return nil, err

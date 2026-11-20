@@ -393,6 +393,18 @@ val q = divide(dividend = 20, 4)
 // error[GALA-E0105]: positional argument `4` follows named argument `dividend`
 ```
 
+Each parameter or field takes one argument. Naming it twice, or naming one
+that a positional argument already fills (`divide(20, dividend = 4)`), is
+[GALA-E0136](errors/GALA-E0136.md), in every call form:
+
+<!-- doc-check: error GALA-E0136 -->
+```gala
+func divide(dividend int, divisor int) int = dividend / divisor
+
+val q = divide(dividend = 20, divisor = 4, dividend = 2)
+// error[GALA-E0136]: argument `dividend` is given more than once in call to `divide`
+```
+
 Named arguments are evaluated in the order they are written, then passed in
 parameter order. This holds for function and method calls, struct and sealed
 case constructors, and `Copy()`:
@@ -906,7 +918,7 @@ re-defaulted.
 
 A named argument that names no field is an error for every form called with
 call syntax — shorthand, block form, and a Go struct whose fields the Go type
-info lists — and so is a field named twice:
+info lists (a field named twice is [GALA-E0136](errors/GALA-E0136.md)):
 
 <!-- doc-check: error GALA-E0045 -->
 ```gala
@@ -1787,7 +1799,7 @@ func main() {
 }
 ```
 
-- **Every method, by name, once.** Each argument names the method it implements, and the literal gives every method of the interface. A left-out, unknown, repeated or positional argument is an error ([`GALA-E0078`](errors/GALA-E0078.md)).
+- **Every method, by name, once.** Each argument names the method it implements, and the literal gives every method of the interface. A left-out, unknown or positional argument is an error ([`GALA-E0078`](errors/GALA-E0078.md)), and a repeated one is [`GALA-E0136`](errors/GALA-E0136.md).
 - **Lambda types come from the method.** A lambda's parameter and result types are the method's, so `(id) => ...` needs no annotation. Any value of the method's function type works too, such as a method value: `UserRepo(Find = mem.Find, Count = () => 0)`.
 - **Generic interfaces** take their type arguments as written, `Box[string](Get = () => "s")`, or from the expected type: a declared result type, a typed `val`, or a parameter.
 - **A method with a Go result list**, such as `Write(p []byte) (int, error)`, takes a lambda that returns the GALA value of those results, here a `Try[int]`, as a lambda passed to a Go function does.

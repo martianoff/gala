@@ -4,8 +4,8 @@
 invalid:
 
 - an argument is positional, or names no method of the interface;
-- a method is given twice, or left out: a literal gives every method of the
-  interface exactly once;
+- a method is left out: a literal gives every method of the interface (a
+  method given twice is [GALA-E0136](GALA-E0136.md));
 - the interface is generic, and its type arguments are neither written
   (`Box[int](...)`) nor taken from an expected type;
 - the interface has a method a function cannot implement: an unexported

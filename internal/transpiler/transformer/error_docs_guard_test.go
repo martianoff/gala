@@ -2378,6 +2378,34 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "a named argument given twice",
+			code: galaerr.CodeDuplicateArgument, // GALA-E0136
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func area(width int, height int) int = width * height
+
+func main() {
+    Println(area(width = 3, height = 4, width = 5))
+}
+`)
+			},
+		},
+		{
+			name: "a named argument a positional argument already fills",
+			code: galaerr.CodeDuplicateArgument, // GALA-E0136
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func area(width int, height int) int = width * height
+
+func main() {
+    Println(area(3, width = 5))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

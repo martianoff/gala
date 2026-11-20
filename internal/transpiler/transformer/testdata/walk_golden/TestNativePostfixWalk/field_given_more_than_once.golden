@@ -1,1 +1,1 @@
-error: [SemanticError] $DIR/main.gala:6:26 field "x" is given more than once in construction of "P"
+error: [SemanticError GALA-E0136] $DIR/main.gala:6:26 argument `x` is given more than once in call to `P` (hint: remove the duplicate; each parameter, field or method takes one argument)

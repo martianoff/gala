@@ -266,7 +266,7 @@ func TestGoStructNamedConstructionRejects(t *testing.T) {
 	}{
 		{"positional among named", `Bag("x", Text = "t")`, "Bag is a Go struct: construct it with named arguments only"},
 		{"generic without type arguments", "Box(Value = 1)", "Box is a generic Go struct: write its type arguments"},
-		{"field given twice", `Bag(Text = "a", Text = "b")`, `field "Text" is given more than once in construction of "Bag"`},
+		{"field given twice", `Bag(Text = "a", Text = "b")`, "argument `Text` is given more than once in call to `Bag`"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

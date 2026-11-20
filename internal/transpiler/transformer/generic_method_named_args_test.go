@@ -36,7 +36,7 @@ func (b Box) Pick[T any](first T, second T, useSecond bool = false) T = if (useS
 		{name: "lambda bound by name", call: `b.Fold(f = (acc, x) => acc + x, initial = 10)`, want: `func(acc int, x int) int`},
 		{name: "unknown parameter", call: `b.Pick("a", "b", third = true)`, wantErr: `unknown parameter "third" in call to Pick`},
 		{name: "missing required argument", call: `b.Pick(second = "b")`, wantErr: `missing required argument "first" (parameter 1) in call to Pick`},
-		{name: "parameter given twice", call: `b.Pick("a", "b", first = "c")`, wantErr: `parameter "first" specified both positionally and by name in call to Pick`},
+		{name: "parameter given twice", call: `b.Pick("a", "b", first = "c")`, wantErr: "argument `first` is given both by position and by name in call to `b.Pick`"},
 		{name: "too many arguments", call: `b.Pick("a", "b", true, "d", useSecond = false)`, wantErr: `too many arguments in call to Pick`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

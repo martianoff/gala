@@ -204,6 +204,7 @@ go_test(
         "dot_import_prelude_ambiguity_test.go",
         "dot_import_prune_test.go",
         "dot_import_test.go",
+        "duplicate_argument_test.go",
         "equal_reentry_test.go",
         "equal_test.go",
         "error_codes_test.go",

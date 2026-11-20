@@ -168,13 +168,16 @@ func sortedNamedArgs[A any](named map[string]A) []namedArg[A] {
 // named one the parameter of its name. A parameter given no argument takes its
 // default, from fill (nil to only check that it has one), and a variadic last
 // one given none takes no argument: the slots returned then stop before it.
-// nargs is the argument count a missing-argument error names, -1 for none.
+// nargs is the argument count a missing-argument error names, -1 for none;
+// c is the call, whose anchor an error about the whole call points at; an
+// argument naming a parameter already filled by position is reported at it.
 //
 // Every call passing an argument by name is laid out here, whatever its
 // callee: a GALA function or method, an interface method, a Go function or
 // method. A callee whose parameter names are not known takes no argument by
 // name; that is reported rather than guessed at.
-func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs int, fill func(i int, slots []A) (A, error), line, col int) ([]A, error) {
+func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs int, fill func(i int, slots []A) (A, error), c callSrc) ([]A, error) {
+	line, col := c.anchor().start()
 	slots := make([]A, len(p.names))
 	filled := make([]bool, len(p.names))
 	if len(positional) > len(slots) {
@@ -183,6 +186,8 @@ func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs i
 	for i, a := range positional {
 		slots[i], filled[i] = a, true
 	}
+	// A named argument that fills a parameter a positional argument fills is
+	// reported once every name is known, at the first one written.
 	for _, n := range named {
 		idx := slices.Index(p.names, n.name)
 		switch {
@@ -190,12 +195,13 @@ func layoutArgs[A any](p paramList, positional []A, named []namedArg[A], nargs i
 			return nil, unknownParamNamesError(n.name, p.callee, line, col)
 		case idx < 0:
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", n.name, p.callee))
-		case idx < len(positional):
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q specified both positionally and by name in call to %s", n.name, p.callee))
-		case filled[idx]:
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("parameter %q is given more than once in call to %s", n.name, p.callee))
 		}
+		// A name given twice is reported for every call's arguments, before
+		// any is laid out (checkDuplicateNamedArgs, in lowerSuffix).
 		slots[idx], filled[idx] = n.arg, true
+	}
+	if err := checkNamedFillsPositional(c, p.names, len(positional)); err != nil {
+		return nil, err
 	}
 	for i := range slots {
 		if filled[i] {

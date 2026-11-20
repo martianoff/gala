@@ -4,7 +4,7 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
-last_modified_at: 2026-11-15
+last_modified_at: 2026-11-16
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
@@ -263,6 +263,18 @@ func divide(dividend int, divisor int) int = dividend / divisor
 
 val q = divide(dividend = 20, 4)
 // error[GALA-E0105]: positional argument `4` follows named argument `dividend`
+```
+
+Each parameter or field takes one argument. Naming it twice, or naming one
+that a positional argument already fills (`divide(20, dividend = 4)`), is
+[GALA-E0136](/docs/errors/gala-e0136/), in every call form:
+
+<!-- doc-check: error GALA-E0136 -->
+```gala
+func divide(dividend int, divisor int) int = dividend / divisor
+
+val q = divide(dividend = 20, divisor = 4, dividend = 2)
+// error[GALA-E0136]: argument `dividend` is given more than once in call to `divide`
 ```
 
 Named arguments are evaluated in the order they are written, then passed in
@@ -941,7 +953,7 @@ func main() {
 }
 ```
 
-- **Every method, by name, once.** A left-out, unknown, repeated or positional argument is an error ([GALA-E0078](/docs/errors/gala-e0078/)).
+- **Every method, by name, once.** A left-out, unknown or positional argument is an error ([GALA-E0078](/docs/errors/gala-e0078/)), and a repeated one is [GALA-E0136](/docs/errors/gala-e0136/).
 - **Lambda types come from the method**, so `(id) => ...` needs no annotation. A method value such as `mem.Find` works too.
 - **Generic interfaces** take their type arguments as written, `Box[string](Get = () => "s")`, or from the expected type.
 - **A method with a Go result list** (`(int, error)`) takes a lambda returning the GALA value of those results, a `Try[int]`. **A variadic method's** last parameter reaches the function as a slice.

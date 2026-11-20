@@ -49,8 +49,8 @@ func seed() []string = SliceOf("a")
 		{
 			name:      "a field given by position and by name",
 			body:      `func main() { Println(Cfg("a", Name = "b")) }`,
-			wantCode:  galaerr.CodeMissingStructField,
-			wantError: `main.gala:14:31 field "Name" of "Cfg" is given both by position and by name`,
+			wantCode:  galaerr.CodeDuplicateArgument,
+			wantError: "main.gala:14:31 argument `Name` is given both by position and by name in call to `Cfg`",
 		},
 		{
 			name:      "more arguments than fields",
