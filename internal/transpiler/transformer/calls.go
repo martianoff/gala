@@ -5082,9 +5082,10 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 //
 // The conversion is purely additive and never changes the meaning of an
 // existing valid program: passing a bare `T` where a `func() T` is expected is
-// otherwise a compile error, and an argument whose own type is already a
-// function is passed through untouched (returns ok=false) so an existing thunk
-// is never double-wrapped. Returns ok=false — leaving `expr` unchanged — when
+// otherwise a compile error, and a function value is passed through untouched
+// (returns ok=false) so an existing thunk is never double-wrapped — a value of
+// a named function type only where that alone is known to be valid Go (see
+// passesNamedFunctionAsThunk). Returns ok=false — leaving `expr` unchanged — when
 // the sugar does not apply, including when the thunk's result type cannot be
 // determined (so the normal type error surfaces instead of masking it).
 //
@@ -5118,17 +5119,21 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 			return withLead(thunk, mark), true
 		}
 	}
+	// A function value of a function type as written is passed as itself; one
+	// of a named function type (`type Getter func() int`) is passed as itself
+	// or wrapped as the thunk's value (see passesNamedFunctionAsThunk).
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
+		return expr, false
+	}
+	if fn := t.resolveTranspilerTypeAsFuncType(exprType); fn != nil && t.passesNamedFunctionAsThunk(expr, *fn, ft) {
 		return expr, false
 	}
 
 	// Several results: the expression is their one GALA value, spread over
-	// them as a lambda's is (see spreadLambdaGoResults). A value of a named
-	// function type (`type Getter func() (int, error)`) is the function
-	// itself, and so is a `nil` the slot left untyped (an open one): no Try
-	// or Tuple is either.
+	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
+	// left untyped (an open one) is the function itself: no Try or Tuple is.
 	if len(ft.Results) > 1 {
-		if isNilIdent(expr) || t.resolveTranspilerTypeAsFuncType(exprType) != nil {
+		if isNilIdent(expr) {
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
@@ -5184,6 +5189,74 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		},
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}},
 	}, mark), true
+}
+
+// passesNamedFunctionAsThunk reports whether expr, a value of a named
+// function type (`type Getter func() int`) whose function type is fn, fills
+// the zero-argument function slot ft as itself rather than as the value of a
+// thunk wrapping it.
+//
+// Where the slot has several results it is the function itself: no Try or
+// Tuple is one. Otherwise it is passed the one way Go accepts when only one
+// is known to be: as itself when fn is the slot's function type (a Getter for
+// a `func() int`), as the thunk's value when the slot's result holds it (a
+// Getter for a `func() Getter`). When both ways are, or neither is, or that
+// is not known — a slot whose result is still a type parameter — it is the
+// thunk's value.
+func (t *galaASTTransformer) passesNamedFunctionAsThunk(expr ast.Expr, fn, ft transpiler.FuncType) bool {
+	if len(ft.Results) > 1 {
+		return true
+	}
+	asItself, knownItself := t.identicalTypes(fn, ft)
+	asValue, knownValue := t.fillsThunkResult(expr, fn, ft)
+	return knownItself && knownValue && asItself && !asValue
+}
+
+// fillsThunkResult reports whether expr, a value whose function type is fn,
+// is a valid body of a thunk for the zero-argument function slot ft — a
+// statement for a `func()`, a value its result holds for a `func() R` — and
+// whether that is known. It is known for a result that is `any`, a function
+// type, a predeclared type other than `error`, or a GALA struct or sealed
+// type.
+func (t *galaASTTransformer) fillsThunkResult(expr ast.Expr, fn, ft transpiler.FuncType) (fits, known bool) {
+	if len(ft.Results) == 0 {
+		return isValidGoExprStatement(expr), true
+	}
+	result := ft.Results[0]
+	if transpiler.IsUnusable(result) || t.hasTypeParams(result) {
+		return false, false
+	}
+	result = t.followAliasChain(result)
+	// The empty interface holds any function; it is an interface too, so this
+	// comes before the interface check below.
+	if result.IsAny() || result.String() == "interface{}" {
+		return true, true
+	}
+	if rf := t.resolveTranspilerTypeAsFuncType(result); rf != nil {
+		return t.identicalTypes(fn, *rf)
+	}
+	if b, ok := result.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(b.Name) && b.Name != "error" {
+		return false, true
+	}
+	if t.isInterfaceType(result) {
+		return false, false
+	}
+	var meta *transpiler.TypeMetadata
+	switch r := result.(type) {
+	case transpiler.GenericType:
+		meta = t.getTypeMeta(stripTypeNameDecorations(r.Base.String()))
+	case transpiler.NamedType:
+		meta = t.getTypeMeta(r.String())
+	case transpiler.BasicType:
+		// A GALA type of this package is a BasicType of its bare name; a bare
+		// name is taken for no other package's type.
+		key := t.resolveTypeMetaName(r.Name)
+		own := key != "" && (!strings.Contains(key, ".") || strings.HasPrefix(key, t.packageName+"."))
+		if own && !t.mentionsUnboundTypeParam(r) {
+			meta = t.typeMetas[key]
+		}
+	}
+	return false, isStructOrSealed(meta)
 }
 
 // liftToImmutableForArg wraps `expr` with `std.NewImmutable[T](expr)` when

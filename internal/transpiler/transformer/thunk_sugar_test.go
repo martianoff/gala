@@ -141,6 +141,145 @@ func main() {
 	assert.NotContains(t, body, "func() func() int", "must not double-wrap an existing thunk")
 }
 
+// A value of a function type as written is passed to a zero-argument
+// function slot as itself. A value of a named function type fills it the one
+// way Go accepts when only one is: as itself when its function type is the
+// slot's, as the thunk's value when the slot's result holds it. When both
+// are, or neither, or a slot's result is still a type parameter, it is the
+// thunk's value.
+func TestThunkSugar_FunctionValueSlots(t *testing.T) {
+	trans := newThunkSugarTranspiler()
+	const decls = `type Getter func() int
+
+type Action func()
+
+type AnyGetter func() any
+
+func one() int = 1
+
+func call(f func() int) int = f()
+
+func run(f func()) {
+    f()
+}
+
+func takeGetter(f func() Getter) int = f()()
+
+func takeAny(f func() any) any = f()
+
+func later[T any](f func() T) T = f()
+
+func mkAction() Action = () => Println("act")
+
+func mkFunc() func() = () => Println("act")
+
+type Supplier func() Option[int]
+
+func supply(f func() Option[int]) Option[int] = f()
+
+struct Holder(g Getter, act Action)
+
+type MakeHolder func() Holder
+
+func build(f func() Holder) Holder = f()`
+	cases := []struct {
+		name     string
+		main     string
+		contains string
+		absent   string
+	}{
+		{
+			name:     "a named value for its own function type",
+			main:     "val g Getter = one\n    Println(call(g))",
+			contains: "call(g)",
+			absent:   "func() int {",
+		},
+		{
+			name:     "a named void value for a func() slot",
+			main:     "val a Action = () => Println(1)\n    run(a)",
+			contains: "run(a)",
+			absent:   "run(func() {",
+		},
+		{
+			name:     "a named value for a slot whose result is its type",
+			main:     "val g Getter = one\n    Println(takeGetter(g))",
+			contains: "takeGetter(func() Getter {",
+		},
+		{
+			// T is inferred as int from g's function type, so the slot is a
+			// func() int, and a thunk returning g as an int is no Go.
+			name:     "a named value for a generic slot it binds",
+			main:     "val g Getter = one\n    Println(later(g))",
+			contains: "later(g)",
+		},
+		{
+			name:     "a named value for Try",
+			main:     "val g Getter = one\n    Println(Try(g).Get()())",
+			contains: "func() Getter {",
+		},
+		{
+			name:     "a call returning a named void function for a func() slot",
+			main:     "run(mkAction())",
+			contains: "run(func() {",
+		},
+		{
+			name:     "a named value for a func() any slot",
+			main:     "val h AnyGetter = () => 1\n    Println(takeAny(h))",
+			contains: "takeAny(func() any {",
+		},
+		{
+			name:     "a value as written for its own function type",
+			main:     "val plain = () => 1\n    Println(call(plain))",
+			contains: "call(plain)",
+		},
+		{
+			name:     "a named value for its own function type with a generic sealed result",
+			main:     "val s Supplier = () => Some(1)\n    Println(supply(s))",
+			contains: "supply(s)",
+			absent:   "supply(func()",
+		},
+		{
+			name:     "a named value for its own function type with a struct result",
+			main:     "val m MakeHolder = () => Holder(one, () => Println(1))\n    Println(build(m).g())",
+			contains: "build(m)",
+			absent:   "build(func()",
+		},
+		{
+			name:     "a named field value for its own function type",
+			main:     "val h = Holder(one, () => Println(1))\n    Println(call(h.g))",
+			contains: "call(h.g.Get())",
+		},
+		{
+			// A field read is a call of Get, which Go runs as a statement.
+			name:     "a named void field value for a func() slot",
+			main:     "val h = Holder(one, () => Println(1))\n    run(h.act)",
+			contains: "run(func() {",
+		},
+		{
+			name:     "a named value for a func() any slot as written",
+			main:     "val g Getter = one\n    Println(takeAny(g))",
+			contains: "takeAny(func() any {",
+		},
+		{
+			name:     "a call returning a void function as written for a func() slot",
+			main:     "run(mkFunc())",
+			contains: "run(mkFunc())",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "package main\n\n" + decls + "\n\nfunc main() {\n    " + tc.main + "\n}"
+			out, err := trans.Transpile(input, "")
+			require.NoError(t, err)
+			body := mainBodyOf(t, out)
+			assert.Contains(t, body, tc.contains, "generated:\n%s", out)
+			if tc.absent != "" {
+				assert.NotContains(t, body, tc.absent, "generated:\n%s", out)
+			}
+		})
+	}
+}
+
 // An explicit lambda argument must keep working unchanged (the sugar only adds a
 // path for bare expressions; lambdas already self-infer their return type).
 func TestThunkSugar_ExplicitLambdaStillWorks(t *testing.T) {

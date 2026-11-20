@@ -1687,6 +1687,13 @@ gala_exec_test(
     expected = "go_results_call_body_assignable.out",
 )
 
+# A named function type value fills a func() T or func() slot as itself where only that is valid Go
+gala_exec_test(
+    name = "named_func_type_thunk_slot",
+    src = "named_func_type_thunk_slot.gala",
+    expected = "named_func_type_thunk_slot.out",
+)
+
 # A block-bodied function returns its trailing expression
 gala_exec_test(
     name = "block_function_trailing_value",
