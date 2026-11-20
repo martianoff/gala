@@ -136,9 +136,28 @@ def methodSet (c : Ctx) (t : Ty) (m : String) : Option (String × String × List
   | .ptr (.named p n args) => (methodOf c p n m).map fun me => (p, n, args, me)
   | _ => none
 
+/-- What a `fmt.Formatter` of the standard library prints, with the very verb and flags
+    it is given, by `v`'s dynamic value as fmt looks at it (`handleMethods`): its wrapped
+    value for `Immutable.Format` (std/types.go, lines 97-101), its error for
+    `(*panicError).Format` (`fmt.Fprintf(s, fmt.FormatString(s, verb), e.err)`; `err`
+    is the struct's first field, TestRecoveredErrorShape pins both). `none` when `v` has
+    no `Format`. Any other Formatter is unsupported, and so is a nil `*panicError`,
+    whose `Format` panics and which fmt then prints as `<nil>`. -/
+def stdFormatted? (c : Ctx) (v : Val) : GM (Option Val) := do
+  let d := v.dyn
+  let some (p, tn, _, _) := methodSet c d.ty "Format" | return none
+  if p == stdPath && tn == "Immutable" then
+    let .struct_ _ [inner] := d | unsupported "fmt-formatter-pointer"
+    return some inner
+  if p == stdPath && tn == "panicError" then
+    let .ptr _ (some l) := d | unsupported "fmt-formatter-nil"
+    let .struct_ _ (e :: _) ← load l | stuck "panicError is not a struct"
+    return some e
+  unsupported "fmt-formatter"
+
 /-- The models of hand-written standard-library functions (see `Lib` below), by name.
     The exported Go of a function named here is never run. -/
-def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand"]
+def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand", "recoveredError"]
 
 /-- The `fmt` functions modelled (see `Fmt` below). -/
 def fmtFuncs : List String := ["Println", "Print", "Printf", "Sprintf", "Sprint"]
@@ -2236,8 +2255,8 @@ def sprintf (c : Ctx) : Nat → List Char → List Val → GM String
 
 /-- One operand printed with `verb` under a flags, width and precision `spec`
     (`fmt/print.go`, `printArg`, `handleMethods`; `fmt/format.go`). Without any, as
-    `fmtArg`. A formatter (`Immutable.Format`, which passes the whole spec on) comes
-    first; an `Error` or `String` method gives the text for `%v` and `%s`, which is
+    `fmtArg`. A formatter of the standard library (`stdFormatted?`, which passes the
+    whole spec on) comes first; an `Error` or `String` method gives the text for `%v` and `%s`, which is
     then formatted as a string; integers, booleans and strings are formatted as
     `fmtInteger`, `fmtBoolean` and `fmtS` do, floats as `fmtFloat` does (`%e %E %f %F
     %g %G %v`; `FmtSpec.float`, `FloatRep.formatVerb`). A flag on a composite value,
@@ -2253,11 +2272,7 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
     if let .nilIface _ := v then
       return ← if verb == 'v' then pure (spec.pad "<nil>") else unsupported "fmt-nil-verb"
     let d := v.dyn
-    if let some (p, tn, _, _) := methodSet c d.ty "Format" then
-      if p == stdPath && tn == "Immutable" then
-        let .struct_ _ [inner] := d | unsupported "fmt-formatter-pointer"
-        return ← fmtSpec c n inner verb spec
-      unsupported "fmt-formatter"
+    if let some inner ← stdFormatted? c d then return ← fmtSpec c n inner verb spec
     -- `handleMethods`: an `error` or `fmt.Stringer` gives the text for `%v %s %x %X`.
     let stringMethod := fun m => do
       pure (← methodOfType c n d.ty m (.func_ [] [.string] false)).isSome
@@ -2306,14 +2321,9 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
   | 0, _, _, _, _ => throw .fuel
   | n + 1, v, verb, depth, canIface => do
     if canIface then
-      -- A Formatter: the one the standard library declares is `Immutable.Format`,
-      -- which prints the wrapped value with the same verb in a fresh printer
-      -- (std/types.go, `Immutable.Format`, lines 97-101).
-      if let some (p, tn, _, _) := methodSet c v.ty "Format" then
-        if p == stdPath && tn == "Immutable" then
-          let .struct_ _ [inner] := v | unsupported "fmt-formatter-pointer"
-          return ← fmtArg c n inner verb
-        unsupported "fmt-formatter"
+      -- A Formatter, before `Error` and `String`, by the dynamic value: those of the
+      -- standard library print another value with the same verb (`stdFormatted?`).
+      if let some inner ← stdFormatted? c v then return ← fmtArg c n inner verb
       if ['v', 's'].contains verb then
         -- `catchPanic`: a nil pointer whose method panics prints `<nil>`; any other
         -- panic in the method prints a `%!v(PANIC=...)` text, which is not modelled.
@@ -2371,7 +2381,8 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
 /-- Models of the standard library's hand-written functions (std/types.go), which use
     reflection and are outside GoCore. Each follows the code it names, by line range at
     the time of writing; `libFuncs` lists the functions they replace by name, and with
-    `Immutable.Format` (in `fmtValue`) they are the whole list. They are trusted, like
+    `Immutable.Format` and `(*panicError).Format` (`stdFormatted?`) they are the whole
+    list. They are trusted, like
     the `fmt` model, and the differential run against `go run` is what tests them. -/
 def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
   | 0, _, _ => throw .fuel
@@ -2379,6 +2390,28 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     match f, vs with
     -- `EvalOperand[T](v T) T { return v }` (std/types.go, line 114).
     | "EvalOperand", [v] => pure [v]
+    -- `recoveredError(r any) error` (std/types.go, lines 318-335), the error a Try
+    -- Failure holds for a recovered panic: a `*panicError` as it is; else a new
+    -- `*panicError` of the error, of `errors.New(s)` for a string, or (not modelled)
+    -- of `fmt.Errorf("panic: %v", r)`. Its `pcs`, the stack `runtime.Callers` records,
+    -- are left nil: only `(*panicError).stack` reads them, through
+    -- `runtime.CallersFrames`, which GoCore does not run (`TestRecoveredErrorShape` and
+    -- `TestPanicErrorPcsReaders` in internal/formal/gocoreexport pin both).
+    | "recoveredError", [r] =>
+      let d := r.dyn
+      let pt : Ty := .named stdPath "panicError" []
+      if d.ty == .ptr pt then return [← convert c n errorTy d]
+      let err ← if (← methodOfType c n d.ty "Error" (.func_ [] [.string] false)).isSome then pure d
+        else match d with
+          | .str .string _ =>
+            if !c.pkgs.contains "errors" then unsupported "errors.New"
+            Val.single (← callValue c n (← funcVal c n "errors" "New" []) [d] false)
+          | _ => unsupported "fmt.Errorf"
+      -- `err` is the first field (TestRecoveredErrorShape), as `stdFormatted?` reads it.
+      let .struct_ _ (_ :: rest) ← zero c n pt | stuck "panicError is not a struct"
+      let vals := (← convert c n errorTy err) :: rest
+      let cell ← alloc (.struct_ pt vals)
+      return [← convert c n errorTy (.ptr (.ptr pt) (some ⟨cell, []⟩))]
     -- `FormatStruct(name, fields...)` (std/types.go, lines 559-572): `Name(f1, f2, ...)`, each field unwrapped from
     -- its `Immutable` and printed by `formatField`.
     | "FormatStruct", name :: fields =>

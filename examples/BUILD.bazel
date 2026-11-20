@@ -650,6 +650,15 @@ gala_exec_test(
     deps = ["//go_builtins"],
 )
 
+# A Try Failure's error prints as the panic's own: a string panic, an error
+# panic, and a Failure's error raised again by Get inside another Try.
+gala_exec_test(
+    name = "try_failure_errors",
+    src = "try_failure_errors.gala",
+    expected = "try_failure_errors.out",
+    deps = ["//go_builtins"],
+)
+
 # `v, ok := m[k]` and `v, ok := <-ch` are Go's comma-ok forms, as their
 # `val v, ok = ...` spellings are. `:=` used to reject them as an
 # assignment mismatch.
