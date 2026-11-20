@@ -22,6 +22,7 @@ import Gala.AlphaEval
 import Gala.AlphaConst
 import Gala.AlphaProg
 import Gala.M5.SpecPure
+import Gala.M5.Bits
 import Gala.M5.Expr
 import Gala.M5.Stmt
 import Gala.M5.StmtOrder

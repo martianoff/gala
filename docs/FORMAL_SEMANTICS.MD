@@ -470,14 +470,23 @@ column lists what each milestone's claim rests on beyond them.
   claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`.
   `expr_correct_instance` meets every hypothesis, on `x + 1`. It covers
   literals, locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %` and comparisons on
-  `int`s, `==` and `!=` on one kind, string `+`, `&&` and `||`. Shifts, the bitwise
-  operators and string ordering are not lowered yet. The lowering is type-directed, as
+  `int`s, the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, `&&`
+  and `||`. galaspec computes the bitwise operators through Lean's `Int64`, GoCore
+  exactly and then reduced to `int`; core's `BitVec` lemmas show they agree
+  (`formal/Gala/M5/Bits.lean`). Shifts `<<` and `>>` of a typed `int` by an `int` count
+  are covered, counts of 64 or more and negative counts included; a shift of a literal
+  is not lowered (Go gives an untyped constant shifted by a variable count the type
+  its context would give it), nor is a negative constant count (Go does not compile
+  it), nor is string ordering. The relation on `int`s requires a value in int64's range
+  (`VRel`), so the theorems assume each local `int` is in range, as galaspec's always
+  are. The lowering is type-directed, as
   the transformer is: without types, galaspec's `x == "a"` on an `int` is `false` where
-  Go rejects the program. The only run-time panic in this subset is an integer division
-  by zero, whose class and text are the same wherever it happens, so the order of
-  evaluation is unobservable here; it is proved for GoCore's, left to right. For later
-  steps, the fixtures `panic_order_divide` and `panic_order_shift` pin gc 1.25.5's
-  order of two failing operands that are not calls (left to right).
+  Go rejects the program. The run-time panics in this subset are an integer division by
+  zero and a negative shift count, each with one text. The claim is proved for GoCore's
+  order, left to right, which is galaspec's; where a division and a shift both fail, the
+  first in that order decides on both sides. The fixtures `panic_order_divide` and
+  `panic_order_shift` pin gc 1.25.5 to the same order on the shapes they test; that gc's
+  order agrees in general (with its `&&`/`||` temporaries) is carried to step 3.
   Step 2b is proved: `val`/`var`, `if` statements and blocks (`stmts_correct` and
   `block_correct` in `formal/Gala/M5/Stmt.lean`). A local `val x = e` or `var x = e`
   lowers to Go's `var x = e`, an `if` with block branches (an `else` a block or another
@@ -650,8 +659,11 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   hypothesis on `ord`, a predicate step 2 defines with the statements it covers, and
   show it holds of `Order.gc` and `Order.leftToRight`. Step 2's predicate,
   `RunsStep2AsWritten`, is narrower than "every order the spec allows": it admits the
-  orders that run step 2's lowered function bodies as written, and constrains nothing
-  else in the program. Both of GoCore's orders meet it: left to right and GoCore's model
+  orders that run step 2's lowered function bodies without a shift as written, and
+  constrains nothing else in the program. A shift can panic with another text than a
+  division, so a statement with both can trigger gc's rewrite; bodies with a shift are
+  covered for GoCore's evaluator, and whether gc's model or real gc runs them as written
+  is carried to step 3. Both of GoCore's orders meet it: left to right and GoCore's model
   of gc 1.25.5's order (`gc_runsStep2`, `leftToRight_runsStep2`). Real gc copies an `&&`
   or `||` into a temporary before the statement (order.go), which rewrites these bodies
   and is outside the predicate, although in them the copy cannot be observed (they

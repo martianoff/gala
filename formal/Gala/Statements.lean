@@ -463,6 +463,53 @@ theorem expr_correct_instance : ∀ (ds : Spec.Decls) (steps d : Nat),
       ((GoCore.Full.evalExpr instCtx N instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt) :=
   Gala.M5.expr_correct_instance
 
+open Gala Gala.M5 GoCore.Full in
+theorem inst_bitwise :
+    (["&", "|", "^", "&^"].all fun op =>
+      (lowerE instKinds (.binary op (.name "x") (.lit (.int (-3))))).isSome) = true ∧
+    ((pureEval default (.binary "&" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
+      .ok (.int 5) ∧
+    ((pureEval default (.binary "^" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
+      .ok (.int (-8)) ∧
+    ((pureEval default (.binary "|" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
+      .ok (.int (-3)) ∧
+    ((pureEval default (.binary "&^" (.name "x") (.lit (.int (-3))))).run.run instCore).1 =
+      .ok (.int 0) ∧
+    (evalExpr instCtx 8 instEnv (.binary "&" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy 5), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "|" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy (-3)), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy (-8)), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "&^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy 0), instSt) :=
+  Gala.M5.inst_bitwise
+
+open Gala Gala.M5 GoCore.Full in
+theorem inst_shift :
+    ((pureEval default (.binary "<<" (.name "x") (.name "x"))).run.run instCore).1 = .ok (.int 160) ∧
+    (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.ident "x"))).run.run instSt =
+      (.ok (.int intTy 160), instSt) ∧
+    ((pureEval default (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 1)))).run.run instCore).1 =
+      .ok (.int (-3)) ∧
+    (evalExpr instCtx 10 instEnv (.binary ">>" (.unary "-" (.ident "x")) (.intLit 1))).run.run instSt =
+      (.ok (.int intTy (-3)), instSt) ∧
+    ((pureEval default (.binary "<<" (.name "x") (.lit (.int 64)))).run.run instCore).1 = .ok (.int 0) ∧
+    (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.intLit 64))).run.run instSt =
+      (.ok (.int intTy 0), instSt) ∧
+    ((pureEval default (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 70)))).run.run instCore).1 =
+      .ok (.int (-1)) ∧
+    (evalExpr instCtx 10 instEnv (.binary ">>" (.unary "-" (.ident "x")) (.intLit 70))).run.run instSt =
+      (.ok (.int intTy (-1)), instSt) ∧
+    ((pureEval default (.binary "<<" (.name "x") (.unary "-" (.name "x")))).run.run instCore).1 =
+      .error (.panic .other "runtime error: negative shift amount") ∧
+    (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.unary "-" (.ident "x")))).run.run instSt =
+      (.error (.panic (.str .string "runtime error: negative shift amount") true), instSt) ∧
+    (lowerE instKinds (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 70)))).isSome ∧
+    lowerE instKinds (.binary "<<" (.lit (.int 1)) (.name "x")) = none ∧
+    lowerE instKinds (.binary "<<" (.name "x") (.lit (.int (-1)))) = none :=
+  Gala.M5.inst_shift
+
 open Gala Gala.M5 in
 theorem stmts_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ κ' : String → Option Kind)
     (ss : List Spec.Expr) (lss : List GoCore.Full.Stmt), lowerSs κ ss = some (κ', lss) →
@@ -497,7 +544,8 @@ theorem inst_gocore_ok : ∀ (N : Nat), N ≥ sdepthL instBody →
 
 open Gala Gala.M5 GoCore.Full Hoist in
 theorem hSs_lowered : ∀ (κ κ' : String → Option Kind) (ss : List Spec.Expr) (lss : List Stmt),
-    lowerSs κ ss = some (κ', lss) → ∀ (s : Scope) (h : HState), (hSs s lss).run h = (lss, h) :=
+    lowerSs κ ss = some (κ', lss) → ssNoShift lss = true → ∀ (s : Scope) (h : HState),
+      (hSs s lss).run h = (lss, h) :=
   Gala.M5.hSs_lowered
 
 open Gala Gala.M5 GoCore.Full in

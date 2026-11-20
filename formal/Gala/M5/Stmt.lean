@@ -408,7 +408,7 @@ theorem inv_push {cx : Ctx} {κ : String → Option Kind} {c : Spec.Core} {g : S
 theorem vrel_default {v : Spec.Val} {w : Val} (h : VRel v w) :
     VRel v (defaultVal w) ∧ ¬ UInt (defaultVal w) ∧ (∀ t b, defaultVal w ≠ .bool (.untyped t) b) ∧
       (∀ t s, defaultVal w ≠ .str (.untyped t) s) := by
-  cases h <;> simp [defaultVal, UInt, UKind.default] <;> constructor
+  cases h <;> simp [defaultVal, UInt, UKind.default] <;> constructor <;> assumption
 
 theorem results_of_vrel {v : Spec.Val} {w : Val} (h : VRel v w) : w.results = [w] := by
   cases h <;> rfl

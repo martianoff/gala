@@ -6,12 +6,18 @@
   lowered statements as written; `RunsStep2AsWritten` is the hypothesis on an order that
   says it runs them as written. No theorem consumes it yet: linking a function body to a
   run of the program (`runProgramAt ord`) needs calls, step 3, whose theorem will take it
-  (widened to the whole program). It only constrains step 2's function bodies. Both
-  orders GoCore has satisfy it: left to right (the identity), and GoCore's model of gc
-  1.25.5's order (`Order.gc`, the rewrite in `Gala/GoCore/Hoist.lean`), which rewrites a statement only where its operands'
-  order can be observed (`Hoist.triggers`), and on step 2's statements it cannot be: they
-  have no calls, nothing in them changes state, and the only panic is an integer division
-  by zero, whose text is the same wherever it happens.
+  (widened to the whole program). It only constrains step 2's function bodies without a
+  shift (`Step2Body`). Both orders GoCore has satisfy it: left to right (the identity),
+  and GoCore's model of gc 1.25.5's order (`Order.gc`, the rewrite in
+  `Gala/GoCore/Hoist.lean`), which rewrites a statement only where its operands' order can
+  be observed (`Hoist.triggers`), and on these statements it cannot be: they have no
+  calls, nothing in them changes state, and the only panic is an integer division by
+  zero, whose text is the same wherever it happens.
+
+  A shift can panic with another text (a negative count), so a statement with a shift
+  and a division can trigger the rewrite. Bodies with a shift are covered by
+  `stmts_correct` for GoCore's evaluator, left to right, but are outside `Step2Body`:
+  whether gc's model or real gc runs them as written is carried to step 3.
 
   This is narrower than every order the Go spec allows. An order that copies an `&&` or
   `||` into a temporary before the statement, as gc's order.go does, rewrites step 2's
@@ -38,9 +44,32 @@ def CF : Expr → Prop
   | .binary op x y => op ≠ "<<" ∧ op ≠ ">>" ∧ CF x ∧ CF y
   | _ => False
 
+/-- No shift in a GoCore expression: a shift can panic with another text than a division,
+    which can trigger gc's rewrite, so the order result leaves bodies with shifts out. -/
+def eNoShift : Expr → Bool
+  | .paren x => eNoShift x
+  | .unary _ x => eNoShift x
+  | .binary op x y => !isShift op && eNoShift x && eNoShift y
+  | _ => true
+
+mutual
+/-- No shift in a lowered statement. -/
+def sNoShift : Stmt → Bool
+  | .decl (.value false [.mk _ none [e]]) => eNoShift e
+  | .block ss => ssNoShift ss
+  | .if_ none c b els => eNoShift c && ssNoShift b && osNoShift els
+  | _ => true
+def ssNoShift : List Stmt → Bool
+  | [] => true
+  | s :: ss => sNoShift s && ssNoShift ss
+def osNoShift : Option Stmt → Bool
+  | none => true
+  | some s => sNoShift s
+end
+
 theorem lowerE_CF (κ : String → Option Kind) : ∀ (e : Spec.Expr) (k : Kind) (le : Expr),
-    lowerE κ e = some (k, le) → CF le
-  | .lit l, k, le, h => by
+    lowerE κ e = some (k, le) → eNoShift le = true → CF le
+  | .lit l, k, le, h, _ => by
     simp only [lowerE, Option.some.injEq] at h
     cases l with
     | int v =>
@@ -48,36 +77,39 @@ theorem lowerE_CF (κ : String → Option Kind) : ∀ (e : Spec.Expr) (k : Kind)
       split <;> simp [CF]
     | bool b => simp only [lowerLit, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; trivial
     | str s => simp only [lowerLit, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; trivial
-  | .name x, k, le, h => by
+  | .name x, k, le, h, _ => by
     simp only [lowerE] at h
     split at h
     · cases h
     simp only [Option.map_eq_some_iff, Prod.mk.injEq] at h
     obtain ⟨_, _, _, rfl⟩ := h; trivial
-  | .paren x, k, le, h => by
+  | .paren x, k, le, h, hn => by
     simp only [lowerE, Option.map_eq_some_iff] at h
     obtain ⟨⟨k', lx⟩, hx, he⟩ := h
     simp only [Prod.mk.injEq] at he; obtain ⟨-, rfl⟩ := he
-    exact lowerE_CF κ x k' lx hx
-  | .unary op x, k, le, h => by
+    exact lowerE_CF κ x k' lx hx hn
+  | .unary op x, k, le, h, hn => by
     simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
     obtain ⟨⟨kx, lx⟩, hx, k', hu, he⟩ := h
     simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at he
     obtain ⟨-, rfl⟩ := he
-    refine ⟨?_, lowerE_CF κ x kx lx hx⟩
+    refine ⟨?_, lowerE_CF κ x kx lx hx hn⟩
     intro hop; subst hop; simp [unaryKind] at hu
-  | .binary op l r, k, le, h => by
+  | .binary op l r, k, le, h, hn => by
     simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
     obtain ⟨⟨kl, ll⟩, hll, ⟨kr, lr⟩, hlr, k', hb, he⟩ := h
+    split at he
+    · cases he
     simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at he
     obtain ⟨-, rfl⟩ := he
-    have hs := binaryKind_noshift hb
-    simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne] at hs
-    exact ⟨hs.1, hs.2, lowerE_CF κ l kl ll hll, lowerE_CF κ r kr lr hlr⟩
-  | .call .., _, _, h | .select .., _, _, h | .tuple _, _, _, h | .ifExpr .., _, _, h
-  | .mtch .., _, _, h | .block _, _, _, h | .ifStmt .., _, _, h | .ret _, _, _, h
-  | .assign .., _, _, h | .incdec .., _, _, h | .decl .., _, _, h | .interp _, _, _, h
-  | .lambda .., _, _, h | .named .., _, _, h | .unsupported _, _, _, h => by simp [lowerE] at h
+    simp only [eNoShift, isShift, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_false_iff,
+      beq_eq_false_iff_ne] at hn
+    obtain ⟨⟨⟨h1, h2⟩, hnl⟩, hnr⟩ := hn
+    exact ⟨h1, h2, lowerE_CF κ l kl ll hll hnl, lowerE_CF κ r kr lr hlr hnr⟩
+  | .call .., _, _, h, _ | .select .., _, _, h, _ | .tuple _, _, _, h, _ | .ifExpr .., _, _, h, _
+  | .mtch .., _, _, h, _ | .block _, _, _, h, _ | .ifStmt .., _, _, h, _ | .ret _, _, _, h, _
+  | .assign .., _, _, h, _ | .incdec .., _, _, h, _ | .decl .., _, _, h, _ | .interp _, _, _, h, _
+  | .lambda .., _, _, h, _ | .named .., _, _, h, _ | .unsupported _, _, _, h, _ => by simp [lowerE] at h
 
 /-- The rewrite with hoisting off leaves a lowered expression as it is. -/
 theorem hE_off (s : Scope) (top : Bool) : ∀ (e : Expr), CF e → ∀ h, (hE s false top e).run h = (e, h)
@@ -233,8 +265,8 @@ theorem isolated_run {α : Type} (m : HM α) (a : α) (hm : ∀ h, m.run h = (a,
   rfl
 
 theorem lowerX_CF {κ : String → Option Kind} {e : Spec.Expr} {k : Kind} {le : Expr}
-    (h : lowerX κ e = some (k, le)) : CF le :=
-  lowerE_CF κ e k le (lowerX_some h).2
+    (h : lowerX κ e = some (k, le)) (hn : eNoShift le = true) : CF le :=
+  lowerE_CF κ e k le (lowerX_some h).2 hn
 
 theorem hOperands_one (s : Scope) (top : Bool) (le : Expr) (hc : CF le) (h : HState) :
     (hOperands s false top [le]).run h = ([le], h) := by
@@ -272,13 +304,15 @@ theorem hS_if (s : Scope) (lc : Expr) (la : List Stmt) (els : Option Stmt) (h : 
 
 /-- gc's rewrite at nesting bound `N`: a lowered statement list, and a lowered statement. -/
 def HoistSs (N : Nat) : Prop :=
-  ∀ κ ss κ' lss, lowerSs κ ss = some (κ', lss) → sdepthL ss ≤ N → ∀ s h, (hSs s lss).run h = (lss, h)
+  ∀ κ ss κ' lss, lowerSs κ ss = some (κ', lss) → ssNoShift lss = true → sdepthL ss ≤ N → ∀ s h,
+    (hSs s lss).run h = (lss, h)
 
 def HoistS (N : Nat) : Prop :=
-  ∀ κ st κ' l, lowerS κ st = some (κ', l) → sdepth st ≤ N → ∀ s h, ∃ s', (hS s l).run h = (([l], s'), h)
+  ∀ κ st κ' l, lowerS κ st = some (κ', l) → sNoShift l = true → sdepth st ≤ N → ∀ s h,
+    ∃ s', (hS s l).run h = (([l], s'), h)
 
 theorem hoistS_of (N : Nat) (ih : ∀ m < N, HoistSs m ∧ HoistS m) : HoistS N := by
-  intro κ st κ' l hl hN s h
+  intro κ st κ' l hl hns hN s h
   match st, hl with
   | .decl m [x] false none [e], hl =>
     simp only [lowerS] at hl
@@ -286,17 +320,19 @@ theorem hoistS_of (N : Nat) (ih : ∀ m < N, HoistSs m ∧ HoistS m) : HoistS N 
     · cases hl
     simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hl
     obtain ⟨⟨k, le⟩, hlx, -, rfl⟩ := hl
-    exact ⟨_, hS_decl s x le (lowerX_CF hlx) h⟩
+    exact ⟨_, hS_decl s x le (lowerX_CF hlx (by simpa [sNoShift] using hns)) h⟩
   | .block ss, hl =>
     simp only [lowerS, Option.map_eq_some_iff, Prod.mk.injEq] at hl
     obtain ⟨⟨κ₁, lb⟩, hlb, -, rfl⟩ := hl
     exact ⟨s, hS_block s lb h ((ih (N - 1) (by simp [sdepth] at hN; omega)).1 κ ss κ₁ lb hlb
-      (by simp [sdepth] at hN; omega) s h)⟩
+      (by simpa [sNoShift] using hns) (by simp [sdepth] at hN; omega) s h)⟩
   | .ifStmt c a els, hl =>
     obtain ⟨-, as, lc, κ₁, la, le, rfl, hlc, hla, hle, rfl⟩ := lowerS_if hl
     have hN' : N - 1 < N := by simp [sdepth] at hN; omega
-    have hb := (ih (N - 1) hN').1 κ as κ₁ la hla (by simp [sdepth] at hN; omega) s h
-    refine ⟨s, hS_if s lc la le h (lowerX_CF hlc) hb ?_⟩
+    simp only [sNoShift, Bool.and_eq_true] at hns
+    obtain ⟨⟨hnc, hna⟩, hne⟩ := hns
+    have hb := (ih (N - 1) hN').1 κ as κ₁ la hla hna (by simp [sdepth] at hN; omega) s h
+    refine ⟨s, hS_if s lc la le h (lowerX_CF hlc hnc) hb ?_⟩
     cases els with
     | none =>
       simp only [lowerElse, Option.some.injEq] at hle
@@ -307,12 +343,13 @@ theorem hoistS_of (N : Nat) (ih : ∀ m < N, HoistSs m ∧ HoistS m) : HoistS N 
         simp only [lowerElse, Option.map_eq_some_iff] at hle
         obtain ⟨⟨κ₂, lb⟩, hlb, rfl⟩ := hle
         obtain ⟨s', hs'⟩ := (ih (N - 1) hN').2 κ (.block bs) κ (.block lb)
-          (by simp [lowerS, hlb]) (by simp [sdepth, sdepthO] at hN ⊢; omega) s h
+          (by simp [lowerS, hlb]) (by simpa [osNoShift] using hne) (by simp [sdepth, sdepthO] at hN ⊢; omega) s h
         exact ⟨s', hs'⟩
       | .ifStmt c₂ a₂ els₂, hle =>
         simp only [lowerElse, Option.map_eq_some_iff] at hle
         obtain ⟨⟨κ₂, l₂⟩, hl₂, rfl⟩ := hle
-        obtain ⟨s', hs'⟩ := (ih (N - 1) hN').2 κ _ κ₂ l₂ hl₂ (by simp [sdepth, sdepthO] at hN ⊢; omega) s h
+        obtain ⟨s', hs'⟩ := (ih (N - 1) hN').2 κ _ κ₂ l₂ hl₂ (by simpa [osNoShift] using hne)
+          (by simp [sdepth, sdepthO] at hN ⊢; omega) s h
         exact ⟨s', hs'⟩
       | .lit _, hle | .name _, hle | .unary .., hle | .binary .., hle | .call .., hle
       | .select .., hle | .paren _, hle | .tuple _, hle | .ifExpr .., hle | .mtch .., hle
@@ -330,31 +367,33 @@ theorem hoistSs_of (N : Nat) (hS' : ∀ m < N, HoistS m) : HoistSs N := by
   intro κ ss
   induction ss generalizing κ with
   | nil =>
-    intro κ' lss hl _ s h
+    intro κ' lss hl _ _ s h
     simp only [lowerSs, Option.some.injEq, Prod.mk.injEq] at hl
     obtain ⟨-, rfl⟩ := hl
     rfl
   | cons st rest ihl =>
-    intro κ' lss hl hN s h
+    intro κ' lss hl hns hN s h
     simp only [lowerSs, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq, Prod.mk.injEq] at hl
     obtain ⟨⟨κ₁, l⟩, hst, ⟨κ₂, ls⟩, hrest, -, rfl⟩ := hl
-    obtain ⟨s', hs'⟩ := hS' (N - 1) (by simp [sdepthL] at hN; omega) κ st κ₁ l hst
+    simp only [ssNoShift, Bool.and_eq_true] at hns
+    obtain ⟨s', hs'⟩ := hS' (N - 1) (by simp [sdepthL] at hN; omega) κ st κ₁ l hst hns.1
       (by simp [sdepthL] at hN; omega) s h
-    have ht := ihl κ₁ κ₂ ls hrest (by simp [sdepthL] at hN ⊢; omega) s' h
+    have ht := ihl κ₁ κ₂ ls hrest hns.2 (by simp [sdepthL] at hN ⊢; omega) s' h
     simp only [hSs, StateT.run_bind, hs', id_bind', ht]
     rfl
 
 /-- **gc's rewrite leaves a lowered statement list as it is**, in every scope: no
     statement of step 2 triggers it. -/
 theorem hSs_lowered (κ κ' : String → Option Kind) (ss : List Spec.Expr) (lss : List Stmt)
-    (hl : lowerSs κ ss = some (κ', lss)) (s : Scope) (h : HState) : (hSs s lss).run h = (lss, h) := by
+    (hl : lowerSs κ ss = some (κ', lss)) (hns : ssNoShift lss = true) (s : Scope) (h : HState) :
+    (hSs s lss).run h = (lss, h) := by
   have hall : ∀ N, HoistSs N ∧ HoistS N := by
     intro N
     refine Nat.strongRecOn N fun N ih => ?_
     have hs : HoistS N := hoistS_of N ih
     exact ⟨hoistSs_of N fun m hm => (ih m hm).2, hs⟩
-  exact (hall (sdepthL ss)).1 κ ss κ' lss hl (Nat.le_refl _) s h
+  exact (hall (sdepthL ss)).1 κ ss κ' lss hl hns (Nat.le_refl _) s h
 
 /-! ## The orders step 2 allows -/
 
@@ -365,7 +404,8 @@ def declAt (p : Program) (pi fi i : Nat) : Option Decl := do
   f.decls[i]?
 
 /-- A function body the reference lowering produces in step 2. -/
-def Step2Body (body : List Stmt) : Prop := ∃ κ ss κ', lowerSs κ ss = some (κ', body)
+def Step2Body (body : List Stmt) : Prop :=
+  (∃ κ ss κ', lowerSs κ ss = some (κ', body)) ∧ ssNoShift body = true
 
 /-- **An order step 2's theorem holds for:** it runs every function body made of step 2's
     lowered statements as written, in its place. -/
@@ -399,7 +439,7 @@ theorem mapM_getElem {α β σ : Type} (f : α → StateM σ β) (P : β → Pro
     or `||` into a temporary, which the model leaves out where it cannot be observed; that
     the two agree is not proved here (see the module header). -/
 theorem gc_runsStep2 : RunsStep2AsWritten Order.gc := by
-  intro p pi fi i name recv tps sig body ⟨κ, ss, κ', hl⟩ hd
+  intro p pi fi i name recv tps sig body ⟨⟨κ, ss, κ', hl⟩, hns⟩ hd
   simp only [declAt, Option.bind_eq_bind, Option.bind_eq_some_iff] at hd
   obtain ⟨pk, hpk, f, hf, hdi⟩ := hd
   simp only [Order.gc, gcOrder, declAt, Option.bind_eq_bind, Option.bind_eq_some_iff,
@@ -415,7 +455,7 @@ theorem gc_runsStep2 : RunsStep2AsWritten Order.gc := by
     (hDecl (buildCtx p) (structFields (buildCtx p)) (allMethods (buildCtx p)) pk.path fi) (· = Decl.func name recv tps sig (some body))
     f.decls h'' i _ hdi (by
       intro h3
-      simp only [hDecl, StateT.run_bind, StateT.run_pure, hSs_lowered κ κ' ss body hl]
+      simp only [hDecl, StateT.run_bind, StateT.run_pure, hSs_lowered κ κ' ss body hl hns]
       rfl)
   subst hP
   exact hd'
