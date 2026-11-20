@@ -17,7 +17,9 @@ written outside string literals only, so a `_` inside an interpolation is not
 one of its parameters, and nothing else gives it a value. It fires wherever
 the `_` sits in the interpolated expression (`${_}`, `${_ + 1}`,
 `${_.Name}`), in nested strings too, and whether or not the argument the string
-is passed as wants a function.
+is passed as wants a function. Reading a `_` lambda parameter inside `${...}`,
+as in `s"${xs.Map((_) => _ + 1)}"`, is reported too: a `_` parameter names no
+value.
 
 **Minimal repro.**
 
@@ -61,7 +63,7 @@ func main() {
 A `_` that something inside the interpolation gives a meaning is fine: a
 placeholder lambda written whole inside it, as in `s"${xs.Map(_ * 10)}"`, a
 wildcard pattern, as in `s"${opt match { case Some(_) => "some" case _ => "none" }}"`,
-and a `_` parameter name.
+and naming a parameter `_` without reading it.
 
 **Rationale.** A placeholder lambda's parameters are the `_` of the argument
 as written, and the text of a string literal is not part of that. Reading a

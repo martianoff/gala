@@ -268,20 +268,32 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 
 // placeholderInInterpolation is GALA-E0137 when name, a primary written at
 // at, is a `_` read in an interpolated expression that no placeholder lambda
-// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine).
+// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine). The
+// innermost `_` decides: a `_` parameter names no value to read. A scope
+// chain that does not lead back to the interpolation's lowers something not
+// written in it, and is left alone.
 func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode) error {
 	if name != "_" || t.interpolationScope == nil {
 		return nil
 	}
-	for s := t.currentScope; s != nil && s != t.interpolationScope; s = s.parent {
+	s := t.currentScope
+	for ; s != nil && s != t.interpolationScope; s = s.parent {
 		if _, ok := s.vals[name]; ok {
-			return nil
+			break
 		}
 	}
 	r := at.rng()
-	return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
-		"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
-		"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
+	switch {
+	case s == t.interpolationScope:
+		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
+			"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
+			"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
+	case s != nil && !s.placeholder:
+		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
+			"`_` inside an interpolated string reads a `_` parameter, which names no value",
+			"give the parameter a name and use the name inside the string: `(x) => s\"v${x}\"`")
+	}
+	return nil
 }
 
 // parseExprAt parses text as one expression whose first character sits at
