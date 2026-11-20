@@ -21,6 +21,7 @@ go_library(
         "match.go",
         "names.go",
         "options.go",
+        "placeholders.go",
         "packages.go",
         "program.go",
         "run.go",

@@ -169,6 +169,11 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 		if !isFunc {
 			ft = nil
 		}
+		if g.placeholders[l] && (ft == nil || len(ft.Params) != 1) {
+			// The transformer makes a lambda of `_` only for a function
+			// type, of one parameter per `_` (placeholders.go).
+			unsup(l.Pos, "placeholder-lambda")
+		}
 		return g.lambda(l, sc, ft)
 	}
 	if isFunc && len(ft.Params) == 0 {

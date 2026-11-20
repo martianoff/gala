@@ -48,6 +48,9 @@ type gen struct {
 	depNS map[string]bool
 	// ownPtrs is the packages that may declare their own Ptr type (ownPtr).
 	ownPtrs map[string]bool
+	// placeholders are the lambdas lowerPlaceholders made of placeholder
+	// arguments.
+	placeholders map[*coreexport.Lambda]bool
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).
