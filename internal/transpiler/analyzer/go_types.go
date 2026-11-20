@@ -1697,11 +1697,11 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 
 // keepsTypeArgs reports whether convertGoType keeps the type arguments of
 // t, an instance of a generic type, outside exact mode: an instance of a
-// function, slice, array, map or channel type. A struct's or an interface's
+// function, slice, map or channel type. A struct's or an interface's
 // stays the bare type name its fields and methods are looked up by.
 func keepsTypeArgs(t *types.Named) bool {
 	switch t.Underlying().(type) {
-	case *types.Signature, *types.Slice, *types.Array, *types.Map, *types.Chan:
+	case *types.Signature, *types.Slice, *types.Map, *types.Chan:
 		return true
 	}
 	return false

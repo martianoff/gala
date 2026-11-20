@@ -48,7 +48,7 @@ func main() {
 
     val n = int64(3)
     for i := range n {
-        val j int64 = i
-        Println(s"i=$j")
+        val next = () => i + 1
+        Println(s"i=$i next=${next()}")
     }
 }

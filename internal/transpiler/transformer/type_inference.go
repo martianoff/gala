@@ -1964,9 +1964,14 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		if sig := t.goTypeInfo.GetMethodSignature(key, method); sig != nil {
 			// A generic type's method reached without type arguments: its
 			// results name the receiver's type parameters, none bound.
-			if funcTypeParamsMentionTypeParams(sig.Returns, sig.TypeParams) {
+			if len(sig.TypeParams) > 0 {
 				open := *sig
 				open.Returns = t.bareOpenInstances(sig.Returns, sig.TypeParams)
+				open.Params = make([]transpiler.GoParam, len(sig.Params))
+				for i, p := range sig.Params {
+					p.Type = t.bareOpenInstance(p.Type, sig.TypeParams)
+					open.Params[i] = p
+				}
 				return &open
 			}
 			return sig
@@ -2056,10 +2061,24 @@ func universeMethodSignature(recv transpiler.Type, method string) *transpiler.Go
 // Go type alias has its target's fields, through every alias of a chain (see
 // goTypeDataThroughAliases).
 func (t *galaASTTransformer) getGoFieldType(typ transpiler.Type, fieldName string) transpiler.Type {
+	if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
+		typ = ptr.Elem
+	}
+	// An instance of a generic struct is looked up by its base name, and
+	// its field instantiated with its type arguments.
+	gen, isGeneric := typ.(transpiler.GenericType)
+	if isGeneric {
+		typ = gen.Base
+	}
 	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
 		if fType := td.Fields[fieldName]; fType != nil {
-			// A generic struct is looked up by its bare name: its type
-			// parameters are open in the field's type.
+			if isGeneric && len(td.TypeParams) > 0 {
+				if inst := t.instantiateGoType(fType, td.TypeParams, gen.Params); inst != nil {
+					return inst
+				}
+			}
+			// Reached through the bare name: the struct's type parameters
+			// are open in the field's type.
 			return t.bareOpenInstance(fType, td.TypeParams)
 		}
 	}

@@ -83,11 +83,11 @@ func main() {
 func main() {
     val n = int64(3)
     for i := range n {
-        val j int64 = i
-        Println(j)
+        val f = () => i
+        Println(f())
     }
 }
-`, []string{"for i := range n"}},
+`, []string{"func() int64"}},
 		// Go binds i to int over an untyped rune constant: %d, not %c.
 		{"an untyped rune constant (unicode.MaxASCII)", `package main
 
