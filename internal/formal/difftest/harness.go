@@ -93,7 +93,7 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 		// run it: it could exhaust its own stack or time limit on it.
 		gr, resource := goResource(real)
 		if !resource {
-			doc, err := exportGoCore(h.Dir, p.ID, *goProg)
+			doc, err := ExportGoCore(h.Dir, p.ID, *goProg)
 			if err != nil {
 				tb.Fatalf("%s: Go AST export: %v", p.ID, err)
 			}
@@ -101,7 +101,7 @@ func (h Harness) Check(tb testing.TB, p Program) Record {
 			if err != nil {
 				tb.Fatalf("%s: %v", p.ID, err)
 			}
-			gr = compareGoCore(g, real, goPanicText(stderr))
+			gr = CompareGoCore(g, real, goPanicText(stderr))
 		}
 		rec.GoCore = &gr
 	}

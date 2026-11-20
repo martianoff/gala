@@ -128,10 +128,10 @@ type GoCoreRecord struct {
 	Construct string
 }
 
-// compareGoCore is the fidelity verdict: GoCore's run against Go's, on
+// CompareGoCore is the fidelity verdict: GoCore's run against Go's, on
 // stdout and on how they end, a panic by the exact text Go prints after
 // `panic: `. real's outcome and goPanic are Go's.
-func compareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
+func CompareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
 	if r, ok := goResource(real); ok {
 		return r
 	}
@@ -210,9 +210,9 @@ type GoProgram struct {
 	GoRoot string
 }
 
-// exportGoCore writes prog's GoCore JSON document under dir, named for id,
+// ExportGoCore writes prog's GoCore JSON document under dir, named for id,
 // and returns its path.
-func exportGoCore(dir, id string, prog GoProgram) (string, error) {
+func ExportGoCore(dir, id string, prog GoProgram) (string, error) {
 	pkgs := []gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "main.go", Text: prog.Main}}}}
 	paths := make([]string, 0, len(prog.Packages))
 	for p := range prog.Packages {

@@ -1,7 +1,9 @@
 package differential_test
 
 import (
-	"os"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,10 +16,11 @@ import (
 // TestPartialPackageUnsupported pins what GoCore does with a name a partial
 // package lacks (gocoreexport.RunnableStdlib): errors.Is lives in Go's
 // errors/wrap.go, which the document leaves out, so the run prints what comes
-// before it and ends unsupported:errors.Is, never stuck. The document is built
-// here from the pinned GOROOT, as the differential run builds it; only the
-// programs' own text is in the repository. Like TestDifferential it needs gocore
-// and the pinned Go, and fails without them.
+// before it and ends unsupported:errors.Is, never stuck, and the harness's
+// verdict is UNSUPPORTED. The document is built here from the pinned GOROOT by
+// the harness's own export (difftest.ExportGoCore); only the programs' text is
+// in the repository. Like TestDifferential it needs gocore and the pinned Go,
+// and fails without them.
 //
 // It covers the two value sites (a call and a function value). GoCore's other
 // stops for a partial package's missing name, a type or an address taken of it,
@@ -25,10 +28,10 @@ import (
 // aiming at. Tested on these programs, not proved.
 func TestPartialPackageUnsupported(t *testing.T) {
 	gc := difftest.GoCore{Bin: gocoreBin(t)}
-	if got := progrun.GoVersion(t); got != difftest.GcRuntimeGoVersion {
-		t.Fatalf("Go is %s, but GoCore models %s: run with the Go SDK MODULE.bazel pins (GOROOT)", got, difftest.GcRuntimeGoVersion)
-	}
+	requirePinnedGo(t)
 	goroot := progrun.GoRoot(t)
+	requireLacks(t, goroot, "errors", "Is")
+	imp := progrun.OracleImporter(t)
 	tests := []struct {
 		name string
 		use  string
@@ -40,32 +43,19 @@ func TestPartialPackageUnsupported(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			src := "package main\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n)\n\nfunc main() {\n" +
 				"\tfmt.Println(\"before\")\n\te := errors.New(\"x\")\n\t" + tt.use + "\n}\n"
-			pkgs, err := gocoreexport.AddStdlib(goroot, []gocoreexport.PackageSource{
-				{Path: "main", Files: []gocoreexport.Source{{Name: "main.go", Text: src}}}})
+			if tc := imp.TypeCheck("main.go", src); tc.Skipped != "" || len(tc.Errors) > 0 {
+				t.Fatalf("go type-check: %s%s", tc.Skipped, strings.Join(tc.Errors, "\n"))
+			}
+			res, err := progrun.Run(t, imp, src)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("go run: %v", err)
 			}
-			// The stop must come from partiality: errors is in the document,
-			// marked partial, with its runnable files only.
-			var errorsPkg *gocoreexport.PackageSource
-			for i := range pkgs {
-				if pkgs[i].Path == "errors" {
-					errorsPkg = &pkgs[i]
-				}
+			real := difftest.Run{Stdout: res.Stdout, Outcome: difftest.GoOutcome(res.ExitCode, res.Stderr, res.TimedOut)}
+			if real.Outcome.Kind != difftest.KindOK {
+				t.Fatalf("go run: %s\n%s", real.Outcome, res.Stderr)
 			}
-			if errorsPkg == nil || !errorsPkg.Partial || len(errorsPkg.Files) != len(gocoreexport.RunnableStdlib["errors"]) {
-				t.Fatalf("errors must be in the document, partial, with only %v: %+v", gocoreexport.RunnableStdlib["errors"], errorsPkg)
-			}
-			doc, err := gocoreexport.Export(pkgs)
+			path, err := difftest.ExportGoCore(t.TempDir(), "partial", difftest.GoProgram{Main: src, GoRoot: goroot})
 			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := gocoreexport.Marshal(doc)
-			if err != nil {
-				t.Fatal(err)
-			}
-			path := filepath.Join(t.TempDir(), "prog.gocore.json")
-			if err := os.WriteFile(path, data, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			got, err := gc.Run(path)
@@ -76,14 +66,35 @@ func TestPartialPackageUnsupported(t *testing.T) {
 				t.Fatalf("gocore: outcome %q, stdout %q (detail %q); want unsupported:errors.Is after %q",
 					got.Outcome, got.Stdout, got.Detail, "before\n")
 			}
-			// The prefix is what Go prints, not only what the test expects.
-			out, err := progrun.RunOK(t, progrun.OracleImporter(t), src)
-			if err != nil {
-				t.Fatalf("go run: %v", err)
+			// What Go prints goes on past the stop: the prefix is tied to it.
+			if real.Stdout == got.Stdout {
+				t.Fatalf("go run printed %q, no more than gocore did before it stopped", real.Stdout)
 			}
-			if !strings.HasPrefix(out, got.Stdout) || out == got.Stdout {
-				t.Fatalf("go run printed %q: gocore's %q must be a proper prefix of it", out, got.Stdout)
+			if r := difftest.CompareGoCore(got, real, ""); r.Verdict != difftest.Unsupported || r.Construct != "errors.Is" {
+				t.Fatalf("verdict %s (%s), construct %q; want UNSUPPORTED at errors.Is", r.Verdict, r.Reason, r.Construct)
 			}
 		})
+	}
+}
+
+// requireLacks fails the test unless the runnable files of the package at ip,
+// read from goroot, declare no function name: a stop at it then comes from
+// the package being partial.
+func requireLacks(t *testing.T, goroot, ip, name string) {
+	t.Helper()
+	files := gocoreexport.RunnableStdlib[ip]
+	if len(files) == 0 {
+		t.Fatalf("%s has no runnable files (gocoreexport.RunnableStdlib)", ip)
+	}
+	for _, f := range files {
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(goroot, "src", filepath.FromSlash(ip), f), nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range file.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == name {
+				t.Fatalf("%s/%s declares %s: the test needs a name the runnable files lack", ip, f, name)
+			}
+		}
 	}
 }

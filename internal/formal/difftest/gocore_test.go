@@ -69,7 +69,7 @@ func TestCompareGoCore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := compareGoCore(tt.g, tt.real, tt.goPanic)
+			got := CompareGoCore(tt.g, tt.real, tt.goPanic)
 			require.Equal(t, tt.want, got.Verdict, got.Reason)
 			if tt.want == Unsupported {
 				require.Equal(t, "map-type", got.Construct)
@@ -92,7 +92,7 @@ func TestCompareGoCoreStoppedEarly(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := compareGoCore(GoCoreRun{Stdout: tt.stdout, Outcome: "unsupported:map-type"}, ok, "")
+			got := CompareGoCore(GoCoreRun{Stdout: tt.stdout, Outcome: "unsupported:map-type"}, ok, "")
 			require.Equal(t, GoCoreRecord{Comparison: Comparison{Disagree, tt.reason}}, got)
 		})
 	}
@@ -115,7 +115,7 @@ func TestExportGoCore(t *testing.T) {
 			"martianoff/gala/std": {"b.go": "package std\n", "a.go": "package std\n\nvar X = 1\n"},
 		},
 	}
-	path, err := exportGoCore(t.TempDir(), "examples/x.gala", prog)
+	path, err := ExportGoCore(t.TempDir(), "examples/x.gala", prog)
 	require.NoError(t, err)
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)

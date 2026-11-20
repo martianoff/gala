@@ -414,9 +414,9 @@ column lists what each milestone's claim rests on beyond them.
       `unicode/utf8/utf8.go`), which import only each other or packages fmt depends on whose own
       initialization does nothing, are not modelled at all: their own source, from the pinned
       toolchain, runs with the program (`gocoreexport.RunnableStdlib`). A name those files
-      lack ends the run `unsupported`, never stuck: tested, not proved, by
-      `TestPartialPackageUnsupported` on `errors.Is`, with the document built from the
-      pinned toolchain at test time.
+      lack ends the run `unsupported`, never stuck. This is tested, not proved, by
+      `TestPartialPackageUnsupported` on a call of `errors.Is` and on `errors.Is` as a
+      function value, with the document built from the pinned toolchain at test time.
     - Floats are IEEE 754, one rounding per operation to the type's width, with untyped
       constants exact; Lean's `Float` is opaque to its kernel, so float code is tested
       only, never proved (see [What is trusted](#what-is-trusted)).
