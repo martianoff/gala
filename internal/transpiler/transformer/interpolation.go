@@ -269,8 +269,10 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 // placeholderInInterpolation is GALA-E0137 when name, a primary written at
 // at, is a `_` read in an interpolated expression that no placeholder lambda
 // written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine). The
-// innermost `_` decides: one a `_` parameter or typed pattern binds names no
-// value to read, and an unbound one is never valid.
+// innermost `_` decides: one a `_` parameter or typed pattern binds, inside
+// the string or around it, names no value to read (the binding message); one
+// only a placeholder lambda around the string binds, or none, is not a
+// placeholder (the placeholder message).
 func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode) error {
 	if name != "_" || t.interpolationScope == nil {
 		return nil

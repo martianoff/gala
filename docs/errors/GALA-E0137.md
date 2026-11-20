@@ -7,7 +7,7 @@ one of its parameters, and nothing else gives it a value. It fires wherever
 the `_` sits in the interpolated expression (`${_}`, `${_ + 1}`,
 `${_.Name}`), in nested strings too, and whether or not the argument the string
 is passed as wants a function. Reading a `_` that a lambda parameter or a typed
-pattern written in the same `${...}` binds, as in `s"${xs.Map((_) => _ + 1)}"`,
+pattern binds, inside or around the string, as in `s"${xs.Map((_) => _ + 1)}"`,
 is reported too: such a `_` names no value.
 
 **Minimal repro.**
@@ -53,7 +53,7 @@ A `_` that something inside the interpolation gives a meaning is fine: a
 placeholder lambda written whole inside it, as in `s"${xs.Map(_ * 10)}"`, a
 wildcard pattern, as in `s"${opt match { case Some(_) => "some" case _ => "none" }}"`,
 and a `_` parameter or `case _: int` that is not read. Where a `_` that a
-parameter or typed pattern in the same `${...}` binds is read, bind a name
+parameter or typed pattern binds is read, bind a name
 instead of `_` and read that name: `s"${xs.Map((x) => x + 1)}"`,
 `s"${v match { case n: int => n case _ => 0 }}"`.
 
