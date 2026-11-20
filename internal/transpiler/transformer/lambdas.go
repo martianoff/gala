@@ -1592,7 +1592,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// their correct per-position types via paramTypes below.
 	scopeType := placeholderScopeType(paramTypes)
 	t.pushScope()
-	t.currentScope.lambda = true
+	t.currentScope.lambda, t.currentScope.placeholder = true, true
 	t.addVar("_", scopeType)
 	body, err := t.lowerExpr(e)
 	// Resolve the body's concrete result type while `_` is still bound in scope

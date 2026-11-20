@@ -268,15 +268,25 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 
 // placeholderInInterpolation is GALA-E0137 when name, a primary written at
 // at, is a `_` read in an interpolated expression that no placeholder lambda
-// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine).
+// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine); the
+// innermost `_` decides, so a `_` parameter there does not count. A scope
+// chain that does not lead back to the interpolation's lowers something not
+// written in it, and is left alone.
 func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode) error {
 	if name != "_" || t.interpolationScope == nil {
 		return nil
 	}
-	for s := t.currentScope; s != nil && s != t.interpolationScope; s = s.parent {
+	s := t.currentScope
+	for ; s != nil && s != t.interpolationScope; s = s.parent {
 		if _, ok := s.vals[name]; ok {
-			return nil
+			if s.placeholder {
+				return nil
+			}
+			break
 		}
+	}
+	if s == nil {
+		return nil
 	}
 	r := at.rng()
 	return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,

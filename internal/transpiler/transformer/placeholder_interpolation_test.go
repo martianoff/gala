@@ -22,6 +22,7 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 		{"slot that wants no function", `    Println(s"v${_}" + xs.String())`, "line 7:17 "},
 		{"selector on `_`", `    Println(xs.Map(s"v${_.String()}"))`, "line 7:24 "},
 		{"inside a lambda inside the string", `    Println(s"${xs.Map((x) => s"${_}")}")`, "line 7:34 "},
+		{"a `_` parameter read inside the string", `    Println(s"${xs.Map((_) => _ + 1)}")`, "line 7:30 "},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
