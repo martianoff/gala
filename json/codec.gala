@@ -212,7 +212,8 @@ type JsonDecoderImpl struct {
     var pos           int
     var stack         []byte
     // firstConsumed records, per open container, whether an object has
-    // read a key yet; ReadKey uses it. Arrays use elemStart instead.
+    // read a key yet; ReadKey uses it. An array's entry only keeps the
+    // slice in step with stack: arrays use elemStart instead.
     var firstConsumed []bool
     // elemStart is the position at which an array element's separator was
     // last settled: just inside a container's opening byte, or just after
@@ -300,7 +301,7 @@ func (d Ptr[JsonDecoderImpl]) ReadKey() string {
     val depth = d.stack.Size() - 1
     if depth >= 0 {
         if d.firstConsumed[depth] {
-            d.expectByte(',')
+            d.expectSeparator('}')
         }
         d.firstConsumed[depth] = true
     }
@@ -441,7 +442,7 @@ func (d Ptr[JsonDecoderImpl]) consumeElemComma() {
     if depth >= 0 && d.stack[depth] == 'a' {
         d.skipWs()
         if d.pos != d.elemStart {
-            d.expectByte(',')
+            d.expectSeparator(']')
             d.skipWs()
             d.elemStart = d.pos
         }
@@ -628,7 +629,7 @@ func (d Ptr[JsonDecoderImpl]) skipContainer(close byte, depth int) {
         if d.skipByte(close) {
             return
         }
-        d.expectByte(',')
+        d.expectSeparator(close)
     }
 }
 
@@ -647,6 +648,15 @@ func (d Ptr[JsonDecoderImpl]) skipByte(c byte) bool {
 func (d Ptr[JsonDecoderImpl]) expectByte(c byte) {
     if !d.skipByte(c) {
         go_builtins.Panic(f"json at pos ${d.pos}: expected ${c}%q")
+    }
+}
+
+// expectSeparator steps over the ',' between two members or elements, after
+// any whitespace. The error names close too: a wrong closing bracket, as in
+// `[1}`, is the other mistake that ends up here.
+func (d Ptr[JsonDecoderImpl]) expectSeparator(close byte) {
+    if !d.skipByte(',') {
+        go_builtins.Panic(f"json at pos ${d.pos}: expected ',' or ${close}%q")
     }
 }
 

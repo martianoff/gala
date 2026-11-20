@@ -506,15 +506,22 @@ func TestDecoder_SeparatorsRequired(t *testing.T) {
 	}
 }
 
-// A missing separator is reported where the separator belongs.
+// A missing separator is reported where the separator belongs, naming the
+// closing bracket that could stand there instead, whether the value is read
+// or skipped.
 func TestDecoder_MissingSeparatorError(t *testing.T) {
 	tests := []struct{ in, want string }{
-		{`[1 2]`, `json at pos 3: expected ','`},
-		{`{"a":1 "b":2}`, `json at pos 7: expected ','`},
+		{`[1 2]`, `json at pos 3: expected ',' or ']'`},
+		{`[1}`, `json at pos 2: expected ',' or ']'`},
+		{`{"a":1 "b":2}`, `json at pos 7: expected ',' or '}'`},
+		{`{"a":1]`, `json at pos 6: expected ',' or '}'`},
 	}
 	for _, tt := range tests {
 		if got := decodeDocument(tt.in, readValue); got != tt.want {
 			t.Errorf("decode(%s): error = %q, want %q", tt.in, got, tt.want)
+		}
+		if got := decodeDocument(tt.in, skipValue); got != tt.want {
+			t.Errorf("Skip(%s): error = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
