@@ -672,8 +672,25 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
       match FloatRep.truncate x with
       | some i => if k.represents i then pure (.int t i) else unsupported "float-to-int-out-of-range"
       | none => unsupported "float-to-int-out-of-range"
+    -- `[]byte(s)` of a constant string: a new array of its bytes (Go spec,
+    -- "Conversions to and from a string type"), of the capacity gc gives it
+    -- (`GcRuntime.constStringBytesCap`). Of another string the capacity depends on
+    -- escape analysis, and a typed constant cannot be told from a variable here: not
+    -- modelled, but in a range clause (`rangeLoop`). `[]rune(s)` is not modelled.
+    | .slice et, .str (.untyped _) s =>
+      let .int .uint8 ← underlying c n et | unsupported "slice-of-string"
+      stringBytes c n t et s
     | .slice _, .str .. => unsupported "slice-of-string"
-    | .string, .slice .. => unsupported "string-of-slice"
+    -- `string(b)` of a byte slice: the string of its bytes (Go spec, "Conversions to
+    -- and from a string type"); a nil slice gives "". GoCore's strings hold valid
+    -- UTF-8 only, so other bytes are not modelled, nor is `string(runes)`.
+    | .string, .slice st _ =>
+      let .slice et ← underlying c n st | stuck "a slice of a non-slice type"
+      let .int .uint8 ← underlying c n et | unsupported "string-of-slice"
+      let bs ← (← sliceElems v).mapM fun e => do pure (← asInt e).toNat.toUInt8
+      match String.fromUTF8? ⟨bs.toArray⟩ with
+      | some s => pure (.str t s)
+      | none => unsupported "string-of-invalid-utf8"
     | .array .., .slice .. | .ptr (.array ..), .slice .. => unsupported "array-of-slice"
     | _, _ => convert c n t v
 
@@ -756,6 +773,11 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
     | .binary op x y => do
       let a ← evalExpr c n env x
       let b ← evalExpr c n env y
+      -- In a constant declaration (`iota` is set) every operand is a constant, so a
+      -- shifted untyped constant is one too, whatever the count's type (Go spec,
+      -- "Constant expressions").
+      if env.iota.isSome && (op == "<<" || op == ">>") then
+        if let .int (.untyped k) v := a then return .int (.untyped k) (← shiftOp op none v (← asInt b))
       binary c n op a b
     | .unsupported k => unsupported k
     | .keyValue .. => stuck "key: value outside a composite literal"
@@ -883,6 +905,15 @@ def newArray (c : Ctx) : Nat → Ty → Array Val → Nat → GM SliceRep
     let es := es ++ Array.replicate (size - len) (← zero c n et)
     let cell ← allocAs (.array size et) (.array (.array size et) es)
     pure { base := ⟨cell, []⟩, off := 0, len, cap := size }
+
+/-- `[]byte(s)` of slice type `t`, element type `et`: a new array of the string's bytes,
+    exactly as long (`GcRuntime.constStringBytesCap`). -/
+def stringBytes (c : Ctx) : Nat → Ty → Ty → String → GM Val
+  | 0, _, _, _ => throw .fuel
+  | n + 1, t, et, s => do
+    let bs := s.toUTF8.data.map fun b => Val.int et b.toNat
+    if bs.size > maxSliceCap then unsupported "slice-of-string-large"
+    pure (.slice t (some (← newArray c n et bs (GcRuntime.constStringBytesCap bs.size))))
 
 /-- The indices of an array or slice literal's elements: a key's constant value, else
     the previous index plus one, from 0 (Go spec, "Composite literals"). -/
@@ -1416,6 +1447,22 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
     -- A conversion `T(x)`.
     if let some t ← typeOf? c n env fn then
       let [a] := args | stuck "a conversion takes one argument"
+      -- `T(x << s)` of an untyped constant `x` (Go spec, "Operators"): with an untyped
+      -- (constant) count, a constant shift, converted after; with a typed count, `x`
+      -- takes the type `T` first, as it would without the shift when the count is a
+      -- variable. A typed constant count gives a constant shift instead, which is the
+      -- same value when `x` fits the integer type `T` (an overflowing constant result
+      -- is a compile error); otherwise GoCore cannot tell the two apart.
+      if let .binary op l r := a then
+        if op == "<<" || op == ">>" then
+          let lv ← evalExpr c n env l
+          let rv ← evalExpr c n env r
+          if let .int (.untyped _) x := lv then
+            if !(rv.ty matches .untyped _) then
+              let .int k ← underlying c n t | unsupported "untyped-shift"
+              if !k.represents x then unsupported "untyped-shift"
+              return [← conversion c n t (← binary c n op (← conversion c n t lv) rv)]
+          return [← conversion c n t (← binary c n op lv rv)]
       return [← conversion c n t (← evalExpr c n env a)]
     match fn with
     | .ident b =>
@@ -1431,6 +1478,12 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
             match ← evalArgs c n env args with
             | [.slice t r] => return [.slice t (r.map fun r => { r with cap := r.len, alt := none })]
             | _ => stuck "slices.Clip of a non-slice"
+          -- `stringslite.Clone(s)` returns a copy of `s` (internal/stringslite, which
+          -- strconv's errors use): strings are immutable, so the copy is `s`.
+          if path == "internal/stringslite" && f == "Clone" && !spread then
+            match ← evalArgs c n env args with
+            | [s@(.str ..)] => return [s]
+            | _ => stuck "stringslite.Clone of a non-string"
           if !c.pkgs.contains path then unsupported s!"{path}.{f}"
     | _ => pure ()
     -- A declared function called by name: a generic one gets its type arguments by
@@ -1674,6 +1727,9 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
       -- document does not hold.
       if exported b then
         if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
+      -- A name of a package of which the document holds only some files (Go's
+      -- runnable ones): one of its other files declares it.
+      if (c.pkgs.get? env.pkg).any (·.isPartial) then unsupported s!"{env.pkg}.{b}"
       unsupported s!"builtin-{b}"
 
 /-- The text Go's runtime prints after `panic: ` for a panic value: a string as it is,
@@ -1923,7 +1979,26 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
           let v ← declValue c n t? vs[i]?
           env := env.bind x (← allocAs (t?.getD v.ty) v)
       pure env
-    | .decl (.value true _) => unsupported "local-const"
+    -- Local constants, as package-level ones (`Prog`): a spec without a type and
+    -- values repeats the previous one's, each spec's `iota` is its index, a typed one
+    -- is converted. The name holds the constant's value, untyped or typed, which no
+    -- compiled program assigns or takes the address of (Go spec, "Constant
+    -- declarations").
+    | .decl (.value true specs) =>
+      let mut env := env
+      let mut prev : Option Expr × List Expr := (none, [])
+      for (.mk names ty values, iota) in specs.zipIdx do
+        let (t, vs) := if ty.isNone && values.isEmpty then prev else (ty, values)
+        prev := (t, vs)
+        let cenv := { env with iota := some iota }
+        for (x, k) in names.zipIdx do
+          let some ve := vs[k]? | stuck s!"constant {x} without a value"
+          let v ← evalExpr c n cenv ve
+          let v ← match t with
+            | some te => conversion c n (← evalType c n cenv te) v
+            | none => pure v
+          env := env.bind x (← allocAs v.ty v)
+      pure env
     | .decl (.type _) => unsupported "local-type"
     | .decl (.func ..) | .decl (.unsupported _) => unsupported "local-decl"
     | .incDec op x => do
@@ -2079,7 +2154,20 @@ def rangeLoop (c : Ctx) : Nat → Env → Option Expr → Option Expr → String
     -- With one iteration variable, Go does not evaluate an array (or pointer to one)
     -- whose length is constant (Go spec, "For statements with range clause"); GoCore
     -- does not know the static type, so a panic evaluating it ends the run instead.
-    let xv ← if (v.map (· matches .ident "_")).getD true then constantOperand c n env x else evalExpr c n env x
+    -- `range []byte(s)` ranges over a new array of the string's bytes, which nothing
+    -- else can reach, so its capacity is never observed (Go spec, "Conversions to and
+    -- from a string type"), of any string.
+    let bytesOf? : GM (Option Val) := do
+      let .call fn [a] false := x | return none
+      let some t ← typeOf? c n env fn | return none
+      let .slice et ← underlying c n t | return none
+      let .int .uint8 ← underlying c n et | return none
+      let av ← evalExpr c n env a
+      let .str _ s := av | return some (← conversion c n t av)
+      return some (← stringBytes c n t et s)
+    let xv ← match ← bytesOf? with
+      | some bv => pure bv
+      | none => if (v.map (· matches .ident "_")).getD true then constantOperand c n env x else evalExpr c n env x
     let intVal := fun (i : Nat) => Val.int (.int .int) i
     -- The number of iterations, and the key and value of each.
     let (count, item) : Nat × (Nat → GM (Val × Val)) ← match xv with

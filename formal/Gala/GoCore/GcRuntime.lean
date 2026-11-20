@@ -19,6 +19,9 @@
     not model escape analysis, so such a slice has two possible capacities
     (`SliceRep.alt`); the evaluator stops `unsupported` when a run would tell them
     apart.
+  * **`[]byte(s)` of a constant string.** The spec says only that the conversion gives
+    a new slice (Go spec, "Conversions to and from a string type"); gc gives one of a
+    constant string exactly its length (`constStringBytesCap`).
   * **No fused multiply-add.** The spec lets an implementation fuse `x*y + z` into one
     rounding (Go spec, "Arithmetic operators", "Floating-point operators"); gc on amd64
     at the default GOAMD64=v1 does not, so GoCore rounds each float operation (fixture
@@ -159,6 +162,13 @@ def stackAppendCap (elem : Layout) (oldLen newLen : Nat) (spread : Bool) : Optio
       newLen ≤ stackAppendBytes / elem.size then
     some (stackAppendBytes / elem.size)
   else none
+
+/-- The capacity of `[]byte(s)` for a constant string of `n` bytes: gc allocates a
+    `[n]byte` array for it, on the stack or the heap (cmd/compile/internal/walk/
+    convert.go, `walkStringToBytes`), so exactly `n`. A non-constant string goes
+    through `runtime.stringtoslicebyte`, whose capacity depends on escape analysis
+    and on the allocator; GoCore does not model that conversion. -/
+def constStringBytesCap (n : Nat) : Nat := n
 
 /-- The capacity of the slice a variadic parameter receives for `k` arguments. -/
 def variadicCap (k : Nat) : Nat := k

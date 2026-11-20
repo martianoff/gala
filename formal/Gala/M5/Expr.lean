@@ -83,9 +83,10 @@ def LocRel (κ : String → Option Kind) (c : Spec.Core) (cells : Array GoCore.F
     (∀ t b, w ≠ .bool (.untyped t) b) ∧ (∀ t s, w ≠ .str (.untyped t) s)
 
 /-- `true` and `false` mean Go's predeclared constants where `env` is: no variable and no
-    declaration of the package shadows them. -/
+    declaration of the package shadows them; and `env` is not a constant declaration's
+    (no `iota`), where a shift of an untyped constant is a constant one. -/
 def Predeclared (c : GoCore.Full.Ctx) (env : GoCore.Full.Env) : Prop :=
-  ∀ x ∈ ["true", "false"], env.lookup x = none ∧
+  env.iota = none ∧ ∀ x ∈ ["true", "false"], env.lookup x = none ∧
     ∃ p, c.pkgs.get? env.pkg = some p ∧ p.objs.get? x = none ∧ GoCore.Full.nameOwner c env x = none
 
 def lowerLit : Spec.Lit → Kind × GoCore.Full.Expr
@@ -172,10 +173,10 @@ theorem evalExpr_unary (c : Ctx) (n : Nat) (env : Env) (op : String) (x : Expr) 
   simp [evalExpr]
 
 theorem evalExpr_binary (c : Ctx) (n : Nat) (env : Env) (op : String) (x y : Expr)
-    (h1 : op ≠ "&&") (h2 : op ≠ "||") :
+    (h1 : op ≠ "&&") (h2 : op ≠ "||") (h3 : env.iota = none) :
     evalExpr c (n + 1) env (.binary op x y) =
       (do let a ← evalExpr c n env x; let b ← evalExpr c n env y; binary c n op a b) := by
-  simp [evalExpr]
+  simp [evalExpr, h3]
 
 theorem evalExpr_local (c : Ctx) (n : Nat) (env : Env) (x : String) (cell : Nat) (w : Val)
     (g : St) (hl : env.lookup x = some cell) (hw : g.cells[cell]? = some w)
@@ -420,11 +421,11 @@ theorem evalExpr_predeclared (c : Ctx) (n : Nat) (env : Env) (b : Bool) (g : St)
     (evalExpr c (n + 2) env (.ident (if b then "true" else "false"))).run.run g =
       (.ok (.bool (.untyped .bool) b), g) := by
   cases b
-  · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp "false" (by simp)
+  · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp.2 "false" (by simp)
     simp only [Std.HashMap.get?_eq_getElem?] at hpk hobj
     simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj]
     rfl
-  · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp "true" (by simp)
+  · obtain ⟨hl, p, hpk, hobj, hown⟩ := hp.2 "true" (by simp)
     simp only [Std.HashMap.get?_eq_getElem?] at hpk hobj
     simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj]
     rfl
@@ -764,7 +765,7 @@ theorem pure_sim (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) :
           | err e => simp [Spec.constEval, hr1, hr2]
         | err e => cases r2 <;> simp [Spec.constEval, hr1, hr2]
       rw [hc] at hs; simp at hs
-    rw [evalExpr_binary _ _ _ _ _ _ hand hor, pureEval_binary ds op l r hand hor]
+    rw [evalExpr_binary _ _ _ _ _ _ hand hor hp.1, pureEval_binary ds op l r hand hor]
     rw [grun_bind, Spec.run_bind_eq]
     rcases hx : (pureEval ds l).run.run c with ⟨rl, c₁⟩
     have hc₁ : c₁ = c := by have := pureEval_readOnly ds l c; rw [hx] at this; exact this
@@ -888,6 +889,7 @@ theorem inst_locRel : LocRel instKinds instCore #[.int intTy 5] instEnv := by
   · cases hk
 
 theorem inst_predeclared : Predeclared instCtx instEnv := by
+  refine ⟨rfl, ?_⟩
   intro x hx
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
   refine ⟨?_, emptyPkg, by simp [instCtx, instEnv], by simp [emptyPkg], ?_⟩

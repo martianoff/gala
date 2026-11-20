@@ -669,6 +669,13 @@ gala_exec_test(
     deps = ["//go_builtins"],
 )
 
+# strconv.Atoi's results and errors, the errors quoting the input.
+gala_exec_test(
+    name = "strconv_atoi_results",
+    src = "strconv_atoi_results.gala",
+    expected = "strconv_atoi_results.out",
+)
+
 # `v, ok := m[k]` and `v, ok := <-ch` are Go's comma-ok forms, as their
 # `val v, ok = ...` spellings are. `:=` used to reject them as an
 # assignment mismatch.
