@@ -425,8 +425,10 @@ column lists what each milestone's claim rests on beyond them.
       read as empty and panic on a store, `fmt` prints them sorted by key as
       `internal/fmtsort` does. Go leaves the order of a `range` over a map unspecified, so
       GoCore never picks one. A range over a map of two or more entries ends the run
-      `unsupported`, and so does one that adds a key while it ranges. Other key types are
-      unsupported too.
+      `unsupported`, and so does one that adds a key while it ranges. gc builds a map
+      literal by storing its constant entries first, then the others, which its order
+      pass may move ahead of the statement. GoCore does not model that move, so it runs
+      only literals whose entries are all constants. Other key types are unsupported too.
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
     every compiled program's Go runs through GoCore and is compared with `go run`. In the
     CI run that set the baselines, GoCore agrees with `go run` on 359 programs that

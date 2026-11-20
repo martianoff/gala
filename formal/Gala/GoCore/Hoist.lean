@@ -160,7 +160,7 @@ def isType (s : Scope) : Expr → Bool
   | .index (.selector (.ident q) t) _ => isTypeObj (s.qualified? q t)
   | .star x => isType s x
   | .paren x => isType s x
-  | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. => true
+  | .structType _ | .interfaceType _ | .funcType _ | .arrayType .. | .mapType .. => true
   | _ => false
 
 /-- Whether `x[args]` instantiates a generic function or type (no index is read). -/
@@ -274,12 +274,12 @@ inductive Shape
   | unknown
   deriving BEq
 
-/-- The shape of a type written `te`: pointers and functions are pointer-shaped;
+/-- The shape of a type written `te`: pointers, functions and maps are pointer-shaped;
     interfaces, slices, strings, numbers, booleans and structs of several fields are
     not; a struct of one field or an array is as its element is, and a named type as
     its definition, which this does not look through. -/
 def shapeOfTypeExpr : Expr → Shape
-  | .star _ | .funcType _ => .late
+  | .star _ | .funcType _ | .mapType .. => .late
   | .interfaceType _ | .arrayType none _ => .copied
   | .structType fs => if (fieldNames fs).length == 1 then .unknown else .copied
   | _ => .unknown
@@ -397,7 +397,7 @@ def isBoolOp : Expr → Bool
 
 /-- Whether a type definition `type T def` makes `T` certainly not an interface. -/
 def concreteDef : Expr → Bool
-  | .structType _ | .star _ | .arrayType .. | .funcType _ => true
+  | .structType _ | .star _ | .arrayType .. | .funcType _ | .mapType .. => true
   | .ident x => match universeType? x with
     | some (.iface _) => false
     | some _ => true
@@ -414,7 +414,7 @@ def nonIfaceObj : Option Obj → Bool
     Unknown types are not. -/
 def nonIface (s : Scope) : Expr → Bool
   | .paren t => nonIface s t
-  | .star _ | .arrayType .. | .funcType _ | .structType _ => true
+  | .star _ | .arrayType .. | .funcType _ | .structType _ | .mapType .. => true
   | .ident x =>
     if s.isLocal x then false
     else if s.tparams.contains x then true

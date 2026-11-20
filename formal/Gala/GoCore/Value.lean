@@ -421,16 +421,10 @@ def newMap : GM Nat := do
   modify fun s => { s with maps := s.maps.push {} }
   pure i
 
-/-- Map `i`'s entries. -/
-def mapEntries (i : Nat) : GM (Std.HashMap MapKey (Val × Val)) := do
+/-- Map `i`. -/
+def getMap (i : Nat) : GM MapObj := do
   match (← get).maps[i]? with
-  | some m => pure m.entries
-  | none => stuck "no such map"
-
-/-- How many new keys map `i` has had added (`MapObj.added`). -/
-def mapAdded (i : Nat) : GM Nat := do
-  match (← get).maps[i]? with
-  | some m => pure m.added
+  | some m => pure m
   | none => stuck "no such map"
 
 /-- Map `i` with `f` applied to its entries; `modify`, so an unshared map is updated in
@@ -438,12 +432,15 @@ def mapAdded (i : Nat) : GM Nat := do
 def modifyMap (i : Nat) (f : Std.HashMap MapKey (Val × Val) → Std.HashMap MapKey (Val × Val)) : GM Unit :=
   modify fun s => { s with maps := s.maps.modify i fun m => { m with entries := f m.entries } }
 
-/-- Where an assignment stores: a variable or element at `l`, of type `t`; or a map's
-    entry, which is not addressable (Go spec, "Address operators"): the map, the key
-    (already of the map's key type) and the element type. -/
+/-- Where an assignment stores: a variable or element at `l`, of type `t`; element `i`
+    of `v` (at `l` if addressable), whose bounds are checked when it is stored or loaded
+    (Go spec, "Assignment statements": `x[1], x[3] = 4, 5` sets `x[1]`, then panics);
+    or a map's entry, which is not addressable (Go spec, "Address operators"): the map,
+    the key (already of the map's key type) and its encoding, and the element type. -/
 inductive Place
   | loc (l : Loc) (t : Ty)
-  | entry (ref : Option Nat) (key : Val) (t : Ty)
+  | elem (v : Val) (l : Option Loc) (i : Val)
+  | entry (ref : Option Nat) (key : Val) (k : MapKey) (t : Ty)
 
 /-- The encoding of a key already of its map's key type. -/
 def mapKeyOf : Val → GM MapKey
@@ -457,17 +454,18 @@ def mapKeyOf : Val → GM MapKey
 def mapLookup (ref : Option Nat) (k : MapKey) : GM (Option Val) := do
   match ref with
   | none => pure none
-  | some i => pure (((← mapEntries i).get? k).map (·.2))
+  | some i => pure (((← getMap i).entries.get? k).map (·.2))
 
-/-- `m[k] = v` on the map `ref` refers to (Go spec, "Index expressions"): a nil map
-    panics with the runtime error gc raises, whose text has no `runtime error: `
-    prefix (Go 1.25's runtime/map_swiss.go: `maps_errNilAssign`, a `plainError`). -/
-def mapStore (ref : Option Nat) (key : Val) (v : Val) : GM Unit := do
-  let k ← mapKeyOf key
+/-- `m[k] = v` on the map `ref` refers to, `key` encoded as `k` (Go spec, "Index
+    expressions"): a nil map panics with the runtime error gc raises, whose text has no
+    `runtime error: ` prefix (Go 1.25's runtime/map_swiss.go: `maps_errNilAssign`, a
+    `plainError`). -/
+def mapStore (ref : Option Nat) (key : Val) (k : MapKey) (v : Val) : GM Unit := do
   match ref with
   | none => throw (.panic (.str .string "assignment to entry in nil map") true)
   | some i =>
     modify fun s => { s with maps := s.maps.modify i fun m =>
-      { entries := m.entries.insert k (key, v), added := if m.entries.contains k then m.added else m.added + 1 } }
+      let (had, entries) := m.entries.containsThenInsert k (key, v)
+      { entries, added := if had then m.added else m.added + 1 } }
 
 end Gala.GoCore.Full

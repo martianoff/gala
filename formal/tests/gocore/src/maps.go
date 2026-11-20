@@ -42,8 +42,29 @@ func main() {
 	fmt.Println(sm)
 	tm := map[T]T{3: 4, 1: 2}
 	fmt.Println(tm)
-	mm := map[string]map[string]int{"o": {"y": 1, "x": 2}, "a": nil}
+	mm := map[string]map[string]int{"a": nil}
+	mm["o"] = map[string]int{"y": 1, "x": 2}
 	fmt.Println(mm, mm["a"] == nil, len(mm["o"]))
+	pm := map[string]int{"a": 1}
+	fmt.Println(&pm, map[string][2]int{"p": {1, 2}})
+	neg := -1
+	h := make(map[int]int, neg)
+	h[1] = 1
+	(h[1])++
+	(h[2]) += 5
+	for h[3] = range []int{7, 8} {
+	}
+	fmt.Println(h)
+	var a any = h
+	var b any = Counts{}
+	fmt.Println(a == nil, a == any(1), a == b)
+	ms := []map[int]int{}
+	for i := 0; i < 5; i++ {
+		mi := make(map[int]int)
+		mi[i] = i
+		ms = append(ms, mi)
+	}
+	fmt.Println(ms, len(ms))
 	u8 := map[uint8]int{200: 1, 3: 2}
 	fmt.Println(u8)
 	alias := m
