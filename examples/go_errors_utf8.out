@@ -1,4 +1,4 @@
-boom true false true
+boom true true
+false true
 [    boom] [hé]
-0 2 5
-3 3
+0/0 2/2 5/6 3/9 3/7

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,7 +17,10 @@ import (
 // TestGoCoreFixturesFresh checks that each GoCore fixture's document
 // (formal/tests/gocore/<name>.json) is what the exporter writes for its source
 // (formal/tests/gocore/src/<name>.go), so the fixtures cannot drift from the
-// exporter. Regenerate them with formal/tests/gocore/regen.sh.
+// exporter, and that every document has a source: none then holds a standard-
+// library package, which the exporter adds only when asked (AddStdlib), never
+// for a fixture (formal/README.md). Regenerate them with
+// formal/tests/gocore/regen.sh.
 func TestGoCoreFixturesFresh(t *testing.T) {
 	files, err := bazel.ListRunfiles()
 	require.NoError(t, err)
@@ -47,19 +51,12 @@ func TestGoCoreFixturesFresh(t *testing.T) {
 		require.Equal(t, decoded(t, want), decoded(t, got),
 			"%s.json is stale: run formal/tests/gocore/regen.sh", name)
 	}
-	// No committed document holds Go's own standard-library source: a runnable
-	// package (gocoreexport.RunnableStdlib) is added at test time from the
-	// pinned toolchain's GOROOT, as the differential run does (formal/README.md).
-	for name, docPath := range docs {
-		want, err := os.ReadFile(docPath)
-		require.NoError(t, err)
-		pkgs, _ := decoded(t, want)["packages"].([]any)
-		for _, p := range pkgs {
-			if m, ok := p.(map[string]any); ok {
-				require.Nil(t, gocoreexport.RunnableStdlib[m["path"].(string)],
-					"%s.json holds Go's own source of %s", name, m["path"])
-			}
-		}
+	// Every document is its source's export, which adds no standard-library
+	// package: so none holds Go's own source of one (formal/README.md).
+	for name := range docs {
+		require.True(t, slices.ContainsFunc(srcs, func(s bazel.RunfileEntry) bool {
+			return path.Base(s.ShortPath) == name+".go"
+		}), "%s.json has no source in formal/tests/gocore/src", name)
 	}
 }
 
