@@ -205,11 +205,27 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		}
 	}
 
-	lhsExprs, err := t.lowerExprs(targets)
-	if err != nil {
-		return nil, err
+	// A `_` target of `=` (`_ = expr`, `n, _ = f()`) is Go's blank
+	// identifier, not a `_` binding: it is no read (GALA-E0139), and a value
+	// it discards takes no type from one.
+	discards := make([]bool, len(targets))
+	lhsExprs := make([]ast.Expr, len(targets))
+	for i, target := range targets {
+		if d.op == "=" && target.bareIdent() == "_" {
+			discards[i], lhsExprs[i] = true, ast.NewIdent("_")
+			continue
+		}
+		e, err := t.lowerExpr(target)
+		if err != nil {
+			return nil, err
+		}
+		lhsExprs[i] = e
 	}
+	discard := len(targets) == 1 && discards[0]
 	for i, target := range lhsExprs {
+		if discards[i] {
+			continue
+		}
 		if err := t.immutableFieldWriteError(targets[i].at(), target, "assign to"); err != nil {
 			return nil, err
 		}
@@ -220,9 +236,9 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`, and so does a
 	// field or element target: `s.cur = None()` for `cur Option[int]`.
 	var lhsType transpiler.Type
-	if lhsName, lhsOk := singleAssignmentLHSName(targets); lhsOk && !t.isInoutName(lhsName) {
+	if lhsName, lhsOk := singleAssignmentLHSName(targets); lhsOk && !discard && !t.isInoutName(lhsName) {
 		lhsType = t.getValType(lhsName)
-	} else if len(lhsExprs) == 1 {
+	} else if len(lhsExprs) == 1 && !discard {
 		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
 	rhsExprs, err := t.lowerDeclarationInitializers(t.exprsOf(d.rhs), len(lhsExprs), lhsType)
@@ -235,6 +251,9 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	if len(lhsExprs) > 1 && len(rhsExprs) == len(lhsExprs) {
 		values := d.rhs.exprs()
 		for i, rhs := range rhsExprs {
+			if discards[i] {
+				continue
+			}
 			if err := t.checkAssignFill(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
 				return nil, err
 			}
@@ -252,6 +271,9 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		if results := t.multiValueTypes(unwrappedRhs[0]); len(results) == len(lhsExprs) {
 			at := d.rhs.exprs()[0].at()
 			for i, result := range results {
+				if discards[i] {
+					continue
+				}
 				if err := t.checkResultFill(result, t.getExprTypeName(lhsExprs[i]), at); err != nil {
 					return nil, err
 				}

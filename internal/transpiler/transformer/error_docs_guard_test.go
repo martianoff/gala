@@ -2457,6 +2457,21 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "a `_` lambda parameter read",
+			code: galaerr.CodeUnderscoreBindingRead, // GALA-E0139
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = ArrayOf(1, 2)
+    Println(xs.Map((_) => _ + 1))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

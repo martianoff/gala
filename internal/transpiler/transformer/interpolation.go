@@ -268,34 +268,19 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 
 // placeholderInInterpolation is GALA-E0137 when name, a primary written at
 // at, is a `_` read in an interpolated expression that no placeholder lambda
-// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine). The
-// innermost `_` decides: one a `_` parameter or typed pattern binds, inside
-// the string or around it, names no value to read (the binding message); one
-// only a placeholder lambda around the string binds, or none, is not a
-// placeholder (the placeholder message).
+// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine). A
+// placeholder lambda around the string does not reach in. A `_` that a
+// parameter or typed pattern binds is GALA-E0139, reported before this.
 func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode) error {
 	if name != "_" || t.interpolationScope == nil {
 		return nil
 	}
-	s := t.currentScope
-	for ; s != nil && s != t.interpolationScope; s = s.parent {
+	for s := t.currentScope; s != nil && s != t.interpolationScope; s = s.parent {
 		if _, ok := s.vals[name]; ok {
-			break
+			return nil
 		}
 	}
-	if s == t.interpolationScope || s == nil {
-		// Not bound inside the string; outside it, a `_` parameter or typed
-		// pattern may bind it, and a placeholder lambda does not reach in.
-		s = t.bindingScope(name)
-	} else if s.placeholder {
-		return nil
-	}
 	r := at.rng()
-	if s != nil && !s.placeholder {
-		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
-			"`_` inside an interpolated string reads a `_` binding, which names no value",
-			"bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`")
-	}
 	return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
 		"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
 		"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")

@@ -13,9 +13,8 @@ import (
 // //examples:placeholder_interpolation.
 func TestPlaceholderInInterpolation(t *testing.T) {
 	const (
-		header        = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val xs = ArrayOf(1, 2)\n"
-		notBound      = "`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string (hint: write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`)"
-		readsABinding = "`_` inside an interpolated string reads a `_` binding, which names no value (hint: bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`)"
+		header   = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val xs = ArrayOf(1, 2)\n"
+		notBound = "`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string (hint: write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`)"
 	)
 	rejected := []struct{ name, body, want string }{
 		{"s-string in a function slot", `    Println(xs.Map(s"v${_}"))`, "line 7:24 " + notBound},
@@ -26,10 +25,6 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 		{"slot that wants no function", `    Println(s"v${_}" + xs.String())`, "line 7:17 " + notBound},
 		{"selector on `_`", `    Println(xs.Map(s"v${_.String()}"))`, "line 7:24 " + notBound},
 		{"inside a lambda inside the string", `    Println(s"${xs.Map((x) => s"${_}")}")`, "line 7:34 " + notBound},
-		{"a `_` parameter read inside the string", `    Println(s"${xs.Map((_) => _ + 1)}")`, "line 7:30 " + readsABinding},
-		{"a typed-pattern `_` read inside the string", "    val v any = xs.Size()\n" + `    Println(s"${v match { case _: int => _ case _ => 0 }}")`, "line 8:41 " + readsABinding},
-		{"a `_` parameter of a lambda around the string", `    Println(xs.Map((_) => s"v${_}"))`, "line 7:31 " + readsABinding},
-		{"a typed-pattern `_` of a match around the string", "    val v any = xs.Size()\n" + `    Println(v match { case _: int => s"${_}" case _ => "" })`, "line 8:41 " + readsABinding},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
