@@ -2079,12 +2079,14 @@ func universeMethodSignature(recv transpiler.Type, method string) *transpiler.Go
 // Go type alias has its target's fields, through every alias of a chain (see
 // goTypeDataThroughAliases).
 func (t *galaASTTransformer) getGoFieldType(typ transpiler.Type, fieldName string) transpiler.Type {
-	if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
-		typ = ptr.Elem
+	// An instance of a generic struct (one pointer level stripped, as the
+	// lookup strips it) is looked up by its base name, and its field
+	// instantiated with its type arguments.
+	recv := typ
+	if ptr, isPtr := recv.(transpiler.PointerType); isPtr {
+		recv = ptr.Elem
 	}
-	// An instance of a generic struct is looked up by its base name, and
-	// its field instantiated with its type arguments.
-	gen, isGeneric := typ.(transpiler.GenericType)
+	gen, isGeneric := recv.(transpiler.GenericType)
 	if isGeneric {
 		typ = gen.Base
 		// A generic alias's type arguments are not its target's: they are
