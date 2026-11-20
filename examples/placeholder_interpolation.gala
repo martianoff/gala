@@ -25,4 +25,5 @@ func main() {
     Println(s"${xs.Map((x) => x + 1)}")
     val v any = xs.Size()
     Println(s"${v match { case n: int => n case _ => 0 }}")
+    Println(s"${v match { case _: int => "int" case _ => "other" }}")
 }
