@@ -5,6 +5,7 @@ import (
     "net/http"
     "net/url"
     "slices"
+    "unicode"
     "martianoff/gala/go_interop"
 )
 
@@ -50,5 +51,11 @@ func main() {
     for i := range n {
         val next = () => i + 1
         Println(s"i=$i next=${next()}")
+    }
+    for r := range unicode.MaxASCII {
+        val same = () => r
+        if r < 2 {
+            Println(s"r=$r same=${same()}")
+        }
     }
 }

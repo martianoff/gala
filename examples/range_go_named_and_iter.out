@@ -11,3 +11,5 @@ w=y
 i=0 next=1
 i=1 next=2
 i=2 next=3
+r=0 same=0
+r=1 same=1

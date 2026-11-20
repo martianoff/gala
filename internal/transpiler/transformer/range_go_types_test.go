@@ -88,17 +88,18 @@ func main() {
     }
 }
 `, []string{"func() int64"}},
-		// A rune keeps the int key: typed rune, `s"$i"` would pick %c (#1317).
+		// Go binds i to rune: typed int32 (the same type), so `s"$i"` keeps %d, not %c.
 		{"an untyped rune constant (unicode.MaxASCII)", `package main
 
 import "unicode"
 
 func main() {
     for i := range unicode.MaxASCII {
-        Println(s"i=$i")
+        val f = () => i
+        Println(s"i=$i", f())
     }
 }
-`, []string{`"i=%d"`}},
+`, []string{`"i=%d"`, "func() int32"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

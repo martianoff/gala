@@ -34,7 +34,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x0A}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x0B}
 
 const (
 	typeTagNil        uint8 = 0 // nil interface
