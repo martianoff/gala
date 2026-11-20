@@ -2149,7 +2149,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		case v.spread && callCtx.funcMeta == nil && callCtx.applyMethodMeta == nil:
 			// The Apply a value is called through (Sections 11 and 12).
 			if meta := t.valueApplyType(fun); meta != nil {
-				expectedType = spreadArgType(applyVariadicElem(meta, slotIdx))
+				expectedType = spreadArgType(t.applyVariadicElem(meta, t.valueApplyTypeArgs(fun), slotIdx))
 			}
 		case transpiler.IsUnusable(expectedType) && !v.spread:
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
