@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -113,4 +114,17 @@ func TestPanicErrorPcsReaders(t *testing.T) {
 	}
 	require.Contains(t, stack, "runtime.CallersFrames(e.pcs)",
 		"(*panicError).stack no longer reads the pcs through runtime.CallersFrames")
+	// std's GALA sources compile into the same Go package, so they could read the
+	// unexported field too.
+	pcs := regexp.MustCompile(`\.pcs\b`)
+	for _, loc := range strings.Fields(os.Getenv("STDLIB_SOURCES")) {
+		if !strings.HasSuffix(loc, ".gala") || !strings.Contains(loc, "/std/") {
+			continue
+		}
+		path, err := runfiles.Rlocation(loc)
+		require.NoError(t, err)
+		text, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.False(t, pcs.Match(text), "%s reads .pcs; GoCore's recoveredError leaves it nil", loc)
+	}
 }
