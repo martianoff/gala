@@ -1169,6 +1169,13 @@ const (
 	// value silently on most of them.
 	CodeDuplicateArgument ErrorCode = "GALA-E0136"
 
+	// E0137: a `_` read as a value inside an interpolated string, `${_}`.
+	// A placeholder lambda's `_` are written outside string literals; one
+	// inside an interpolation, which no lambda binds, used to reach Go as
+	// the blank identifier and fail `go build` with "cannot use _ as value
+	// or type".
+	CodePlaceholderInInterpolation ErrorCode = "GALA-E0137"
+
 	// E0138: a spread argument `xs...` that is not a Go slice of the
 	// variadic parameter's element type: a GALA collection or other struct,
 	// a string, a number, a map, a function or a fixed-size array, or a Go

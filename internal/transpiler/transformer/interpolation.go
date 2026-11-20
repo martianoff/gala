@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
@@ -259,7 +260,28 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 	if err := t.checkVariantTypeNamesNative(e.node); err != nil {
 		return nil, err
 	}
+	outer := t.interpolationScope
+	t.interpolationScope = t.currentScope
+	defer func() { t.interpolationScope = outer }()
 	return t.lowerExpr(e)
+}
+
+// placeholderInInterpolation is GALA-E0137 when name, a primary written at
+// at, is a `_` read in an interpolated expression that no placeholder lambda
+// written inside the expression binds (`s"${xs.Map(_ * 2)}"` is fine).
+func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode) error {
+	if name != "_" || t.interpolationScope == nil {
+		return nil
+	}
+	for s := t.currentScope; s != nil && s != t.interpolationScope; s = s.parent {
+		if _, ok := s.vals[name]; ok {
+			return nil
+		}
+	}
+	r := at.rng()
+	return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
+		"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
+		"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
 }
 
 // parseExprAt parses text as one expression whose first character sits at

@@ -1,0 +1,21 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A `_` inside an interpolated string is never a placeholder of a lambda
+// outside the string (GALA-E0137). These are the forms that stay valid: a
+// placeholder outside the string, a placeholder lambda written whole inside
+// an interpolation, an explicit lambda, and `_` as a pattern or a parameter
+// name inside an interpolation.
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+    Println(xs.Map(_ * 2 + s"${xs.Size()}".Size()))
+    Println(xs.Map((x) => s"v${x}"))
+    Println(xs.Map((x) => f"v${x}%03d"))
+    Println(s"${xs.Map(_ * 10)}")
+    Println(s"${xs.Map(_ + 1).FoldLeft(0, _ + _)}")
+    Println(s"${xs.Map((x) => s"<${xs.Count(_ > x)}>")}")
+    Println(s"${xs.Map((x) => x match { case 1 => "one" case _ => "other" })}")
+    Println(s"${Some(1) match { case Some(_) => "some" case _ => "none" }}")
+    Println(s"${xs.Map((_) => 0)}")
+}

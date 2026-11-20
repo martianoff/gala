@@ -2661,6 +2661,18 @@ on an `Array[int]` gives `_` type `int`). Placeholder lambdas may not
 escape an argument position: you cannot assign `_ * 2` to a val, return it
 from a function, or use it as a standalone expression.
 
+Only a `_` written outside string literals is a placeholder. A `_` inside the
+`${...}` of an `s"..."` or `f"..."` string is not a parameter of a lambda
+around the string, and reading it is an error
+([GALA-E0137](errors/GALA-E0137.md)). Name the parameter in an explicit lambda
+instead:
+
+<!-- doc-check: fragment -->
+```gala
+val labels = nums.Map((x) => s"v${x}")     // not nums.Map(s"v${_}")
+val tens   = s"${nums.Map(_ * 10)}"        // fine: the placeholder lambda is inside ${...}
+```
+
 ### Partial Function Literals
 GALA supports Scala-style partial function syntax where `{ case pattern => result }` creates a function that returns `Option[T]`. This enables concise pattern matching that automatically wraps results in `Some` and returns `None` for unmatched cases.
 

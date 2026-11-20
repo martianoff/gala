@@ -1275,6 +1275,29 @@ val total = Some(5).Map((var n) => {
 })
 ```
 
+#### Placeholder Lambda Shorthand
+
+Where an argument's expected type is a function type, an expression written
+with `_` is a lambda with one parameter per `_`, left to right:
+
+<!-- doc-check: fragment -->
+```gala
+val doubled = nums.Map(_ * 2)              // ≡ (x) => x * 2
+val sum     = nums.FoldLeft(0, _ + _)      // ≡ (a, b) => a + b
+```
+
+Only a `_` written outside string literals is a placeholder. A `_` inside the
+`${...}` of an `s"..."` or `f"..."` string is not a parameter of a lambda
+around the string, and reading it is an error
+([GALA-E0137](/docs/errors/gala-e0137/)). Name the parameter in an explicit
+lambda instead:
+
+<!-- doc-check: fragment -->
+```gala
+val labels = nums.Map((x) => s"v${x}")     // not nums.Map(s"v${_}")
+val tens   = s"${nums.Map(_ * 10)}"        // fine: the placeholder lambda is inside ${...}
+```
+
 ### Partial Function Literals
 
 <!-- doc-check: fragment -->
