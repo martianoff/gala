@@ -560,17 +560,17 @@ M6's validator has as few normalizations as possible to prove.
 
 GoCore's `runProgram` caps its depth at the constant `maxDepth`, while galaspec bounds
 its depth by the fuel alone, so a deep recursion galaspec finishes would be `fuel` in
-GoCore for every budget, and the statement above would be false. The theorems are therefore stated for `runProgramAt q depth fuel`,
-the same run without the cap (`runProgram q fuel` is `runProgramAt q (min fuel maxDepth)
+GoCore for every budget, and the statement above would be false. The theorems are therefore stated for `runProgramAt ord q depth fuel`,
+the same run without the cap (`runProgram q fuel` is `runProgramAt .gc q (min fuel maxDepth)
 fuel`). The differential run uses the capped run, which can only turn an agreement into
 `fuel` (inconclusive), never into another verdict; a run Go aborts for lack of stack is
 outside every claim already. For every `p` and `q` with `lower p = some q`, relative to
 `stdExcerpt` and for every operand order Go allows (see below):
 
 1. **Forward.** If `Spec.run p n` ends `ok` or in a panic, there is an `m` such that
-   `runProgramAt q m m` ends the same way, with the same output.
+   `runProgramAt ord q m m` ends the same way, with the same output.
 2. **Divergence.** If `Spec.run p n` ends in `fuel` for every `n`, then
-   `runProgramAt q m m` ends in `fuel` for every `m`. Conversely, if the GoCore run is
+   `runProgramAt ord q m m` ends in `fuel` for every `m`. Conversely, if the GoCore run is
    `fuel` for every `m`, galaspec never ends `ok` or in a panic (it may end `stuck` or
    `unsupported`, where nothing is claimed).
 
@@ -583,7 +583,7 @@ two source calls galaspec spends at most `K` steps, `K` fixed by the program's s
 each source call costs GoCore at least one step (its call, or an iteration of a
 self-tail-call loop; the lowering's other calls, `Get`, `Apply`, the function literals,
 only add steps); so `Spec.run p (K * (m + 1))` ending in `fuel` forces
-`runProgramAt q m m` to end in `fuel` too. That needs, besides, that the lowered program
+`runProgramAt ord q m m` to end in `fuel` too. That needs, besides, that the lowered program
 does not stop `stuck` or `unsupported` in GoCore while galaspec is still running, which
 the lock-step lemma (step 3) carries as part of its state relation.
 
@@ -616,11 +616,14 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   it cannot and the difference could be observed, and where the rewrite needs a place
   for statements that the statement does not have (a `for` condition, a `switch` case, a
   package-level initializer), the run ends `unsupported`
-  (`eval-order-*`), not guessed. The fixtures `eval_order`, `eval_order2` and
-  `eval_order3` pin it against `go run`.
+  (`eval-order-*`), not guessed. The fixtures `eval_order` to `eval_order4` pin it
+  against `go run`.
 - **The theorem.** Proved for gc's order alone, it would hold for that gc release only;
   a later gc may pick any order the spec allows. So M5's theorems are stated for the
   order parameter, constrained to the orders the spec allows; the harness runs gc's.
+  `Order` itself is any rewrite of the program: the theorems carry the constraint as a
+  hypothesis on `ord`, a predicate step 2 defines with the statements it covers, and
+  show it holds of `Order.gc` and `Order.leftToRight`.
   Then `EvalOperand` carries weight: without it, some allowed order breaks the theorem,
   which is how a #996-class bug shows. If the parameter proves too heavy, the theorems
   fall back to gc's order and say "for gc 1.25.5's operand order".
@@ -802,7 +805,7 @@ The table is honest about what the guarantees rest on.
 | GoCore's models of `fmt` and of the standard library's hand-written functions | GoCore runs the exported Go, but not Go's own standard library, nor the reflective functions of GALA's (`std/types.go`). `fmt`'s `Println`, `Print`, `Sprint`, `Printf` and `Sprintf` (with `%v %d %s %t %x %X %e %E %f %F %g %G %%`, and flags, width and precision on integers, floats, booleans and strings, except `#` and `%+v` on floats) are modelled, and so are `slices.Clip`, `FormatStruct`, `Copy`, `Equal`, `EvalOperand` and `Immutable.Format`, replaced by name (`libFuncs` in `formal/Gala/GoCore/Eval.lean`); `fmt.Stringer` is the defined interface type of `fmt/print.go` (`libType?`). Anything `fmt` would print as `%!verb(...)` or as an address is unsupported, never imitated | Each model cites the code it follows; the differential run against `go run` tests them |
 | GoCore's layout of a sealed value | M3's fragment holds a sealed value as its type, its active case and that case's fields; the generated Go holds every case's fields in one struct with a tag | From M4, GoCore for whole programs runs the flat struct, `_variant` included, through the generated `Unapply`, `Equal` and `String` bodies, so the layout is tested against `go run`. M3's abstract layout against the flat one: a proof is owed by M5, whose reference lowering targets the flat layout |
 | gc runtime model (append growth, size classes) | The Go spec leaves the capacity a growing `append` gives a slice to the implementation. GoCore takes gc's: `growslice`'s growth, the allocator's size classes and amd64 type layout, as Go 1.25.5 has them (`formal/Gala/GoCore/GcRuntime.lean`), and nothing outside that module encodes them. Where gc's choice depends on its escape analysis (a 32-byte stack buffer for a slice grown from empty), GoCore keeps both capacities and stops `unsupported` when a run would tell them apart | Tested against the pinned toolchain: `tools/check_repo_policy.sh` keeps the modelled release equal to MODULE.bazel's Go SDK and to the formal workflow's, the differential test refuses any other `go`, and fixtures from `go run` cover growth across the 256-element threshold, aliasing after growth, pointerful elements over 512 bytes and zero-size elements. No proof may rely on the policy's numbers, only on what the spec guarantees (capacity at least the length; growth allocates a fresh array; an append within capacity shares it), so proofs hold across Go releases |
-| gc's order of evaluation | The Go spec orders only calls, method calls and receives among themselves. GoCore's run takes gc's order (`Order.gc`, `formal/Gala/GoCore/Hoist.lean`): a rewrite modelling Go 1.25.5's order pass, which evaluates calls, builtins, slice expressions, type assertions and `&&`/`\|\|` at their place and the other operands after them. Where gc's choice depends on static types (a value converted to an interface) and could be observed, the run stops `unsupported` | Read from order.go of the pinned toolchain and tested against it: the same version check as the gc runtime model, and `go run` fixtures (`eval_order`, `eval_order2`, `eval_order3`). That the rewrite leaves alone exactly the statements on which the two orders agree is argued, not yet proved; the differential run tests it. M5's theorems take the order as a parameter, so they do not rest on gc's |
+| gc's order of evaluation | The Go spec orders only calls, method calls and receives among themselves. GoCore's run takes gc's order (`Order.gc`, `formal/Gala/GoCore/Hoist.lean`): a rewrite modelling Go 1.25.5's order pass, which evaluates calls, builtins, slice expressions, type assertions and `&&`/`\|\|` at their place and the other operands after them. Where gc's choice depends on static types (a value converted to an interface) and could be observed, the run stops `unsupported` | Read from order.go of the pinned toolchain and tested against it: the same version check as the gc runtime model, and `go run` fixtures (`eval_order` to `eval_order4`). That the rewrite leaves alone exactly the statements on which the two orders agree is argued, not yet proved; the differential run tests it. M5's theorems take the order as a parameter, so they do not rest on gc's |
 | Lean's `Float` and `Float32` (GoCore's floats, M4) | GoCore's float arithmetic is Lean's `Float`: the IEEE 754 binary64 of the build, C `double` under SSE on x86-64, with `Float32` its binary32. Trusted like the Lean compiler. Lean's kernel cannot see inside `Float`, so no theorem of M5 or M6 says anything about float values until an IEEE 754 specification is added: a proof covering a program says nothing about its float code | The rounding to and from exact values, the shortest digits and the conversions are computed exactly with `Nat` (`formal/Gala/GoCore/Float.lean`). The arithmetic is tested against `go run` by the differential run, and by fixtures whose results would differ with a fused multiply-add or without binary32 rounding (`formal/tests/gocore/src/floats.go`), on the x86-64 build of `gocore` |
 | Go AST exporter (`internal/formal/gocoreexport`, M4) | It decides which GoCore program the emitted Go is | A plain syntax dump of `go/ast`: every Go construct has a kind of its own and GoCore alone decides which it runs; literals are read as the Go type checker reads them; nothing but comments is dropped. A round-trip test prints every exported file back as Go and checks that it parses to the source's syntax tree, over the Go output of every example and of the GALA packages they import |
 | The validator's run (planned, M6) | Evaluated by Lean's kernel, or by compiled Lean when the kernel is too slow | The kernel needs no mitigation; compiled Lean is named as trusted where it is used |

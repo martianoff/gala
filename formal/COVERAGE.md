@@ -227,10 +227,12 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
   type, reassignment to another dynamic type, method values, `init` functions, `<nil>` for
   a nil receiver;
 - generics, two panics, fuel and an unsupported construct;
-- gc's order of evaluation (`eval_order`, `eval_order2`, `eval_order3`): a variable read
-  after a call in the same statement changes it, nested calls, `&&` and `||`, `len`, slice
-  expressions, method calls, `:=`, `var`, `op=`, `if` conditions, `return` and `defer`
-  arguments, output from a call before an earlier operand's panic; and the type-dependent
+- gc's order of evaluation (`eval_order`, `eval_order2`, `eval_order3`, `eval_order4`): a
+  variable read after a call in the same statement changes it, nested calls, `&&` and `||`,
+  `len`, slice expressions, method calls, `:=`, `var`, `op=`, `if` conditions, `return` and
+  `defer` arguments, output from a call before an earlier operand's panic, and the
+  operands gc reads late whatever their type (a field through a pointer parameter or a
+  pointer assertion, a dereferenced receiver, a struct passed as a struct); and the type-dependent
   case that stops (`unsupported_eval_order`).
 
 The differential run (`internal/formal/difftest`) runs every compiled program's Go through

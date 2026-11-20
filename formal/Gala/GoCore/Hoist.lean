@@ -13,7 +13,7 @@
 
   This is **gc 1.25.5's choice, not the spec's**, kept apart like `GcRuntime` and checked
   by the same version guard (`GcRuntime.goVersion`). It is pinned by the `go run`
-  fixtures `eval_order`, `eval_order2` and `eval_order3` (tests/gocore/src).
+  fixtures `eval_order`, `eval_order2`, `eval_order3` and `eval_order4` (tests/gocore/src).
 
   What order.go copies into a temporary at its lexical place (an *O-node*):
   * a call of a function, method or function value (`OCALLFUNC`, `OCALLINTER`);
@@ -41,8 +41,9 @@
   later M5 step owes as a lemma, `untriggered_orders_agree` (docs/FORMAL_SEMANTICS.MD,
   "Evaluation order"), tested meanwhile by the differential run. The classifiers are
   conservative: a read is "changeable" unless it is a constant, a function, a type, or a
-  local that no function literal assigns, whose address is not taken and that receives
-  no call of a method with a pointer receiver (or of a method no declaration names).
+  local that no function literal assigns, whose address is not taken (by `&`, by slicing
+  it, or by a method with a pointer receiver, called or as a method value; a call of a
+  method no declaration names counts too).
 
   gc's choice depends on static types in one place, which GoCore's syntax does not
   carry: a value converted to an interface whose type the runtime's conversion takes by
@@ -78,6 +79,10 @@ def declaredBy : List Expr → List String
 def sigNames : Sig → List String
   | .mk ps rs _ => fieldListNames ps ++ fieldListNames rs
 
+/-- The names of the fields of `ps` declared `*T`: locals of pointer type. -/
+def pointerNames (ps : List Field) : List String :=
+  ps.flatMap fun | .mk ns (.star _) => ns | _ => []
+
 namespace Hoist
 
 /-- What the rewrite knows where an expression is: the package and file (for names and
@@ -96,6 +101,8 @@ structure Scope where
   funcTypes : List (String × Sig) := []
   /-- The names of every struct field of the program. -/
   fields : Std.HashSet String := {}
+  /-- The methods of the program, by name. -/
+  methods : Std.HashMap String (List Method) := {}
 
 namespace Scope
 
@@ -126,7 +133,7 @@ def enter (s : Scope) (sig : Sig) : Scope :=
   let .mk ps _ _ := sig
   let s := s.bind (sigNames sig)
   { s with
-    pointers := ps.flatMap (fun | .mk ns (.star _) => ns | _ => []) ++ s.pointers,
+    pointers := pointerNames ps ++ s.pointers,
     funcTypes := ps.flatMap (fun | .mk ns (.funcType fs) => ns.map (·, fs) | _ => []) ++ s.funcTypes }
 
 end Scope
@@ -306,6 +313,8 @@ def lateRoot (s : Scope) : Expr → Bool
   | .ident x => !(s.isLocal x && s.changeable.contains x)
   -- A field through a pointer is addressable, whatever the pointer variable is.
   | .selector (.ident p) _ => s.pointers.contains p || !(s.isLocal p && s.changeable.contains p)
+  -- So is a field through an assertion to a pointer type.
+  | .selector (.typeAssert _ (.star _)) _ => true
   | .selector x _ | .paren x => lateRoot s x
   | .star _ => true
   | .call fn _ _ => !isType s fn
@@ -331,7 +340,7 @@ def resultCount : Sig → Nat
 
 /-- Whether every method named `m`, of any type of the program, has one result. -/
 def methodsSingle (s : Scope) (m : String) : Bool :=
-  let ms := s.c.pkgs.fold (fun acc _ p => p.methodsByName.getD m [] ++ acc) []
+  let ms := s.methods.getD m []
   !ms.isEmpty && ms.all fun me => resultCount me.sig == 1
 
 /-- Whether a call of `fn` is known to have one result: a declared function, or every
@@ -501,21 +510,24 @@ def elemValue : Expr → Expr
   | .keyValue _ v => v
   | e => e
 
-/-- Whether some method of the program is named `m`. -/
-def hasMethod (c : Ctx) (m : String) : Bool :=
-  c.pkgs.fold (fun acc _ p => acc || p.methodsByName.contains m) false
+/-- The methods of every package of the program, by name. -/
+def allMethods (c : Ctx) : Std.HashMap String (List Method) :=
+  c.pkgs.fold (fun acc _ p => p.methodsByName.fold (fun acc m ms => acc.insert m (ms ++ acc.getD m [])) acc) {}
 
-/-- Whether a call of some method named `m` may take its receiver's address: one has a
-    pointer receiver, or none is known (the call may be of anything). -/
-def ptrMethod (c : Ctx) (m : String) : Bool :=
-  let ms := c.pkgs.fold (fun acc _ p => p.methodsByName.getD m [] ++ acc) []
-  ms.isEmpty || ms.any (·.ptr)
+/-- Whether `x.m`, called (`called`) or as a method value, may take `x`'s address: some
+    method named `m` has a pointer receiver, or, for a call, none is known (it may be of
+    anything). -/
+def takesAddress (ms : Std.HashMap String (List Method)) (called : Bool) (m : String) : Bool :=
+  match ms.get? m with
+  | none => called
+  | some l => l.any (·.ptr) || (called && l.isEmpty)
 
-/-- A callee `x.m` that selects a method, not a field: some method is named `m` and no
-    struct field is (the selection then reads `x`, not a field `x` holds). -/
+/-- A callee `T{...}.m` that selects a method of a composite literal, not a field: some
+    method is named `m` and no struct field is. The receiver is a fresh value, so the
+    selection reads no state. (On a variable `p` it may: a value-receiver method of a
+    pointer dereferences it.) -/
 def isMethodSel (s : Scope) : Expr → Bool
-  | .selector x m => (match x with | .ident q => (s.import? q).isNone | _ => true) &&
-      hasMethod s.c m && !s.fields.contains m
+  | .selector (.composite ..) m => s.methods.contains m && !s.fields.contains m
   | _ => false
 
 /-- A callee that reads nothing a call can change: a function of an imported package
@@ -556,7 +568,10 @@ def scanE (s : Scope) (top : Bool) : Expr → List Ev
   | .star x => if isType s x then [] else scanE s false x ++ [.read true (some .nil)]
   | .unary op x => if op == "<-" then [mkNode true [.text] (scanE s false x)] else scanE s false x
   | .binary op x y =>
-    if op == "&&" || op == "||" then [mkNode false [] (scanE s false x ++ scanE s false y)]
+    -- Each operand is a level of its own: `x` is evaluated whole before `y` in both
+    -- orders (gc's `r := x; if r { r = y }`).
+    if op == "&&" || op == "||" then
+      [mkNode false [] [mkNode false [] (scanE s false x), mkNode false [] (scanE s false y)]]
     else
       let ex := scanE s false x
       let ey := scanE s false y
@@ -570,6 +585,10 @@ def scanE (s : Scope) (top : Bool) : Expr → List Ev
     match callKind s fn with
     | .conversion =>
       if isByteSliceType s fn && args.all isStringShaped then [mkNode false [] (scanEs s args)]
+      -- `[]byte(x)`: copied at its place if `x` is a string, not if it is a []byte.
+      else if isByteSliceType s fn then
+        let ev := scanEs s args
+        ev ++ (if readsChangeable ev then [.slot "conversion"] else [])
       -- A conversion's operand may be converted to an interface (unless the type is
       -- certainly not one), or be a []byte gc does not copy.
       else scanArgs s [!nonIface s fn] args
@@ -577,8 +596,8 @@ def scanE (s : Scope) (top : Bool) : Expr → List Ev
       let inner := scanSlots s args
       if top then inner else [mkNode (!pureBuiltins.contains b) [.text] inner]
     | .call =>
-      -- A method selected on a value reads its receiver, not a field (`dropLast` drops the
-      -- selector's field read), unless some struct has a field of that name.
+      -- A method selected on a composite literal reads no state (`dropLast` drops the
+      -- selector's read), unless some struct has a field of that name.
       let ef := if isPkgFunc s fn then [] else
         let e := scanE s false fn
         if isMethodSel s fn then e.dropLast else e
@@ -715,32 +734,36 @@ def rootName : Expr → List String
 
 mutual
 /-- The locals a call may change, by name: those a function literal assigns (`lit`: inside
-    one), the operands of `&` and the receivers of calls of a method `m` with `pm m`: one
-    with a pointer receiver, which takes the receiver's address, or no known method. -/
-def chE (pm : String → Bool) (lit : Bool) : Expr → List String
+    one), the operands of `&`, the arrays sliced, and the receivers of `x.m` where
+    `pm called m` (`takesAddress`): a method with a pointer receiver takes the receiver's
+    address, called or as a method value. -/
+def chE (pm : Bool → String → Bool) (lit : Bool) : Expr → List String
   | .funcLit _ body => chSs pm true body
   | .unary op x => (if op == "&" then rootName x else []) ++ chE pm lit x
   | .call fn args _ =>
-    (match fn with | .selector x m => (if pm m then rootName x else []) | _ => []) ++ chE pm lit fn ++ chEs pm lit args
+    (match fn with | .selector x m => (if pm true m then rootName x else []) | _ => []) ++
+      chE pm lit fn ++ chEs pm lit args
   | .composite _ es => chEs pm lit es
   | .keyValue k v => chE pm lit k ++ chE pm lit v
-  | .paren x | .star x | .selector x _ | .typeAssert x _ => chE pm lit x
+  | .selector x m => (if pm false m then rootName x else []) ++ chE pm lit x
+  | .paren x | .star x | .typeAssert x _ => chE pm lit x
   | .index x is => chE pm lit x ++ chEs pm lit is
-  | .sliceExpr x l h m => chE pm lit x ++ chOE pm lit l ++ chOE pm lit h ++ chOE pm lit m
+  | .sliceExpr x l h m => rootName x ++ chE pm lit x ++ chOE pm lit l ++ chOE pm lit h ++ chOE pm lit m
   | .binary _ x y => chE pm lit x ++ chE pm lit y
   | _ => []
-def chEs (pm : String → Bool) (lit : Bool) : List Expr → List String
+def chEs (pm : Bool → String → Bool) (lit : Bool) : List Expr → List String
   | [] => []
   | e :: es => chE pm lit e ++ chEs pm lit es
-def chOE (pm : String → Bool) (lit : Bool) : Option Expr → List String
+def chOE (pm : Bool → String → Bool) (lit : Bool) : Option Expr → List String
   | none => []
   | some e => chE pm lit e
-def chS (pm : String → Bool) (lit : Bool) : Stmt → List String
+def chS (pm : Bool → String → Bool) (lit : Bool) : Stmt → List String
   | .block ss => chSs pm lit ss
   | .decl (.value _ specs) => chSpecs pm lit specs
   | .expr x | .defer_ x => chE pm lit x
   | .incDec _ x => (if lit then rootName x else []) ++ chE pm lit x
-  | .assign tok l r => (if lit && tok != ":=" then l.flatMap rootName else []) ++ chEs pm lit l ++ chEs pm lit r
+  | .assign tok l r =>
+    (if lit && tok != ":=" then l.flatMap rootName else []) ++ chEs pm lit l ++ chEs pm lit r
   | .ret es => chEs pm lit es
   | .if_ i c b e => chOS pm lit i ++ chE pm lit c ++ chSs pm lit b ++ chOS pm lit e
   | .switch i t cs => chOS pm lit i ++ chOE pm lit t ++ chClauses pm lit cs
@@ -750,16 +773,16 @@ def chS (pm : String → Bool) (lit : Bool) : Stmt → List String
     (if lit && tok != ":=" then (k.toList ++ v.toList).flatMap rootName else []) ++
       chOE pm lit k ++ chOE pm lit v ++ chE pm lit x ++ chSs pm lit b
   | _ => []
-def chSs (pm : String → Bool) (lit : Bool) : List Stmt → List String
+def chSs (pm : Bool → String → Bool) (lit : Bool) : List Stmt → List String
   | [] => []
   | s :: ss => chS pm lit s ++ chSs pm lit ss
-def chOS (pm : String → Bool) (lit : Bool) : Option Stmt → List String
+def chOS (pm : Bool → String → Bool) (lit : Bool) : Option Stmt → List String
   | none => []
   | some s => chS pm lit s
-def chClauses (pm : String → Bool) (lit : Bool) : List Clause → List String
+def chClauses (pm : Bool → String → Bool) (lit : Bool) : List Clause → List String
   | [] => []
   | .mk l _ b :: cs => chEs pm lit l ++ chSs pm lit b ++ chClauses pm lit cs
-def chSpecs (pm : String → Bool) (lit : Bool) : List Spec → List String
+def chSpecs (pm : Bool → String → Bool) (lit : Bool) : List Spec → List String
   | [] => []
   | .mk _ _ vs :: specs => chEs pm lit vs ++ chSpecs pm lit specs
 end
@@ -995,13 +1018,6 @@ def hPkgValue (s : Scope) (vals : List Expr) : HM (List Expr) := do
   let vals' ← hEs s false vals
   pure (if triggers (scanOperands s true vals) then vals'.map (stopAt "package-variable") else vals')
 
-/-- The names of the fields of `ps` declared `*T`: locals of pointer type. -/
-def pointerNames (ps : List Field) : List String :=
-  ps.flatMap fun | .mk ns (.star _) => ns | _ => []
-
-def sigParams : Sig → List Field
-  | .mk ps _ _ => ps
-
 /-- The names of every struct field the program declares. -/
 def structFields (c : Ctx) : Std.HashSet String :=
   c.pkgs.fold (fun acc _ p => p.objs.fold (fun acc _ o => match o with
@@ -1011,7 +1027,8 @@ def structFields (c : Ctx) : Std.HashSet String :=
 
 /-- A declaration in gc's order: function and method bodies, and package-level
     variables' initializers. -/
-def hDecl (c : Ctx) (fields : Std.HashSet String) (pkg : String) (fi : Nat) : Decl → HM Decl
+def hDecl (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String (List Method))
+    (pkg : String) (fi : Nat) : Decl → HM Decl
   | .func name recv tps sig (some body) => do
     let recvNames := match recv with
       | some (.mk ns _) => ns
@@ -1021,11 +1038,13 @@ def hDecl (c : Ctx) (fields : Std.HashSet String) (pkg : String) (fi : Nat) : De
       | none => []
     let s := Scope.enter { c, pkg, file := fi, locals := recvNames,
                            tparams := fieldListNames tps ++ recvTParams,
-                           changeable := Std.HashSet.ofList (chSs (ptrMethod c) false body),
-                           pointers := pointerNames recv.toList, fields } sig
+                           changeable := Std.HashSet.ofList (chSs (takesAddress methods) false body),
+                           pointers := pointerNames recv.toList, fields, methods } sig
     pure (.func name recv tps sig (some (← hSs s body)))
   | .value false specs => do
-    let s : Scope := { c, pkg, file := fi, fields }
+    -- Its function literals' locals: those a nested literal assigns may change.
+    let s : Scope := { c, pkg, file := fi, fields, methods,
+                       changeable := Std.HashSet.ofList (chSpecs (takesAddress methods) false specs) }
     let specs' ← specs.mapM fun
       | .mk names ty vals => do pure (Spec.mk names ty (← hPkgValue s vals))
     pure (.value false specs')
@@ -1036,9 +1055,10 @@ def hDecl (c : Ctx) (fields : Std.HashSet String) (pkg : String) (fi : Nat) : De
 def gcOrder (prog : Program) : Program :=
   let c := buildCtx prog
   let fields := structFields c
+  let methods := allMethods c
   let go : HM (List Package) := prog.packages.mapM fun p => do
     let files ← p.files.zipIdx.mapM fun (f, fi) => do
-      pure { f with decls := ← f.decls.mapM (hDecl c fields p.path fi) }
+      pure { f with decls := ← f.decls.mapM (hDecl c fields methods p.path fi) }
     pure { p with files }
   { packages := (go.run' {}) }
 
