@@ -459,7 +459,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 29 | 1 | 75 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 477 | 34 | 431 | 32 |
+| UNSUPPORTED | 478 | 34 | 432 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **29** (ratchet baseline 29).
@@ -528,7 +528,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 | Construct | Programs |
 |---|---|
 | `import` | 285 |
-| `method-call` | 52 |
+| `method-call` | 53 |
 | `generic-type` | 41 |
 | `index` | 38 |
 | `generic-decl` | 15 |
