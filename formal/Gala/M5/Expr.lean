@@ -24,12 +24,16 @@
   * **Constant expressions.** galaspec folds them before a run (`Gala/Const.lean`), so
     the expressions a run evaluates have none: `NoConstOp`.
   * **Evaluation order.** A call-free expression has no effects other than its result
-    or a panic, and the only run-time panic this step lowers is an integer division by
-    zero, whose class and text are the same wherever it happens. So the order its parts
-    run in is unobservable here, and the claim holds for any order Go allows, though it is
-    proved for GoCore's, left to right. When shifts are lowered, two failing operands can
-    panic differently; the GoCore fixtures `panic_order_divide` and `panic_order_shift`
-    pin gc 1.25.5's choice there (left to right) for that step.
+    or a panic. Its run-time panics are an integer division by zero and a negative shift
+    count, each with one text. The claim is proved for GoCore's order, left to right,
+    which is galaspec's; where two failing operands panic differently (a division and a
+    shift), the first in that order decides on both sides. The GoCore fixtures
+    `panic_order_divide` and `panic_order_shift` pin gc 1.25.5 to the same order for
+    operands that are not calls.
+  * **Shifts.** A shift's left operand is a typed `int`: the lowering rejects a literal
+    there, as Go gives an untyped constant shifted by a variable count the type its
+    context would give it, which this lowering does not track. The count is a typed `int`
+    or an untyped constant.
 -/
 import Gala.M5.SpecPure
 import Gala.M5.Bits
@@ -57,7 +61,7 @@ abbrev intTy : Ty := .int .int
 
 /-- **Values.** -/
 inductive VRel : Spec.Val → GoCore.Full.Val → Prop
-  | int (n : Int) : VRel (.int n) (.int intTy n)
+  | int (n : Int) : IntKind.int.represents n = true → VRel (.int n) (.int intTy n)
   | intU (n : Int) : IntKind.int.represents n = true → VRel (.int n) (.int (.untyped .int) n)
   | bool (b : Bool) : VRel (.bool b) (.bool .bool b)
   | boolU (b : Bool) : VRel (.bool b) (.bool (.untyped .bool) b)
@@ -105,6 +109,7 @@ def binaryKind (op : String) (kl kr : Kind) : Option Kind :=
   | "+", .int, .int | "-", .int, .int | "*", .int, .int | "/", .int, .int | "%", .int, .int =>
     some .int
   | "&", .int, .int | "|", .int, .int | "^", .int, .int | "&^", .int, .int => some .int
+  | "<<", .int, .int | ">>", .int, .int => some .int
   | "+", .str, .str => some .str
   | _, _, _ => none
 
@@ -113,6 +118,16 @@ def unaryKind (op : String) (k : Kind) : Option Kind :=
   | "-", .int | "+", .int | "^", .int => some .int
   | "!", .bool => some .bool
   | _, _ => none
+
+/-- A literal, through parentheses: the only expressions whose GoCore value may be an
+    untyped integer. -/
+def isLitE : Spec.Expr → Bool
+  | .lit _ => true
+  | .paren e => isLitE e
+  | _ => false
+
+/-- A shift. -/
+def isShift (op : String) : Bool := op == "<<" || op == ">>"
 
 /-- **The lowering** of a call-free expression, with its kind; `none` outside this step. -/
 def lowerE (κ : String → Option Kind) : Spec.Expr → Option (Kind × GoCore.Full.Expr)
@@ -127,7 +142,9 @@ def lowerE (κ : String → Option Kind) : Spec.Expr → Option (Kind × GoCore.
     let (kl, ll) ← lowerE κ l
     let (kr, lr) ← lowerE κ r
     let k ← binaryKind op kl kr
-    pure (k, .binary op ll lr)
+    -- A shift of an untyped constant takes the type its context would give the constant
+    -- (Go spec, "Operators"), which this lowering does not track.
+    if isShift op && isLitE l then none else pure (k, .binary op ll lr)
   | _ => none
 
 /-- No operator node is a constant expression: what `foldConstants` leaves. -/
@@ -137,11 +154,11 @@ def NoConstOp : Spec.Expr → Prop
   | .binary op l r => Spec.constEval (.binary op l r) = none ∧ NoConstOp l ∧ NoConstOp r
   | _ => True
 
-/-- How a galaspec panic and a GoCore panic agree in this step, whose only run-time panic
-    is an integer division by zero: galaspec's is of class `divide`, and GoCore's is the
-    runtime error with the same text. -/
+/-- How a galaspec panic and a GoCore panic agree in this step, whose run-time panics are
+    an integer division by zero (galaspec's class `divide`) and a negative shift count
+    (class `other`): GoCore's is the runtime error with the same text. -/
 def PanicRel : Spec.PanicClass → String → GoCore.Full.Val → Prop
-  | c, m, .str .string t => c = .divide ∧ t = m
+  | c, m, .str .string t => (c = .divide ∨ c = .other) ∧ t = m
   | _, _, _ => False
 
 
@@ -197,6 +214,12 @@ theorem evalExpr_local (c : Ctx) (n : Nat) (env : Env) (x : String) (cell : Nat)
 theorem wrap_eq (x : Int) : Spec.wrap x = IntKind.int.wrap x := by
   simp [Spec.wrap, IntKind.wrap, IntKind.signed, IntKind.bits]
 
+theorem represents_kwrap (x : Int) : IntKind.int.represents (IntKind.int.wrap x) = true := by
+  simp [IntKind.represents, IntKind.wrap, IntKind.signed, IntKind.bits, Int.bmod_bmod]
+
+theorem represents_swrap (x : Int) : IntKind.int.represents (Spec.wrap x) = true := by
+  rw [wrap_eq]; exact represents_kwrap x
+
 theorem minInt_eq : Spec.minInt = -9223372036854775808 := rfl
 theorem maxInt_eq : Spec.maxInt = 9223372036854775807 := rfl
 
@@ -217,15 +240,15 @@ theorem unary_sim (cx : Ctx) (n : Nat) (op : String) (v : Spec.Val) (w : Val) (k
     (hnu : ¬ UInt w) :
     ∃ v' w', ((Spec.unop op v).run.run c).1 = .ok v' ∧
       (unary cx (n + 2) op w).run.run g = (.ok w', g) ∧ VRel v' w' ∧ valKind v' = some k' ∧ ¬ UInt w' := by
-  rcases hv with x | ⟨x, _⟩ | b | b | s | s <;> simp only [valKind, Option.some.injEq] at hk <;> subst hk
+  rcases hv with ⟨x, hx⟩ | ⟨x, _⟩ | b | b | s | s <;> simp only [valKind, Option.some.injEq] at hk <;> subst hk
   · have hop : (op = "-" ∧ k' = .int) ∨ (op = "+" ∧ k' = .int) ∨ (op = "^" ∧ k' = .int) := by
       unfold unaryKind at hu; split at hu <;> simp_all
     rcases hop with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · refine ⟨_, _, rfl, ?_, .int (Spec.wrap (-x)), rfl, by simp [UInt]⟩
+    · refine ⟨_, _, rfl, ?_, .int _ (represents_swrap _), rfl, by simp [UInt]⟩
       simp [unary, grun_bind, underlying_int, wrap_eq]; rfl
-    · refine ⟨_, _, rfl, ?_, .int x, rfl, by simp [UInt]⟩
+    · refine ⟨_, _, rfl, ?_, .int x hx, rfl, by simp [UInt]⟩
       simp [unary]; rfl
-    · refine ⟨_, _, rfl, ?_, .int (Spec.wrap (-x - 1)), rfl, by simp [UInt]⟩
+    · refine ⟨_, _, rfl, ?_, .int _ (represents_swrap _), rfl, by simp [UInt]⟩
       simp [unary, grun_bind, underlying_int, wrap_eq, bitNot]; rfl
   · exact absurd trivial hnu
   all_goals first
@@ -344,13 +367,13 @@ theorem intTy_beq : (intTy == intTy) = true := rfl
 
 /-- **Integer operators** on two typed `int`s, against galaspec's. -/
 theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St) (c : Spec.Core)
-    (k : Kind) (hk : binaryKind op .int .int = some k) :
+    (k : Kind) (hk : binaryKind op .int .int = some k) (hsh : isShift op = false) :
     RRel k g ((Spec.binop op (.int x) (.int y)).run.run c).1
       ((binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g) := by
   have hop : op = "==" ∨ op = "!=" ∨ op = "<" ∨ op = "<=" ∨ op = ">" ∨ op = ">=" ∨
       op = "+" ∨ op = "-" ∨ op = "*" ∨ op = "/" ∨ op = "%" ∨ op = "&" ∨ op = "|" ∨ op = "^" ∨
       op = "&^" := by
-    unfold binaryKind at hk; split at hk <;> simp_all
+    unfold binaryKind at hk; split at hk <;> simp_all [isShift]
   rcases hop with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk
   all_goals (first | rw [binop_and] | rw [binop_or] | rw [binop_xor] | rw [binop_andNot] | skip)
@@ -359,12 +382,12 @@ theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     cmp_le, cmp_ge, wrap_eq]
   all_goals first
     | exact ⟨_, rfl, .boolU _, rfl, by simp [UInt]⟩
-    | exact ⟨_, rfl, .int _, rfl, by simp [UInt]⟩
+    | exact ⟨_, rfl, .int _ (represents_kwrap _), rfl, by simp [UInt]⟩
     | (by_cases hy : y = 0
        · simp only [hy, ite_true]
-         exact ⟨_, rfl, rfl, rfl⟩
+         exact ⟨_, rfl, .inl rfl, rfl⟩
        · simp only [hy, ite_false]
-         exact ⟨_, rfl, .int _, rfl, by simp [UInt]⟩)
+         exact ⟨_, rfl, .int _ (represents_kwrap _), rfl, by simp [UInt]⟩)
 
 /-- `==` and `!=` on two booleans of one type: Go's `bool`, or two untyped ones (two
     comparisons' results). -/
@@ -434,28 +457,124 @@ theorem evalExpr_predeclared (c : Ctx) (n : Nat) (env : Env) (b : Bool) (g : St)
     simp [evalExpr, hl, hown, evalName, pkgCtx, hpk, hobj]
     rfl
 
-theorem binaryKind_noshift {op : String} {k₁ k₂ k : Kind} (h : binaryKind op k₁ k₂ = some k) :
-    (op == "<<" || op == ">>") = false := by
-  unfold binaryKind at h
-  split at h <;> simp_all
+/-- A shift on `int`s takes `int`s. -/
+theorem binaryKind_shift {op : String} {k₁ k₂ k : Kind} (h : binaryKind op k₁ k₂ = some k)
+    (hs : isShift op = true) : k₁ = .int ∧ k₂ = .int ∧ k = .int := by
+  simp only [isShift, Bool.or_eq_true, beq_iff_eq] at hs
+  rcases hs with rfl | rfl <;> (unfold binaryKind at h; split at h <;> simp_all)
+
+/-- An `int` in Go's range, divided by `2 ^ s` with `s ≥ 64`, is `-1` or `0` by its sign. -/
+theorem represents_bounds {x : Int} (hx : IntKind.int.represents x = true) :
+    -9223372036854775808 ≤ x ∧ x < 9223372036854775808 := by
+  simp only [IntKind.represents, IntKind.wrap, IntKind.signed, IntKind.bits, ite_true,
+    beq_iff_eq] at hx
+  have h1 := Int.le_bmod (x := x) (m := 2 ^ 64) (by decide)
+  have h2 := Int.bmod_lt (x := x) (m := 2 ^ 64) (by decide)
+  rw [hx] at h1 h2
+  constructor <;> omega
+
+theorem ediv_big (x : Int) (hx : IntKind.int.represents x = true) (s : Nat) (hs : 64 ≤ s) :
+    x / 2 ^ s = if x < 0 then -1 else 0 := by
+  obtain ⟨h1, h2⟩ := represents_bounds hx
+  have hp : 18446744073709551616 ≤ (2 : Int) ^ s := by
+    have := Nat.pow_le_pow_right (n := 2) (by decide) hs
+    have h : ((2 ^ 64 : Nat) : Int) ≤ ((2 ^ s : Nat) : Int) := by exact_mod_cast this
+    simpa using h
+  generalize (2 : Int) ^ s = B at *
+  split
+  · have := (Int.ediv_emod_unique (a := x) (b := B) (q := -1) (r := x + B) (by omega)).mpr
+      ⟨by omega, by omega, by omega⟩
+    exact this.1
+  · exact Int.ediv_eq_zero_of_lt (by omega) (by omega)
+
+theorem represents_ediv (x : Int) (hx : IntKind.int.represents x = true) (s : Nat) :
+    IntKind.int.represents (x / 2 ^ s) = true := by
+  obtain ⟨h1, h2⟩ := represents_bounds hx
+  have hB1 : (1 : Int) ≤ 2 ^ s := by
+    have h : ((1 : Nat) : Int) ≤ ((2 ^ s : Nat) : Int) := by exact_mod_cast Nat.one_le_two_pow
+    simpa using h
+  generalize (2 : Int) ^ s = B at *
+  have hd := Int.mul_ediv_add_emod x B
+  have hr0 : 0 ≤ x % B := Int.emod_nonneg x (by omega)
+  have hrB : x % B < B := Int.emod_lt_of_pos x (by omega)
+  generalize x / B = q at *
+  generalize x % B = r at *
+  apply represents_of_range <;> simp only [minInt_eq, maxInt_eq]
+  · by_cases hq : 0 ≤ q
+    · omega
+    · have h := Int.mul_nonneg (by omega : (0 : Int) ≤ B - 1) (by omega : (0 : Int) ≤ -(q + 1))
+      rw [Int.sub_mul, Int.one_mul, Int.mul_neg, Int.mul_add, Int.mul_one] at h
+      omega
+  · by_cases hq : 0 ≤ q
+    · have h := Int.mul_nonneg (by omega : (0 : Int) ≤ B - 1) hq
+      rw [Int.sub_mul, Int.one_mul] at h
+      omega
+    · omega
+
+/-- **Shifts** of a typed `int` by an `int` count, typed or an untyped constant: galaspec's
+    and GoCore's agree, a negative count panicking with the same text on both sides. -/
+theorem binary_shift (cx : Ctx) (n : Nat) (op : String) (x y : Int) (w : Val) (g : St)
+    (c : Spec.Core) (hop : isShift op = true) (hx : IntKind.int.represents x = true)
+    (hy : VRel (.int y) w) :
+    RRel .int g ((Spec.binop op (.int x) (.int y)).run.run c).1
+      ((binary cx (n + 3) op (.int intTy x) w).run.run g) := by
+  simp only [isShift, Bool.or_eq_true, beq_iff_eq] at hop
+  have hbits : IntKind.int.bits = 64 := rfl
+  rcases hop with rfl | rfl
+  · cases hy <;>
+      simp [Spec.binop, binary, grun_bind, asInt, underlying_int, shiftOp, Val.ty, runtimePanic, RRel] <;>
+    · by_cases hneg : y < 0
+      · simp only [hneg, ite_true]; exact ⟨_, rfl, .inr rfl, rfl⟩
+      · by_cases hbig : 64 ≤ y
+        · have h64 : 64 ≤ y.toNat := by omega
+          simp only [hneg, hbig, h64, ite_true, ite_false, shiftL, hbits]
+          exact ⟨_, rfl, .int 0 (show IntKind.int.represents 0 = true from rfl), rfl, by simp [UInt]⟩
+        · have h64 : ¬ 64 ≤ y.toNat := by omega
+          simp only [hneg, hbig, h64, ite_false, shiftL, hbits, wrap_eq]
+          exact ⟨_, rfl, .int _ (represents_kwrap _), rfl, by simp [UInt]⟩
+  · cases hy <;>
+      simp [Spec.binop, binary, grun_bind, asInt, underlying_int, shiftOp, Val.ty, runtimePanic, RRel] <;>
+    · by_cases hneg : y < 0
+      · simp only [hneg, ite_true]; exact ⟨_, rfl, .inr rfl, rfl⟩
+      · by_cases hbig : 64 ≤ y
+        · have h64 : 64 ≤ y.toNat := by omega
+          simp only [hneg, hbig, ite_true, ite_false, shiftR, ediv_big x hx _ h64]
+          exact ⟨_, rfl, .int (if x < 0 then -1 else 0) (by split <;> rfl), rfl, by simp [UInt]⟩
+        · simp only [hneg, hbig, ite_false, shiftR]
+          exact ⟨_, rfl, .int _ (represents_ediv x hx _), rfl, by simp [UInt]⟩
 
 /-- **Binary operators** other than `&&` and `||`, on related operands: galaspec's result
     and GoCore's agree. The two operands are not both untyped integers: an expression
-    with no constant operator node never has two (`NoConstOp`). -/
+    with no constant operator node never has two (`NoConstOp`); a shift's left operand is
+    not one at all (the lowering rejects a literal there). -/
 theorem binary_sim (cx : Ctx) (n : Nat) (op : String) (v₁ v₂ : Spec.Val) (w₁ w₂ : Val)
     (k₁ k₂ k : Kind) (g : St) (c : Spec.Core) (h1 : VRel v₁ w₁) (h2 : VRel v₂ w₂)
     (hk1 : valKind v₁ = some k₁) (hk2 : valKind v₂ = some k₂) (hb : binaryKind op k₁ k₂ = some k)
-    (ha : op ≠ "&&") (ho : op ≠ "||") (hnu : ¬ (UInt w₁ ∧ UInt w₂)) :
+    (ha : op ≠ "&&") (ho : op ≠ "||") (hnu : ¬ (UInt w₁ ∧ UInt w₂))
+    (hsl : isShift op = true → ¬ UInt w₁) :
     RRel k g ((Spec.binop op v₁ v₂).run.run c).1 ((binary cx (n + 3) op w₁ w₂).run.run g) := by
-  have hs := binaryKind_noshift hb
-  rcases h1 with x | ⟨x, hx⟩ | x | x | x | x <;> rcases h2 with y | ⟨y, hy⟩ | y | y | y | y <;>
+  cases hsh : isShift op
+  case true =>
+    obtain ⟨rfl, rfl, rfl⟩ := binaryKind_shift hb hsh
+    have hnu1 := hsl hsh
+    cases h1 with
+    | int x hx =>
+      cases h2 with
+      | int y hy => exact binary_shift cx n op x y _ g c hsh hx (.int y hy)
+      | intU y hy => exact binary_shift cx n op x y _ g c hsh hx (.intU y hy)
+      | _ => simp [valKind] at hk2
+    | intU x _ => exact absurd trivial hnu1
+    | _ => simp [valKind] at hk1
+  case false =>
+  have hs : (op == "<<" || op == ">>") = false := hsh
+  rcases h1 with ⟨x, hx⟩ | ⟨x, hx⟩ | x | x | x | x <;> rcases h2 with ⟨y, hy⟩ | ⟨y, hy⟩ | y | y | y | y <;>
     simp only [valKind, Option.some.injEq] at hk1 hk2 <;> subst hk1 hk2
   all_goals first
     | (exfalso; unfold binaryKind at hb; split at hb <;> simp_all; done)
     | (simp [UInt] at hnu; done)
-    | exact binary_int_typed cx n op x y g c k hb
-    | (rw [binary_uint_left cx n op x y g hx hs]; exact binary_int_typed cx n op x y g c k hb)
-    | (rw [binary_uint_right cx n op x y g hy hs]; exact binary_int_typed cx n op x y g c k hb)
+    | exact binary_int_typed cx n op x y g c k hb hsh
+    | (rw [binary_uint_left cx n op x y g hx hs]; exact binary_int_typed cx n op x y g c k hb hsh)
+    | (rw [binary_uint_right cx n op x y g hy hs]; exact binary_int_typed cx n op x y g c k hb hsh)
     | exact binary_bool_same cx n op _ x y g c k (.inl rfl) hb ha ho
     | exact binary_bool_same cx n op _ x y g c k (.inr rfl) hb ha ho
     | (rw [binary_ubool_left cx n op x y g hs]; exact binary_bool_same cx n op _ x y g c k (.inl rfl) hb ha ho)
@@ -464,17 +583,9 @@ theorem binary_sim (cx : Ctx) (n : Nat) (op : String) (v₁ v₂ : Spec.Val) (w�
     | exact binary_str_same cx n op _ x y g c k (.inr rfl) hb
     | (rw [binary_ustr_left cx n op x y g hs]; exact binary_str_same cx n op _ x y g c k (.inl rfl) hb)
     | (rw [binary_ustr_right cx n op x y g hs]; exact binary_str_same cx n op _ x y g c k (.inl rfl) hb)
-
 end GoCoreRuns
 
 /-! ## Literal trees are constant expressions -/
-
-/-- A literal, through parentheses: the only expressions whose GoCore value may be an
-    untyped integer. -/
-def isLitE : Spec.Expr → Bool
-  | .lit _ => true
-  | .paren e => isLitE e
-  | _ => false
 
 def cvKind : Spec.CVal → Kind
   | .int _ => .int
@@ -660,6 +771,9 @@ theorem pure_sim (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) :
   | .binary op l r, k, le, hl, hnc, c, g, env, hloc, hp, N, hN => by
     simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at hl
     obtain ⟨⟨kl, ll⟩, hll, ⟨kr, lr⟩, hlr, k', hb, he⟩ := hl
+    split at he
+    · cases he
+    rename_i hnsh
     simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at he
     obtain ⟨rfl, rfl⟩ := he
     obtain ⟨hc, hncl, hncr⟩ := hnc
@@ -806,6 +920,7 @@ theorem pure_sim (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) :
             · exact hnur hr h2
             · exact hlits ⟨hl, hr⟩
         have hbs := binary_sim cx n op vl vr wl wr kl kr k' g c hvl hvr hkl hkr hb hand hor hnu
+          (fun hs => hnul (by simpa [hs] using hnsh))
         revert hbs
         rcases ((Spec.binop op vl vr).run.run c) with ⟨rb, cb⟩
         intro hbs
@@ -853,8 +968,10 @@ theorem pure_of_lower (κ : String → Option Kind) (c : Spec.Core) (cells : Arr
     `^`, `!`, and binary `+ - * / %` and the bitwise `& | ^ &^` on `int`s (galaspec's
     through `Int64`, GoCore's exact bits reduced to `int`; `Gala/M5/Bits.lean`),
     comparisons of `int`s, `==` and `!=` of any one kind, `+` of strings, `&&` and `||`.
-    Not covered yet: shifts and the ordering of strings (the lowering has none). Stated for GoCore's order of
-    evaluation, left to right, which is gc's for operands that are not calls. -/
+    Shifts `<< >>` of a typed `int` by an `int` count, a negative count panicking as in Go.
+    Not covered yet: the ordering of strings, and a shift of a literal (the lowering has
+    neither). Stated for GoCore's order of evaluation, left to right, which is gc's for
+    operands that are not calls. -/
 theorem expr_correct (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) (e : Spec.Expr)
     (k : Kind) (le : GoCore.Full.Expr) (hl : lowerE κ e = some (k, le)) (hnc : NoConstOp e)
     (s : Spec.St) (g : St) (env : Env) (hloc : LocRel κ s.toCore g.cells env)
@@ -889,7 +1006,7 @@ theorem inst_locRel : LocRel instKinds instCore #[.int intTy 5] instEnv := by
   split at hk
   · subst_vars
     simp only [Option.some.injEq] at hk; subst hk
-    exact ⟨_, 0, .int 5, .int intTy 5, rfl, rfl, rfl, rfl, .int 5, rfl, by simp [UInt],
+    exact ⟨_, 0, .int 5, .int intTy 5, rfl, rfl, rfl, rfl, .int 5 rfl, rfl, by simp [UInt],
       by simp, by simp⟩
   · cases hk
 
@@ -935,6 +1052,34 @@ theorem inst_bitwise :
       (.ok (.int intTy 0), instSt) ∧
     (lowerE instKinds (.binary "&^" (.name "x") (.lit (.int (-3))))).isSome := by
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Shifts on the instance, `x = 5`: by a typed count `x << x` is `160`; `-x >> 1` is `-3`
+    (an arithmetic shift rounds down); a count of `64` or more gives `x << 64 = 0` and
+    `-x >> 70 = -1`; a negative count `x << -x` panics with Go's text. galaspec and GoCore
+    give each of these. The lowering accepts them and rejects `1 << x`, whose untyped left
+    operand would take its type from the context. -/
+theorem inst_shift :
+    ((pureEval default (.binary "<<" (.name "x") (.name "x"))).run.run instCore).1 = .ok (.int 160) ∧
+    (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.ident "x"))).run.run instSt =
+      (.ok (.int intTy 160), instSt) ∧
+    ((pureEval default (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 1)))).run.run instCore).1 =
+      .ok (.int (-3)) ∧
+    (evalExpr instCtx 10 instEnv (.binary ">>" (.unary "-" (.ident "x")) (.intLit 1))).run.run instSt =
+      (.ok (.int intTy (-3)), instSt) ∧
+    ((pureEval default (.binary "<<" (.name "x") (.lit (.int 64)))).run.run instCore).1 = .ok (.int 0) ∧
+    (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.intLit 64))).run.run instSt =
+      (.ok (.int intTy 0), instSt) ∧
+    ((pureEval default (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 70)))).run.run instCore).1 =
+      .ok (.int (-1)) ∧
+    (evalExpr instCtx 10 instEnv (.binary ">>" (.unary "-" (.ident "x")) (.intLit 70))).run.run instSt =
+      (.ok (.int intTy (-1)), instSt) ∧
+    ((pureEval default (.binary "<<" (.name "x") (.unary "-" (.name "x")))).run.run instCore).1 =
+      .error (.panic .other "runtime error: negative shift amount") ∧
+    (evalExpr instCtx 10 instEnv (.binary "<<" (.ident "x") (.unary "-" (.ident "x")))).run.run instSt =
+      (.error (.panic (.str .string "runtime error: negative shift amount") true), instSt) ∧
+    (lowerE instKinds (.binary ">>" (.unary "-" (.name "x")) (.lit (.int 70)))).isSome ∧
+    lowerE instKinds (.binary "<<" (.lit (.int 1)) (.name "x")) = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- `expr_correct` applied to `x + 1`, every hypothesis discharged: it is not vacuous. -/
 theorem expr_correct_instance (ds : Spec.Decls) (steps d : Nat) :

@@ -82,6 +82,7 @@ def requiredTheorems : List Name := [
   `Gala.M5.expr_correct,
   `Gala.M5.expr_correct_instance,
   `Gala.M5.inst_bitwise,
+  `Gala.M5.inst_shift,
   `Gala.M5.stmts_correct,
   `Gala.M5.block_correct,
   `Gala.M5.stmts_correct_instance,
