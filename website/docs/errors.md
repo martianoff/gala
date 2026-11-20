@@ -184,6 +184,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0134](/docs/errors/gala-e0134/) | A Go-results body gives neither the Try nor the Tuple of its results | Types |
 | [GALA-E0135](/docs/errors/gala-e0135/) | A parameter or field default that depends on itself | Declarations |
 | [GALA-E0136](/docs/errors/gala-e0136/) | Argument given more than once | Declarations |
+| [GALA-E0137](/docs/errors/gala-e0137/) | A `_` inside an interpolated string | Functions |
 | [GALA-E0138](/docs/errors/gala-e0138/) | Spread `xs...` of a value that is not a Go slice of the variadic parameter's element type | Collections |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.

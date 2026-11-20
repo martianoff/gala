@@ -24,6 +24,9 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 	if _, isLoopControl := loopControlToken(name); isLoopControl {
 		return nil, t.loopControlAsValueError(at, name)
 	}
+	if err := t.placeholderInInterpolation(name, at); err != nil {
+		return nil, err
+	}
 	ident := ast.NewIdent(name)
 	// First check if it's a local variable - if so, don't try to resolve as std type
 	if s := t.bindingScope(name); s != nil {

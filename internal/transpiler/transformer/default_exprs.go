@@ -387,7 +387,10 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		return nil, err
 	}
 	t.loweringDefault = &defaultLowering{foreign: !local, useScope: t.currentScope, emitTypeParams: useSite, src: src, outer: prev}
-	defer func() { t.loweringDefault = prev }()
+	// A default is not written in an interpolation it is lowered in.
+	prevInterp := t.interpolationScope
+	t.interpolationScope = nil
+	defer func() { t.loweringDefault, t.interpolationScope = prev, prevInterp }()
 	// The default is lowered in its own declaration's scope: the type
 	// parameters bound at the use site do not shadow the names it reads. In
 	// the generated Go they do, so a name the default reads unqualified that a

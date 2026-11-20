@@ -1,0 +1,38 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A `_` inside an interpolated string is never a placeholder of a lambda
+// outside the string (GALA-E0137). These are the forms that stay valid: a
+// placeholder outside the string, a placeholder lambda written whole inside
+// an interpolation, an explicit lambda, `_` as a pattern or a parameter
+// name inside an interpolation, a named parameter or typed-pattern binding
+// read inside one, and a default with a placeholder lambda expanded inside
+// one.
+func bump(x int, g func(int) int = _ + 1) int = g(x)
+
+type Sized interface {
+    Width() int
+}
+
+struct Box(W int)
+
+func (b Box) Width() int = b.W
+
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+    Println(xs.Map(_ * 2 + s"${xs.Size()}".Size()))
+    Println(xs.Map((x) => s"v${x}"))
+    Println(xs.Map((x) => f"v${x}%03d"))
+    Println(s"${xs.Map(_ * 10)}")
+    Println(s"${xs.Map(_ + 1).FoldLeft(0, _ + _)}")
+    Println(s"${xs.Map((x) => s"<${xs.Count(_ > x)}>")}")
+    Println(s"${xs.Map((x) => x match { case 1 => "one" case _ => "other" })}")
+    Println(s"${Some(1) match { case Some(_) => "some" case _ => "none" }}")
+    Println(s"${xs.Map((_) => 0)}")
+    Println(s"${bump(1)}")
+    Println(s"${xs.Map((x) => x + 1)}")
+    val sz Sized = Box(3)
+    Println(s"${sz match { case b: Box => b.W case _ => 0 }}")
+    Println(s"${sz match { case _: Box => "box" case _ => "other" }}")
+}

@@ -146,6 +146,7 @@ type galaASTTransformer struct {
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
 	parsedExprs            map[parsedExprKey]exprSrc                     // parse trees of default values and interpolated expressions, one per text per position per file (see parseExprAt)
 	loweringDefault        *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
+	interpolationScope     *scope                                        // non-nil while an interpolated expression, `${...}`, is lowered: the scope it is lowered in (see placeholderInInterpolation)
 	expectedArgTypes       expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
 	methodReceivers        []methodReceiver                              // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)

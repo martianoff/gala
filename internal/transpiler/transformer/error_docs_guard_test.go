@@ -2407,6 +2407,21 @@ func main() {
 			},
 		},
 		{
+			name: "a `_` inside an interpolated string",
+			code: galaerr.CodePlaceholderInInterpolation, // GALA-E0137
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val xs = ArrayOf(1, 2)
+    Println(xs.Map(s"v${_}"))
+}
+`)
+			},
+		},
+		{
 			name: "spread an Array",
 			code: galaerr.CodeSpreadNotSlice, // GALA-E0138
 			render: func(t *testing.T) string {
