@@ -114,6 +114,28 @@ func TestCompare(t *testing.T) {
 		{"both differ", ok("a\n"), panicked("b\n", ClassIndex), Disagree, "outcome: spec=ok, go=panic:index; stdout: line 1"},
 		{"go rejected", ok("a\n"), Run{Outcome: Outcome{Kind: KindRejected, Detail: "go build: x"}}, Disagree, "go=rejected:go build: x"},
 		{"unsupported", Run{Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}}, Run{}, Unsupported, "lambda"},
+		{"unsupported after a prefix of Go's output", Run{Stdout: "1\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			ok("1\n2\n"), Unsupported, "outside the spec's subset: lambda"},
+		{"unsupported after a prefix of a panicking Go run", Run{Stdout: "1\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			panicked("1\n", ClassDivide), Unsupported, "lambda"},
+		{"unsupported after a line Go did not print", Run{Stdout: "1\n3\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			ok("1\n2\n"), Disagree, `galaspec stopped (unsupported:lambda) after printing what Go did not: stdout: line 2: galaspec="3", go="2"`},
+		{"unsupported after printing more than Go", Run{Stdout: "1\n2\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			ok("1\n"), Disagree, `after printing what Go did not: stdout: line 2: galaspec="2", go=""`},
+		{"unsupported, Go rejected the program", Run{Stdout: "1\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			Run{Outcome: Outcome{Kind: KindRejected, Detail: "go build: x"}}, Unsupported, "lambda"},
+		{"unsupported, Go timed out", Run{Stdout: "1\n2\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			Run{Stdout: "1\n", Outcome: Outcome{Kind: KindTimeout}}, Unsupported, "lambda"},
+		{"unsupported, Go out of stack", Run{Stdout: "1\n2\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			Run{Stdout: "1\n", Outcome: Outcome{Kind: KindCrash, Detail: "stack overflow"}}, Unsupported, "lambda"},
+		{"unsupported, Go killed", Run{Stdout: "1\n2\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			Run{Stdout: "1\n", Outcome: Outcome{Kind: KindExit, Detail: "-1"}}, Unsupported, "lambda"},
+		{"unsupported after a line Go did not print before it exited", Run{Stdout: "3\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			Run{Stdout: "2\n", Outcome: Outcome{Kind: KindExit, Detail: "1"}}, Disagree, `line 1: galaspec="3", go="2"`},
+		{"unsupported after a line Go did not print before it deadlocked", Run{Stdout: "3\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			Run{Stdout: "2\n", Outcome: Outcome{Kind: KindCrash, Detail: "all goroutines are asleep - deadlock!"}}, Disagree, `line 1: galaspec="3", go="2"`},
+		{"unsupported, CRLF is not LF", Run{Stdout: "a\n", Outcome: Outcome{Kind: KindUnsupported, Detail: "lambda"}},
+			ok("a\r\n"), Disagree, "after printing what Go did not"},
 		{"fuel", Run{Outcome: Outcome{Kind: KindFuel}}, ok("x"), Inconclusive, "fuel"},
 		{"malformed", Run{Outcome: Outcome{Kind: KindMalformed}}, ok(""), Disagree, "malformed"},
 	}
@@ -256,6 +278,9 @@ func TestRender(t *testing.T) {
 		{ID: "e6", Source: FromExample, Comparison: Comparison{Verdict: Inconclusive}, Spec: Outcome{Kind: KindFuel}, Constructs: map[string]int{"call": 1}},
 		// Only out of fuel: galaspec never ran a program using it to the end.
 		{ID: "e7", Source: FromGenerator, Comparison: Comparison{Verdict: Inconclusive}, Spec: Outcome{Kind: KindFuel}, Constructs: map[string]int{"tuple": 1}},
+		// Stopped unsupported after a wrong line: still where galaspec
+		// stopped, and its disagreement still counts against its constructs.
+		{ID: "e8", Source: FromExample, Comparison: Comparison{Verdict: Disagree, Reason: "galaspec stopped"}, Spec: Outcome{Kind: KindUnsupported, Detail: "composite-literal"}, Constructs: map[string]int{"bool": 1, "composite-literal": 1}},
 	}
 	out := Render(Coverage{
 		Records:  records,
@@ -265,7 +290,7 @@ func TestRender(t *testing.T) {
 	})
 	for _, want := range []string{
 		"| AGREE | 2 | 1 |",
-		"| DISAGREE | 1 | 0 |",
+		"| DISAGREE | 2 | 0 |",
 		"| UNSUPPORTED | 2 | 1 |",
 		"| INCONCLUSIVE | 1 | 1 |",
 		"agree with the spec: **2** (ratchet baseline 2)",
@@ -275,13 +300,16 @@ func TestRender(t *testing.T) {
 		// Seen only in an unsupported program: the run says nothing about it.
 		"| `if` | not seen | no | no |",
 		"| `tuple` | not seen | no: 0 agree, 0 disagree, 1 inconclusive | no |",
+		"| `bool` | not seen | no: 0 agree, 1 disagree, 0 inconclusive | no |",
 		"| `lambda` | 2 |",
+		"| `composite-literal` | 1 |",
 		"| `import` | 1 |",
 		"| `e3` | #1234 | a \\| b |",
 	} {
 		require.Contains(t, out, want)
 	}
 	require.NotContains(t, strings.ToLower(out), "verified")
+	require.NotContains(t, out, "| `composite-literal` | not seen", "a stopped-at construct is not a row of the constructs table")
 	require.Less(t, strings.Index(out, "`lambda` | 2"), strings.Index(out, "`import` | 1"), "most frequent first")
 
 	tested := Render(Coverage{Records: []Record{

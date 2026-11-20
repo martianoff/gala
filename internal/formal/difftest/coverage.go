@@ -452,9 +452,11 @@ func renderConstructs(b *strings.Builder, c Coverage, lean bool) {
 const maxUnsupportedRows = 20
 
 func renderUnsupported(b *strings.Builder, records []Record) {
-	programs := map[string]int{} // UNSUPPORTED programs, by what galaspec named
+	// Every program galaspec stopped at, by what it named: an UNSUPPORTED
+	// one, or a DISAGREE for a wrong line printed before the stop.
+	programs := map[string]int{}
 	for _, r := range records {
-		if r.Verdict == Unsupported {
+		if r.Spec.Kind == KindUnsupported {
 			programs[r.Spec.Detail]++
 		}
 	}

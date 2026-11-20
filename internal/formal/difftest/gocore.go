@@ -138,6 +138,9 @@ func compareGoCore(g GoCoreRun, real Run, goPanic string) GoCoreRecord {
 	kind, construct, _ := strings.Cut(g.Outcome, ":")
 	switch kind {
 	case "unsupported":
+		if d := stoppedEarlyDiff("gocore", g.Outcome, g.Stdout, real); d != "" {
+			return GoCoreRecord{Comparison: Comparison{Disagree, d}}
+		}
 		return GoCoreRecord{Comparison: Comparison{Unsupported, "outside GoCore: " + construct}, Construct: construct}
 	case "fuel":
 		return GoCoreRecord{Comparison: Comparison{Inconclusive, "gocore ran out of fuel"}}

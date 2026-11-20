@@ -144,7 +144,12 @@ formal/
   1. Export it to Core JSON and run `galaspec`.
   2. Transpile, build and run it with the machinery `FuzzPrograms` already uses.
   3. Compare stdout and outcome. Each comparison is one of four verdicts: `AGREE`,
-     `DISAGREE`, `UNSUPPORTED` or `INCONCLUSIVE`.
+     `DISAGREE`, `UNSUPPORTED` or `INCONCLUSIVE`. A run that stops `unsupported` after
+     printing (galaspec's, gala2lean's or GoCore's) is `UNSUPPORTED` only when what it
+     printed is a prefix of what Go printed, and `DISAGREE` otherwise, so a stop cannot
+     hide an earlier wrong line. The check is skipped, and the stop is `UNSUPPORTED`,
+     only where Go's output is missing or may be cut short: a rejected program, a
+     time-out, a crash for lack of stack or memory, or a kill by a signal.
   4. From M4, for a program that compiles: export the Go it ran, with the Go of the GALA
      packages it imports, to GoCore JSON, run `gocore`, and compare it with `go run` of the
      same Go: stdout, and how it ends, a panic by the exact text Go prints. This is GoCore's
@@ -794,14 +799,16 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 
 - **Modelled:** the construct is in the spec. Programs using it can run through `galaspec`.
 - **Tested against the spec:** at least N programs using the construct (examples or
-  generated) agree with the spec, and none that galaspec ran to the end disagrees or is
-  inconclusive.
+  generated) agree with the spec, and none disagrees or is inconclusive. A run galaspec
+  stopped `unsupported` after printing a line Go did not counts as disagreeing for every
+  construct the program uses.
 - **Proved:** a theorem from the table above covers it.
 
 `formal/COVERAGE.md` is generated in CI and committed with each formal change. It holds:
 - a per-construct table with the three tiers;
 - the number of examples in each verdict;
-- every `UNSUPPORTED` construct, with how often it occurs;
+- every construct galaspec stopped at, with how often it occurs (an `UNSUPPORTED`
+  run, or a `DISAGREE` one that stopped after printing a line Go did not);
 - the list of known disagreements.
 
 The run writes this as the section between the `<!-- difftest:begin -->` and

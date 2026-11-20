@@ -74,6 +74,18 @@ func TestHarnessWithStub(t *testing.T) {
 			want: Comparison{Verdict: Unsupported, Reason: "outside the spec's subset: stub-if"},
 		},
 		{
+			// No GoCore and no Lean here: Go runs because the spec printed
+			// before it stopped, and what it printed is checked.
+			name: "unsupported by the spec after printing a prefix of Go's output",
+			body: "    Println(1)\n    if (true) { Println(2) }\n",
+			want: Comparison{Verdict: Unsupported, Reason: "outside the spec's subset: stub-if"},
+		},
+		{
+			name: "unsupported by the spec after printing what Go did not",
+			body: "    Println(\"stub:lie\")\n    if (true) { Println(2) }\n",
+			want: Comparison{Verdict: Disagree, Reason: `galaspec stopped (unsupported:stub-if) after printing what Go did not: stdout: line 1: galaspec="truth", go="stub:lie"`},
+		},
+		{
 			name: "out of fuel",
 			body: "    Println(1)\n    Println(2)\n",
 			fuel: 1,

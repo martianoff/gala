@@ -58,6 +58,9 @@ func TestCompareGoCore(t *testing.T) {
 		{"stdout differs", GoCoreRun{Stdout: "2\n", Outcome: "ok"}, ok, "", Disagree},
 		{"outcome differs", GoCoreRun{Stdout: "1\n", Outcome: "ok"}, divide, "runtime error: integer divide by zero", Disagree},
 		{"unsupported", GoCoreRun{Outcome: "unsupported:map-type"}, ok, "", Unsupported},
+		{"unsupported after a prefix of Go's output", GoCoreRun{Stdout: "1\n", Outcome: "unsupported:map-type"}, ok, "", Unsupported},
+		{"unsupported after a prefix of a panicking Go run", GoCoreRun{Stdout: "1", Outcome: "unsupported:map-type"},
+			divide, "runtime error: integer divide by zero", Unsupported},
 		{"fuel", GoCoreRun{Outcome: "fuel"}, ok, "", Inconclusive},
 		{"stuck is a bug", GoCoreRun{Outcome: "stuck", Detail: "x"}, ok, "", Disagree},
 		{"go ran out of stack", GoCoreRun{Outcome: "fuel"},
@@ -71,6 +74,26 @@ func TestCompareGoCore(t *testing.T) {
 			if tt.want == Unsupported {
 				require.Equal(t, "map-type", got.Construct)
 			}
+		})
+	}
+}
+
+// TestCompareGoCoreStoppedEarly: a GoCore run that stops unsupported after
+// printing a line Go did not is a disagreement, not UNSUPPORTED.
+func TestCompareGoCoreStoppedEarly(t *testing.T) {
+	ok := Run{Stdout: "1\n", Outcome: Outcome{Kind: KindOK}}
+	tests := []struct {
+		name, stdout, reason string
+	}{
+		{"a line Go did not print", "2\n",
+			`gocore stopped (unsupported:map-type) after printing what Go did not: stdout: line 1: gocore="2", go="1"`},
+		{"more than Go printed", "1\n2\n",
+			`gocore stopped (unsupported:map-type) after printing what Go did not: stdout: line 2: gocore="2", go=""`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := compareGoCore(GoCoreRun{Stdout: tt.stdout, Outcome: "unsupported:map-type"}, ok, "")
+			require.Equal(t, GoCoreRecord{Comparison: Comparison{Disagree, tt.reason}}, got)
 		})
 	}
 }
