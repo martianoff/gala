@@ -46,6 +46,10 @@ struct Conv(n int)
 
 func (c Conv) Apply[A any](x int) Option[A] = None[A]()
 
+struct Cell[T any](v T)
+
+func (c Cell[T]) Apply[A any](x T) Option[A] = None[A]()
+
 val shower = Show()
 
 func main() {
@@ -113,6 +117,12 @@ func main() {
 			`val q Option[string] = Conv(1)(2)
     Println(q)`,
 			[]string{`Conv_Apply[string](Conv{`},
+		},
+		{
+			"the slot binding it for a construction with type arguments called at once",
+			`val q Option[string] = Cell[int](1)(2)
+    Println(q)`,
+			[]string{`Cell_Apply[string`},
 		},
 	}
 	// The import goes only where it is used: GALA reports an unused one.

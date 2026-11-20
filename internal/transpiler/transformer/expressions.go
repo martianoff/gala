@@ -1006,8 +1006,11 @@ func (t *galaASTTransformer) isResultGenericValueApply(name string) bool {
 }
 
 // isResultGenericLitApply reports whether e is a construction called at once,
-// `T(...)(...)` or `pkg.T(...)(...)`, whose type's Apply has type parameters
-// its result mentions, as isResultGenericValueApply does for a val.
+// `T(...)(...)`, `pkg.T(...)(...)` or either with type arguments
+// (`T[int](...)(...)`), whose type's Apply has type parameters its result
+// mentions, as isResultGenericValueApply does for a val. The first call must
+// build the struct, not call that Apply as a companion
+// (positionalCallBuildsStructLiteral).
 func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 	if !t.resultGenericMethods["Apply"] {
 		return false
@@ -1016,20 +1019,35 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 	if !p.ok() || p.hasCases() {
 		return false
 	}
-	suffixes := p.suffixes()
-	n := len(suffixes)
-	if n < 2 || n > 3 || suffixes[n-1].opener() != "(" || suffixes[n-2].opener() != "(" {
+	name := p.primaryIdent()
+	if name == "" {
 		return false
 	}
-	name := p.primaryIdent()
-	if n == 3 {
-		member, _, ok := suffixes[0].member()
-		if !ok || !t.importManager.IsPackage(name) {
+	var typ ast.Expr = ast.NewIdent(name)
+	suffixes := p.suffixes()
+	if member, _, ok := firstMember(suffixes); ok {
+		if !t.importManager.IsPackage(name) {
 			return false
 		}
-		name += "." + member
+		typ = &ast.SelectorExpr{X: typ, Sel: ast.NewIdent(member)}
+		suffixes = suffixes[1:]
 	}
-	return name != "" && resultGenericApply(t.applyTypeMeta(name))
+	if len(suffixes) > 0 && suffixes[0].opener() == "[" {
+		suffixes = suffixes[1:]
+	}
+	if len(suffixes) != 2 || suffixes[0].opener() != "(" || suffixes[1].opener() != "(" {
+		return false
+	}
+	meta := t.litApplyTarget(&ast.CompositeLit{Type: typ})
+	return resultGenericApply(meta) && t.positionalCallBuildsStructLiteral(meta, meta.FieldNames, len(suffixes[0].args().list))
+}
+
+// firstMember is the member the first of suffixes selects, `.name`.
+func firstMember(suffixes []suffixSrc) (string, srcNode, bool) {
+	if len(suffixes) == 0 {
+		return "", srcNode{}, false
+	}
+	return suffixes[0].member()
 }
 
 // resultGenericApply reports whether meta, a type's metadata, has an Apply

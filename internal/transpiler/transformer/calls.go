@@ -2807,7 +2807,7 @@ func explicitTypeArgSubst(typeParams, typeArgs []string) typeSubstMap {
 // set. Returns handled=false for all other shapes of `fun`.
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []ast.Expr, spread bool) (ast.Expr, bool) {
-	if !t.litCallsApply(fun) {
+	if t.litApplyTarget(fun) == nil {
 		return nil, false
 	}
 	return &ast.CallExpr{
@@ -2904,31 +2904,43 @@ func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetada
 	return t.bindingApplyType(fun)
 }
 
-// litCallsApply reports whether fun is a composite literal whose type has an
-// Apply method (Section 11): by the type the literal names, `alias.T` too,
-// else by the bare name of a qualified or other type. A bare name was looked
-// up already.
-func (t *galaASTTransformer) litCallsApply(fun ast.Expr) bool {
+// litApplyTarget is the metadata of the type whose Apply a call of fun, a
+// composite literal, calls (Section 11): by the type the literal names,
+// `alias.T` too, else by the bare name of a qualified or other type (a bare
+// name was looked up already); nil for any other fun.
+func (t *galaASTTransformer) litApplyTarget(fun ast.Expr) *transpiler.TypeMetadata {
 	cl, ok := fun.(*ast.CompositeLit)
 	if !ok {
-		return false
+		return nil
 	}
-	if t.litApplyType(cl) != nil {
-		return true
+	if meta := t.litApplyType(cl); meta != nil {
+		return meta
 	}
-	name, qualified := qualifiedLitType(cl)
-	return (qualified || name == "") && t.compositeLitApplyType(fun) != nil
+	if name, qualified := qualifiedLitType(cl); qualified || name == "" {
+		return t.compositeLitApplyType(fun)
+	}
+	return nil
 }
 
 // callsGenericValueApply reports whether a call of fun calls a value through
-// its type's Apply (Sections 11 and 12) and that Apply is generic, by the
-// test Section 3 rewrites a generic method call by.
+// its type's Apply (Sections 11 and 12) and that Apply is generic.
 func (t *galaASTTransformer) callsGenericValueApply(fun ast.Expr) bool {
-	if !t.litCallsApply(fun) && t.bindingApplyType(fun) == nil {
+	meta := t.litApplyTarget(fun)
+	if meta == nil {
+		meta = t.bindingApplyType(fun)
+	}
+	return genericApply(meta)
+}
+
+// genericApply reports whether meta, a type's metadata, has an Apply that
+// lowers to a free function: one with type parameters of its own, or one the
+// analyzer marks generic.
+func genericApply(meta *transpiler.TypeMetadata) bool {
+	if meta == nil {
 		return false
 	}
-	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(fun, "Apply")
-	return t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), "Apply")
+	apply := meta.Methods["Apply"]
+	return apply != nil && (apply.IsGeneric || len(apply.TypeParams) > 0)
 }
 
 // litApplyType is the metadata of the type of the composite literal cl when
