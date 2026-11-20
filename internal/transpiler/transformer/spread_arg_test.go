@@ -76,6 +76,10 @@ struct Vals[V any]()
 
 func (c Vals[V]) Apply(meta ValueMeta[V], xs ...V) int = xs.Size()
 
+struct Holder[T any](V T)
+
+func (h Holder[T]) Apply(xs ...T) int = xs.Size()
+
 struct Bag[T any]()
 
 func (b Bag[T]) Apply(xs ...T) int = xs.Size()
@@ -276,6 +280,22 @@ func main() {
 			"cannot spread `go_interop.SliceOf(1)` of type []int into a variadic parameter of string",
 		},
 		{
+			"a slice of other elements into the Apply of a value of a generic type",
+			`val h = Holder("a")
+    Println(h(go_interop.SliceOf(1)...))`,
+			"cannot spread `go_interop.SliceOf(1)` of type []int into a variadic parameter of string",
+		},
+		{
+			"a slice of other elements into the Apply of a construction of a generic type",
+			`Println(Holder("a")(go_interop.SliceOf(1)...))`,
+			"cannot spread `go_interop.SliceOf(1)` of type []int into a variadic parameter of string",
+		},
+		{
+			"a slice of other elements into the Apply of a construction with type arguments",
+			`Println(Holder[string]("a")(go_interop.SliceOf(1)...))`,
+			"cannot spread `go_interop.SliceOf(1)` of type []int into a variadic parameter of string",
+		},
+		{
 			"a string into the Apply of a value, hint",
 			`val j = Joiner("-")
     Println(j("a"...))`,
@@ -330,6 +350,8 @@ func main() {
 		{"nil", "Println(count(nil...))"},
 		{"a Go slice into a generic companion Apply", "Println(Bag(go_interop.SliceOf(1, 2)...))"},
 		{"a Go slice into the Apply of a construction", `Println(Joiner(",")(go_interop.SliceOf("a", "b")...))`},
+		{"a Go slice into the Apply of a value of a generic type", `val h = Holder("a")
+    Println(h(go_interop.SliceOf("b", "c")...), Holder(1)(go_interop.SliceOf(2)...))`},
 		{"a Go slice into the Apply of a value", `val j = Joiner("-")
     Println(j(go_interop.SliceOf("a", "b")...))`},
 		{"a Go slice into a companion Apply that takes injected metadata", `Println(Tags[Counter](go_interop.SliceOf("a")...))`},
