@@ -59,6 +59,6 @@ func main() {
             "{\"O\":[1,,2]}",
             "{\"O\":[,1]}",
         ),
-        EmptyArray[string](),
+        EmptyArray(),
     )
 }
