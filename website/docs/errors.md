@@ -4,7 +4,7 @@ title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E00
 description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0048."
 keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala-e0039, gala-e0040, gala-e0041, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
 permalink: /docs/errors/
-last_modified_at: 2026-11-16
+last_modified_at: 2026-11-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Error Codes</p>
