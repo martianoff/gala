@@ -1286,7 +1286,7 @@ val doubled = nums.Map(_ * 2)              // ≡ (x) => x * 2
 val sum     = nums.FoldLeft(0, _ + _)      // ≡ (a, b) => a + b
 ```
 
-A placeholder lambda takes only the `_` written outside string literals.
+A placeholder lambda around a string does not take a `_` inside the string.
 Inside the `${...}` of an `s"..."` or `f"..."` string, a `_` may be read only
 as a placeholder of a lambda written inside that `${...}`. Reading any other
 `_` there is an error ([GALA-E0137](/docs/errors/gala-e0137/)): a `_` that no
@@ -1297,6 +1297,7 @@ binds, inside or around the string. Bind a name instead and read the name:
 ```gala
 val labels = nums.Map((x) => s"v${x}")     // not nums.Map(s"v${_}")
 val tens   = s"${nums.Map(_ * 10)}"        // fine: the placeholder lambda is inside ${...}
+val v any  = nums.Size()
 val kind   = v match {
     case n: int => s"int ${n}"             // not case _: int => s"int ${_}"
     case _      => "other"
