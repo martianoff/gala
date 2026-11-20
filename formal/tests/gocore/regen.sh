@@ -15,14 +15,13 @@
 # embedded type or of a package GoCore does not hold (unsupported_embedded_*),
 # at an operand whose order of evaluation gc decides by its static type
 # (unsupported_eval_order),
-# at what fmt prints as an error (unsupported_printf_*), and at a name a runnable
-# standard-library file lacks (unsupported_stdlib).
+# and at what fmt prints as an error (unsupported_printf_*).
 # Their files are written by hand.
 #
 # Run from formal/tests/gocore with GOCOREJSON naming the exporter binary, and a
 # `go` that is the release MODULE.bazel pins: the expected output comes from its
-# `go run`, and the standard library's runnable files (gocoreexport.RunnableStdlib)
-# from its GOROOT.
+# `go run`. No document holds Go's own standard-library source (formal/README.md):
+# the runnable files (gocoreexport.RunnableStdlib) are added at test time, never here.
 set -euo pipefail
 : "${GOCOREJSON:?set GOCOREJSON to the gocorejson binary}"
 pinned="go$(sed -nE 's/^go_sdk\.download\(version = "([^"]+)"\)/\1/p' ../../../MODULE.bazel)"
@@ -30,10 +29,9 @@ if [[ "$(go env GOVERSION)" != "$pinned" ]]; then
   echo "regen.sh: go is $(go env GOVERSION), MODULE.bazel pins $pinned" >&2
   exit 1
 fi
-goroot="$(go env GOROOT)"
 for f in src/*.go; do
   b="$(basename "$f" .go)"
-  "$GOCOREJSON" -goroot="$goroot" "$f" > "$b.json"
+  "$GOCOREJSON" "$f" > "$b.json"
   case "$b" in fuel|unsupported_*) continue ;; esac
   set +e
   go run "$f" > "$b.out" 2> "$b.goerr"

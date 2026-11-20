@@ -306,5 +306,12 @@ release binaries bundle LGPL components, so:
 - The Lean toolchain is never vendored, committed, mirrored or re-hosted. CI and
   rules_lean fetch it from Lean's official releases and check a pinned SHA-256.
 - Lake dependencies must be Apache 2.0, MIT or BSD.
+- No committed file holds Go's own standard-library source, whole or re-encoded: GoCore
+  runs some of it (`gocoreexport.RunnableStdlib`), always read at test time from the
+  pinned toolchain's GOROOT, never from a fixture. `TestGoCoreFixturesFresh` checks
+  that each GoCore fixture is the export of its own program, which adds no
+  standard-library package; copying such source into a fixture's program is up to
+  review. The standard library is tested through examples the differential run
+  exports.
 
 Details are in the "Licensing" section of the design.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,7 +17,10 @@ import (
 // TestGoCoreFixturesFresh checks that each GoCore fixture's document
 // (formal/tests/gocore/<name>.json) is what the exporter writes for its source
 // (formal/tests/gocore/src/<name>.go), so the fixtures cannot drift from the
-// exporter. Regenerate them with formal/tests/gocore/regen.sh.
+// exporter, and that every document has a source: none then holds a standard-
+// library package, which the exporter adds only when asked (AddStdlib), never
+// for a fixture (formal/README.md). Regenerate them with
+// formal/tests/gocore/regen.sh.
 func TestGoCoreFixturesFresh(t *testing.T) {
 	files, err := bazel.ListRunfiles()
 	require.NoError(t, err)
@@ -44,28 +48,22 @@ func TestGoCoreFixturesFresh(t *testing.T) {
 		require.True(t, ok, "%s has no document", name)
 		want, err := os.ReadFile(docPath)
 		require.NoError(t, err)
-		// The standard library's runnable files, which regen.sh adds from the
-		// pinned toolchain's GOROOT (gocoreexport.AddStdlib), are not read here:
-		// the document is compared without them.
-		require.Equal(t, withoutStdlib(t, want), withoutStdlib(t, got),
+		require.Equal(t, decoded(t, want), decoded(t, got),
 			"%s.json is stale: run formal/tests/gocore/regen.sh", name)
+	}
+	// Every document is its source's export, which adds no standard-library
+	// package: so none holds Go's own source of one (formal/README.md).
+	for name := range docs {
+		require.True(t, slices.ContainsFunc(srcs, func(s bazel.RunfileEntry) bool {
+			return path.Base(s.ShortPath) == name+".go"
+		}), "%s.json has no source in formal/tests/gocore/src", name)
 	}
 }
 
-// withoutStdlib is a GoCore document, as JSON values, without the packages of
-// gocoreexport.RunnableStdlib.
-func withoutStdlib(t *testing.T, doc []byte) map[string]any {
+// decoded is a GoCore document as JSON values.
+func decoded(t *testing.T, doc []byte) map[string]any {
 	t.Helper()
 	var v map[string]any
 	require.NoError(t, json.Unmarshal(doc, &v))
-	pkgs, _ := v["packages"].([]any)
-	kept := []any{}
-	for _, p := range pkgs {
-		if m, ok := p.(map[string]any); ok && gocoreexport.RunnableStdlib[m["path"].(string)] != nil {
-			continue
-		}
-		kept = append(kept, p)
-	}
-	v["packages"] = kept
 	return v
 }

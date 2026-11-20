@@ -1,0 +1,26 @@
+package main
+
+import (
+    "errors"
+    "fmt"
+    "unicode/utf8"
+)
+
+// errors.New and unicode/utf8.RuneCountInString from Go: each New is a new
+// error, though the text is the same, an error returned by a function is the
+// one it holds, and runes are counted, not bytes.
+
+val errBoom = errors.New("boom")
+
+func find(ok bool) error = if (ok) nil else errBoom
+
+func counts(s string) string = s"${utf8.RuneCountInString(s)}/${s.ByteSize()}"
+
+func main() {
+    val again = errors.New("x")
+    Println(find(false), find(false) == errBoom, find(true) == nil)
+    Println(errors.New("x") == again, again == again)
+    // fmt.Printf on purpose: an error formatted with a width.
+    fmt.Printf("[%8v] [%s]\n", errBoom, errors.New("hé"))
+    Println(counts(""), counts("go"), counts("héllo"), counts("日本語"), counts("aé\U0001F600"))
+}

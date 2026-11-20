@@ -32,7 +32,8 @@ func run(args []string) error {
 	goroot := ""
 	for _, a := range args {
 		// -goroot=dir: the standard library's runnable files come from dir/src
-		// (gocoreexport.AddStdlib), as the differential run adds them.
+		// (gocoreexport.AddStdlib), as the differential run adds them: for running a
+		// program by hand, never for a committed fixture (formal/README.md).
 		if r, ok := strings.CutPrefix(a, "-goroot="); ok {
 			if r == "" {
 				return fmt.Errorf("-goroot= without a directory")
