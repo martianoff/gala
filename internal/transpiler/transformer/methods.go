@@ -89,6 +89,11 @@ func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.
 		return nil, false
 	}
 	if _, isGeneric := typ.(transpiler.GenericType); isGeneric {
+		// Only an instance of a generic function, slice, map or channel
+		// type: a struct's or an interface's underlying is no type of its own.
+		if _, data, _ := t.goDeclaredType(typ, nil); data == nil || data.Kind == "struct" || data.Kind == "interface" {
+			return nil, false
+		}
 		u := t.goDefinedUnderlying(typ, nil)
 		return u, u != nil
 	}

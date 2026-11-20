@@ -2069,6 +2069,11 @@ func (t *galaASTTransformer) getGoFieldType(typ transpiler.Type, fieldName strin
 	gen, isGeneric := typ.(transpiler.GenericType)
 	if isGeneric {
 		typ = gen.Base
+		// A generic alias's type arguments are not its target's: they are
+		// not matched up here.
+		if _, direct := t.goTypeDataFor(typ); direct != nil && direct.Kind == "alias" {
+			return transpiler.NilType{}
+		}
 	}
 	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
 		if fType := td.Fields[fieldName]; fType != nil {
