@@ -67,7 +67,8 @@ and a `_` parameter or `case _: int` that is not read. Where a `_` that a
 parameter or typed pattern binds is read, bind a name
 instead of `_` and read that name: `s"${xs.Map((x) => x + 1)}"`,
 `s"${v match { case n: int => n case _ => 0 }}"`, and for a lambda around the
-string `xs.Map((x) => s"v${x}")` in place of `xs.Map((_) => s"v${_}")`.
+string `xs.Map((x) => s"v${x}")` in place of `xs.Map((_) => s"v${_}")`, and for a
+typed pattern `case n: int => s"${n}"` in place of `case _: int => s"${_}"`.
 
 **Rationale.** A placeholder lambda's parameters are the `_` of the argument
 as written, and the text of a string literal is not part of that. Reading a

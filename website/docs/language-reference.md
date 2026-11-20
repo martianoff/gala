@@ -1288,8 +1288,8 @@ val sum     = nums.FoldLeft(0, _ + _)      // ≡ (a, b) => a + b
 
 Only a `_` written outside string literals is a placeholder. A `_` inside the
 `${...}` of an `s"..."` or `f"..."` string is not a parameter of a lambda
-around the string, and reading it inside `${...}` is an error, as is reading a
-`_` that a parameter or typed pattern binds, inside or around the string
+around the string, and reading it is an error, as is reading inside `${...}` a
+`_` that a parameter or typed pattern binds inside or around the string
 ([GALA-E0137](/docs/errors/gala-e0137/)). Name the parameter in an explicit
 lambda instead:
 
