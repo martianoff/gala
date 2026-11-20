@@ -247,8 +247,8 @@ inductive Dflt where
   | struct_ (ty : String) (fs : List Dflt)
   | sealed (ty c : String) (fs : List Dflt)
 
-/-- The fields of a struct, or of a sealed case, by name: the lookup a construction's
-    (`resolve`, `omittedDefaults`). -/
+/-- The fields of a struct, or of a sealed case, by name: a struct first, else a case,
+    the order `resolve` finds a construction's callee in. -/
 def fieldsOf (ds : Decls) (x : String) : Option (List Field) :=
   match ds.structs.lookup x with
   | some fs => some fs
@@ -1025,7 +1025,9 @@ def mentionsUpTo (ds : Decls) (k : Nat) (chain : List (String × Nat)) (bound : 
     ts.flatMap (mentionsUpTo ds k chain bound) ++ vs.flatMap (mentionsUpTo ds k chain bound)
   | .decl _ _ _ ty vs => vs.flatMap (mentionsUpTo ds k chain bound) ++
     -- A declaration with no value evaluates its type's declared field defaults, each with
-    -- no local in scope; they are expanded as a construction's omitted defaults are.
+    -- no local in scope; they are expanded as a construction's omitted defaults are. A
+    -- destructuring one with no value also lists them, though `declare` stops on it
+    -- before evaluating any: the run stops there either way.
     if !vs.isEmpty then [] else
     (declDefaults ds ty).flatMap fun (x, j, e) =>
       if chain.contains (x, j) then [] else
