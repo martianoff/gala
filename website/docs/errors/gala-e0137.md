@@ -65,7 +65,8 @@ placeholder lambda written whole inside it, as in `s"${xs.Map(_ * 10)}"`, a
 wildcard pattern, as in `s"${opt match { case Some(_) => "some" case _ => "none" }}"`,
 and a `_` parameter or `case _: int` that is not read. Where a `_` that a
 parameter or typed pattern in the same `${...}` binds is read, bind a name
-instead of `_` and read that name: `(x) => s"v${x}"`, `case n: int => s"${n}"`.
+instead of `_` and read that name: `s"${xs.Map((x) => x + 1)}"`,
+`s"${v match { case n: int => n case _ => 0 }}"`.
 
 **Rationale.** A placeholder lambda's parameters are the `_` of the argument
 as written, and the text of a string literal is not part of that. Reading a

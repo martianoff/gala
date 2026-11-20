@@ -14,8 +14,8 @@ import (
 func TestPlaceholderInInterpolation(t *testing.T) {
 	const (
 		header        = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    val xs = ArrayOf(1, 2)\n"
-		notBound      = "`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string (hint: write an explicit lambda"
-		readsABinding = "`_` inside an interpolated string reads a `_` binding, which names no value (hint: bind a name instead of `_` and read that name"
+		notBound      = "`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string (hint: write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`)"
+		readsABinding = "`_` inside an interpolated string reads a `_` binding, which names no value (hint: bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`)"
 	)
 	rejected := []struct{ name, body, want string }{
 		{"s-string in a function slot", `    Println(xs.Map(s"v${_}"))`, "line 7:24 " + notBound},
