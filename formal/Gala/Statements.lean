@@ -23,6 +23,7 @@ import Gala.MatchLower
 import Gala.AlphaEval
 import Gala.AlphaProg
 import Gala.M5.Expr
+import Gala.M5.StmtOrder
 
 namespace Gala.Statements
 
@@ -461,5 +462,49 @@ theorem expr_correct_instance : ∀ (ds : Spec.Decls) (steps d : Nat),
       ((Spec.eval ds d instExpr).run.run { instCore with steps }).1
       ((GoCore.Full.evalExpr instCtx N instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt) :=
   Gala.M5.expr_correct_instance
+
+open Gala Gala.M5 in
+theorem stmts_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ κ' : String → Option Kind)
+    (ss : List Spec.Expr) (lss : List GoCore.Full.Stmt), lowerSs κ ss = some (κ', lss) →
+    ∀ (s : Spec.St) (g : GoCore.Full.St) (env : GoCore.Full.Env), LocRel κ s.toCore g.cells env →
+      s.out = g.out → Predeclared cx env → ∀ (d : Nat),
+      ∀ N ≥ sdepthL ss, ResL cx κ' s.toCore g ((Spec.evalBlock ds d ss).run.run s)
+        ((GoCore.Full.execStmts cx N env lss).run.run g) :=
+  Gala.M5.stmts_correct
+
+open Gala Gala.M5 in
+theorem block_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ κ' : String → Option Kind)
+    (ss : List Spec.Expr) (lss : List GoCore.Full.Stmt), lowerSs κ ss = some (κ', lss) →
+    ∀ (s : Spec.St) (g : GoCore.Full.St) (env : GoCore.Full.Env), LocRel κ s.toCore g.cells env →
+      s.out = g.out → Predeclared cx env → ∀ (d : Nat),
+      ∀ N ≥ sdepthL ss + 2, ResL cx κ s.toCore g ((Spec.eval ds d (.block ss)).run.run s)
+        ((GoCore.Full.execStmt cx N env (.block lss)).run.run g) :=
+  Gala.M5.block_correct
+
+open Gala Gala.M5 in
+theorem stmts_correct_instance : ∀ (ds : Spec.Decls) (steps d : Nat),
+    ∀ N ≥ sdepthL instBody, ResL instCtx (upd instKinds "y" .int) instCore instSt
+      ((Spec.evalBlock ds d instBody).run.run { instCore with steps })
+      ((GoCore.Full.execStmts instCtx N instEnv instLowered).run.run instSt) :=
+  Gala.M5.stmts_correct_instance
+
+open Gala Gala.M5 in
+theorem inst_gocore_ok : ∀ (N : Nat), N ≥ sdepthL instBody →
+    ∃ env' g', (GoCore.Full.execStmts instCtx N instEnv instLowered).run.run instSt = (.ok env', g') ∧
+      ∃ s', Inv instCtx (upd instKinds "y" .int) s' g' env' :=
+  Gala.M5.inst_gocore_ok
+
+open Gala Gala.M5 GoCore.Full Hoist in
+theorem hSs_lowered : ∀ (κ κ' : String → Option Kind) (ss : List Spec.Expr) (lss : List Stmt),
+    lowerSs κ ss = some (κ', lss) → ∀ (s : Scope) (h : HState), (hSs s lss).run h = (lss, h) :=
+  Gala.M5.hSs_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem gc_runsStep2 : RunsStep2AsWritten Order.gc :=
+  Gala.M5.gc_runsStep2
+
+open Gala Gala.M5 GoCore.Full in
+theorem leftToRight_runsStep2 : RunsStep2AsWritten Order.leftToRight :=
+  Gala.M5.leftToRight_runsStep2
 
 end Gala.Statements
