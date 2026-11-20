@@ -125,6 +125,12 @@ func main() {
     Println(q)`,
 			[]string{`Cell_Apply[string`},
 		},
+		{
+			"the slot binding it for a construction of an inferred generic type called at once",
+			`val q Option[string] = Cell(1)(2)
+    Println(q)`,
+			[]string{`Cell_Apply[string, int](Cell[int]{`},
+		},
 	}
 	// The import goes only where it is used: GALA reports an unused one.
 	src := func(body string) string {
@@ -173,6 +179,8 @@ struct Conv(N int)
 func (c Conv) Apply[A any](x int) Option[A] = None[A]()
 
 val Shower = Show()
+
+val Converter = Conv(1)
 `,
 	}
 	for _, pkg := range []struct{ name, imp string }{
@@ -186,7 +194,8 @@ val Shower = Show()
 func main() {
     Println(P.Shower(1))
     val q Option[string] = P.Conv(1)(2)
-    Println(q)
+    val r Option[int] = P.Converter(3)
+    Println(q, r)
 }
 `
 			files["main.gala"] = strings.ReplaceAll(files["main.gala"], "P.", pkg.name+".")
@@ -194,6 +203,7 @@ func main() {
 			require.NoError(t, err)
 			require.Contains(t, out, pkg.name+".Show_Apply(")
 			require.Contains(t, out, pkg.name+".Conv_Apply[string](")
+			require.Contains(t, out, pkg.name+".Conv_Apply[int]("+pkg.name+".Converter")
 			require.NotContains(t, out, "}.Apply(")
 			require.NotContains(t, out, "Shower.Apply(")
 		})
