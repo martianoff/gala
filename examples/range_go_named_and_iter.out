@@ -1,0 +1,13 @@
+query name=[ann]
+header Accept: text/plain
+key=a value=1.5
+a! 3 true
+key=a
+value=1.50
+0:x x?
+1:y y?
+w=x
+w=y
+i=0
+i=1
+i=2

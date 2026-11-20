@@ -798,17 +798,25 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 	return false
 }
 
-// inferRangeTypes returns the key and value types for a range expression of
-// type exprType.
-// For slices/arrays: key is int, value is element type
-// For maps: key is map key type, value is map value type
-// For strings: key is int, value is rune
-func inferRangeTypes(exprType transpiler.Type) (keyType transpiler.Type, valueType transpiler.Type) {
+// inferRangeTypes returns the key and value types a range statement over a
+// value of type exprType binds, as Go types them:
+//   - a slice or array: an int key and the element
+//   - a map: its key and element
+//   - a string: an int key and a rune
+//   - a channel: the element (one variable)
+//   - a predeclared integer type: that type (one variable)
+//   - a `func(yield func(K, V) bool)`, such as iter.Seq[V] or
+//     iter.Seq2[K, V]: the yield function's parameters
+//
+// A Go alias or defined type (url.Values, http.Header, iter.Seq2[K, V]) is
+// ranged over as its underlying type.
+func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType transpiler.Type, valueType transpiler.Type) {
 	if exprType.IsNil() {
 		return transpiler.NilType{}, transpiler.NilType{}
 	}
+	under, defined := t.goUnderlying(exprType)
 
-	switch v := exprType.(type) {
+	switch v := under.(type) {
 	case transpiler.ArrayType:
 		return transpiler.BasicType{Name: "int"}, v.Elem
 	case transpiler.MapType:
@@ -820,10 +828,45 @@ func inferRangeTypes(exprType transpiler.Type) (keyType transpiler.Type, valueTy
 		if v.Name == "string" {
 			return transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "rune"}
 		}
+		if k := scalarKindOfPrimitive(v.Name); (k == scalarInt || k == scalarUint) && !defined {
+			// `for i := range n` binds i to n's type. A Go defined integer
+			// type (time.Duration) keeps the int key it has always had: its
+			// String method would change what `s"$i"` prints.
+			return v, transpiler.NilType{}
+		}
+	case transpiler.FuncType:
+		if key, value, ok := rangeFuncYieldTypes(v); ok {
+			return key, value
+		}
 	}
 
 	// Default: int key, unknown value
 	return transpiler.BasicType{Name: "int"}, transpiler.NilType{}
+}
+
+// rangeFuncYieldTypes is the key and value types a range-over-func loop binds
+// for f, a `func(yield func() bool)`, `func(yield func(V) bool)` or
+// `func(yield func(K, V) bool)`: the yield function's parameters, NilType for
+// each it does not have. False when f is no such function.
+func rangeFuncYieldTypes(f transpiler.FuncType) (key, value transpiler.Type, ok bool) {
+	if len(f.Params) != 1 || len(f.Results) != 0 {
+		return nil, nil, false
+	}
+	yield, isFunc := f.Params[0].(transpiler.FuncType)
+	if !isFunc || len(yield.Params) > 2 || len(yield.Results) != 1 {
+		return nil, nil, false
+	}
+	if b, isBasic := yield.Results[0].(transpiler.BasicType); !isBasic || b.Name != "bool" {
+		return nil, nil, false
+	}
+	key, value = transpiler.NilType{}, transpiler.NilType{}
+	if len(yield.Params) >= 1 {
+		key = yield.Params[0]
+	}
+	if len(yield.Params) == 2 {
+		value = yield.Params[1]
+	}
+	return key, value, true
 }
 
 // Type inference functions moved to type_inference.go

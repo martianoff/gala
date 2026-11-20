@@ -1,0 +1,54 @@
+package main
+
+import (
+    "maps"
+    "net/http"
+    "net/url"
+    "slices"
+    "martianoff/gala/go_interop"
+)
+
+// Range over a Go named map or slice type (url.Values, http.Header) and over a
+// Go iterator (iter.Seq, iter.Seq2) binds the range variables to the types Go
+// gives them, so interpolation picks the right verb and string operations on
+// a string key type-check (#1299).
+
+func main() {
+    val q = url.Values{}
+    q.Set("name", "ann")
+    for k, v := range q {
+        Println(s"query $k=$v")
+    }
+
+    val h = http.Header{}
+    h.Set("Accept", "text/plain")
+    for k, vs := range h {
+        Println(s"header $k: ${vs[0]}")
+    }
+
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, float64](), "a", 1.5)
+    for k, v := range maps.All(m) {
+        Println(s"key=$k value=$v")
+        Println(k + "!", v * 2.0, k == "a")
+    }
+    for k := range maps.Keys(m) {
+        Println(s"key=$k")
+    }
+    for v := range maps.Values(m) {
+        Println(f"value=$v%.2f")
+    }
+
+    val words = go_interop.SliceOf("x", "y")
+    for i, w := range slices.All(words) {
+        Println(s"$i:$w", w + "?")
+    }
+    for w := range slices.Values(words) {
+        Println(s"w=$w")
+    }
+
+    val n = int64(3)
+    for i := range n {
+        val j int64 = i
+        Println(s"i=$j")
+    }
+}

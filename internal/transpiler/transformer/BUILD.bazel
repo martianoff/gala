@@ -328,6 +328,7 @@ go_test(
         "inout_interop_test.go",
         "inout_test.go",
         "range_check_test.go",
+        "range_go_types_test.go",
         "receiver_mutation_test.go",
         "receiver_type_param_rename_test.go",
         "recursive_immutable_test.go",

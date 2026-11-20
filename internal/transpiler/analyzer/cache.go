@@ -238,7 +238,11 @@ import (
 // v50: an interface's methods record their parameter names
 // (MethodMetadata.ParamNames), so a call through the interface can pass
 // arguments by name. A v49 payload lacks them.
-const CacheVersion = "v50"
+//
+// v51: a Go generic type instance keeps its type arguments wherever they
+// spell exactly (iter.Seq2[string, int]), not only in an anonymous struct,
+// and a GoFuncSignature records its type parameters' core types (CoreTypes).
+const CacheVersion = "v51"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

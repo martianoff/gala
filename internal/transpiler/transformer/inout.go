@@ -632,6 +632,17 @@ func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []str
 	return t.instantiateGoType(data.Underlying, data.TypeParams, args)
 }
 
+// goUnderlying is typ through aliases (unaliasedType) and then, when that is
+// a type Go defines, its underlying type (goDefinedUnderlying); defined
+// reports the second step.
+func (t *galaASTTransformer) goUnderlying(typ transpiler.Type) (under transpiler.Type, defined bool) {
+	under, _ = t.unaliasedType(typ, nil)
+	if u := t.goDefinedUnderlying(under, nil); u != nil {
+		return u, true
+	}
+	return under, false
+}
+
 // goDeclaredType is the Go type information of typ, a type Go declares: a
 // named type, or the basic type a GALA declaration names a Go type by,
 // given type arguments (args) or not. data is nil when Go type information

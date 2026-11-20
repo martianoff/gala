@@ -551,6 +551,7 @@ func (e *encoder) writeGoFuncSig(s *transpiler.GoFuncSignature) {
 	e.writeBool(s.IsVariadic)
 	e.writeBool(s.Inexact)
 	e.writeStringSlice(s.TypeParams)
+	e.writeStringTypeMap(s.CoreTypes)
 }
 
 func (e *encoder) writeStringGoFuncSigMap(m map[string]*transpiler.GoFuncSignature) {
@@ -1172,6 +1173,7 @@ func (d *decoder) readGoFuncSig() *transpiler.GoFuncSignature {
 	s.IsVariadic = d.readBool()
 	s.Inexact = d.readBool()
 	s.TypeParams = d.readStringSlice()
+	s.CoreTypes = d.readStringTypeMap()
 	return s
 }
 

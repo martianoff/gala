@@ -40,7 +40,7 @@ type GoFuncSignature struct {
 	// Inexact is true when a parameter or result has no exact GALA spelling:
 	// a channel (its direction is lost), an anonymous struct or non-empty
 	// interface literal (spelled any), or an instance of a generic type (its
-	// type arguments are lost). Go written from the signature would not match
+	// type arguments may be lost). Go written from the signature would not match
 	// the declaration.
 	Inexact bool
 	// TypeParams holds the declared type-parameter names of a generic Go
@@ -53,6 +53,12 @@ type GoFuncSignature struct {
 	// from ordinary types, so a call site cannot instantiate the signature and
 	// would materialize the type parameters verbatim into generated Go.
 	TypeParams []string
+	// CoreTypes maps a type parameter whose constraint has one type term
+	// (`S ~[]E`, `M ~map[K]V`) to that term's underlying type ([]E,
+	// map[K]V). Once S is bound, unifying its underlying type with the core
+	// type binds E, K and V, as Go's constraint type inference does. Nil
+	// when no type parameter has one.
+	CoreTypes map[string]Type
 }
 
 // GoParam describes a single function parameter.

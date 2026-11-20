@@ -1,0 +1,44 @@
+package main
+
+import (
+    "maps"
+    "slices"
+    "martianoff/gala/go_interop"
+    . "martianoff/gala/examples/go_tilde_constraint_bridge"
+)
+
+// A lambda passed to a generic Go function whose slice or map parameter has a
+// type-set constraint (`S ~[]E`, `M ~map[K]V`) takes its parameter types from
+// the constraint's core type, as Go's constraint type inference does (#1298).
+// The same inference types the range variables of the generic iterators
+// maps.All, maps.Keys and slices.All (#1299).
+
+func main() {
+    val xs = go_interop.SliceOf(3, 1, 2)
+    Println(FindPlain(xs, (x) => x < 3))
+    Println(FindTilde(xs, (x) => x < 3))
+    Println(FindTilde(MakeNums(), (x) => x < 3))
+    Println(CountWhere(MakeScores(), (k, v) => k.Size() == 3 && v > 2))
+
+    Println(slices.IndexFunc(xs, (x) => x < 3))
+    Println(slices.ContainsFunc(xs, (x) => x > 2))
+    val ys = slices.Clone(xs)
+    slices.SortFunc(ys, (a, b) => b - a)
+    Println(ys)
+
+    val m = go_interop.MapPut(go_interop.MapEmpty[string, int](), "ann", 3)
+    for k, v := range maps.All(m) {
+        Println(k.Size(), s"$k=$v", v * 2)
+    }
+    for k := range maps.Keys(m) {
+        val name string = k
+        Println(name + "!")
+    }
+    Println(slices.Collect(maps.Keys(m)))
+    for i, x := range slices.All(xs) {
+        Println(s"$i:$x")
+    }
+    for k, v := range Pairs(MakeScores()) {
+        Println(s"$k has $v")
+    }
+}

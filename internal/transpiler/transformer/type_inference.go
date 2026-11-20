@@ -1571,6 +1571,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 					t.unifyForInference(goSigParamType(sig, i), r, sig.TypeParams, inferred)
 				}
 			}
+			t.inferFromGoCoreTypes(sig, inferred)
 			if len(inferred) == 0 {
 				return nil
 			}
@@ -1597,11 +1598,38 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		}
 		t.unifyForInference(paramType, argType, sig.TypeParams, inferred)
 	}
+	t.inferFromGoCoreTypes(sig, inferred)
 
 	if len(inferred) == 0 {
 		return nil
 	}
 	return inferred
+}
+
+// inferFromGoCoreTypes adds to inferred the type parameters of sig that the
+// core types of its bound ones determine, until no more are found, as Go's
+// constraint type inference does: for `func IndexFunc[S ~[]E, E any](s S,
+// f func(E) bool)` with S bound to []int (or a Go type defined over it),
+// unifying []E with []int binds E to int.
+func (t *galaASTTransformer) inferFromGoCoreTypes(sig *transpiler.GoFuncSignature, inferred map[string]transpiler.Type) {
+	if len(sig.CoreTypes) == 0 || len(inferred) == len(sig.TypeParams) {
+		return
+	}
+	done := make(map[string]bool, len(sig.CoreTypes))
+	for grew := true; grew; {
+		grew = false
+		for _, tp := range sig.TypeParams {
+			core, arg := sig.CoreTypes[tp], inferred[tp]
+			if core == nil || arg == nil || done[tp] {
+				continue
+			}
+			done[tp] = true
+			under, _ := t.goUnderlying(unwrapValueMarkers(arg))
+			before := len(inferred)
+			t.unifyForInference(core, under, sig.TypeParams, inferred)
+			grew = grew || len(inferred) > before
+		}
+	}
 }
 
 // goFuncValueType is the type of name as a value when it is a Go function the
@@ -1639,10 +1667,43 @@ func (t *galaASTTransformer) instantiateGoSignatureReturn(
 ) transpiler.Type {
 	ret := sig.Returns[0]
 	subst := t.inferGoSignatureTypeArgs(sig, args, typeArgs, hasEllipsis)
-	if len(subst) == 0 {
-		return ret
+	if len(subst) > 0 {
+		ret = t.substituteGoTypeParams(ret, subst)
 	}
-	return t.substituteGoTypeParams(ret, subst)
+	return t.bareOpenInstances(ret, sig.TypeParams)
+}
+
+// bareOpenInstances is typ with each generic type instance whose type
+// arguments still name one of typeParams, a type parameter the call left
+// unbound (iter.Seq2[K, V]), written as its bare type name (iter.Seq2), as
+// Go signatures typed every instance before they kept their type arguments:
+// a type argument naming the callee's own type parameter must not reach a
+// binding or the generated Go. A GALA type's instance (the Go results of a
+// GALA function) is kept as it is.
+func (t *galaASTTransformer) bareOpenInstances(typ transpiler.Type, typeParams []string) transpiler.Type {
+	if len(typeParams) == 0 || typ == nil || !typeMentionsTypeParam(typ, typeParams) {
+		return typ
+	}
+	switch v := typ.(type) {
+	case transpiler.GenericType:
+		if t.getTypeMeta(v.Base.BaseName()) != nil {
+			return typ
+		}
+		return v.Base
+	case transpiler.ArrayType:
+		v.Elem = t.bareOpenInstances(v.Elem, typeParams)
+		return v
+	case transpiler.MapType:
+		v.Key, v.Elem = t.bareOpenInstances(v.Key, typeParams), t.bareOpenInstances(v.Elem, typeParams)
+		return v
+	case transpiler.PointerType:
+		v.Elem = t.bareOpenInstances(v.Elem, typeParams)
+		return v
+	case transpiler.ChanType:
+		v.Elem = t.bareOpenInstances(v.Elem, typeParams)
+		return v
+	}
+	return typ
 }
 
 // instantiateGoSignatureReturns is the multi-value counterpart of
@@ -1659,10 +1720,18 @@ func (t *galaASTTransformer) instantiateGoSignatureReturns(
 	hasEllipsis bool,
 ) []transpiler.Type {
 	subst := t.inferGoSignatureTypeArgs(sig, args, typeArgs, hasEllipsis)
-	if len(subst) == 0 {
-		return sig.Returns
+	results := sig.Returns
+	if len(subst) > 0 {
+		results = t.substituteGoTypeParamsIn(results, subst)
 	}
-	return t.substituteGoTypeParamsIn(sig.Returns, subst)
+	if !funcTypeParamsMentionTypeParams(results, sig.TypeParams) {
+		return results
+	}
+	out := make([]transpiler.Type, len(results))
+	for i, r := range results {
+		out[i] = t.bareOpenInstances(r, sig.TypeParams)
+	}
+	return out
 }
 
 // substituteGoTypeParamsIn is substituteGoTypeParams over each of types, into
