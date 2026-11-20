@@ -467,8 +467,10 @@ column lists what each milestone's claim rests on beyond them.
   claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`.
   `expr_correct_instance` meets every hypothesis, on `x + 1`. It covers
   literals, locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %` and comparisons on
-  `int`s, `==` and `!=` on one kind, string `+`, `&&` and `||`. Shifts, the bitwise
-  operators and string ordering are not lowered yet. The lowering is type-directed, as
+  `int`s, the bitwise `& | ^ &^` on `int`s, `==` and `!=` on one kind, string `+`, `&&`
+  and `||`. galaspec computes the bitwise operators through Lean's `Int64`, GoCore
+  exactly and then reduced to `int`; core's `BitVec` lemmas show they agree
+  (`formal/Gala/M5/Bits.lean`). Shifts and string ordering are not lowered yet. The lowering is type-directed, as
   the transformer is: without types, galaspec's `x == "a"` on an `int` is `false` where
   Go rejects the program. The only run-time panic in this subset is an integer division
   by zero, whose class and text are the same wherever it happens, so the order of

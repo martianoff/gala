@@ -32,6 +32,7 @@
     pin gc 1.25.5's choice there (left to right) for that step.
 -/
 import Gala.M5.SpecPure
+import Gala.M5.Bits
 import Gala.GoCore.Eval
 
 
@@ -103,6 +104,7 @@ def binaryKind (op : String) (kl kr : Kind) : Option Kind :=
   | "<", .int, .int | "<=", .int, .int | ">", .int, .int | ">=", .int, .int => some .bool
   | "+", .int, .int | "-", .int, .int | "*", .int, .int | "/", .int, .int | "%", .int, .int =>
     some .int
+  | "&", .int, .int | "|", .int, .int | "^", .int, .int | "&^", .int, .int => some .int
   | "+", .str, .str => some .str
   | _, _, _ => none
 
@@ -346,10 +348,12 @@ theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     RRel k g ((Spec.binop op (.int x) (.int y)).run.run c).1
       ((binary cx (n + 3) op (.int intTy x) (.int intTy y)).run.run g) := by
   have hop : op = "==" ∨ op = "!=" ∨ op = "<" ∨ op = "<=" ∨ op = ">" ∨ op = ">=" ∨
-      op = "+" ∨ op = "-" ∨ op = "*" ∨ op = "/" ∨ op = "%" := by
+      op = "+" ∨ op = "-" ∨ op = "*" ∨ op = "/" ∨ op = "%" ∨ op = "&" ∨ op = "|" ∨ op = "^" ∨
+      op = "&^" := by
     unfold binaryKind at hk; split at hk <;> simp_all
-  rcases hop with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hop with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp only [binaryKind, ite_true, Option.some.injEq] at hk <;> subst hk
+  all_goals (first | rw [binop_and] | rw [binop_or] | rw [binop_xor] | rw [binop_andNot] | skip)
   all_goals simp [Spec.binop, binary, grun_bind, underlying_int, intOp, cmpOp, Val.ty, Val.materializeTyped,
     equal, Val.dyn, Ty.isUntyped, runtimePanic, RRel, Spec.valEq, cmp_lt, cmp_gt,
     cmp_le, cmp_ge, wrap_eq]
@@ -846,9 +850,10 @@ theorem pure_of_lower (κ : String → Option Kind) (c : Spec.Core) (cells : Arr
     or `unsupported`.
 
     Covered: `int`, `bool` and `string` literals, locals, parentheses, unary `-`, `+`,
-    `^`, `!`, and binary `+ - * / %`, comparisons of `int`s, `==` and `!=` of any one
-    kind, `+` of strings, `&&` and `||`. Not covered yet: shifts, the bitwise operators
-    and the ordering of strings (the lowering has none). Stated for GoCore's order of
+    `^`, `!`, and binary `+ - * / %` and the bitwise `& | ^ &^` on `int`s (galaspec's
+    through `Int64`, GoCore's exact bits reduced to `int`; `Gala/M5/Bits.lean`),
+    comparisons of `int`s, `==` and `!=` of any one kind, `+` of strings, `&&` and `||`.
+    Not covered yet: shifts and the ordering of strings (the lowering has none). Stated for GoCore's order of
     evaluation, left to right, which is gc's for operands that are not calls. -/
 theorem expr_correct (ds : Spec.Decls) (cx : Ctx) (κ : String → Option Kind) (e : Spec.Expr)
     (k : Kind) (le : GoCore.Full.Expr) (hl : lowerE κ e = some (k, le)) (hnc : NoConstOp e)
@@ -904,6 +909,32 @@ theorem inst_values (ds : Spec.Decls) :
     (evalExpr instCtx 5 instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt =
       (.ok (.int intTy 6), instSt) := by
   exact ⟨rfl, rfl⟩
+
+/-- The bitwise operators on the instance: with `x = 5`, `x & -3`, `x | -3`, `x ^ -3` and
+    `x &^ -3` are `5`, `-3`, `-8` and `0` in galaspec (through `Int64`) and in GoCore
+    (exact bits reduced to `int`), as in Go. The lowering accepts each. -/
+theorem inst_bitwise :
+    (["&", "|", "^", "&^"].map fun op =>
+      ((pureEval default (.binary op (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 matches
+        .ok (.int _)) = [true, true, true, true] ∧
+    ((pureEval default (.binary "&" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int 5) ∧
+    ((pureEval default (.binary "^" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int (-8)) ∧
+    ((pureEval default (.binary "|" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int (-3)) ∧
+    ((pureEval default (.binary "&^" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int 0) ∧
+    (evalExpr instCtx 8 instEnv (.binary "&" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy 5), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "|" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy (-3)), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy (-8)), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "&^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy 0), instSt) ∧
+    (lowerE instKinds (.binary "&^" (.name "x") (.lit (.int (-3))))).isSome := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- `expr_correct` applied to `x + 1`, every hypothesis discharged: it is not vacuous. -/
 theorem expr_correct_instance (ds : Spec.Decls) (steps d : Nat) :

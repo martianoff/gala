@@ -463,6 +463,30 @@ theorem expr_correct_instance : ∀ (ds : Spec.Decls) (steps d : Nat),
       ((GoCore.Full.evalExpr instCtx N instEnv (.binary "+" (.ident "x") (.intLit 1))).run.run instSt) :=
   Gala.M5.expr_correct_instance
 
+open Gala Gala.M5 GoCore.Full in
+theorem inst_bitwise :
+    (["&", "|", "^", "&^"].map fun op =>
+      ((pureEval default (.binary op (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 matches
+        .ok (.int _)) = [true, true, true, true] ∧
+    ((pureEval default (.binary "&" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int 5) ∧
+    ((pureEval default (.binary "^" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int (-8)) ∧
+    ((pureEval default (.binary "|" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int (-3)) ∧
+    ((pureEval default (.binary "&^" (.name "x") (.unary "-" (.lit (.int 3))))).run.run instCore).1 =
+      .ok (.int 0) ∧
+    (evalExpr instCtx 8 instEnv (.binary "&" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy 5), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "|" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy (-3)), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy (-8)), instSt) ∧
+    (evalExpr instCtx 8 instEnv (.binary "&^" (.ident "x") (.unary "-" (.intLit 3)))).run.run instSt =
+      (.ok (.int intTy 0), instSt) ∧
+    (lowerE instKinds (.binary "&^" (.name "x") (.lit (.int (-3))))).isSome :=
+  Gala.M5.inst_bitwise
+
 open Gala Gala.M5 in
 theorem stmts_correct : ∀ (ds : Spec.Decls) (cx : GoCore.Full.Ctx) (κ κ' : String → Option Kind)
     (ss : List Spec.Expr) (lss : List GoCore.Full.Stmt), lowerSs κ ss = some (κ', lss) →
