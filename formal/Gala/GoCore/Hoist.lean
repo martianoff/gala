@@ -347,6 +347,7 @@ def methodsSingle (s : Scope) (m : String) : Bool :=
     method of that name. -/
 def singleResult (s : Scope) : Expr → Bool
   | .paren f => singleResult s f
+  | .funcLit sig _ => resultCount sig == 1
   | .index f _ => singleResult s f
   | .ident f => 
     if s.isLocal f then ((s.funcTypes.lookup f).map fun sig => resultCount sig == 1).getD false
@@ -357,7 +358,10 @@ def singleResult (s : Scope) : Expr → Bool
     match s.import? q with
     | some p => match s.qualified? q f with
       | some (.func _ _ sig _) => resultCount sig == 1
-      | _ => p == "fmt" && ["Sprint", "Sprintf", "Sprintln"].contains f
+      -- A function of a package the document does not hold: the run stops at the call
+      -- (`evalCall`), except at the models, `slices.Clip` and `fmt`'s, which return one
+      -- value but for `Print`, `Println` and `Printf`.
+      | _ => if p == "fmt" then ["Sprint", "Sprintf", "Sprintln"].contains f else !s.c.pkgs.contains p
     | none => methodsSingle s f
   | .selector _ m => methodsSingle s m
   | _ => false
