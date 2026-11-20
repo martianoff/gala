@@ -17,9 +17,9 @@ written outside string literals only, so a `_` inside an interpolation is not
 one of its parameters, and nothing else gives it a value. It fires wherever
 the `_` sits in the interpolated expression (`${_}`, `${_ + 1}`,
 `${_.Name}`), in nested strings too, and whether or not the argument the string
-is passed as wants a function. Reading a `_` that a lambda parameter or a typed
-pattern binds, inside or around the string, as in `s"${xs.Map((_) => _ + 1)}"`,
-is reported too: such a `_` names no value.
+is passed as wants a function. A read of a `_` that a lambda parameter or a
+typed pattern binds, inside the string or not, is
+[GALA-E0139](/docs/errors/gala-e0139/) instead.
 
 **Minimal repro.**
 
@@ -63,18 +63,8 @@ func main() {
 A `_` that something inside the interpolation gives a meaning is fine: a
 placeholder lambda written whole inside it, as in `s"${xs.Map(_ * 10)}"`, a
 wildcard pattern, as in `s"${opt match { case Some(_) => "some" case _ => "none" }}"`,
-and a `_` parameter or `case _: int` that is not read. Where a `_` that a
-parameter or typed pattern binds is read, bind a name instead of `_` and read
-that name:
-
-- inside the string: `s"${xs.Map((x) => x + 1)}"` in place of
-  `s"${xs.Map((_) => _ + 1)}"`, and
-  `s"${v match { case n: int => n case _ => 0 }}"` in place of
-  `s"${v match { case _: int => _ case _ => 0 }}"`;
-- a lambda around the string: `xs.Map((x) => s"v${x}")` in place of
-  `xs.Map((_) => s"v${_}")`;
-- a typed pattern around the string: `case n: int => s"${n}"` in place of
-  `case _: int => s"${_}"`.
+and a `_` parameter or `case _: int` that is not read (reading one is
+[GALA-E0139](/docs/errors/gala-e0139/)).
 
 **Rationale.** A placeholder lambda's parameters are the `_` of the argument
 as written, and the text of a string literal is not part of that. Reading a

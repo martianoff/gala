@@ -1185,6 +1185,12 @@ const (
 	// (variable of struct type collection_immutable.Array[int]) as []int
 	// value".
 	CodeSpreadNotSlice ErrorCode = "GALA-E0138"
+
+	// E0139: a read of a `_` that a lambda parameter or typed pattern binds,
+	// `(_) => _ + 1` or `case _: int => _`. Such a `_` names no value; it
+	// used to reach Go as the blank identifier and fail `go build` with
+	// "cannot use _ as value or type".
+	CodeUnderscoreBindingRead ErrorCode = "GALA-E0139"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

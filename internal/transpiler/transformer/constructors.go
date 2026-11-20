@@ -24,6 +24,9 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 	if _, isLoopControl := loopControlToken(name); isLoopControl {
 		return nil, t.loopControlAsValueError(at, name)
 	}
+	if err := t.underscoreBindingRead(name, at); err != nil {
+		return nil, err
+	}
 	if err := t.placeholderInInterpolation(name, at); err != nil {
 		return nil, err
 	}

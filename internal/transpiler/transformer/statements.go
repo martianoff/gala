@@ -205,9 +205,19 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		}
 	}
 
-	lhsExprs, err := t.lowerExprs(targets)
-	if err != nil {
-		return nil, err
+	// `_` as a target is Go's blank identifier, `_ = expr`, not a read of a
+	// `_` binding (GALA-E0139).
+	lhsExprs := make([]ast.Expr, len(targets))
+	for i, target := range targets {
+		if target.bareIdent() == "_" {
+			lhsExprs[i] = ast.NewIdent("_")
+			continue
+		}
+		e, err := t.lowerExpr(target)
+		if err != nil {
+			return nil, err
+		}
+		lhsExprs[i] = e
 	}
 	for i, target := range lhsExprs {
 		if err := t.immutableFieldWriteError(targets[i].at(), target, "assign to"); err != nil {

@@ -34,4 +34,9 @@ func main() {
     // Placeholder with parenthesized nested expression.
     val plusOneDoubled = nums.Map((_ + 1) * 2)
     fmt.Println(plusOneDoubled.Get(0), plusOneDoubled.Get(4))
+
+    // A placeholder lambda inside a lambda whose parameter is `_`: the inner
+    // `_` is the placeholder's parameter (reading the outer one is E0139).
+    val nested = nums.Map((_) => nums.Map(_ + 1).Get(0))
+    fmt.Println(nested.Get(0))
 }

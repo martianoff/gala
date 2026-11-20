@@ -1288,10 +1288,12 @@ val sum     = nums.FoldLeft(0, _ + _)      // ≡ (a, b) => a + b
 
 A placeholder lambda around a string does not take a `_` inside the string.
 Inside the `${...}` of an `s"..."` or `f"..."` string, a `_` may be read only
-as a placeholder of a lambda written inside that `${...}`. Reading any other
-`_` there is an error ([GALA-E0137](/docs/errors/gala-e0137/)): a `_` that no
-lambda inside the `${...}` takes, and a `_` that a parameter or typed pattern
-binds, inside or around the string. Bind a name instead and read the name:
+as a placeholder of a lambda written inside that `${...}`; reading a `_` that
+no lambda inside the `${...}` takes is an error
+([GALA-E0137](/docs/errors/gala-e0137/)). Anywhere, reading a `_` that a
+parameter or typed pattern binds is an error too
+([GALA-E0139](/docs/errors/gala-e0139/)): such a `_` names no value. Bind a
+name instead and read the name:
 
 <!-- doc-check: fragment -->
 ```gala
