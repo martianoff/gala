@@ -459,7 +459,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 29 | 1 | 75 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 474 | 34 | 428 | 32 |
+| UNSUPPORTED | 477 | 34 | 431 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **29** (ratchet baseline 29).
@@ -523,11 +523,11 @@ when run as Lean and compared with Go.
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (39 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (40 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 283 |
+| `import` | 285 |
 | `method-call` | 52 |
 | `generic-type` | 41 |
 | `index` | 38 |
@@ -550,11 +550,11 @@ The constructs galaspec stopped at, by how many programs it stopped at each (39 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (92 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (94 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 105 |
+| `import` | 106 |
 | `generic-type` | 35 |
 | `index` | 31 |
 | `qualified-type` | 24 |
