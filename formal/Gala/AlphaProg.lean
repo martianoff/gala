@@ -610,17 +610,6 @@ theorem fall2_flatMap_self {R : β → γ → Prop} {F : α → List β} {G : α
     simp only [List.flatMap_cons]
     exact fall2_cat (h a (by simp)) (fall2_flatMap_self fun b hb => h b (by simp [hb]))
 
-/-- What a declaration with no value adds to its mentions, on both sides: its type's
-    declared field defaults, each cut off on both sides or expanded one budget down. -/
-theorem menR_declDefaults (hD : DeclsR pkg pm ds ds') {k : Nat}
-    (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j) (c : List (String × Nat)) (ty : Option Ty) :
-    MenR pkg
-      ((declDefaults ds ty).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
-        match k with | 0 => [] | k + 1 => mentionsUpTo ds k ((x.1, x.2.1) :: c) [] x.2.2)
-      ((declDefaults ds' ty).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
-        match k with | 0 => [] | k + 1 => mentionsUpTo ds' k ((x.1, x.2.1) :: c) [] x.2.2) :=
-  menR_keyed hk c (declDefaults_rel hD ty)
-
 /-- The declared field defaults a construction evaluates for the fields it leaves out that
     declare none: the same fields on both sides, each default related to itself with no
     local in scope. -/
@@ -761,7 +750,7 @@ theorem mentions_blockR (hD : DeclsR pkg pm ds ds') (hk : ∀ j, k = j + 1 → M
     rw [alphaL_isEmpty hvs]
     split
     · exact MenR.nil
-    · exact menR_declDefaults hD hk c _
+    · exact menR_keyed hk c (declDefaults_rel hD _)
   | _, _, _, _, _, _, _, hsz, .stmt he hrest, hs, hacc => by
     simp only [List.cons.sizeOf_spec] at hsz
     simp only [List.foldl_cons]
@@ -1184,7 +1173,7 @@ theorem deps_eq (hD : DeclsR pkg pm ds ds') {all : List String} (hall : ∀ x �
     rw [alphaL_isEmpty hg.values, hg.type]
     split
     · exact MenR.nil
-    · exact menR_declDefaults hD (fun j _ => mentionsUpTo_alpha hD j) [] _
+    · exact menR_keyed (fun j _ => mentionsUpTo_alpha hD j) [] (declDefaults_rel hD _)
   have hr := reach_alpha hD hm
   have key : ∀ l : List String, l.filter (all.contains ·) = (inPkg pkg l).filter (all.contains ·) := by
     intro l

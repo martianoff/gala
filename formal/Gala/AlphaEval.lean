@@ -1173,14 +1173,6 @@ end
 section
 variable {pkg : List String} {pm : String → Ren} {ds ds' : Decls} {d : Nat}
 
-/-- A type check is related to itself whatever it names the checked thing in its
-    message: only a `stuck` text tells them apart. -/
-theorem checkOptTy_msg (ds : Decls) (c : Core) (w w' : String) (t : Option Ty) :
-    ResR pkg pm Eq ((checkOptTy ds w t).run.run c).1 ((checkOptTy ds w' t).run.run c).1 := by
-  cases t with
-  | none => exact .stuck _ _
-  | some t => exact checkTy_self ds c t
-
 /-- A declared field default, looked up by its owner and slot, is related to itself with
     no local in scope. -/
 theorem fieldDefault_rel (hD : DeclsR pkg pm ds ds') (x : String) (j : Nat) :
@@ -1250,10 +1242,7 @@ theorem bindDefaults_alpha_of (hD : DeclsR pkg pm ds ds') (ih : EvalIH pkg pm ds
       · simp only [↓reduceIte]
         -- A left-out field without a declared default: its type's default value, the
         -- same template on both sides, its declared defaults related to themselves.
-        refine relM_bind (relM_liftH_ro (pureH_checkOptTy ds _ _).readOnly
-          (pureH_checkOptTy ds' _ _).readOnly fun c c' _ => by
-            rw [← checkOptTy_congr hD.same, (pureH_checkOptTy ds _ _ c c').1]
-            exact checkOptTy_msg ds c' _ _ _) fun t _ h => ?_
+        refine relM_bind (relM_checkOptTy hD.same _ _ _) fun t _ h => ?_
         subst h
         refine relM_bind (relM_liftH_ro (pureH_defaultOf ds 64 t).readOnly
           (pureH_defaultOf ds' 64 t).readOnly fun c c' _ => by
