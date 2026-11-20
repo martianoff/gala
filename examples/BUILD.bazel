@@ -767,6 +767,15 @@ gala_exec_test(
     expected = "apply_method.out",
 )
 
+# A value whose type has a generic Apply is called through the free function
+# the generic method lowers to, not a Go method it does not have (#1272).
+gala_exec_test(
+    name = "value_generic_apply",
+    src = "value_generic_apply.gala",
+    expected = "value_generic_apply.out",
+    deps = ["//go_interop"],
+)
+
 # A Go method returning (T, error) on a type from a package the file does not
 # import (reached through a field, a val binding or a chain of calls) lowers to
 # Try like any other Go call.

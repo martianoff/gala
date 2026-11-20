@@ -400,6 +400,7 @@ go_test(
         "val_local_plain_test.go",
         "val_param_test.go",
         "value_called_as_function_test.go",
+        "value_generic_apply_test.go",
         "value_match_control_flow_test.go",
         "var_tuple_destructuring_test.go",
         "variables_test.go",
