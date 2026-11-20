@@ -409,38 +409,97 @@ func TestDecoder_SkipInsideArray(t *testing.T) {
 
 // ----- Decoder: separators --------------------------------------------------
 
-// readValue reads the value at the decoder's position through the typed
+// valueReader reads the value at the decoder's position through the typed
 // reads Codec.Decode uses, choosing each read by the value's first byte.
-// Every value is first probed with IsNull, as an Option field is, so a read
-// that follows the probe for the same element is covered too.
-func readValue(d *JsonDecoderImpl) {
-	if d.IsNull() {
-		d.ReadNull()
-		return
+// With probe, every value is first probed with IsNull, as an Option field
+// is, so the probe makes the separator check and the read after it repeats
+// it. Without probe, the read itself makes the check, as for a plain field.
+func valueReader(probe bool) func(*JsonDecoderImpl) {
+	var read func(*JsonDecoderImpl)
+	read = func(d *JsonDecoderImpl) {
+		if probe && d.IsNull() {
+			d.ReadNull()
+			return
+		}
+		switch peekValueByte(d) {
+		case '{':
+			d.StartObject()
+			for d.HasMoreFields() {
+				d.ReadKey()
+				read(d)
+			}
+			d.EndObject()
+		case '[':
+			d.StartArray()
+			for d.HasMoreElements() {
+				read(d)
+			}
+			d.EndArray()
+		case '"':
+			d.ReadString()
+		case 't', 'f':
+			d.ReadBool()
+		case 'n':
+			d.ReadNull()
+		default:
+			d.ReadFloat64()
+		}
 	}
-	if d.pos >= len(d.data) {
-		panic("unexpected end of input")
+	return read
+}
+
+// peekValueByte returns the first byte of the next value without moving the
+// decoder: it looks past whitespace and at most one ',' separator.
+func peekValueByte(d *JsonDecoderImpl) byte {
+	i := d.pos
+	skip := func() {
+		for i < len(d.data) && strings.IndexByte(" \t\n\r", d.data[i]) >= 0 {
+			i++
+		}
 	}
-	switch d.data[d.pos] {
+	skip()
+	if i < len(d.data) && d.data[i] == ',' {
+		i++
+		skip()
+	}
+	if i >= len(d.data) {
+		return 0
+	}
+	return d.data[i]
+}
+
+var readValue = valueReader(true)
+
+// separatorReaders are the paths that check a separator: the typed reads
+// with and without an IsNull probe before each, Skip on the members of a
+// container the caller opened, and Skip over a whole document.
+var separatorReaders = map[string]func(*JsonDecoderImpl){
+	"decode with IsNull probes": readValue,
+	"decode":                    valueReader(false),
+	"Skip each member":          skipMembers,
+	"Skip":                      skipValue,
+}
+
+// skipMembers opens the container at the decoder's position and skips each
+// member value or element, so every Skip call happens inside a container
+// and makes the separator check itself.
+func skipMembers(d *JsonDecoderImpl) {
+	switch peekValueByte(d) {
 	case '{':
 		d.StartObject()
 		for d.HasMoreFields() {
 			d.ReadKey()
-			readValue(d)
+			d.Skip()
 		}
 		d.EndObject()
 	case '[':
 		d.StartArray()
 		for d.HasMoreElements() {
-			readValue(d)
+			d.Skip()
 		}
 		d.EndArray()
-	case '"':
-		d.ReadString()
-	case 't', 'f':
-		d.ReadBool()
 	default:
-		d.ReadFloat64()
+		d.Skip()
 	}
 }
 
@@ -495,7 +554,7 @@ func TestDecoder_SeparatorsRequired(t *testing.T) {
 			if got := stdjson.Valid([]byte(tt.in)); got != tt.valid {
 				t.Fatalf("test table disagrees with encoding/json: Valid(%s) = %v", tt.in, got)
 			}
-			for name, read := range map[string]func(*JsonDecoderImpl){"decode": readValue, "Skip": skipValue} {
+			for name, read := range separatorReaders {
 				err := decodeDocument(tt.in, read)
 				if tt.valid && err != "" {
 					t.Fatalf("%s(%s) failed: %s", name, tt.in, err)
@@ -519,11 +578,10 @@ func TestDecoder_MissingSeparatorError(t *testing.T) {
 		{`{"a":1]`, `json at pos 6: expected ',' or '}'`},
 	}
 	for _, tt := range tests {
-		if got := decodeDocument(tt.in, readValue); got != tt.want {
-			t.Errorf("decode(%s): error = %q, want %q", tt.in, got, tt.want)
-		}
-		if got := decodeDocument(tt.in, skipValue); got != tt.want {
-			t.Errorf("Skip(%s): error = %q, want %q", tt.in, got, tt.want)
+		for name, read := range separatorReaders {
+			if got := decodeDocument(tt.in, read); got != tt.want {
+				t.Errorf("%s(%s): error = %q, want %q", name, tt.in, got, tt.want)
+			}
 		}
 	}
 }

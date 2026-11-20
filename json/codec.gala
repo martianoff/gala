@@ -216,10 +216,10 @@ type JsonDecoderImpl struct {
     // slice in step with stack: arrays use elemStart instead.
     var firstConsumed []bool
     // elemStart is the position at which an array element's separator was
-    // last settled: just inside a container's opening byte, or just after
-    // a ','. A separator check there repeats the one for the same element
-    // (a read after an IsNull probe) and needs no ','. A check anywhere
-    // else is a new element. That holds because pos never moves backwards
+    // last settled: the first byte that is not whitespace after a
+    // container's opening byte or after a ','. A separator check there
+    // repeats the one for the same element (a read after an IsNull probe)
+    // and needs no ','. A check anywhere else is a new element. That holds because pos never moves backwards
     // and every value, nested containers included, is at least one byte,
     // so a decode path that rewinds pos must reset elemStart as well.
     var elemStart     int
