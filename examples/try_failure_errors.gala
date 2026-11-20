@@ -10,11 +10,13 @@ import (
 // string panic becomes an error with that text, an error panic is kept, and a
 // Failure's error that Get raises again inside another Try is the same error.
 
-func failWith(v any) int = go_builtins.Panic(v)
+func failWithText(msg string) int = go_builtins.Panic(msg)
+
+func failWithError(err error) int = go_builtins.Panic(err)
 
 func main() {
-    val fromString = Try(() => failWith("boom"))
-    val fromError = Try(() => failWith(errors.New("bad input")))
+    val fromString = Try(() => failWithText("boom"))
+    val fromError = Try(() => failWithError(errors.New("bad input")))
     val reRaised = Try(() => fromError.Get() + 1)
     Println(fromString)
     Println(fromError)
