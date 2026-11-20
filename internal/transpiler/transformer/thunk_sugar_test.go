@@ -181,11 +181,7 @@ struct Holder(g Getter, act Action)
 
 type MakeHolder func() Holder
 
-func build(f func() Holder) Holder = f()
-
-type Thunk[T any] func() T
-
-func useThunk[T any](g Thunk[T], k func(func() T) T) T = k(g)`
+func build(f func() Holder) Holder = f()`
 	cases := []struct {
 		name     string
 		main     string
@@ -260,11 +256,6 @@ func useThunk[T any](g Thunk[T], k func(func() T) T) T = k(g)`
 			main:     "val h = Holder(one, () => Println(1))\n    run(h.act)",
 			contains: "run(h.act.Get())",
 			absent:   "run(func() {",
-		},
-		{
-			name:     "a generic named value for a slot of the enclosing declaration's type parameter",
-			main:     "val th Thunk[int] = one\n    Println(useThunk(th, (f func() int) => f()))",
-			contains: "useThunk(",
 		},
 		{
 			name:     "a conversion to a named void function type for a func() slot",

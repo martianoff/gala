@@ -5208,9 +5208,9 @@ func (t *galaASTTransformer) passesNamedFunctionAsThunk(fn, ft transpiler.FuncTy
 	if len(ft.Results) > 1 {
 		return true
 	}
-	// A callee's type parameter not yet inferred is no type fn can be known
-	// to match, whatever its name; one the enclosing declaration binds is.
-	if len(ft.Results) == 1 && t.mentionsUnboundTypeParam(ft.Results[0]) {
+	// A type parameter the slot has not inferred yet is no type fn can be
+	// known to match, whatever its name.
+	if len(ft.Results) == 1 && (t.hasTypeParams(ft.Results[0]) || t.mentionsUnboundTypeParam(ft.Results[0])) {
 		return false
 	}
 	same, known := t.identicalTypes(fn, ft)
