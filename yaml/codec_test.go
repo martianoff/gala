@@ -399,3 +399,98 @@ func TestDecoder_EmptyDocumentIsNull(t *testing.T) {
 		t.Fatalf(`IsNull("{}") = true`)
 	}
 }
+
+// ----- Quoted scalars --------------------------------------------------------
+
+// readValueOf decodes "k: <value>" and returns the string read for k, or the
+// error the decode panicked with.
+func readValueOf(value string) (s string, err string) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(string)
+		}
+	}()
+	d := NewYamlDecoder("k: " + value)
+	d.StartObject()
+	d.ReadKey()
+	s = d.ReadString()
+	d.EndObject()
+	return s, ""
+}
+
+// A scalar that starts with a quote is exactly one quoted scalar, optionally
+// followed by a comment (#1296). Anything else is a decode error rather than
+// plain text that keeps the quote.
+func TestDecoder_QuotedScalarMustBeWellFormed(t *testing.T) {
+	tests := []struct{ value, want, wantErr string }{
+		{`"abc"`, "abc", ""},
+		{`'abc'`, "abc", ""},
+		{`""`, "", ""},
+		{`''`, "", ""},
+		{`"a\"b"`, `a"b`, ""},
+		{`"a\\"`, `a\`, ""},
+		{`'it''s'`, "it's", ""},
+		{`''''`, "'", ""},
+		{`"it's"`, "it's", ""},
+		{`'say "hi"'`, `say "hi"`, ""},
+		{`"a # b"`, "a # b", ""},
+		{`"abc"   # comment`, "abc", ""},
+		{`'abc' # comment`, "abc", ""},
+		{`abc"`, `abc"`, ""},
+		{`it's`, "it's", ""},
+
+		{`"abc`, "", `yaml: unterminated quoted scalar "abc`},
+		{`'abc`, "", `yaml: unterminated quoted scalar 'abc`},
+		{`"`, "", `yaml: unterminated quoted scalar "`},
+		{`'`, "", `yaml: unterminated quoted scalar '`},
+		{`"abc\"`, "", `yaml: unterminated quoted scalar "abc\"`},
+		{`'it''s`, "", `yaml: unterminated quoted scalar 'it''s`},
+		{`"abc" trailing`, "", `yaml: unexpected text after quoted scalar "abc" trailing`},
+		{`'abc' trailing`, "", `yaml: unexpected text after quoted scalar 'abc' trailing`},
+		{`"a" "b"`, "", `yaml: unexpected text after quoted scalar "a" "b"`},
+		{`"abc"#x`, "", `yaml: unexpected text after quoted scalar "abc"#x`},
+	}
+	for _, tt := range tests {
+		got, err := readValueOf(tt.value)
+		if err != tt.wantErr || got != tt.want {
+			t.Errorf("k: %s => (%q, error %q), want (%q, error %q)", tt.value, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
+// The same rule holds for a sequence item, a quoted key's value and a
+// one-line document.
+func TestDecoder_QuotedScalarContexts(t *testing.T) {
+	tests := []struct{ src, wantErr string }{
+		{"- \"abc", `yaml: unterminated quoted scalar "abc`},
+		{"- 'abc' trailing", `yaml: unexpected text after quoted scalar 'abc' trailing`},
+		{"\"k\": \"abc", `yaml: unterminated quoted scalar "abc`},
+		{"\"abc", `yaml: unterminated quoted scalar "abc`},
+	}
+	for _, tt := range tests {
+		func() {
+			defer func() {
+				if r := recover(); r != tt.wantErr {
+					t.Errorf("NewYamlDecoder(%q) panicked with %v, want %q", tt.src, r, tt.wantErr)
+				}
+			}()
+			NewYamlDecoder(tt.src)
+		}()
+	}
+}
+
+// A comment after a quoted key's value is not part of the value, as it is
+// not after a plain key's.
+func TestDecoder_QuotedKeyValueComment(t *testing.T) {
+	for _, src := range []string{`"k": "v" # note`, `"k": v # note`, `'k': 'v' # note`} {
+		d := NewYamlDecoder(src)
+		d.StartObject()
+		if k := d.ReadKey(); k != "k" {
+			t.Errorf("%s: key = %q, want %q", src, k, "k")
+		}
+		if s := d.ReadString(); s != "v" {
+			t.Errorf("%s: value = %q, want %q", src, s, "v")
+		}
+		d.EndObject()
+	}
+}

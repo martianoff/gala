@@ -1153,7 +1153,7 @@ func parseQuotedKey(line string) (string, string, bool) {
 		}
 		rest := ""
 		if j+1 < len(line) {
-			rest = trimYamlSpace(line[j+1:])
+			rest = withoutComment(trimYamlSpace(line[j+1:]))
 		}
 		key := line[1:i]
 		if quote == '"' {
@@ -1177,36 +1177,119 @@ func parseInlineScalar(raw string) *yNode {
 	case "{}":
 		return &yNode{kind: yMap}
 	}
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return newScalarNode(unescapeDoubleQuoted(s[1:len(s)-1]), false)
-	}
-	if len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\'' {
-		return newScalarNode(decodeSingleQuoted(s), false)
+	// A scalar that starts with a quote must be one quoted scalar: an
+	// unterminated quote, or text after the closing one, is an error rather
+	// than a plain scalar with a stray quote.
+	if q := s[0]; q == '"' || q == '\'' {
+		// The common case, checked here to keep it cheap: the first quote
+		// after the opening one ends s and is not escaped, so it closes the
+		// scalar. Single-quoted text then holds no '' to decode.
+		end := strings.IndexByte(s[1:], q) + 1
+		if end > 0 && end == len(s)-1 {
+			if q == '\'' {
+				return newScalarNode(s[1:end], false)
+			}
+			if s[end-1] != '\\' {
+				return newScalarNode(unescapeDoubleQuoted(s[1:end]), false)
+			}
+		}
+		return newScalarNode(decodeQuotedScalar(s), false)
 	}
 	return newScalarNode(s, false)
 }
 
-// yamlCharEscapes maps the one-character escapes of a YAML double-quoted
-// scalar to the character each one stands for (YAML 1.2, section 5.7).
-var yamlCharEscapes = map[byte]rune{
-	'0':  0x00,
-	'a':  0x07,
-	'b':  0x08,
-	't':  0x09,
-	'\t': 0x09,
-	'n':  0x0a,
-	'v':  0x0b,
-	'f':  0x0c,
-	'r':  0x0d,
-	'e':  0x1b,
-	' ':  ' ',
-	'"':  '"',
-	'/':  '/',
-	'\\': '\\',
-	'N':  0x85,
-	'_':  0xa0,
-	'L':  0x2028,
-	'P':  0x2029,
+// decodeQuotedScalar decodes the quoted scalar s, or fails when s is not one.
+func decodeQuotedScalar(s string) string {
+	switch end := closingQuote(s); {
+	case end < 0:
+		panic(fmt.Sprintf("yaml: unterminated quoted scalar %s", s))
+	case end != len(s)-1:
+		panic(fmt.Sprintf("yaml: unexpected text after quoted scalar %s", s))
+	case s[0] == '"':
+		return unescapeDoubleQuoted(s[1:end])
+	default:
+		return unescapeSingleQuoted(s[1:end])
+	}
+}
+
+// unescapeSingleQuoted decodes the body of a well-formed single-quoted
+// scalar, where a quote is always written twice and stands for one.
+func unescapeSingleQuoted(body string) string {
+	var sb strings.Builder
+	sb.Grow(len(body))
+	for i := 0; i < len(body); i++ {
+		sb.WriteByte(body[i])
+		if body[i] == '\'' {
+			i++
+		}
+	}
+	return sb.String()
+}
+
+// closingQuote returns the index of the quote that closes the quoted scalar
+// s starts with, or -1 if none does. In a double-quoted scalar a backslash
+// escapes the next character, so a '"' after an odd run of backslashes is
+// escaped; in a single-quoted one a quote written twice stands for one.
+func closingQuote(s string) int {
+	quote := s[0]
+	for i := 1; i < len(s); {
+		j := strings.IndexByte(s[i:], quote) + i
+		switch {
+		case j < i:
+			return -1
+		case quote == '"':
+			k := j
+			for s[k-1] == '\\' { // s[0] is the opening quote, so k stays > 0
+				k--
+			}
+			if (j-k)%2 == 0 {
+				return j
+			}
+		case j+1 == len(s) || s[j+1] != '\'':
+			return j
+		default:
+			j++ // '' stands for one quote
+		}
+		i = j + 1
+	}
+	return -1
+}
+
+// yamlCharEscape returns the character a one-character escape of a YAML
+// double-quoted scalar stands for (YAML 1.2, section 5.7). A switch rather
+// than a map keeps the lookup off the hash path.
+func yamlCharEscape(esc byte) (rune, bool) {
+	switch esc {
+	case '0':
+		return 0x00, true
+	case 'a':
+		return 0x07, true
+	case 'b':
+		return 0x08, true
+	case 't', '\t':
+		return 0x09, true
+	case 'n':
+		return 0x0a, true
+	case 'v':
+		return 0x0b, true
+	case 'f':
+		return 0x0c, true
+	case 'r':
+		return 0x0d, true
+	case 'e':
+		return 0x1b, true
+	case ' ', '"', '/', '\\':
+		return rune(esc), true
+	case 'N':
+		return 0x85, true
+	case '_':
+		return 0xa0, true
+	case 'L':
+		return 0x2028, true
+	case 'P':
+		return 0x2029, true
+	}
+	return 0, false
 }
 
 // yamlCodePointEscapes maps the code-point escapes to their number of hex
@@ -1225,6 +1308,7 @@ func unescapeDoubleQuoted(body string) string {
 		return body
 	}
 	var sb strings.Builder
+	sb.Grow(len(body))
 	for i := 0; i < len(body); i++ {
 		c := body[i]
 		if c != '\\' || i+1 >= len(body) {
@@ -1232,7 +1316,7 @@ func unescapeDoubleQuoted(body string) string {
 			continue
 		}
 		esc := body[i+1]
-		if r, ok := yamlCharEscapes[esc]; ok {
+		if r, ok := yamlCharEscape(esc); ok {
 			sb.WriteRune(r)
 			i++
 			continue
@@ -1246,21 +1330,6 @@ func unescapeDoubleQuoted(body string) string {
 			}
 		}
 		sb.WriteByte(c) // not decodable: keep the backslash and what follows
-	}
-	return sb.String()
-}
-
-func decodeSingleQuoted(s string) string {
-	var sb strings.Builder
-	end := len(s) - 1
-	for i := 1; i < end; i++ {
-		c := s[i]
-		if c == '\'' && i+1 < end && s[i+1] == '\'' {
-			sb.WriteByte('\'')
-			i++
-			continue
-		}
-		sb.WriteByte(c)
 	}
 	return sb.String()
 }

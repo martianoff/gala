@@ -1,0 +1,40 @@
+package main
+
+// A YAML scalar that starts with a quote must be one complete quoted scalar
+// (#1296). An unterminated quote, or text after the closing quote, is a
+// decode Failure instead of a string that keeps the stray quote. Well-formed
+// quoted scalars, with escapes, doubled single quotes or a trailing comment,
+// decode as before.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct R(S string, N Array[string])
+
+val codec = yaml.Codec[R](yaml.AsIs())
+
+func main() {
+    Println("--- well-formed ---")
+    ArrayOf(
+        "S: \"abc\"\nN: []",
+        "S: 'abc'\nN: []",
+        "S: \"say \\\"hi\\\"\"\nN: []",
+        "S: 'it''s'\nN: []",
+        "S: \"a # b\"   # note\nN: []",
+        "\"S\": 'v' # note\nN: []",
+        "S: it's\nN:\n  - \"x\"\n  - 'y' # note",
+    ).ForEach((s) => Println(codec.Decode(s)))
+
+    Println("--- malformed ---")
+    ArrayOf(
+        "S: \"abc\nN: []",
+        "S: 'abc\nN: []",
+        "S: \"abc\" trailing\nN: []",
+        "S: 'abc' trailing\nN: []",
+        "S: \"abc\\\"\nN: []",
+        "S: a\nN:\n  - \"x\n",
+        "S: a\nN:\n  - 'x' 'y'\n",
+    ).ForEach((s) => Println(codec.Decode(s)))
+}
