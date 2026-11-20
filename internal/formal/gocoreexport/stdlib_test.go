@@ -77,18 +77,27 @@ func TestAddStdlib(t *testing.T) {
 	}
 	// A sibling that only reads a listed variable cannot change what the
 	// listed file does.
+	// Even a read of a variable that is not a sealed error may alias it.
 	t.Run("sibling reading a variable", func(t *testing.T) {
 		sib := filepath.Join(dir, "wrap.go")
 		require.NoError(t, os.WriteFile(sib, []byte("package errors\n\nfunc isSentinel(e error) bool { x := Sentinel; return e == x }\n"), 0o644))
 		defer os.Remove(sib)
 		_, err := gocoreexport.AddStdlib(goroot, src)
-		require.NoError(t, err)
+		require.Error(t, err)
 	})
 	// A listed file may import a package GoCore does not hold only when that
-	// package's initialization does nothing: no init function, no variable.
+	// package's initialization does nothing (no init function, no variable)
+	// and it is one of fmt's dependencies.
+	fmtDir := filepath.Join(goroot, "src", "fmt")
+	require.NoError(t, os.MkdirAll(fmtDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(fmtDir, "print.go"),
+		[]byte("package fmt\n\nimport (\n\t_ \"quiet\"\n\t_ \"noisy\"\n\t_ \"initp\"\n)\n"), 0o644))
 	quiet := filepath.Join(goroot, "src", "quiet")
 	require.NoError(t, os.MkdirAll(quiet, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(quiet, "q.go"), []byte("package quiet\n\nconst K = 1\n\nfunc F() int { return K }\n"), 0o644))
+	aside := filepath.Join(goroot, "src", "aside")
+	require.NoError(t, os.MkdirAll(aside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(aside, "a.go"), []byte("package aside\n\nfunc F() int { return 1 }\n"), 0o644))
 	noisy := filepath.Join(goroot, "src", "noisy")
 	require.NoError(t, os.MkdirAll(noisy, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(noisy, "n.go"), []byte("package noisy\n\nvar V = 1\n"), 0o644))
@@ -105,6 +114,7 @@ func TestAddStdlib(t *testing.T) {
 		"unsafe":                    {"import \"unsafe\"\n\nvar _ = unsafe.Sizeof(1)", false},
 		"an aliased import":         {"import q \"quiet\"\n\nvar _ = q.F", false},
 		"an absent package":         {"import \"absent\"\n\nvar _ = 1", false},
+		"a quiet package not fmt's":  {"import \"aside\"\n\nvar _ = aside.F", false},
 	} {
 		t.Run("listed file importing "+name, func(t *testing.T) {
 			text := "package errors\n\n" + tc.imp + "\n\nfunc New(s string) error { return nil }\n"
@@ -128,9 +138,19 @@ func TestAddStdlib(t *testing.T) {
 		for _, name := range gocoreexport.RunnableStdlib["strconv"][1:] {
 			require.NoError(t, os.WriteFile(filepath.Join(sc, name), []byte("package strconv\n"), 0o644))
 		}
-		got, err := gocoreexport.AddStdlib(goroot, main("package main\nimport \"strconv\"\nvar e = strconv.ErrRange\n"))
+		prog := main("package main\nimport \"strconv\"\nvar e = strconv.ErrRange\n")
+		got, err := gocoreexport.AddStdlib(goroot, prog)
 		require.NoError(t, err)
 		require.Equal(t, []string{"main", "errors", "strconv"}, paths(got))
+		// A sibling may read a sealed error (errors.New), never write it.
+		sib := filepath.Join(sc, "atof.go")
+		require.NoError(t, os.WriteFile(sib, []byte("package strconv\n\nfunc f(e error) bool { x := ErrRange; return e == x }\n"), 0o644))
+		_, err = gocoreexport.AddStdlib(goroot, prog)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(sib, []byte("package strconv\n\nfunc f() { ErrRange = nil }\n"), 0o644))
+		_, err = gocoreexport.AddStdlib(goroot, prog)
+		require.Error(t, err)
+		require.NoError(t, os.Remove(sib))
 	})
 	// A listed file GoCore could run differently from Go fails the export.
 	for name, text := range map[string]string{

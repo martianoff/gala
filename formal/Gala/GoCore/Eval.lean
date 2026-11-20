@@ -679,9 +679,7 @@ def conversion (c : Ctx) : Nat → Ty → Val → GM Val
     -- modelled, but in a range clause (`rangeLoop`). `[]rune(s)` is not modelled.
     | .slice et, .str (.untyped _) s =>
       let .int .uint8 ← underlying c n et | unsupported "slice-of-string"
-      let bs := s.toUTF8.toList.toArray.map fun b => Val.int et b.toNat
-      if bs.size > maxSliceCap then unsupported "slice-of-string-large"
-      pure (.slice t (some (← newArray c n et bs (GcRuntime.constStringBytesCap bs.size))))
+      stringBytes c n t et s
     | .slice _, .str .. => unsupported "slice-of-string"
     -- `string(b)` of a byte slice: the string of its bytes (Go spec, "Conversions to
     -- and from a string type"); a nil slice gives "". GoCore's strings hold valid
@@ -907,6 +905,15 @@ def newArray (c : Ctx) : Nat → Ty → Array Val → Nat → GM SliceRep
     let es := es ++ Array.replicate (size - len) (← zero c n et)
     let cell ← allocAs (.array size et) (.array (.array size et) es)
     pure { base := ⟨cell, []⟩, off := 0, len, cap := size }
+
+/-- `[]byte(s)` of slice type `t`, element type `et`: a new array of the string's bytes,
+    exactly as long (`GcRuntime.constStringBytesCap`). -/
+def stringBytes (c : Ctx) : Nat → Ty → Ty → String → GM Val
+  | 0, _, _, _ => throw .fuel
+  | n + 1, t, et, s => do
+    let bs := s.toUTF8.data.map fun b => Val.int et b.toNat
+    if bs.size > maxSliceCap then unsupported "slice-of-string-large"
+    pure (.slice t (some (← newArray c n et bs (GcRuntime.constStringBytesCap bs.size))))
 
 /-- The indices of an array or slice literal's elements: a key's constant value, else
     the previous index plus one, from 0 (Go spec, "Composite literals"). -/
@@ -1440,17 +1447,22 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
     -- A conversion `T(x)`.
     if let some t ← typeOf? c n env fn then
       let [a] := args | stuck "a conversion takes one argument"
-      -- `T(x << s)` of an untyped constant `x`: `x` takes the type `T` first, as it
-      -- would without the shift (Go spec, "Operators"); with a constant count too,
-      -- which gives the same value whenever the program compiles (a constant result
-      -- `T` cannot hold is a compile error).
+      -- `T(x << s)` of an untyped constant `x` (Go spec, "Operators"): with an untyped
+      -- (constant) count, a constant shift, converted after; with a typed count, `x`
+      -- takes the type `T` first, as it would without the shift when the count is a
+      -- variable. A typed constant count gives a constant shift instead, which is the
+      -- same value when `x` fits the integer type `T` (an overflowing constant result
+      -- is a compile error); otherwise GoCore cannot tell the two apart.
       if let .binary op l r := a then
         if op == "<<" || op == ">>" then
           let lv ← evalExpr c n env l
-          let lv ← match lv with
-            | .int (.untyped _) _ => conversion c n t lv
-            | _ => pure lv
-          return [← conversion c n t (← binary c n op lv (← evalExpr c n env r))]
+          let rv ← evalExpr c n env r
+          if let .int (.untyped _) x := lv then
+            if !(rv.ty matches .untyped _) then
+              let .int k ← underlying c n t | unsupported "untyped-shift"
+              if !k.represents x then unsupported "untyped-shift"
+              return [← conversion c n t (← binary c n op (← conversion c n t lv) rv)]
+          return [← conversion c n t (← binary c n op lv rv)]
       return [← conversion c n t (← evalExpr c n env a)]
     match fn with
     | .ident b =>
@@ -1715,6 +1727,9 @@ def builtin (c : Ctx) : Nat → Env → String → List Expr → Bool → GM (Li
       -- document does not hold.
       if exported b then
         if let some p := foreignDotImport c env then unsupported s!"dot-import-{p}"
+      -- A name of a package of which the document holds only some files (Go's
+      -- runnable ones): one of its other files declares it.
+      if (c.pkgs.get? env.pkg).any (·.isPartial) then unsupported s!"{env.pkg}.{b}"
       unsupported s!"builtin-{b}"
 
 /-- The text Go's runtime prints after `panic: ` for a panic value: a string as it is,
@@ -2149,9 +2164,7 @@ def rangeLoop (c : Ctx) : Nat → Env → Option Expr → Option Expr → String
       let .int .uint8 ← underlying c n et | return none
       let av ← evalExpr c n env a
       let .str _ s := av | return some (← conversion c n t av)
-      let bs := s.toUTF8.toList.toArray.map fun b => Val.int et b.toNat
-      if bs.size > maxSliceCap then unsupported "slice-of-string-large"
-      return some (.slice t (some (← newArray c n et bs bs.size)))
+      return some (← stringBytes c n t et s)
     let xv ← match ← bytesOf? with
       | some bv => pure bv
       | none => if (v.map (· matches .ident "_")).getD true then constantOperand c n env x else evalExpr c n env x

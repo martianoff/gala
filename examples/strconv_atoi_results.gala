@@ -5,6 +5,8 @@ import "strconv"
 // strconv.Atoi's results and errors: signs, a leading zero, int64's bounds,
 // and the errors Go builds for bad input, which quote it.
 
+// The Go pair, not a Try: Atoi returns a value with its error too (the bound on
+// a range error), which this example prints.
 func parsed(text string) string {
     val n, err = strconv.Atoi(text)
     if (err == nil) s"$n" else s"$n $err"

@@ -15,9 +15,9 @@ import (
 // RunnableStdlib lists the files of Go's standard library that GoCore runs as
 // Go's own source, by import path: small files that import only runnable or
 // quiet packages (checkRunnable), so the program runs the very code `go run`
-// links, not a model of it. It is reviewed
-// like GoCore's library models: a file is added here only with the guards of
-// checkRunnable and checkSiblings passing.
+// links, not a model of it. It is reviewed like GoCore's library models: a file
+// is added here only with the guards of checkRunnable and checkSiblings
+// passing.
 var RunnableStdlib = map[string][]string{
 	"errors":       {"errors.go"},
 	"strconv":      {"atoi.go", "isprint.go", "quote.go"},
@@ -26,9 +26,8 @@ var RunnableStdlib = map[string][]string{
 
 // AddStdlib returns pkgs with the packages of RunnableStdlib the program
 // imports (not with `.` or `_`), and their runnable imports, their listed files
-// read from goroot, marked
-// partial: a name the program uses that those files do not declare is one
-// GoCore reports as outside what it runs. The error is for a file that cannot
+// read from goroot, marked partial: a name the program uses that those files do
+// not declare is one GoCore reports as outside what it runs. The error is for a file that cannot
 // be read or does not parse, or one the guards refuse. An empty goroot adds
 // nothing.
 func AddStdlib(goroot string, pkgs []PackageSource) ([]PackageSource, error) {
@@ -160,12 +159,15 @@ func checkRunnable(goroot, where string, f *ast.File) error {
 // checkSiblings refuses a runnable package whose other files, which GoCore
 // does not run but `go run` links, could change what the listed files do: by
 // declaring a method on a type a listed file declares (it would be in the
-// type's method set), or by writing a package-level variable a listed file
-// declares (writes; reading one cannot). What else those files do while they
-// initialize, GoCore leaves out as for any quiet package: every runnable
-// package is in quietInitPackages (TestRunnableStdlibIsQuiet).
+// type's method set), or by changing a package-level variable a listed file
+// declares. A sibling may name only a sealed one, an error from errors.New,
+// whose value no other package can change (errorString's field is
+// unexported), and never write it (writes); another may be reached through an
+// alias (`t := v; t[0] = x`), so naming it at all is refused. What else those
+// files do while they initialize, GoCore leaves out as for any quiet package:
+// every runnable package is in quietInitPackages (TestRunnableStdlibIsQuiet).
 func checkSiblings(ip, dir string, listed []*ast.File) error {
-	types, vars := map[string]bool{}, map[string]bool{}
+	types, vars, sealed := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, f := range listed {
 		for _, d := range f.Decls {
 			if gd, ok := d.(*ast.GenDecl); ok {
@@ -177,6 +179,15 @@ func checkSiblings(ip, dir string, listed []*ast.File) error {
 						if gd.Tok == token.VAR {
 							for _, n := range s.Names {
 								vars[n.Name] = true
+							}
+							if len(s.Names) == 1 && len(s.Values) == 1 {
+								if call, ok := s.Values[0].(*ast.CallExpr); ok {
+									if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "New" {
+										if x, ok := sel.X.(*ast.Ident); ok && x.Name == "errors" {
+											sealed[s.Names[0].Name] = true
+										}
+									}
+								}
 							}
 						}
 					}
@@ -209,6 +220,10 @@ func checkSiblings(ip, dir string, listed []*ast.File) error {
 					if id, ok := t.(*ast.Ident); ok && types[id.Name] && bad == nil {
 						bad = fmt.Errorf("%s/%s: a method on %s, declared in a runnable file", ip, name, id.Name)
 					}
+				}
+			case *ast.Ident:
+				if vars[n.Name] && !sealed[n.Name] && bad == nil {
+					bad = fmt.Errorf("%s/%s: names %s, a variable of a runnable file", ip, name, n.Name)
 				}
 			}
 			for _, w := range writes(n) {
@@ -250,9 +265,8 @@ func writes(n ast.Node) []ast.Expr {
 	return nil
 }
 
-// rootIdent is the variable an expression reads or writes through selectors,
-// type assertions,
-// indexing, slicing and dereferences, or nil for any other expression.
+// rootIdent is the variable an expression reads or writes through selectors, type
+// assertions, indexing, slicing and dereferences, or nil for any other expression.
 func rootIdent(e ast.Expr) *ast.Ident {
 	for {
 		switch x := e.(type) {
@@ -279,11 +293,22 @@ func rootIdent(e ast.Expr) *ast.Ident {
 }
 
 // quietImport checks a package a runnable file imports that GoCore does not
-// hold: its initialization does nothing at all, so GoCore leaving it out is
-// exact. In every file of its directory (build constraints included, the
+// hold, whose initialization GoCore leaves out. Its own initialization does
+// nothing: in every file of its directory (build constraints included, the
 // stricter reading), there is no init function and no package-level variable.
-// Every name of it the program reaches stays unsupported (partial packages).
+// And it is one of fmt's dependencies, so what its own imports do as they
+// initialize is part of fmt's initialization, which every program GoCore runs
+// has (GALA's std imports fmt) and which quietInitPackages already takes to
+// print nothing and not panic. Every name of it the program reaches stays
+// unsupported (partial packages), but for GoCore's models.
 func quietImport(goroot, ip string) error {
+	deps, err := stdDeps(goroot, "fmt")
+	if err != nil {
+		return err
+	}
+	if !deps[ip] {
+		return fmt.Errorf("not a dependency of fmt")
+	}
 	names, err := filepath.Glob(filepath.Join(goroot, "src", filepath.FromSlash(ip), "*.go"))
 	if err != nil {
 		return err
@@ -313,4 +338,36 @@ func quietImport(goroot, ip string) error {
 		}
 	}
 	return nil
+}
+
+// stdDeps is the standard-library packages root imports, directly or not, in
+// goroot, with root: the imports of every non-test file of each, whatever its
+// build constraints (a superset of what one build links).
+func stdDeps(goroot, root string) (map[string]bool, error) {
+	seen := map[string]bool{root: true}
+	queue := []string{root}
+	for len(queue) > 0 {
+		ip := queue[0]
+		queue = queue[1:]
+		names, err := filepath.Glob(filepath.Join(goroot, "src", filepath.FromSlash(ip), "*.go"))
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range names {
+			if strings.HasSuffix(path, "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+			if err != nil {
+				return nil, err
+			}
+			for _, spec := range f.Imports {
+				if dep, err := strconv.Unquote(spec.Path.Value); err == nil && !seen[dep] {
+					seen[dep] = true
+					queue = append(queue, dep)
+				}
+			}
+		}
+	}
+	return seen, nil
 }
