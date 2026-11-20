@@ -40,6 +40,7 @@ func TestUnderscoreBindingRead(t *testing.T) {
 		{"an unread `_` parameter", `    Println(xs.Map((_) => 0))`},
 		{"a discard of another type in a lambda with a `_` parameter", "    Println(xs.Map((_) => {\n        _ = \"x\"\n        0\n    }))"},
 		{"a discard among several targets in a lambda with a `_` parameter", "    Println(xs.Map((_) => {\n        var a = 0\n        a, _ = 1, 2\n        a\n    }))"},
+		{"a discard of a non-error in an arm whose `_` is an error", anyV + "    Println(v match {\n        case _: error => {\n            var a = 0\n            a, _ = 1, 2\n            a\n        }\n        case _ => 0\n    })"},
 		{"a placeholder lambda inside a lambda with a `_` parameter", `    Println(xs.Map((_) => xs.Map(_ + 1)))`},
 		{"a placeholder lambda inside a typed-pattern arm", anyV + `    Println(v match { case _: int => xs.Map(_ * 2) case _ => xs })`},
 		{"an unread typed-pattern `_`", anyV + `    Println(v match { case _: int => "int" case _ => "other" })`},

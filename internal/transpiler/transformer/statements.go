@@ -208,12 +208,11 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	// A `_` target of `=` (`_ = expr`, `n, _ = f()`) is Go's blank
 	// identifier, not a `_` binding: it is no read (GALA-E0139), and a value
 	// it discards takes no type from one.
-	isDiscard := func(target exprSrc) bool { return d.op == "=" && target.bareIdent() == "_" }
-	discard := len(targets) == 1 && isDiscard(targets[0])
+	discards := make([]bool, len(targets))
 	lhsExprs := make([]ast.Expr, len(targets))
 	for i, target := range targets {
-		if isDiscard(target) {
-			lhsExprs[i] = ast.NewIdent("_")
+		if d.op == "=" && target.bareIdent() == "_" {
+			discards[i], lhsExprs[i] = true, ast.NewIdent("_")
 			continue
 		}
 		e, err := t.lowerExpr(target)
@@ -222,7 +221,11 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		}
 		lhsExprs[i] = e
 	}
+	discard := len(targets) == 1 && discards[0]
 	for i, target := range lhsExprs {
+		if discards[i] {
+			continue
+		}
 		if err := t.immutableFieldWriteError(targets[i].at(), target, "assign to"); err != nil {
 			return nil, err
 		}
@@ -248,6 +251,9 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	if len(lhsExprs) > 1 && len(rhsExprs) == len(lhsExprs) {
 		values := d.rhs.exprs()
 		for i, rhs := range rhsExprs {
+			if discards[i] {
+				continue
+			}
 			if err := t.checkAssignFill(rhs, t.getExprTypeName(lhsExprs[i]), values[i].at()); err != nil {
 				return nil, err
 			}
@@ -265,6 +271,9 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 		if results := t.multiValueTypes(unwrappedRhs[0]); len(results) == len(lhsExprs) {
 			at := d.rhs.exprs()[0].at()
 			for i, result := range results {
+				if discards[i] {
+					continue
+				}
 				if err := t.checkResultFill(result, t.getExprTypeName(lhsExprs[i]), at); err != nil {
 					return nil, err
 				}
