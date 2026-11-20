@@ -158,7 +158,9 @@ def NoConstOp : Spec.Expr → Prop
     an integer division by zero (galaspec's class `divide`) and a negative shift count
     (class `other`): GoCore's is the runtime error with the same text. -/
 def PanicRel : Spec.PanicClass → String → GoCore.Full.Val → Prop
-  | c, m, .str .string t => (c = .divide ∨ c = .other) ∧ t = m
+  | c, m, .str .string t =>
+    ((c = .divide ∧ m = "runtime error: integer divide by zero") ∨
+      (c = .other ∧ m = "runtime error: negative shift amount")) ∧ t = m
   | _, _, _ => False
 
 
@@ -385,7 +387,7 @@ theorem binary_int_typed (cx : Ctx) (n : Nat) (op : String) (x y : Int) (g : St)
     | exact ⟨_, rfl, .int _ (represents_kwrap _), rfl, by simp [UInt]⟩
     | (by_cases hy : y = 0
        · simp only [hy, ite_true]
-         exact ⟨_, rfl, .inl rfl, rfl⟩
+         exact ⟨_, rfl, .inl ⟨rfl, rfl⟩, rfl⟩
        · simp only [hy, ite_false]
          exact ⟨_, rfl, .int _ (represents_kwrap _), rfl, by simp [UInt]⟩)
 
@@ -524,7 +526,7 @@ theorem binary_shift (cx : Ctx) (n : Nat) (op : String) (x y : Int) (w : Val) (g
   · cases hy <;>
       simp [Spec.binop, binary, grun_bind, asInt, underlying_int, shiftOp, Val.ty, runtimePanic, RRel] <;>
     · by_cases hneg : y < 0
-      · simp only [hneg, ite_true]; exact ⟨_, rfl, .inr rfl, rfl⟩
+      · simp only [hneg, ite_true]; exact ⟨_, rfl, .inr ⟨rfl, rfl⟩, rfl⟩
       · by_cases hbig : 64 ≤ y
         · have h64 : 64 ≤ y.toNat := by omega
           simp only [hneg, hbig, h64, ite_true, ite_false, shiftL, hbits]
@@ -535,7 +537,7 @@ theorem binary_shift (cx : Ctx) (n : Nat) (op : String) (x y : Int) (w : Val) (g
   · cases hy <;>
       simp [Spec.binop, binary, grun_bind, asInt, underlying_int, shiftOp, Val.ty, runtimePanic, RRel] <;>
     · by_cases hneg : y < 0
-      · simp only [hneg, ite_true]; exact ⟨_, rfl, .inr rfl, rfl⟩
+      · simp only [hneg, ite_true]; exact ⟨_, rfl, .inr ⟨rfl, rfl⟩, rfl⟩
       · by_cases hbig : 64 ≤ y
         · have h64 : 64 ≤ y.toNat := by omega
           simp only [hneg, hbig, ite_true, ite_false, shiftR, ediv_big x hx _ h64]
