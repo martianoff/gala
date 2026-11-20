@@ -281,18 +281,22 @@ func (t *galaASTTransformer) placeholderInInterpolation(name string, at srcNode)
 			break
 		}
 	}
+	if s == t.interpolationScope || s == nil {
+		// Not bound inside the string; outside it, a `_` parameter or typed
+		// pattern may bind it, and a placeholder lambda does not reach in.
+		s = t.bindingScope(name)
+	} else if s.placeholder {
+		return nil
+	}
 	r := at.rng()
-	switch {
-	case s == t.interpolationScope || s == nil:
-		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
-			"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
-			"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
-	case !s.placeholder:
+	if s != nil && !s.placeholder {
 		return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
 			"`_` inside an interpolated string reads a `_` binding, which names no value",
 			"bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`")
 	}
-	return nil
+	return spanErrorAt(galaerr.CodePlaceholderInInterpolation, r, r,
+		"`_` inside an interpolated string is not a placeholder: a placeholder lambda takes only the `_` written outside the string",
+		"write an explicit lambda; name its parameter and use the name inside the string: `(x) => s\"v${x}\"`")
 }
 
 // parseExprAt parses text as one expression whose first character sits at

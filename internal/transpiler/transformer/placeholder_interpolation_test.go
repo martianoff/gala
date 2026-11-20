@@ -28,6 +28,8 @@ func TestPlaceholderInInterpolation(t *testing.T) {
 		{"inside a lambda inside the string", `    Println(s"${xs.Map((x) => s"${_}")}")`, "line 7:34 " + notBound},
 		{"a `_` parameter read inside the string", `    Println(s"${xs.Map((_) => _ + 1)}")`, "line 7:30 " + readsABinding},
 		{"a typed-pattern `_` read inside the string", "    val v any = xs.Size()\n" + `    Println(s"${v match { case _: int => _ case _ => 0 }}")`, "line 8:41 " + readsABinding},
+		{"a `_` parameter of a lambda around the string", `    Println(xs.Map((_) => s"v${_}"))`, "line 7:31 " + readsABinding},
+		{"a typed-pattern `_` of a match around the string", "    val v any = xs.Size()\n" + `    Println(v match { case _: int => s"${_}" case _ => "" })`, "line 8:41 " + readsABinding},
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
