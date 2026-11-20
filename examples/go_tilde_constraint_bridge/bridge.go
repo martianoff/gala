@@ -74,6 +74,16 @@ func (b Bag[T]) All() iter.Seq[T] {
 // MakeBag returns a Bag[string].
 func MakeBag() Bag[string] { return Bag[string]{"p", "q"} }
 
+// Stream is a generic struct with an iterator field.
+type Stream[T any] struct {
+	Next iter.Seq[T]
+}
+
+// LoadStream returns a Stream[string].
+func LoadStream() Stream[string] {
+	return Stream[string]{Next: MakeBag().All()}
+}
+
 // Pairs is an iterator over a Scores, sorted by name.
 func Pairs(s Scores) iter.Seq2[string, int] {
 	return func(yield func(string, int) bool) {

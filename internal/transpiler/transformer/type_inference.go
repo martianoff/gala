@@ -2058,7 +2058,9 @@ func universeMethodSignature(recv transpiler.Type, method string) *transpiler.Go
 func (t *galaASTTransformer) getGoFieldType(typ transpiler.Type, fieldName string) transpiler.Type {
 	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
 		if fType := td.Fields[fieldName]; fType != nil {
-			return fType
+			// A generic struct is looked up by its bare name: its type
+			// parameters are open in the field's type.
+			return t.bareOpenInstance(fType, td.TypeParams)
 		}
 	}
 	return transpiler.NilType{}

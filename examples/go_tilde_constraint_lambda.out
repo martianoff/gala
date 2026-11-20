@@ -16,3 +16,6 @@ bob has 1
 true 8
 p! 1
 q! 1
+2
+next p
+next q

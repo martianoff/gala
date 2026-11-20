@@ -75,23 +75,37 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 
 // goNamedUnderlying resolves a NAMED Go type (package-qualified) to its
 // underlying type via the analyzer's Go type info — e.g. time.Duration -> int64,
-// url.Values -> map[string][]string. Returns (nil, false) when goTypeInfo is
-// absent, the type is unusable, or it is not a resolvable package-qualified Go
-// named type. Shared by the Sendable Go-scalar check and the .Size()-sugar
-// collection resolver.
+// url.Values -> map[string][]string; an instance of a generic one
+// (`pkg.Bag[string]`) to its underlying with the type arguments substituted.
+// Returns (nil, false) when goTypeInfo is absent, the type is unusable, or it
+// is not a resolvable package-qualified Go named type. Shared by the Sendable
+// Go-scalar check and the .Size()-sugar collection resolver.
 func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
 	if t.goTypeInfo == nil || transpiler.IsUnusable(typ) {
 		return nil, false
 	}
-	named, ok := typ.(transpiler.NamedType)
+	named, ok := goNamedBase(typ)
 	if !ok || named.Package == "" {
 		return nil, false
+	}
+	if _, isGeneric := typ.(transpiler.GenericType); isGeneric {
+		u := t.goDefinedUnderlying(typ, nil)
+		return u, u != nil
 	}
 	td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(named))
 	if td == nil || td.Underlying == nil {
 		return nil, false
 	}
 	return td.Underlying, true
+}
+
+// goNamedBase is the NamedType typ is, or is an instance of.
+func goNamedBase(typ transpiler.Type) (transpiler.NamedType, bool) {
+	if gen, isGeneric := typ.(transpiler.GenericType); isGeneric {
+		typ = gen.Base
+	}
+	named, ok := typ.(transpiler.NamedType)
+	return named, ok
 }
 
 // resolveNamedGoCollectionUnderlying resolves a NAMED Go type whose underlying is
@@ -109,7 +123,7 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 	case transpiler.ArrayType, transpiler.MapType:
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
-		named := typ.(transpiler.NamedType) // safe: goNamedUnderlying only reports ok for a NamedType
+		named, _ := goNamedBase(typ) // goNamedUnderlying only reports ok for a NamedType or an instance of one
 		if t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(named), "Size") != nil {
 			return typ
 		}

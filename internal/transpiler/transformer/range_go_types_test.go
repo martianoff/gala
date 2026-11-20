@@ -88,6 +88,17 @@ func main() {
     }
 }
 `, []string{"for i := range n"}},
+		// Go binds i to int over an untyped rune constant: %d, not %c.
+		{"an untyped rune constant (unicode.MaxASCII)", `package main
+
+import "unicode"
+
+func main() {
+    for i := range unicode.MaxASCII {
+        Println(s"i=$i")
+    }
+}
+`, []string{`"i=%d"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

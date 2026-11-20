@@ -47,4 +47,8 @@ func main() {
     for w := range MakeBag().All() {
         Println(w + "!", w.Size())
     }
+    Println(MakeBag().Size())
+    for x := range LoadStream().Next {
+        Println(s"next $x")
+    }
 }
