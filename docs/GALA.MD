@@ -2661,18 +2661,21 @@ on an `Array[int]` gives `_` type `int`). Placeholder lambdas may not
 escape an argument position: you cannot assign `_ * 2` to a val, return it
 from a function, or use it as a standalone expression.
 
-Only a `_` written outside string literals is a placeholder. A `_` inside the
-`${...}` of an `s"..."` or `f"..."` string is not a parameter of a lambda
-around the string, and reading it is an error unless a placeholder lambda
-written inside `${...}` takes it. So is reading inside `${...}` a
-`_` that a parameter or typed pattern binds inside or around the string
-([GALA-E0137](errors/GALA-E0137.md)). Name the parameter in an explicit lambda
-instead:
+A placeholder lambda takes only the `_` written outside string literals.
+Inside the `${...}` of an `s"..."` or `f"..."` string, a `_` may be read only
+as a placeholder of a lambda written inside that `${...}`. Reading any other
+`_` there is an error ([GALA-E0137](errors/GALA-E0137.md)): a `_` that no lambda
+inside the `${...}` takes, and a `_` that a parameter or typed pattern binds,
+inside or around the string. Bind a name instead and read the name:
 
 <!-- doc-check: fragment -->
 ```gala
 val labels = nums.Map((x) => s"v${x}")     // not nums.Map(s"v${_}")
 val tens   = s"${nums.Map(_ * 10)}"        // fine: the placeholder lambda is inside ${...}
+val kind   = v match {
+    case n: int => s"int ${n}"             // not case _: int => s"int ${_}"
+    case _      => "other"
+}
 ```
 
 ### Partial Function Literals

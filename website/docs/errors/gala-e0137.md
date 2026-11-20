@@ -67,8 +67,10 @@ and a `_` parameter or `case _: int` that is not read. Where a `_` that a
 parameter or typed pattern binds is read, bind a name instead of `_` and read
 that name:
 
-- inside the string: `s"${xs.Map((x) => x + 1)}"`, or
-  `s"${v match { case n: int => n case _ => 0 }}"`;
+- inside the string: `s"${xs.Map((x) => x + 1)}"` in place of
+  `s"${xs.Map((_) => _ + 1)}"`, and
+  `s"${v match { case n: int => n case _ => 0 }}"` in place of
+  `s"${v match { case _: int => _ case _ => 0 }}"`;
 - a lambda around the string: `xs.Map((x) => s"v${x}")` in place of
   `xs.Map((_) => s"v${_}")`;
 - a typed pattern around the string: `case n: int => s"${n}"` in place of
