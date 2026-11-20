@@ -5080,9 +5080,9 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 //
 // mean the same as `Future(() => doSomething())`.
 //
-// The conversion is purely additive and never changes the meaning of an
-// existing valid program: passing a bare `T` where a `func() T` is expected is
-// otherwise a compile error, and a function value is passed through untouched
+// The lift only gives a meaning to what Go rejects: passing a bare `T` where a
+// `func() T` is expected is otherwise a compile error, and a function value of
+// the slot's function type is passed through untouched
 // (returns ok=false) so an existing thunk is never double-wrapped — a value of
 // a named function type where its function type is the slot's (see
 // passesNamedFunctionAsThunk). Returns ok=false — leaving `expr` unchanged — when
@@ -5207,6 +5207,11 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 func (t *galaASTTransformer) passesNamedFunctionAsThunk(fn, ft transpiler.FuncType) bool {
 	if len(ft.Results) > 1 {
 		return true
+	}
+	// A type parameter the slot has not inferred yet is no type fn can be
+	// known to match, whatever its name.
+	if len(ft.Results) == 1 && (t.hasTypeParams(ft.Results[0]) || t.mentionsUnboundTypeParam(ft.Results[0])) {
+		return false
 	}
 	same, known := t.identicalTypes(fn, ft)
 	return same && known

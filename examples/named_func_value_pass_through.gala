@@ -6,7 +6,18 @@ package main
 
 type Action func()
 
+type Getter func() int
+
 struct Holder(act Action)
+
+func call(f func() int) int = f() + f()
+
+func one() int = 1
+
+func mkGetter() Getter {
+    Println("made getter")
+    one
+}
 
 func callTwice(f func()) {
     f()
@@ -25,4 +36,7 @@ func main() {
     callTwice(mkAction())
 
     callTwice(Action(() => Println("converted action")))
+
+    Println(call(mkGetter()))
+    Println(call(Getter(one)))
 }
