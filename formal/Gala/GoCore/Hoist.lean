@@ -274,12 +274,12 @@ inductive Shape
   | unknown
   deriving BEq
 
-/-- The shape of a type written `te`: pointers, functions and maps are pointer-shaped;
+/-- The shape of a type written `te`: pointers and functions are pointer-shaped;
     interfaces, slices, strings, numbers, booleans and structs of several fields are
     not; a struct of one field or an array is as its element is, and a named type as
     its definition, which this does not look through. -/
 def shapeOfTypeExpr : Expr → Shape
-  | .star _ | .funcType _ | .mapType .. => .late
+  | .star _ | .funcType _ => .late
   | .interfaceType _ | .arrayType none _ => .copied
   | .structType fs => if (fieldNames fs).length == 1 then .unknown else .copied
   | _ => .unknown

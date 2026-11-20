@@ -2441,6 +2441,25 @@ def assign (c : Ctx) : Nat → Env → String → List Expr → List Expr → GM
     let [x] := lhs | stuck s!"{tok} with several targets"
     let [y] := rhs | stuck s!"{tok} with several values"
     let p ← evalPlace c n env x
+    -- `m[k] op= y` on a map entry: gc rewrites `/` and `%` to `m[k] = m[k] op y`, so a
+    -- division by zero panics before any store; for every other operator it takes the
+    -- entry's slot first (`mapassign`, which panics for a nil map and adds the key with
+    -- the zero element), then computes `op` (cmd/compile order.go `OASOP`, walk
+    -- `walkAssign`; with the pinned go run, `m["new"] <<= s` for `s < 0` leaves
+    -- `map[new:0]` and panics). Whether `y` is evaluated before or after the slot is
+    -- taken shows only when `y` panics and the slot is new: such a run stops.
+    if let .entry r key k t := p then
+      if op != "/" && op != "%" then
+        let fresh ← match r with
+          | none => pure true
+          | some i => pure !((← getMap i).entries.contains k)
+        let b ← tryCatch (evalExpr c n env y) fun
+          | e@(.panic ..) => if fresh then unsupported "map-op-assign-order" else throw e
+          | e => throw e
+        if fresh then mapStore r key k (← zero c n t)
+        let a ← loadPlace c n p
+        storePlace c n p (← binary c n op a b)
+        return env
     let a ← loadPlace c n p
     let b ← evalExpr c n env y
     storePlace c n p (← binary c n op a b)
