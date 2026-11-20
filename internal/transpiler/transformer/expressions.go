@@ -983,23 +983,58 @@ func (t *galaASTTransformer) consumesSlotType(e exprSrc, hint transpiler.Type) b
 	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && (t.isResultGenericCall(name, noArgs) || t.isResultGenericValueApply(name))) {
 		return true
 	}
-	return t.isResultGenericMethodCall(e)
+	return t.isResultGenericMethodCall(e) || t.isResultGenericLitApply(e)
 }
 
 // isResultGenericValueApply reports whether name (see calleeOfCall) is a val
-// or var whose type's Apply has type parameters its result mentions: the
-// call is `name.Apply(...)` (Section 1.5 of transformCallWithArgsCtx), which
-// the slot it fills binds them for as for any such method call
-// (isResultGenericMethodCall).
+// or var, or an imported `pkg.Name` one, whose type's Apply has type
+// parameters its result mentions: the call is `name.Apply(...)` (Section 1.5
+// of transformCallWithArgsCtx), which the slot it fills binds them for as for
+// any such method call (isResultGenericMethodCall).
 func (t *galaASTTransformer) isResultGenericValueApply(name string) bool {
 	if !t.resultGenericMethods["Apply"] {
 		return false
 	}
 	var ref ast.Expr = ast.NewIdent(name)
 	if pkg, member, qualified := strings.Cut(name, "."); qualified {
+		if !t.importManager.IsPackage(pkg) {
+			return false
+		}
 		ref = &ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent(member)}
 	}
-	meta := t.bindingApplyType(ref)
+	return resultGenericApply(t.bindingApplyType(ref))
+}
+
+// isResultGenericLitApply reports whether e is a construction called at once,
+// `T(...)(...)` or `pkg.T(...)(...)`, whose type's Apply has type parameters
+// its result mentions, as isResultGenericValueApply does for a val.
+func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
+	if !t.resultGenericMethods["Apply"] {
+		return false
+	}
+	p := e.solePostfix()
+	if !p.ok() || p.hasCases() {
+		return false
+	}
+	suffixes := p.suffixes()
+	n := len(suffixes)
+	if n < 2 || n > 3 || suffixes[n-1].opener() != "(" || suffixes[n-2].opener() != "(" {
+		return false
+	}
+	name := p.primaryIdent()
+	if n == 3 {
+		member, _, ok := suffixes[0].member()
+		if !ok || !t.importManager.IsPackage(name) {
+			return false
+		}
+		name += "." + member
+	}
+	return name != "" && resultGenericApply(t.applyTypeMeta(name))
+}
+
+// resultGenericApply reports whether meta, a type's metadata, has an Apply
+// whose own type parameters its result mentions.
+func resultGenericApply(meta *transpiler.TypeMetadata) bool {
 	if meta == nil {
 		return false
 	}

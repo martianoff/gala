@@ -108,6 +108,12 @@ func main() {
     Println(q)`,
 			[]string{`Conv_Apply[string](c, 2)`},
 		},
+		{
+			"the slot binding it for a construction called at once",
+			`val q Option[string] = Conv(1)(2)
+    Println(q)`,
+			[]string{`Conv_Apply[string](Conv{`},
+		},
 	}
 	// The import goes only where it is used: GALA reports an unused one.
 	src := func(body string) string {
@@ -140,4 +146,16 @@ func main() {
 	_, err = transpileBareVariant(t, src(`val gg = G[string]()
     Println(gg(1, go_interop.SliceOf(1)...))`))
 	require.ErrorContains(t, err, "cannot spread `go_interop.SliceOf(1)` of type []int into a variadic parameter of string")
+
+	// Its arguments are checked against Apply's parameters, as a call of
+	// `v.Apply(...)` written out is, rather than left for go build.
+	for _, tc := range []struct{ name, body, want string }{
+		{"no arguments for required parameters", "val gg = G[string]()\n    Println(gg())", `missing required argument "u" (parameter 1) in call to Apply`},
+		{"an unknown parameter name", "val b = Box(5)\n    Println(b(g = (x) => x))", `unknown parameter "g" in call to Apply`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := transpileBareVariant(t, src(tc.body))
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }
