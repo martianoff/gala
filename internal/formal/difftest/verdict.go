@@ -76,19 +76,13 @@ func Compare(spec, real Run) Comparison {
 // stoppedEarlyDiff checks a run that stopped with outcome (an `unsupported:`
 // one) after printing stdout against Go's: what it printed must be a prefix of
 // what Go printed, or the stop would hide a wrong line. name is the run's
-// (galaspec, gala2lean or gocore). The comparison is exact, as every other
-// comparison of stdout is. It is "" when it is a prefix, and when Go's output
-// is not final: the program was rejected, or Go ran past its time limit or
-// out of stack or memory. Otherwise it is the disagreement, with the first
-// line that differs.
+// (galaspec, gala2lean or gocore). The comparison is exact, as the comparison
+// of a whole run is. It is "" when it is a prefix, and when Go did not end ok
+// or with a panic: a rejected program has no output, and an exit, crash or
+// time-out may have cut Go's short (a process killed from outside is an
+// exit). Otherwise it is the disagreement, with the first line that differs.
 func stoppedEarlyDiff(name, outcome, stdout string, real Run) string {
-	switch real.Outcome.Kind {
-	case KindOK, KindPanic, KindExit:
-	case KindCrash:
-		if isResource(real.Outcome.Detail) {
-			return ""
-		}
-	default:
+	if real.Outcome.Kind != KindOK && real.Outcome.Kind != KindPanic {
 		return ""
 	}
 	if strings.HasPrefix(real.Stdout, stdout) {

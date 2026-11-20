@@ -3,6 +3,7 @@ package difftest
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -84,7 +85,9 @@ func compareLean(r LeanRunner, res *gala2lean.Result, spec, real Run) (LeanRecor
 		// `unsupported` in the prelude): outside what gala2lean translates,
 		// never a verdict, once what it printed before stopping is what Go
 		// printed so far.
-		if d := stoppedEarlyDiff("gala2lean", out.Outcome, out.Stdout, real); d != "" {
+		// The runner turns the Lean run's CRLF into LF, so Go's is too.
+		goRun := Run{Stdout: strings.ReplaceAll(real.Stdout, "\r\n", "\n"), Outcome: real.Outcome}
+		if d := stoppedEarlyDiff("gala2lean", out.Outcome, out.Stdout, goRun); d != "" {
 			return LeanRecord{Comparison: Comparison{Disagree, d}}, nil
 		}
 		return LeanRecord{Comparison: Comparison{Unsupported, "the Lean run stopped: " + out.Outcome},
