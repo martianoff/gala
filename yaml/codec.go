@@ -1153,12 +1153,14 @@ func parseQuotedKey(line string) (string, string, bool) {
 		}
 		rest := ""
 		if j+1 < len(line) {
-			rest = trimYamlSpace(line[j+1:])
-			// A '#' starts a comment only after white space, as for a
-			// plain key's value: in "k":#x it is text.
-			if hi := findUnquotedHash(rest); hi > 0 || hi == 0 && (line[j+1] == ' ' || line[j+1] == '\t') {
-				rest = trimYamlSpace(rest[:hi])
+			// Drop a trailing comment, as for a plain key's value. The
+			// search starts at the ':' so that a '#' right after it, as in
+			// "k":#x, is text: a comment needs white space before it.
+			rest = line[j+1:]
+			if hi := findUnquotedHash(line[j:]); hi > 0 {
+				rest = rest[:hi-1]
 			}
+			rest = trimYamlSpace(rest)
 		}
 		key := line[1:i]
 		if quote == '"' {

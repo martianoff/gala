@@ -502,6 +502,7 @@ func TestDecoder_QuotedKeyValueComment(t *testing.T) {
 		{`'k': 'v' # note`, "v"},
 		{`"k":v # note`, "v"},
 		{`"k":#v`, "#v"},
+		{`"k":#v # note`, "#v"},
 		{`"k": v#w`, "v#w"},
 	}
 	for _, tt := range tests {

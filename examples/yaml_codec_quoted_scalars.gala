@@ -18,23 +18,41 @@ val codec = yaml.Codec[R](yaml.AsIs())
 func main() {
     Println("--- well-formed ---")
     ArrayOf(
-        "S: \"abc\"\nN: []",
-        "S: 'abc'\nN: []",
-        "S: \"say \\\"hi\\\"\"\nN: []",
-        "S: 'it''s'\nN: []",
-        "S: \"a # b\"   # note\nN: []",
-        "\"S\": 'v' # note\nN: []",
-        "S: it's\nN:\n  - \"x\"\n  - 'y' # note",
+        `S: "abc"
+N: []`,
+        `S: 'abc'
+N: []`,
+        `S: "say \"hi\""
+N: []`,
+        `S: 'it''s'
+N: []`,
+        `S: "a # b"   # note
+N: []`,
+        `"S": 'v' # note
+N: []`,
+        `S: it's
+N:
+  - "x"
+  - 'y' # note`,
     ).ForEach((s) => Println(codec.Decode(s)))
 
     Println("--- malformed ---")
     ArrayOf(
-        "S: \"abc\nN: []",
-        "S: 'abc\nN: []",
-        "S: \"abc\" trailing\nN: []",
-        "S: 'abc' trailing\nN: []",
-        "S: \"abc\\\"\nN: []",
-        "S: a\nN:\n  - \"x\n",
-        "S: a\nN:\n  - 'x' 'y'\n",
+        `S: "abc
+N: []`,
+        `S: 'abc
+N: []`,
+        `S: "abc" trailing
+N: []`,
+        `S: 'abc' trailing
+N: []`,
+        `S: "abc\"
+N: []`,
+        `S: a
+N:
+  - "x`,
+        `S: a
+N:
+  - 'x' 'y'`,
     ).ForEach((s) => Println(codec.Decode(s)))
 }
