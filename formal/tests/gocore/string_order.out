@@ -6,6 +6,10 @@ aÿ aĀ true true false false false true
 aĀ aÿ false false true true false true
 😀 ￿ false false true true false true
 ￿ 😀 true true false false false true
+é è false false true true false true
+è é true true false false false true
+€ ₭ true true false false false true
+₭ € false false true true false true
 é éa true true false false false true
 éa é false false true true false true
  a true true false false false true
@@ -16,14 +20,16 @@ Z a true true false false false true
 a Z false false true true false true
 日本 日本語 true true false false false true
 日本語 日本 false false true true false true
-x x false true false true true false
-x x false true false true true false
+日本 日本 false true false true true false
+true false false true true
+true false true false
 0 
 5 apple
 3 aÿ
 3 aĀ
 5 zebra
 6 Äpfel
+2 è
 2 é
 3 éa
 3 €
