@@ -238,7 +238,11 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
   `defer` arguments, output from a call before an earlier operand's panic, and the
   operands gc reads late whatever their type (a field through a pointer parameter or a
   pointer assertion, a dereferenced receiver, a struct passed as a struct); and the type-dependent
-  case that stops (`unsupported_eval_order`).
+  case that stops (`unsupported_eval_order`);
+- string ordering (`string_order`): Go orders strings byte-wise, GoCore by code point,
+  and on these strings (multi-byte ones differing in a lead or a continuation byte,
+  prefixes, untyped constants, a defined string type, a sort) the two agree, as they
+  must on valid UTF-8. Tested on these strings, not proved.
 
 The differential run (`internal/formal/difftest`) runs every compiled program's Go through
 GoCore and compares it with `go run`; its results are in the "GoCore" part of the
