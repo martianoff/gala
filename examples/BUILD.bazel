@@ -660,6 +660,14 @@ gala_exec_test(
     deps = ["//go_builtins"],
 )
 
+# errors.New and unicode/utf8.RuneCountInString, which GoCore runs from Go's
+# own source in the differential run.
+gala_exec_test(
+    name = "go_errors_utf8",
+    src = "go_errors_utf8.gala",
+    expected = "go_errors_utf8.out",
+)
+
 # A Try Failure's error prints as the panic's own: a string panic, an error
 # panic, and a Failure's error raised again by Get inside another Try.
 gala_exec_test(

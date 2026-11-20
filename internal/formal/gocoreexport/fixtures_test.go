@@ -44,28 +44,29 @@ func TestGoCoreFixturesFresh(t *testing.T) {
 		require.True(t, ok, "%s has no document", name)
 		want, err := os.ReadFile(docPath)
 		require.NoError(t, err)
-		// The standard library's runnable files, which regen.sh adds from the
-		// pinned toolchain's GOROOT (gocoreexport.AddStdlib), are not read here:
-		// the document is compared without them.
-		require.Equal(t, withoutStdlib(t, want), withoutStdlib(t, got),
+		require.Equal(t, decoded(t, want), decoded(t, got),
 			"%s.json is stale: run formal/tests/gocore/regen.sh", name)
+	}
+	// No committed document holds Go's own standard-library source: a runnable
+	// package (gocoreexport.RunnableStdlib) is added at test time from the
+	// pinned toolchain's GOROOT, as the differential run does (formal/README.md).
+	for name, docPath := range docs {
+		want, err := os.ReadFile(docPath)
+		require.NoError(t, err)
+		pkgs, _ := decoded(t, want)["packages"].([]any)
+		for _, p := range pkgs {
+			if m, ok := p.(map[string]any); ok {
+				require.Nil(t, gocoreexport.RunnableStdlib[m["path"].(string)],
+					"%s.json holds Go's own source of %s", name, m["path"])
+			}
+		}
 	}
 }
 
-// withoutStdlib is a GoCore document, as JSON values, without the packages of
-// gocoreexport.RunnableStdlib.
-func withoutStdlib(t *testing.T, doc []byte) map[string]any {
+// decoded is a GoCore document as JSON values.
+func decoded(t *testing.T, doc []byte) map[string]any {
 	t.Helper()
 	var v map[string]any
 	require.NoError(t, json.Unmarshal(doc, &v))
-	pkgs, _ := v["packages"].([]any)
-	kept := []any{}
-	for _, p := range pkgs {
-		if m, ok := p.(map[string]any); ok && gocoreexport.RunnableStdlib[m["path"].(string)] != nil {
-			continue
-		}
-		kept = append(kept, p)
-	}
-	v["packages"] = kept
 	return v
 }
