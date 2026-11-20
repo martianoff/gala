@@ -210,6 +210,26 @@ type GoProgram struct {
 	GoRoot string
 }
 
+// GoCoreLane is a program's GoCore lane: GoCore's run of prog, exported
+// under dir and named for id, compared with Go's run of it (real, and its
+// stderr). A run Go could not finish is never compared, so GoCore does not run
+// it (the zero GoCoreRun): it could exhaust its own stack or time limit on it.
+// The error is for an export or a gocore run that failed.
+func GoCoreLane(r GoCoreRunner, dir, id string, prog GoProgram, real Run, stderr string) (GoCoreRecord, GoCoreRun, error) {
+	if rec, ok := goResource(real); ok {
+		return rec, GoCoreRun{}, nil
+	}
+	doc, err := exportGoCore(dir, id, prog)
+	if err != nil {
+		return GoCoreRecord{}, GoCoreRun{}, fmt.Errorf("Go AST export: %w", err)
+	}
+	g, err := r.Run(doc)
+	if err != nil {
+		return GoCoreRecord{}, GoCoreRun{}, err
+	}
+	return compareGoCore(g, real, goPanicText(stderr)), g, nil
+}
+
 // exportGoCore writes prog's GoCore JSON document under dir, named for id,
 // and returns its path.
 func exportGoCore(dir, id string, prog GoProgram) (string, error) {
