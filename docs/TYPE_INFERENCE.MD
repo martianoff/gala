@@ -421,23 +421,15 @@ its body exactly as before.
 
 The lift is purely additive — passing a bare `T` where a `func() T` is expected
 is otherwise a type error. A value of a function type as written is passed
-through untouched, so an existing thunk is never double-wrapped. For a
-`func() T` or `func()` slot, a value of a named function type
-(`type Getter func() int`) is passed through only where its function type is
-the slot's and a thunk returning it is known not to be valid Go: a `func()`
-slot given a value Go does not run as a statement (a local, a parameter, a
-`var` field; a `val` field is read through a call), or a slot whose
-result is a predeclared type other than `error` and `any`, a function type
-whose signature differs from the value's, or a GALA struct or sealed type (a
-`Getter` for a
-`func() int`). Everywhere else — when only the thunk fits, when both fit, when
-neither does, or when that is not known — it is the thunk's result: for a
-`func() Getter`, a `func() any`, a result that is an interface or a type
-parameter not yet inferred, as for a type's `Apply` (`Try(g)` is a
-`Try[Getter]`, while a generic function that infers its `T` from `g` binds it
-from `g`'s function type), and a
-`func()` slot given a call or a receive, which the thunk runs as its
-statement.
+through untouched, so an existing thunk is never double-wrapped. So is a value
+of a named function type (`type Getter func() int`, `type Action func()`)
+whose function type is known to be the slot's, however it is reached — a
+variable, a field, a call, a conversion: a `Getter` for a `func() int`, an
+`Action` for a `func()`. Where the slot's function type is another, or is not
+known to be the value's, the value is the thunk's result: a `Getter` for a
+`func() Getter`, or for a `func() T` whose `T` is not yet inferred, as for a
+type's `Apply` (`Try(g)` is a `Try[Getter]`, while a generic function that
+infers its `T` from `g` binds it from `g`'s function type).
 
 ### Function Result Type (never inferred)
 
