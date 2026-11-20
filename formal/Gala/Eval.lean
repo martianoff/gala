@@ -805,7 +805,8 @@ def bindDefaults (ds : Decls) : Nat → List String → List (Option Ty) → Lis
         -- A field the construction leaves out that declares no default takes its type's
         -- default value (docs/GALA.MD, "Default Values"), as the transpiler writes it out
         -- in the literal: the declared defaults in it evaluated in order, each with no
-        -- local in scope. A function's parameter without a default must be passed.
+        -- local in scope. GALA allows this only for a block-form struct (a shorthand
+        -- struct's or a case's call is GALA-E0045); a function's parameter must be passed.
         unless fieldScope do stuck s!"no argument for {n}"
         let dv ← defaultOf ds 64 (← checkOptTy ds s!"field {n}" (tys.getD j none))
         let mut hv : List Val := []
