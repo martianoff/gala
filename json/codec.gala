@@ -211,12 +211,16 @@ type JsonDecoderImpl struct {
     var data          []byte
     var pos           int
     var stack         []byte
+    // firstConsumed records, per open container, whether an object has
+    // read a key yet; ReadKey uses it. Arrays use elemStart instead.
     var firstConsumed []bool
-    // elemStart is where the array element being read begins: just inside
-    // the '[' for the first element, after the ',' for the others.
-    // Positions only grow and every value is at least one byte, so a
-    // separator check at elemStart repeats the one for the same element
-    // rather than starting a new one.
+    // elemStart is the position at which an array element's separator was
+    // last settled: just inside a container's opening byte, or just after
+    // a ','. A separator check there repeats the one for the same element
+    // (a read after an IsNull probe) and needs no ','. A check anywhere
+    // else is a new element. That holds because pos never moves backwards
+    // and every value, nested containers included, is at least one byte,
+    // so a decode path that rewinds pos must reset elemStart as well.
     var elemStart     int
     var pendingKey    string
     var hasPendingKey bool
