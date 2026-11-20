@@ -24,6 +24,7 @@ go_test(
         "golden_test.go",
         "roundtrip_test.go",
         "schema_test.go",
+        "std_models_test.go",
         "stdlib_test.go",
     ],
     data = [
@@ -37,6 +38,7 @@ go_test(
     embed = [":gocoreexport"],
     env = {
         "GOCORE_RUN_LEAN": "$(rlocationpath //formal:Gala/GoCore/Run.lean)",
+        "STDLIB_SOURCES": "$(rlocationpaths //internal/formal/difftest:stdlib_sources)",
     },
     deps = [
         "//internal/transpiler/fuzz/progrun",

@@ -83,6 +83,15 @@ def universeType? : String → Option Ty
     its hand-written functions by models. -/
 def stdPath : String := "martianoff/gala/std"
 
+/-- The error a std `*panicError` wraps, its first field (TestRecoveredErrorShape pins
+    the struct), which its `Format` prints with the very verb and flags it is given
+    (std/types.go, `(*panicError).Format`: `fmt.Fprintf(s, fmt.FormatString(s, verb),
+    e.err)`). A nil one is not modelled: its `Format` panics, and fmt prints that. -/
+def panicErrorErr (v : Val) : GM Val := do
+  let .ptr _ (some l) := v | unsupported "fmt-formatter-nil"
+  let .struct_ _ (e :: _) ← load l | stuck "panicError is not a struct"
+  pure e
+
 def pkgCtx (c : Ctx) (path : String) : GM PkgCtx :=
   match c.pkgs.get? path with
   | some p => pure p
@@ -138,7 +147,7 @@ def methodSet (c : Ctx) (t : Ty) (m : String) : Option (String × String × List
 
 /-- The models of hand-written standard-library functions (see `Lib` below), by name.
     The exported Go of a function named here is never run. -/
-def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand"]
+def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand", "recoveredError"]
 
 /-- The `fmt` functions modelled (see `Fmt` below). -/
 def fmtFuncs : List String := ["Println", "Print", "Printf", "Sprintf", "Sprint"]
@@ -2257,6 +2266,8 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
       if p == stdPath && tn == "Immutable" then
         let .struct_ _ [inner] := d | unsupported "fmt-formatter-pointer"
         return ← fmtSpec c n inner verb spec
+      if p == stdPath && tn == "panicError" then
+        return ← fmtSpec c n (← panicErrorErr d) verb spec
       unsupported "fmt-formatter"
     -- `handleMethods`: an `error` or `fmt.Stringer` gives the text for `%v %s %x %X`.
     let stringMethod := fun m => do
@@ -2313,6 +2324,8 @@ def fmtValue (c : Ctx) : Nat → Val → Char → Nat → Bool → GM String
         if p == stdPath && tn == "Immutable" then
           let .struct_ _ [inner] := v | unsupported "fmt-formatter-pointer"
           return ← fmtArg c n inner verb
+        if p == stdPath && tn == "panicError" then
+          return ← fmtArg c n (← panicErrorErr v) verb
         unsupported "fmt-formatter"
       if ['v', 's'].contains verb then
         -- `catchPanic`: a nil pointer whose method panics prints `<nil>`; any other
@@ -2379,6 +2392,29 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     match f, vs with
     -- `EvalOperand[T](v T) T { return v }` (std/types.go, line 114).
     | "EvalOperand", [v] => pure [v]
+    -- `recoveredError(r any) error` (std/types.go, lines 318-335), the error a Try
+    -- Failure holds for a recovered panic: a `*panicError` as it is; else a new
+    -- `*panicError` of the error, of `errors.New(s)` for a string, or (not modelled)
+    -- of `fmt.Errorf("panic: %v", r)`. Its `pcs`, the stack `runtime.Callers` records,
+    -- are left nil: only `(*panicError).stack` reads them, through
+    -- `runtime.CallersFrames`, which GoCore does not run (`RecoveredErrorShape` and
+    -- `PanicErrorPcsReaders` in internal/formal/gocoreexport pin both).
+    | "recoveredError", [r] =>
+      let d := r.dyn
+      let pt : Ty := .named stdPath "panicError" []
+      if d.ty == .ptr pt then return [← convert c n errorTy d]
+      let err ← if (← methodOfType c n d.ty "Error" (.func_ [] [.string] false)).isSome then pure d
+        else match d with
+          | .str .string _ =>
+            if !c.pkgs.contains "errors" then unsupported "errors.New"
+            Val.single (← callValue c n (← funcVal c n "errors" "New" []) [d] false)
+          | _ => unsupported "fmt.Errorf"
+      let .struct_ fs ← underlying c n pt | stuck "panicError is not a struct"
+      let .struct_ _ vals ← zero c n pt | stuck "panicError is not a struct"
+      let some i := fs.findIdx? (·.1 == "err") | stuck "panicError has no err field"
+      let vals := vals.set i (← convert c n errorTy err)
+      let cell ← alloc (.struct_ pt vals)
+      return [← convert c n errorTy (.ptr (.ptr pt) (some ⟨cell, []⟩))]
     -- `FormatStruct(name, fields...)` (std/types.go, lines 559-572): `Name(f1, f2, ...)`, each field unwrapped from
     -- its `Immutable` and printed by `formatField`.
     | "FormatStruct", name :: fields =>
