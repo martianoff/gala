@@ -799,8 +799,9 @@ Coverage is reported in three tiers, so nobody reads "tested" as "proved":
 
 - **Modelled:** the construct is in the spec. Programs using it can run through `galaspec`.
 - **Tested against the spec:** at least N programs using the construct (examples or
-  generated) agree with the spec, and none that galaspec ran to the end disagrees or is
-  inconclusive.
+  generated) agree with the spec, and none disagrees or is inconclusive. A run galaspec
+  stopped `unsupported` after printing a line Go did not counts as disagreeing for every
+  construct the program uses.
 - **Proved:** a theorem from the table above covers it.
 
 `formal/COVERAGE.md` is generated in CI and committed with each formal change. It holds:

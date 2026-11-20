@@ -278,6 +278,9 @@ func TestRender(t *testing.T) {
 		{ID: "e6", Source: FromExample, Comparison: Comparison{Verdict: Inconclusive}, Spec: Outcome{Kind: KindFuel}, Constructs: map[string]int{"call": 1}},
 		// Only out of fuel: galaspec never ran a program using it to the end.
 		{ID: "e7", Source: FromGenerator, Comparison: Comparison{Verdict: Inconclusive}, Spec: Outcome{Kind: KindFuel}, Constructs: map[string]int{"tuple": 1}},
+		// Stopped unsupported after a wrong line: still where galaspec
+		// stopped, and its disagreement still counts against its constructs.
+		{ID: "e8", Source: FromExample, Comparison: Comparison{Verdict: Disagree, Reason: "galaspec stopped"}, Spec: Outcome{Kind: KindUnsupported, Detail: "lambda"}, Constructs: map[string]int{"bool": 1}},
 	}
 	out := Render(Coverage{
 		Records:  records,
@@ -287,7 +290,7 @@ func TestRender(t *testing.T) {
 	})
 	for _, want := range []string{
 		"| AGREE | 2 | 1 |",
-		"| DISAGREE | 1 | 0 |",
+		"| DISAGREE | 2 | 0 |",
 		"| UNSUPPORTED | 2 | 1 |",
 		"| INCONCLUSIVE | 1 | 1 |",
 		"agree with the spec: **2** (ratchet baseline 2)",
@@ -297,14 +300,15 @@ func TestRender(t *testing.T) {
 		// Seen only in an unsupported program: the run says nothing about it.
 		"| `if` | not seen | no | no |",
 		"| `tuple` | not seen | no: 0 agree, 0 disagree, 1 inconclusive | no |",
-		"| `lambda` | 2 |",
+		"| `bool` | not seen | no: 0 agree, 1 disagree, 0 inconclusive | no |",
+		"| `lambda` | 3 |",
 		"| `import` | 1 |",
 		"| `e3` | #1234 | a \\| b |",
 	} {
 		require.Contains(t, out, want)
 	}
 	require.NotContains(t, strings.ToLower(out), "verified")
-	require.Less(t, strings.Index(out, "`lambda` | 2"), strings.Index(out, "`import` | 1"), "most frequent first")
+	require.Less(t, strings.Index(out, "`lambda` | 3"), strings.Index(out, "`import` | 1"), "most frequent first")
 
 	tested := Render(Coverage{Records: []Record{
 		agree("a", FromExample, "bool"), agree("b", FromExample, "bool"), agree("c", FromGenerator, "bool"),
