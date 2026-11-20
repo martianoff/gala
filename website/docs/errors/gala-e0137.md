@@ -17,9 +17,9 @@ written outside string literals only, so a `_` inside an interpolation is not
 one of its parameters, and nothing else gives it a value. It fires wherever
 the `_` sits in the interpolated expression (`${_}`, `${_ + 1}`,
 `${_.Name}`), in nested strings too, and whether or not the argument the string
-is passed as wants a function. Reading a `_` lambda parameter inside `${...}`,
-as in `s"${xs.Map((_) => _ + 1)}"`, is reported too: a `_` parameter names no
-value.
+is passed as wants a function. Reading a `_` that a lambda parameter or a typed
+pattern binds inside `${...}`, as in `s"${xs.Map((_) => _ + 1)}"`, is reported
+too: such a `_` names no value.
 
 **Minimal repro.**
 

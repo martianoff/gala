@@ -2663,9 +2663,9 @@ from a function, or use it as a standalone expression.
 
 Only a `_` written outside string literals is a placeholder. A `_` inside the
 `${...}` of an `s"..."` or `f"..."` string is not a parameter of a lambda
-around the string, and reading it is an error, as is reading a `_` parameter
-inside `${...}` ([GALA-E0137](errors/GALA-E0137.md)). Name the parameter in an
-explicit lambda instead:
+around the string, and reading it is an error, as is reading a `_` parameter or
+typed pattern inside `${...}` ([GALA-E0137](errors/GALA-E0137.md)). Name the
+parameter in an explicit lambda instead:
 
 <!-- doc-check: fragment -->
 ```gala
