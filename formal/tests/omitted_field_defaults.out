@@ -1,0 +1,11 @@
+seed
+fromSeed
+b
+power
+x
+{0 On(30) Inner(1, 0) 2}
+a
+power
+x
+{5 On(30) Inner(1, 0) 0}
+7 100

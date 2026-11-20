@@ -26,7 +26,9 @@
     with no value holds T's default value, built as the transpiler writes it out at each
     use: each struct or default-case field at its declared default, else at its type's
     default value. The declared defaults are evaluated anew for each name, in field order
-    and depth first, each with no local in scope.
+    and depth first, each with no local in scope. A field a construction leaves out that
+    declares no default takes the same value, in its turn among the left-out fields
+    (`bindDefaults`).
   * **`match`** (docs/GALA.MD, "Match Expression"), with Scala's semantics: the subject is
     evaluated once; arms are tried in source order; a pattern's variables are in scope in
     its own guard and body only; sub-patterns are tried left to right and the first one
@@ -311,7 +313,7 @@ def Dflt.fill : Dflt → List Val → Val × List Val
   | .lit (.bool b), vs => (.bool b, vs)
   | .lit (.str s), vs => (.str s, vs)
   | .field .., v :: vs => (v, vs)
-  -- Not reached: `declare` checks that there are as many values as holes.
+  -- Not reached: the hole loop of `bindDefaults` appends one value per entry of `holes`.
   | .field .., [] => (.unit, [])
   | .struct_ t fs, vs => let r := Dflt.fillL fs vs; (.struct_ t r.1, r.2)
   | .sealed t c fs, vs => let r := Dflt.fillL fs vs; (.sealed t c r.1, r.2)
@@ -762,7 +764,9 @@ def evalList (ds : Decls) : Nat → List Expr → M (List Val)
        evaluated in the callee's scope: a function's default sees the parameters before
        it, bound to the values the call gives them (explicitly or by their own
        defaults), and never the caller's locals; a field's default sees no field
-       (`fieldScope`, GALA-E0098), only package-level names.
+       (`fieldScope`, GALA-E0098), only package-level names. A field without a declared
+       default takes its type's default value (`defaultOf`), whose declared defaults are
+       evaluated the same way.
 
     A plain expression for a `func() T` parameter is a by-name argument (`byNameOk`). -/
 def bindArgs (ds : Decls) : Nat → List String → List (Option Ty) → List (Option Expr) → Bool →
@@ -779,7 +783,8 @@ def bindArgs (ds : Decls) : Nat → List String → List (Option Ty) → List (O
   termination_by d _ _ _ _ _ => (d, 2, 0)
 /-- The second half of `bindArgs`: each parameter's value, in parameter order. It is the
     value the call gave it (`given`, by parameter index), or else its default, evaluated in
-    the callee's scope: `defaultFrame`, or no local at all for a field's default. The
+    the callee's scope: `defaultFrame`, or no local at all for a field's default; a field
+    without one takes its type's default value. The
     caller's locals are not read here, and are back afterwards
     (`bindDefaults_callerLocals`, Gala/Defaults.lean). -/
 def bindDefaults (ds : Decls) : Nat → List String → List (Option Ty) → List (Option Expr) →
@@ -796,7 +801,25 @@ def bindDefaults (ds : Decls) : Nat → List String → List (Option Ty) → Lis
         unless ← byNameOk ds frame (tys.getD j none) e do
           unsup "by-name-arg" "a plain expression as the default of a func() T"
         vals := vals ++ [← runIn ds d frame e]
-      | none, none => stuck s!"no argument for {n}"
+      | none, none =>
+        -- A field the construction leaves out that declares no default takes its type's
+        -- default value (docs/GALA.MD, "Default Values"), as the transpiler writes it out
+        -- in the literal: the declared defaults in it evaluated in order, each with no
+        -- local in scope. Of the types declared in GALA, a constructor call may leave such a
+        -- field out only for a block-form struct: for a shorthand struct or a case it is
+        -- GALA-E0045, a static check left to the type checker (see the module doc). A
+        -- function's parameter must be passed.
+        unless fieldScope do stuck s!"no argument for {n}"
+        let dv ← defaultOf ds 64 (← checkOptTy ds s!"field {n}" (tys.getD j none))
+        let mut hv : List Val := []
+        for (x, k, ty) in dv.holes do
+          match fieldDefault ds x k with
+          | some e =>
+            unless ← byNameOk ds [] ty e do
+              unsup "by-name-arg" "a plain expression as the default of a func() T"
+            hv := hv ++ [← runIn ds d [] e]
+          | none => stuck s!"no default for field {k} of {x}"
+        vals := vals ++ [(dv.fill hv).1]
     pure vals
   termination_by d _ _ _ _ _ => (d, 1, 1)
 /-- A function's arguments, bound to its parameters. -/
@@ -870,19 +893,13 @@ def declare (ds : Decls) : Nat → List String → Bool → Option Ty → List E
       | _ => stuck "destructuring needs one value"
     else if values.isEmpty then
       match tyName with
-      | some t => do
+      | some _ => do
         -- Each name gets a default value of its own, as the transpiler writes it
-        -- (`var a, b T = T{...}, T{...}`): the declared defaults are evaluated anew for
-        -- each name, in order, each with no local in scope, as for a construction that
-        -- leaves the field out (`bindDefaults`).
-        let dvs := List.replicate names.length (← defaultOf ds 64 t)
-        let hs := Dflt.holesL dvs
-        let vs ← bindDefaults ds d (hs.map (·.1)) (hs.map (·.2.2))
-          (hs.map fun (x, j, _) => fieldDefault ds x j) true []
-        -- `bindDefaults` gives one value per hole when it succeeds; a run that broke
-        -- that would stop here rather than fill a hole with no value.
-        if vs.length != hs.length then stuck "a default value with a hole left unfilled"
-        pure (names.zip (Dflt.fillL dvs vs).1)
+        -- (`var a, b T = T{...}, T{...}`): the value of a field of type T that a
+        -- construction leaves out (`bindDefaults`), so the declared defaults in it are
+        -- evaluated anew for each name, in order.
+        let vs ← bindDefaults ds d names (names.map fun _ => ty) [] true []
+        pure (names.zip vs)
       | none => stuck "declaration without a type or value"
     else
       let vs ← evalList ds d values
@@ -963,6 +980,20 @@ def declDefaults (ds : Decls) (ty : Option Ty) : List (String × Nat × Expr) :=
     | .ok dv => dv.holes.filterMap fun (x, j, _) => (fieldDefault ds x j).map (x, j, ·)
     | .error _ => []
 
+/-- The declared field defaults a construction `x(as)` evaluates for the fields it leaves
+    out that declare no default: those of each such field's type's default value
+    (`declDefaults`, `bindDefaults`), in field order. None for a call of a function. -/
+def omittedTypeDefaults (ds : Decls) (x : String) (as : List Expr) : List (String × Nat × Expr) :=
+  match ds.funcs.lookup x with
+  | some _ => []
+  | none =>
+    match fieldsOf ds x with
+    | some fs =>
+      let given := omittedDefaults.givenSlots (fs.map (·.name)) as
+      (fs.zipIdx.filter fun (f, j) => !given.contains j && f.default.isNone).flatMap
+        fun (f, _) => declDefaults ds f.type
+    | none => []
+
 /-- The number of default values a program's declarations give: of function parameters and
     of struct and sealed case fields. -/
 def defaultCount (ds : Decls) : Nat :=
@@ -998,11 +1029,18 @@ def mentionsUpTo (ds : Decls) (k : Nat) (chain : List (String × Nat)) (bound : 
     -- The defaults a call leaves out are evaluated there (each in its callee's scope).
     match c with
     | .name x => if bound.contains x then [] else
-      (omittedDefaults ds x as).flatMap fun (j, scope, e) =>
+      (omittedDefaults ds x as).flatMap (fun (j, scope, e) =>
         if chain.contains (x, j) then [] else
         match k with
         | 0 => []
-        | k + 1 => mentionsUpTo ds k ((x, j) :: chain) scope e
+        | k + 1 => mentionsUpTo ds k ((x, j) :: chain) scope e) ++
+      -- And so are those in the default values of the fields it leaves out that declare
+      -- none, each with no local in scope.
+      (omittedTypeDefaults ds x as).flatMap fun (y, j, e) =>
+        if chain.contains (y, j) then [] else
+        match k with
+        | 0 => []
+        | k + 1 => mentionsUpTo ds k ((y, j) :: chain) [] e
     | _ => []
   | .tuple es | .interp es => es.flatMap (mentionsUpTo ds k chain bound)
   | .lambda ps _ b => mentionsUpTo ds k chain (ps.map (·.name) ++ bound) b

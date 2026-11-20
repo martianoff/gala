@@ -27,7 +27,7 @@ The tiers mean exactly this:
 | `==`/`!=` on structs, sealed values and tuples, by value | yes | no | no |
 | `val`/`var` (several names, tuple destructuring), `=`, `+= -= *= /=`, `++`/`--`, assignment to `var` struct fields | yes | no | that `op=` reads its target before the right side runs (T3d) |
 | `var x T` with no value: the type's default value (docs/GALA.MD, "Default Values"): Go's zero value for `int`, `bool`, `string`; a struct's fields, and a sealed type's default case's, each at its declared default, else at its type's default value. The declared defaults are evaluated for each name anew, in field order and depth first, with no local in scope, as the transpiler writes the value out at each use | yes | no | no |
-| Package-level `val`/`var`, initialized in Go's dependency order (a declaration with no value depends on what its type's declared field defaults refer to) | yes | no | no |
+| Package-level `val`/`var`, initialized in Go's dependency order (a declaration with no value depends on what its type's declared field defaults refer to, and a construction on those in the default values of the fields it leaves out) | yes | no | no |
 | Blocks and their scopes, shadowing | yes | no | no |
 | `if` statement and expression, `return`, trailing-expression results | yes | no | no |
 | Top-level functions and recursion | yes | no | no |
@@ -38,7 +38,7 @@ The tiers mean exactly this:
 | Strict left-to-right evaluation of operands, arguments and tuple elements | yes | no | the order, given what each part does (T3a, T3c) |
 | S2: interpolated strings `s"..."`: parts left to right, each embedded value printed as `Println` prints it; `$$` is `$`; a `%...` after an embedded expression is literal text | yes | no | the order of the parts (T3a) |
 | S2: lambdas `(x int) => ...` and closures: captured locals by reference (a `var` is shared with the lambda), a block body's trailing expression is its result where the context or a declaration gives a result type, and with none a trailing value is a compile error and the block is void unless it `return`s a value, `return` ends the lambda; top-level functions as values; function types; calling a function value, a function-typed field, or a call's result | yes | no | capture of the scope only |
-| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field) | yes | no | the defaults phase (T4): it does not read the caller's locals, and each default's frame binds exactly the earlier parameters; the order: written arguments, then defaults in parameter order (T3c) |
+| S2: named arguments and default values of parameters, struct fields and case fields: arguments evaluated in the order written, then passed in parameter order; each left-out parameter's default evaluated after them, in parameter order, in the callee's scope (a function's default sees the parameters before it, a field's default no field); a left-out field without a declared default (which a constructor call may leave out, among the types declared in GALA, only for a block-form `type T struct`: for a shorthand struct or a case GALA rejects it, GALA-E0045, a static check galaspec leaves to the type checker) takes its type's default value, its declared defaults evaluated in its turn, with no local in scope | yes | no | the defaults phase (T4): it does not read the caller's locals, and each default's frame binds exactly the earlier parameters; the order: written arguments, then defaults in parameter order (T3c, for calls whose every left-out parameter or field has a declared default) |
 
 An operator expression of literals only is a Go constant expression, evaluated exactly at
 compile time (#1237): `(1 << 70) >> 68` is `4`. galaspec folds each one before it runs a
@@ -129,7 +129,7 @@ pinned that way.
 | Theorem | Statement |
 |---|---|
 | `Gala.Spec.capturedEnv_captured` | **Closures capture their scope.** A lambda's call sees exactly the bindings of the scope it was written in, a `var` by the same cell, so each side sees the other's assignments. Stated for scopes whose `var`s are exactly their cells; that evaluation keeps this invariant is not proved. |
-| `Gala.Spec.bindDefaults_callerLocals` | **T4, default arguments.** The defaults phase of a call (`bindDefaults`, the second half of `bindArgs`: each parameter the call leaves out takes its default, evaluated in the callee's scope) does not read the caller's locals. Run with any other locals, it gives the same values or the same `Stop` and leaves the same output, heap, package-level variables and steps. When it succeeds, the caller's locals are back as they were. This covers a function's defaults and a field's (`Gala/Defaults.lean`). It failed before galaspec resolved a by-name default's bare name in the default's own frame (fixture `default_byname`). Not covered: that a call's written arguments are evaluated first, in the caller's scope, which is `bindArgs`'s definition (an ordering statement belongs to T3). Also not covered: that the caller's locals come back after a panic inside a default, which no run can observe, since nothing catches a panic. |
+| `Gala.Spec.bindDefaults_callerLocals` | **T4, default arguments.** The defaults phase of a call (`bindDefaults`, the second half of `bindArgs`: each parameter the call leaves out takes its default, evaluated in the callee's scope) does not read the caller's locals. Run with any other locals, it gives the same values or the same `Stop` and leaves the same output, heap, package-level variables and steps. When it succeeds, the caller's locals are back as they were. This covers a function's defaults, a field's, and the declared defaults in the default value of a left-out field without one (`Gala/Defaults.lean`). It failed before galaspec resolved a by-name default's bare name in the default's own frame (fixture `default_byname`). Not covered: that a call's written arguments are evaluated first, in the caller's scope, which is `bindArgs`'s definition (an ordering statement belongs to T3). Also not covered: that the caller's locals come back after a panic inside a default, which no run can observe, since nothing catches a panic. |
 | `Gala.Spec.defaultFrame_lookup`, `defaultFrame_other`, `defaultFrame_last` | **T4, the frame of a default.** The frame a default value is evaluated in binds exactly the parameters before it: each name to the value of the latest earlier parameter of that name, immutable; any other name, a local of the caller's included, is unbound there. `defaultFrame_other` and `defaultFrame_last` are special cases. That `bindDefaults` evaluates the default for parameter `j` in the frame of parameters `0..j-1`, with the values the call gave them (explicitly or by their own defaults), is its definition. |
 | `Gala.Spec.evalList_acts`, `eval_binary_acts`, `eval_tuple_acts`, `eval_interp_acts`, `eval_and_acts`, `eval_or_acts`, `argSlots_eq`, `bindArgs_acts`, `bindDefaults_acts`, `eval_compound_acts`, `compound_eff`, `matchPats_append`, `matchPats_stops`, `evalCases_nil`, `evalCases_nomatch`, `evalCases_guard_false`, `evalCases_guard_true`, `evalCases_match` | **T3, left to right** (`Gala/Order.lean`). Each theorem takes, as hypotheses, what every part does: an `Eff`, a function of the starting state giving the part's result (a value or a `Stop`), the state it leaves and the exact number of steps it spends (`Acts`). Its conclusion is what the compound does, built from the parts in source order: each part runs from the state the one before it left, and none runs after one that stopped. Steps are exact, so no statement holds by running out of fuel. Operand lists (`evalList_acts`; the same for binary operands, tuples and `s"..."` parts). `&&` and `\|\|` run the right operand only when the left one does not decide. A call's written arguments run in written order, named ones included, then each left-out parameter's default runs in parameter order; `argSlots_eq` says which parameter each argument goes to (its position if positional, else the one it names). This is stated for calls whose by-name checks pass in every scope: every argument and default for a parameter that is not `func() T`, and every lambda; a bare function name passed to a `func() T` parameter is not covered. `t op= x` reads `t` before `x` runs, and stores into the state `x` left. Sub-patterns: once one fails, later ones are never tried; in S1 a pattern has no effect, so this matters only for a later sub-pattern that would be `stuck` or `unsupported`. `match` arms: a failed pattern leaves the state unchanged; a false guard leaves its own effects but drops the arm's bindings (stated for a guard that keeps the locals, which every S1 guard expression does, since blocks pop their own scope); a matching arm with no guard or a true guard runs its body and then drops its bindings (#996); with no arm left the match panics. Induction on the arms combines these: the first arm whose pattern matches and whose guard holds is the one that runs. Not covered: `if`, blocks, declarations, `++`/`--`, multi-target `=`, and calls of function values (`callValue`) beyond their arguments. `eval_bool_acts` and an example derive the `Acts` of `true && false` from its literals, so the hypotheses can be met. |
 | `Gala.Gala2Lean.Examples.Match.eval_total` | About one program: gala2lean's translation of `tests/src/match.gala`, exactly as the translator writes it, under gala2lean's prelude. Its `eval` (a recursive `match` with a nested pattern, defined by `partial_fixpoint`) never panics or diverges, leaves the state unchanged, and computes the obvious fold over the expression tree. |
@@ -462,7 +462,7 @@ thing for it, nothing more.
 |---|---|---|---|---|
 | AGREE | 29 | 1 | 75 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 478 | 34 | 432 | 32 |
+| UNSUPPORTED | 480 | 34 | 434 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **29** (ratchet baseline 29).
@@ -530,9 +530,9 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 
 | Construct | Programs |
 |---|---|
-| `import` | 285 |
-| `method-call` | 53 |
-| `generic-type` | 41 |
+| `import` | 286 |
+| `method-call` | 54 |
+| `generic-type` | 42 |
 | `index` | 38 |
 | `generic-decl` | 15 |
 | `address-of` | 10 |
@@ -540,7 +540,7 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 | `composite-literal` | 8 |
 | `float-literal` | 7 |
 | `method` | 6 |
-| `stuck` | 4 |
+| `stuck` | 3 |
 | `by-name-arg` | 2 |
 | `char-literal` | 2 |
 | `for` | 2 |
@@ -575,8 +575,8 @@ The first construct gala2lean did not translate in each program, by how many pro
 | `composite-literal` | 6 |
 | `extractor` | 6 |
 | `go-results` | 6 |
+| `untyped-global` | 6 |
 | `expression-pattern` | 5 |
-| `float-literal` | 5 |
 
 ### Known disagreements
 
@@ -592,13 +592,13 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 328 | 31 |
+| AGREE | 330 | 31 |
 | DISAGREE | 0 | 0 |
 | UNSUPPORTED | 86 | 4 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **359** (ratchet baseline 359).
+Programs GoCore agrees with go run on: **361** (ratchet baseline 359).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **29** (ratchet baseline 29).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.

@@ -1,0 +1,45 @@
+package main
+
+// A field a construction leaves out that declares no default takes its type's
+// default value: its declared defaults evaluated after the written arguments, in
+// field order, depth first, each with no local in scope.
+
+func note(s string, n int) int {
+    Println(s)
+    n
+}
+
+sealed type Light {
+    case Off()
+    default case On(Power int = note("power", 30))
+}
+
+struct Inner(X int = note("x", 1), Y int)
+
+type Cfg struct {
+    A int
+    L Light
+    I Inner
+    B int
+}
+
+// `h`'s value reads `seed` through the default of a field `Holder()` leaves out:
+// Go initializes `seed` first, although it is declared after `h`.
+struct G(N int = fromSeed())
+
+func fromSeed() int = seed + note("fromSeed", 0)
+
+type Holder struct {
+    G G
+}
+
+val h = Holder()
+
+val seed = note("seed", 7)
+
+func main() {
+    val x = 100
+    Println(Cfg(B = note("b", 2)))
+    Println(Cfg(note("a", 5)))
+    Println(h.G.N, x)
+}

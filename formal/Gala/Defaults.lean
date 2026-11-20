@@ -169,6 +169,97 @@ theorem readsNoLocals_byNameOk (ds : Decls) (fr : Env) (ty : Option Ty) (e : Exp
   intro c c' h
   exact ⟨_, byNameOk_run ds fr ty e c, by rw [byNameOk_run, h]⟩
 
+/-! ## Steps that neither read nor change the state -/
+
+/-- An `H` step that neither reads nor changes the state. -/
+def PureH (x : H α) : Prop :=
+  ∀ c c', (x.run.run c).1 = (x.run.run c').1 ∧ (x.run.run c).2 = c
+
+theorem pureH_pure (a : α) : PureH (pure a : H α) := fun _ _ => ⟨rfl, rfl⟩
+
+theorem pureH_throw (e : Stop) : PureH (throw e : H α) := fun _ _ => ⟨rfl, rfl⟩
+
+theorem pureH_bind {x : H α} {f : α → H β} (hx : PureH x) (hf : ∀ a, PureH (f a)) :
+    PureH (x >>= f) := by
+  intro c c'
+  rw [run_bind_eq, run_bind_eq]
+  obtain ⟨h1, h2⟩ := hx c c'
+  have h2' := (hx c' c).2
+  rcases e : x.run.run c with ⟨r, t⟩
+  rcases e' : x.run.run c' with ⟨r', t'⟩
+  rw [e, e'] at h1
+  rw [e] at h2
+  rw [e'] at h2'
+  simp only at h1 h2 h2'
+  subst h1 h2 h2'
+  cases r with
+  | error => exact ⟨rfl, rfl⟩
+  | ok a => exact hf a _ _
+
+theorem pureH_mapM {f : α → H β} (hf : ∀ x, PureH (f x)) : ∀ l : List α, PureH (l.mapM f)
+  | [] => pureH_pure _
+  | a :: as => by
+    rw [List.mapM_cons]
+    exact pureH_bind (hf a) fun _ => pureH_bind (pureH_mapM hf as) fun _ => pureH_pure _
+
+set_option hygiene false in
+macro "pure_step" : tactic => `(tactic| (first
+  | exact pureH_pure _
+  | exact pureH_throw _
+  | (apply pureH_bind <;> intros)
+  | (apply pureH_mapM; intros)
+  | exact ihC _
+  | exact ihC
+  | exact ihC _ _
+  | exact ihCs
+  | exact ihZ _
+  | split))
+
+mutual
+theorem pureH_checkTy (ds : Decls) : ∀ t, PureH (checkTy ds t)
+  | .unsupported _ => pureH_throw _
+  | .name _ => by unfold checkTy; repeat' pure_step
+  | .func ps none => by
+    have ihCs := pureH_checkTys ds ps
+    unfold checkTy; repeat' pure_step
+  | .func ps (some r) => by
+    have ihCs := pureH_checkTys ds ps
+    have ihC := pureH_checkTy ds r
+    unfold checkTy; repeat' pure_step
+theorem pureH_checkTys (ds : Decls) : ∀ ts, PureH (checkTys ds ts)
+  | [] => pureH_pure _
+  | t :: ts => by
+    have ihC := pureH_checkTy ds t
+    have ihCs := pureH_checkTys ds ts
+    unfold checkTys; repeat' pure_step
+end
+
+theorem pureH_checkOptTy (ds : Decls) (w : String) (t : Option Ty) :
+    PureH (checkOptTy ds w t) := by
+  cases t
+  · exact pureH_throw _
+  · exact pureH_checkTy ds _
+
+theorem pureH_zero (ds : Decls) : ∀ n t, PureH (zero ds n t)
+  | 0, _ => pureH_throw _
+  | n + 1, t => by
+    have ihZ := pureH_zero ds n
+    have ihC := pureH_checkOptTy ds
+    rw [zero.eq_def]
+    split <;> (try (injections; subst_vars)) <;> repeat' pure_step
+
+theorem pureH_defaultOf (ds : Decls) : ∀ n t, PureH (defaultOf ds n t)
+  | 0, _ => pureH_throw _
+  | n + 1, t => by
+    have ihZ := pureH_defaultOf ds n
+    have ihC := pureH_checkOptTy ds
+    rw [defaultOf.eq_def]
+    split <;> (try (injections; subst_vars)) <;> repeat' pure_step
+
+theorem readsNoLocals_of_pureH {x : H α} (h : PureH x) : ReadsNoLocals x := by
+  intro c c' _
+  exact ⟨(x.run.run c).1, Prod.ext rfl (h c c').2, Prod.ext (h c c').1.symm (h c' c).2⟩
+
 /-! ## The defaults phase -/
 
 /-- One step of showing a computation `Oblivious`, by the lemmas above. -/
@@ -177,6 +268,8 @@ macro "obl_step" : tactic => `(tactic| (first
   | with_reducible exact obl_pure _
   | exact obl_liftM (readsNoLocals_throw _)
   | exact obl_liftM (readsNoLocals_byNameOk _ _ _ _)
+  | exact obl_liftM (readsNoLocals_of_pureH (pureH_checkOptTy _ _ _))
+  | exact obl_liftM (readsNoLocals_of_pureH (pureH_defaultOf _ _ _))
   | with_reducible apply obl_runIn
   | with_reducible intro _
   | with_reducible apply obl_bind
@@ -195,7 +288,8 @@ theorem obl_bindDefaults (ds : Decls) (d : Nat) (names : List String) (tys : Lis
     values or the same `Stop` and leaves the same output, heap, package-level variables
     and steps. When it succeeds, the caller's locals are back as they were. This holds for
     a function's defaults (each evaluated in `defaultFrame` of the earlier parameters,
-    `defaultFrame_lookup`) and a field's (evaluated with no locals at all).
+    `defaultFrame_lookup`), a field's (evaluated with no locals at all), and the declared
+    defaults in the default value of a left-out field without one (no locals either).
 
     It failed before galaspec resolved a by-name default's bare name in the default's
     frame: `byNameOk` read the caller's locals, so whether such a call ended `unsupported`

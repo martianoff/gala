@@ -556,24 +556,6 @@ theorem menR_omitted {pkg : List String} {pm : String → Ren} {ds ds' : Decls} 
 section
 variable {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
 
-/-- What a call of a name adds to its mentions, on both sides, when the name is in `pkg` and
-    the same on both sides, and the arguments follow its parameter renaming. -/
-theorem menR_callTail (hD : DeclsR pkg pm ds ds') {k : Nat} (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j)
-    (c : List (String × Nat)) {Γ : Ren} {b b' : List String} {f : String} (hb : f ∈ b ↔ f ∈ b')
-    {as as' : List Expr} (ha : ArgsR pkg pm (pm f) Γ as as') {F F' : Nat × List String × Expr → List String}
-    (hF : ∀ j sc e, F (j, sc, e) = if c.contains (f, j) then [] else
-      match k with | 0 => [] | k + 1 => mentionsUpTo ds k ((f, j) :: c) sc e)
-    (hF' : ∀ j sc e, F' (j, sc, e) = if c.contains (f, j) then [] else
-      match k with | 0 => [] | k + 1 => mentionsUpTo ds' k ((f, j) :: c) sc e) :
-    MenR pkg
-      (if b.contains f then [] else (omittedDefaults ds f as).flatMap F)
-      (if b'.contains f then [] else (omittedDefaults ds' f as').flatMap F') := by
-  have hc : b.contains f = b'.contains f := Bool.eq_iff_iff.mpr (by simp only [contains_iff]; exact hb)
-  rw [hc]
-  split
-  · exact MenR.nil
-  · exact MenR.all (menR_omitted hk f c hF hF' (omitted_rel hD f ha))
-
 /-- The declared field defaults a declaration with no value evaluates: the same fields on
     both sides, each default related to itself with no local in scope. -/
 theorem declDefaults_rel (hD : DeclsR pkg pm ds ds') (ty : Option Ty) :
@@ -597,22 +579,106 @@ theorem declDefaults_rel (hD : DeclsR pkg pm ds ds') (ty : Option Ty) :
       | some he => exact Or.inr ⟨_, _, rfl, rfl, rfl, rfl, he⟩
     · exact .nil
 
-/-- What a declaration with no value adds to its mentions, on both sides: its type's
-    declared field defaults, each cut off on both sides or expanded one budget down. -/
-theorem menR_declDefaults (hD : DeclsR pkg pm ds ds') {k : Nat}
-    (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j) (c : List (String × Nat)) (ty : Option Ty) :
+/-- Declared defaults keyed by their field's owner and slot, related on both sides, each
+    cut off on both sides (a key the chain is already expanding, or the budget spent) or
+    expanded one budget down with no local in scope. -/
+theorem menR_keyed {k : Nat} (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j)
+    (c : List (String × Nat)) {l l' : List (String × Nat × Expr)}
+    (h : Fall2 (fun a b => a.1 = b.1 ∧ a.2.1 = b.2.1 ∧ AlphaE pkg pm [] a.2.2 b.2.2) l l') :
     MenR pkg
-      ((declDefaults ds ty).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
+      (l.flatMap fun x => if c.contains (x.1, x.2.1) then [] else
         match k with | 0 => [] | k + 1 => mentionsUpTo ds k ((x.1, x.2.1) :: c) [] x.2.2)
-      ((declDefaults ds' ty).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
+      (l'.flatMap fun x => if c.contains (x.1, x.2.1) then [] else
         match k with | 0 => [] | k + 1 => mentionsUpTo ds' k ((x.1, x.2.1) :: c) [] x.2.2) := by
-  refine MenR.all (fall2_map (fun a b ⟨h1, h2, he⟩ => ?_) (declDefaults_rel hD ty))
+  refine MenR.all (fall2_map (fun a b ⟨h1, h2, he⟩ => ?_) h)
   rw [h1, h2]
   split
   · exact MenR.nil
   · cases k with
     | zero => exact MenR.nil
     | succ k => exact hk k rfl he (menScope_nil pkg)
+
+theorem fall2_cat {R : α → β → Prop} :
+    ∀ {as as' : List α} {bs bs' : List β}, Fall2 R as bs → Fall2 R as' bs' → Fall2 R (as ++ as') (bs ++ bs')
+  | _, _, _, _, .nil, h => h
+  | _, _, _, _, .cons hab h, h' => .cons hab (fall2_cat h h')
+
+theorem fall2_flatMap_self {R : β → γ → Prop} {F : α → List β} {G : α → List γ} :
+    ∀ {l : List α}, (∀ a ∈ l, Fall2 R (F a) (G a)) → Fall2 R (l.flatMap F) (l.flatMap G)
+  | [], _ => .nil
+  | a :: _, h => by
+    simp only [List.flatMap_cons]
+    exact fall2_cat (h a (by simp)) (fall2_flatMap_self fun b hb => h b (by simp [hb]))
+
+/-- The declared field defaults a construction evaluates for the fields it leaves out that
+    declare none: the same fields on both sides, each default related to itself with no
+    local in scope. -/
+theorem omittedTypeDefaults_rel (hD : DeclsR pkg pm ds ds') (x : String) {Γ : Ren}
+    {as as' : List Expr} (ha : ArgsR pkg pm (pm x) Γ as as') :
+    Fall2 (fun a b => a.1 = b.1 ∧ a.2.1 = b.2.1 ∧ AlphaE pkg pm [] a.2.2 b.2.2)
+      (omittedTypeDefaults ds x as) (omittedTypeDefaults ds' x as') := by
+  unfold omittedTypeDefaults
+  rcases funcs_rel hD x with ⟨h1, h2⟩ | ⟨_, _, h1, h2, _⟩
+  · rw [h1, h2]
+    rw [hD.noFunc x h1] at ha
+    have hf : fieldsOf ds x = fieldsOf ds' x := by
+      simp only [fieldsOf, Decls.variant?, hD.structs_eq, hD.sealeds_eq]
+    dsimp only
+    rw [← hf]
+    cases fieldsOf ds x with
+    | none => exact .nil
+    | some fs =>
+      dsimp only
+      rw [givenSlots_eq (ns' := fs.map (·.name)) (fun n n' hn => by
+        rcases hn with hn | ⟨rfl, _⟩
+        · simp at hn
+        · rfl) ha]
+      exact fall2_flatMap_self fun f _ => declDefaults_rel hD f.1.type
+  · rw [h1, h2]; exact .nil
+
+/-- A name outside `pkg` names no struct or case, on either side, so a call of it leaves no
+    field's default value to build. -/
+theorem omittedTypeDefaults_nil (hD : DeclsR pkg pm ds ds') {x : String} (hx : x ∉ pkg)
+    (as as' : List Expr) : omittedTypeDefaults ds x as = [] ∧ omittedTypeDefaults ds' x as' = [] := by
+  have hs : ds.structs.lookup x = none := by
+    cases h : ds.structs.lookup x with
+    | none => rfl
+    | some _ => exact absurd (hD.inPkg x (Or.inr (Or.inl (by simp [h])))) hx
+  have hv : ds.variant? x = none := by
+    cases h : ds.variant? x with
+    | none => rfl
+    | some _ => exact absurd (hD.inPkg x (Or.inr (Or.inr (by simp [h])))) hx
+  have hs' : ds'.structs.lookup x = none := by rw [← hD.structs_eq]; exact hs
+  have hv' : ds'.variant? x = none := by
+    rw [show ds'.variant? x = ds.variant? x by simp only [Decls.variant?, hD.sealeds_eq], hv]
+  unfold omittedTypeDefaults fieldsOf
+  simp only [hs, hv, hs', hv', Option.map_none]
+  constructor <;> split <;> rfl
+
+/-- What a call of a name adds to its mentions, on both sides, when the name is in `pkg` and
+    the same on both sides, and the arguments follow its parameter renaming: the defaults it
+    leaves out, and those in the default values of the fields it leaves out that declare
+    none. -/
+theorem menR_callTail (hD : DeclsR pkg pm ds ds') {k : Nat} (hk : ∀ j, k = j + 1 → MenStmt pkg pm ds ds' j)
+    (c : List (String × Nat)) {Γ : Ren} {b b' : List String} {f : String} (hb : f ∈ b ↔ f ∈ b')
+    {as as' : List Expr} (ha : ArgsR pkg pm (pm f) Γ as as') {F F' : Nat × List String × Expr → List String}
+    (hF : ∀ j sc e, F (j, sc, e) = if c.contains (f, j) then [] else
+      match k with | 0 => [] | k + 1 => mentionsUpTo ds k ((f, j) :: c) sc e)
+    (hF' : ∀ j sc e, F' (j, sc, e) = if c.contains (f, j) then [] else
+      match k with | 0 => [] | k + 1 => mentionsUpTo ds' k ((f, j) :: c) sc e) :
+    MenR pkg
+      (if b.contains f then [] else (omittedDefaults ds f as).flatMap F ++
+        (omittedTypeDefaults ds f as).flatMap fun x => if c.contains (x.1, x.2.1) then [] else
+          match k with | 0 => [] | k + 1 => mentionsUpTo ds k ((x.1, x.2.1) :: c) [] x.2.2)
+      (if b'.contains f then [] else (omittedDefaults ds' f as').flatMap F' ++
+        (omittedTypeDefaults ds' f as').flatMap fun x => if c.contains (x.1, x.2.1) then [] else
+          match k with | 0 => [] | k + 1 => mentionsUpTo ds' k ((x.1, x.2.1) :: c) [] x.2.2) := by
+  have hc : b.contains f = b'.contains f := Bool.eq_iff_iff.mpr (by simp only [contains_iff]; exact hb)
+  rw [hc]
+  split
+  · exact MenR.nil
+  · exact (MenR.all (menR_omitted hk f c hF hF' (omitted_rel hD f ha))).cat
+      (menR_keyed hk c (omittedTypeDefaults_rel hD f ha))
 
 theorem alphaL_isEmpty {Γ : Ren} {es es' : List Expr} (h : AlphaL pkg pm Γ es es') :
     es.isEmpty = es'.isEmpty := by
@@ -684,7 +750,7 @@ theorem mentions_blockR (hD : DeclsR pkg pm ds ds') (hk : ∀ j, k = j + 1 → M
     rw [alphaL_isEmpty hvs]
     split
     · exact MenR.nil
-    · exact menR_declDefaults hD hk c _
+    · exact menR_keyed hk c (declDefaults_rel hD _)
   | _, _, _, _, _, _, _, hsz, .stmt he hrest, hs, hacc => by
     simp only [List.cons.sizeOf_spec] at hsz
     simp only [List.foldl_cons]
@@ -801,7 +867,8 @@ theorem mentions_lt (hD : DeclsR pkg pm ds ds') {k : Nat} {c : List (String × N
       by_cases hp : f ∈ pkg
       · exact menR_callTail hD hk c (hs.same f hp) ha (fun _ _ _ => rfl) (fun _ _ _ => rfl)
       · obtain ⟨o1, o2⟩ := omitted_nil hD hp as as'
-        refine MenR.self_nil ?_ ?_ <;> simp [o1, o2]
+        obtain ⟨t1, t2⟩ := omittedTypeDefaults_nil hD hp as as'
+        refine MenR.self_nil ?_ ?_ <;> simp [o1, o2, t1, t2]
     | call hnf hc ha =>
       rename_i c c' as as'
       simp only [Expr.call.sizeOf_spec] at hlt
@@ -829,7 +896,9 @@ theorem mentions_lt (hD : DeclsR pkg pm ds ds') {k : Nat} {c : List (String × N
             · exact h2
           have o1 := (omitted_nil hD hp as as).1
           have o2 := (omitted_nil hD hp' as' as').2
-          refine MenR.self_nil ?_ ?_ <;> simp [o1, o2]
+          have t1 := (omittedTypeDefaults_nil hD hp as as).1
+          have t2 := (omittedTypeDefaults_nil hD hp' as' as').2
+          refine MenR.self_nil ?_ ?_ <;> simp [o1, o2, t1, t2]
       | _ => exact MenR.nil
 
 /-- `mentionsUpTo` commutes with the renaming: on related expressions in related scopes it
@@ -1046,24 +1115,6 @@ theorem relM_modify {Γ Γ' : Ren} {f f' : Core → Core}
   rw [run_liftM, run_liftM]
   exact ⟨rfl, Γ', ⟨h _ _ hc, hn⟩, fun _ => rfl⟩
 
-/-- A `for` loop over related lists, carrying related state. -/
-theorem relM_forIn_st {Γ : Ren} {R : α → β → Prop} {S : σ → σ' → Prop}
-    {f : α → σ → M (ForInStep σ)} {g : β → σ' → M (ForInStep σ')}
-    (hf : ∀ a b x y, R a b → S x y → RelM pkg pm Γ (· = Γ)
-      (fun r r' => match r, r' with
-        | .done x, .done y => S x y
-        | .yield x, .yield y => S x y
-        | _, _ => False) (f a x) (g b y)) :
-    ∀ {xs : List α} {ys : List β}, Fall2 R xs ys → ∀ {x : σ} {y : σ'}, S x y →
-      RelM pkg pm Γ (· = Γ) S (forIn xs x f) (forIn ys y g)
-  | _, _, .nil, _, _, h => by simp only [List.forIn_nil]; exact relM_pure h
-  | _, _, .cons hab t, _, _, h => by
-    simp only [List.forIn_cons]
-    refine relM_bind (hf _ _ _ _ hab h) fun r r' hr => ?_
-    cases r <;> cases r' <;> simp only at hr
-    · exact relM_pure hr
-    · exact relM_forIn_st hf t hr
-
 theorem mem_zip_self : ∀ {l : List String} {p : String × String}, p ∈ l.zip l → p.1 = p.2
   | [], _, h => by simp at h
   | a :: l, p, h => by
@@ -1122,7 +1173,7 @@ theorem deps_eq (hD : DeclsR pkg pm ds ds') {all : List String} (hall : ∀ x �
     rw [alphaL_isEmpty hg.values, hg.type]
     split
     · exact MenR.nil
-    · exact menR_declDefaults hD (fun j _ => mentionsUpTo_alpha hD j) [] _
+    · exact menR_keyed (fun j _ => mentionsUpTo_alpha hD j) [] (declDefaults_rel hD _)
   have hr := reach_alpha hD hm
   have key : ∀ l : List String, l.filter (all.contains ·) = (inPkg pkg l).filter (all.contains ·) := by
     intro l
