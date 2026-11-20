@@ -1024,6 +1024,10 @@ func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
 		return false
 	}
 	var typ ast.Expr = ast.NewIdent(name)
+	// A function the package declares is called, never the same-named type.
+	if t.namesOwnFunction(typ) {
+		return false
+	}
 	suffixes := p.suffixes()
 	if member, _, ok := firstMember(suffixes); ok {
 		if !t.importManager.IsPackage(name) {
