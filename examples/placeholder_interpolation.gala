@@ -6,9 +6,18 @@ import . "martianoff/gala/collection_immutable"
 // outside the string (GALA-E0137). These are the forms that stay valid: a
 // placeholder outside the string, a placeholder lambda written whole inside
 // an interpolation, an explicit lambda, `_` as a pattern or a parameter
-// name inside an interpolation, a named parameter read inside one, and a
-// default with a placeholder lambda expanded inside one.
+// name inside an interpolation, a named parameter or typed-pattern binding
+// read inside one, and a default with a placeholder lambda expanded inside
+// one.
 func bump(x int, g func(int) int = _ + 1) int = g(x)
+
+type Sized interface {
+    Width() int
+}
+
+struct Box(W int)
+
+func (b Box) Width() int = b.W
 
 func main() {
     val xs = ArrayOf(1, 2, 3)
@@ -23,4 +32,7 @@ func main() {
     Println(s"${xs.Map((_) => 0)}")
     Println(s"${bump(1)}")
     Println(s"${xs.Map((x) => x + 1)}")
+    val sz Sized = Box(3)
+    Println(s"${sz match { case b: Box => b.W case _ => 0 }}")
+    Println(s"${sz match { case _: Box => "box" case _ => "other" }}")
 }
