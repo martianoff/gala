@@ -350,7 +350,7 @@ func main() {
 		{"nil", "Println(count(nil...))"},
 		{"a Go slice into a generic companion Apply", "Println(Bag(go_interop.SliceOf(1, 2)...))"},
 		{"a Go slice into the Apply of a construction", `Println(Joiner(",")(go_interop.SliceOf("a", "b")...))`},
-		{"a Go slice into the Apply of a value of a generic type", `val h = Holder("a")
+		{"a Go slice into the Apply of a value and a construction of a generic type", `val h = Holder("a")
     Println(h(go_interop.SliceOf("b", "c")...), Holder(1)(go_interop.SliceOf(2)...))`},
 		{"a Go slice into the Apply of a value", `val j = Joiner("-")
     Println(j(go_interop.SliceOf("a", "b")...))`},

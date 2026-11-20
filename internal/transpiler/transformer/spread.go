@@ -171,7 +171,7 @@ func (t *galaASTTransformer) applyVariadicElem(meta *transpiler.TypeMetadata, ty
 	elem := apply.ParamTypes[n-1]
 	// The value's type arguments, when it names all of them, stand for the
 	// type's parameters.
-	if len(typeArgs) == len(meta.TypeParams) && len(typeArgs) > 0 && !slices.ContainsFunc(typeArgs, transpiler.IsUnusable) {
+	if len(typeArgs) == len(meta.TypeParams) && !slices.ContainsFunc(typeArgs, transpiler.IsUnusable) {
 		elem = t.substituteConcreteTypes(elem, meta.TypeParams, typeArgs)
 	}
 	if typeMentionsTypeParam(elem, slices.Concat(meta.TypeParams, apply.TypeParams)) {
