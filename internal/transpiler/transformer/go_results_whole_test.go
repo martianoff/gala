@@ -221,6 +221,24 @@ func TestGoResultsKeptWhole(t *testing.T) {
 			absent:   []string{"_goResult"},
 		},
 		{
+			name:     "a Go call that is a function's expression body passes assignable results through",
+			body:     "func open(p string) (io.Reader, error) = os.Open(p)",
+			contains: []string{"func open(p string) (io.Reader, error) {", "return os.Open(p)"},
+			absent:   []string{"_goResult"},
+		},
+		{
+			name:     "a Go call that is a lambda's expression body passes assignable results through",
+			body:     "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => os.Open(p))",
+			contains: []string{"return os.Open(p)"},
+			absent:   []string{"_goResult"},
+		},
+		{
+			name:     "a Go call that is a method's expression body passes assignable results through",
+			body:     "struct Opener(Dir string)\n\nfunc (o Opener) Open(name string) (io.Reader, error) = os.Open(o.Dir + name)",
+			contains: []string{"return os.Open(o.Dir.Get() + name)"},
+			absent:   []string{"_goResult"},
+		},
+		{
 			name:     "a value of a named function type still fills a single-result thunk slot as a thunk",
 			body:     "type Getter func() int\n\nfunc takeG(f func() Getter) int = f()()\n\nfunc one() int = 1\n\nfunc viaG() int {\n    val g Getter = one\n    takeG(g)\n}",
 			contains: []string{"takeG(func() Getter {"},
@@ -433,6 +451,18 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			line: 1, col: 34,
 			want: "this value is of type Try[int]",
 		},
+		{
+			name: "a Go call expression body whose results are not assignable",
+			body: "func parse(s string) (string, error) = strconv.Atoi(s)",
+			line: 1, col: 40,
+			want: "function parse gives Go the results (string, error), so its value is a Try[string] (on a failure Go receives the zero value with the error) or a Tuple[string, error] of the results as they are; this value is of type Try[int]",
+		},
+		{
+			name: "a Go call lambda body whose results are not assignable",
+			body: "func parseWith(f func() (string, error)) bool = f().IsFailure()\n\nfunc check(s string) bool = parseWith(() => strconv.Atoi(s))",
+			line: 3, col: 45,
+			want: "this lambda gives Go the results (string, error)",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -448,6 +478,54 @@ func TestGoResultsBodyValueRejected(t *testing.T) {
 			case tc.mixedAt > 0:
 				assert.Contains(t, msg, fmt.Sprintf("at line %d:", goResultsWholeBodyLine+tc.mixedAt-1))
 			}
+		})
+	}
+}
+
+// TestGoCallNotPassedThrough pins the Go calls a Go-results body does not
+// pass through: one that is not the whole expression body is its Try, which
+// must be the body's own, and a comma-ok call never gives `(T, error)`. Both
+// are GALA-E0049 at the call.
+func TestGoCallNotPassedThrough(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	cases := []struct {
+		name      string
+		body      string
+		line, col int
+		want      string
+	}{
+		{
+			name: "a block body's trailing value",
+			body: "func open(p string) (io.Reader, error) {\n    os.Open(p)\n}",
+			line: 2, col: 5,
+			want: "`os.Open(...)` can fail, so it produces `Try[*os.File]`; `Try[io.Reader]` is expected here",
+		},
+		{
+			name: "a block lambda's trailing value",
+			body: "func openWith(f func() (io.Reader, error)) bool = f().IsFailure()\n\nfunc check(p string) bool = openWith(() => {\n    os.Open(p)\n})",
+			line: 4, col: 5,
+			want: "`Try[io.Reader]` is expected here",
+		},
+		{
+			name: "a branch of an expression body",
+			body: "func open(p string) (io.Reader, error) = if (p == \"\") os.Open(\"x\") else os.Open(p)",
+			line: 1, col: 55,
+			want: "`Try[io.Reader]` is expected here",
+		},
+		{
+			name: "a comma-ok call as an expression body",
+			body: "func env(k string) (string, error) = os.LookupEnv(k)",
+			line: 1, col: 38,
+			want: "`os.LookupEnv(...)` returns 2 values, so it produces `Tuple[string, bool]`",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(goResultsWholeProgram(tc.body), "go_results_whole_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), string(galaerr.CodeGoCallResultAsValue))
+			assert.Contains(t, err.Error(), fmt.Sprintf("go_results_whole_test.gala:%d:%d ", goResultsWholeBodyLine+tc.line-1, tc.col-1))
+			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
 }

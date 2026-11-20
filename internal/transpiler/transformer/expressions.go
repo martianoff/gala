@@ -710,6 +710,12 @@ type slot struct {
 	// ending in `error`, which each value filling it is checked against
 	// (lowerGoResultsValue); an if or match passes it to its branches.
 	goResults *goResultsBody
+	// goCallBody: the value is the expression body of this Go-results body,
+	// lowered by lowerGoResultsValue once it cleared goResults (the two are
+	// never both set). A Go call there that passes its results through (see
+	// passesThrough) is checked by noteGoResultsValue, not against typ, the
+	// body's Try, which need not be its own.
+	goCallBody *goResultsBody
 }
 
 // typedSlot is the slot of type typ: an argument, a declaration, a function
@@ -819,7 +825,9 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	}
 	// A Go call converted to a Try or Tuple where its plain value is expected
 	// is named here, not left to Go's type mismatch on the generated code.
-	if !s.open && !s.tryThunk {
+	// One that passes its results through as an expression body is checked
+	// by noteGoResultsValue instead (see slot.goCallBody).
+	if !s.open && !s.tryThunk && (s.goCallBody == nil || !t.passesThrough(s.goCallBody, expr, e.at())) {
 		if err := t.checkGoResultAgainst(expr, s.typ, e.at()); err != nil {
 			return nil, err
 		}

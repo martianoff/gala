@@ -1,0 +1,33 @@
+package main
+
+import (
+    "fmt"
+    "net/url"
+)
+
+// A function, method or lambda that returns several Go results can have a Go
+// call as its whole expression body. The call's results are then returned as
+// they are, as Go's `return url.Parse(raw)` does, so url.Parse's
+// (*url.URL, error) fills (fmt.Stringer, error): each result need only be
+// assignable to its Go result.
+
+func parse(raw string) (fmt.Stringer, error) = url.Parse(raw)
+
+struct Site(Base string)
+
+func (s Site) Page(path string) (fmt.Stringer, error) = url.Parse(s.Base + path)
+
+func show(link Try[fmt.Stringer]) string = link.Map((l) => l.String()).GetOrElse("invalid")
+
+func describe(f func() (fmt.Stringer, error)) string = show(f())
+
+func main() {
+    Println(show(parse("https://example.com/a")))
+    Println(show(parse("://bad")))
+    Println(show(Site("https://example.com").Page("/b")))
+
+    // The lambda form is the one under test here, next to the by-name form.
+    Println(describe(() => url.Parse("https://example.com/c")))
+    Println(describe(() => url.Parse("://bad")))
+    Println(describe(url.Parse("https://example.com/d")))
+}

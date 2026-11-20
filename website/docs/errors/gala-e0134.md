@@ -23,7 +23,9 @@ become those results. Its body gives one of two values:
 
 A value of another type is this error — a `Try` or `Tuple` whose element
 types the results cannot hold among them, or a `Try` of another element
-type (`Try` has no covariance: a `Try[*os.File]` is no `Try[io.Reader]`) —
+type (`Try` has no covariance: a `Try[*os.File]` is no `Try[io.Reader]`,
+though a Go call that is the whole expression body or by-name argument passes
+its results through, so `= os.Open(p)` fills `(io.Reader, error)`) —
 and so is a body that gives a `Try` in one place and the `Tuple` in another.
 A result list without an `error`, such as `(int, int)`, has one value, the
 `Tuple` of its results, and a value of another type is this error too. Each
