@@ -97,15 +97,18 @@ func (t *galaASTTransformer) checkSpreadPlacement(fun ast.Expr, c callSrc, callC
 	switch {
 	case callCtx.funcMeta != nil:
 		return funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta).checkSpreads(c.args)
-	case callCtx.applyMethodMeta != nil:
-		// A companion Apply, unless as many arguments as the type has
-		// fields build a struct literal instead (Section 10), which reports
-		// a spread into a field itself.
-		typeName := t.getBaseTypeName(fun)
-		if len(t.structFields[t.resolveStructTypeName(typeName)]) == len(c.args.list) {
-			return nil
+	case callCtx.structLiteral || callCtx.goStruct != nil:
+		// A construction: a field takes one value, by name as by position.
+		if _, qualifiedName := extractTypeNameFromExpr(fun); qualifiedName != "" {
+			for _, a := range c.args.list {
+				if name, _ := a.name(); name != "" && a.spread() {
+					return spreadFieldError(a, name, qualifiedName)
+				}
+			}
 		}
-		return methodParamList(typeName+".Apply", callCtx.applyMethodMeta).checkSpreads(c.args)
+		return nil
+	case callCtx.applyMethodMeta != nil:
+		return methodParamList(t.getBaseTypeName(fun)+".Apply", callCtx.applyMethodMeta).checkSpreads(c.args)
 	case callCtx.goSig != nil:
 		if !slices.ContainsFunc(c.args.list, argSrc.named) {
 			return nil // Go checks a positional call of its own function

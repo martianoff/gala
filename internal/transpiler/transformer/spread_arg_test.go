@@ -347,6 +347,8 @@ func main() {
 	// when it is not a slice either.
 	misplaced := []struct{ name, body, want string }{
 		{"an Array at a function's slice parameter", `Println(pairs("x", ArrayOf("a")...))`, `a spread argument cannot fill parameter "b" of pairs`},
+		{"an Array by a name no parameter has", `Println(count(ys = ArrayOf(1)...))`, `unknown parameter "ys" in call to count`},
+		{"an Array into a struct field by name", `Println(Counter(N = ArrayOf(1)...))`, `a spread argument cannot fill field "N" in construction of "Counter"`},
 		{"an Array at a method's slice parameter", `Println(Counter(1).Both(ArrayOf(1)...))`, `a spread argument cannot fill parameter "xs" of Both`},
 		{"an Array at a companion Apply's slice parameter", `Println(Pair("x", ArrayOf("a")...))`, `a spread argument cannot fill parameter "b" of Pair.Apply`},
 		{"an Array after an argument of a value's Apply", `val j = Joiner("-")

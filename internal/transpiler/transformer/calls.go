@@ -1444,6 +1444,12 @@ func (t *galaASTTransformer) emitDirectMethodCall(c callSrc, receiver ast.Expr, 
 	params := paramList{callee: method}
 	if slices.ContainsFunc(args, argSrc.named) {
 		params = goParamList(method, goSig)
+		// Placed before the arguments are lowered (see checkSpreadPlacement).
+		if goSig != nil && slices.ContainsFunc(args, argSrc.spread) {
+			if err := params.checkSpreads(c.args); err != nil {
+				return nil, err
+			}
+		}
 	}
 	for i, arg := range args {
 		v, extractErr := t.argContent(arg)

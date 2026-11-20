@@ -256,13 +256,20 @@ func (p paramList) checkSpreads(args argsSrc) error {
 		} else {
 			idx = slices.Index(p.names, name)
 		}
-		// An unknown name is reported as the call's arguments are laid out.
 		// A spread at the variadic parameter is its only argument: no
 		// positional one follows it.
-		if !a.spread() || idx < 0 || p.isVariadicSlot(idx) && (name != "" || pos == positional) {
+		if !a.spread() || idx >= 0 && p.isVariadicSlot(idx) && (name != "" || pos == positional) {
 			continue
 		}
 		line, col := a.at().start()
+		if idx < 0 {
+			// As the call's arguments are laid out, reported here before
+			// what the spread holds is checked against no parameter.
+			if p.namesUnknown() {
+				return unknownParamNamesError(name, p.callee, line, col)
+			}
+			return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("unknown parameter %q in call to %s", name, p.callee))
+		}
 		switch {
 		case idx < len(p.names) && !p.isVariadicSlot(idx):
 			return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
