@@ -309,7 +309,7 @@ def Dflt.fill : Dflt → List Val → Val × List Val
   | .lit (.bool b), vs => (.bool b, vs)
   | .lit (.str s), vs => (.str s, vs)
   | .field .., v :: vs => (v, vs)
-  -- Not reached: `declare` checks that there is a value for every hole.
+  -- Not reached: `declare` checks that there are as many values as holes.
   | .field .., [] => (.unit, [])
   | .struct_ t fs, vs => let r := Dflt.fillL fs vs; (.struct_ t r.1, r.2)
   | .sealed t c fs, vs => let r := Dflt.fillL fs vs; (.sealed t c r.1, r.2)

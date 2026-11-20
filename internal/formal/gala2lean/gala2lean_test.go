@@ -150,6 +150,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"sealed without a default case as a zero value", "package main\nsealed type S { case A case B }\nfunc main() { var s S\n Println(s) }\n", "sealed-zero-value"},
 		{"a default value with a field default", "package main\nstruct S(N int = 1)\nfunc main() { var s S\n Println(s) }\n", "field-default-value"},
 		{"a default case with a field default, nested", "package main\nsealed type L { case Off()\n default case On(P int = 30) }\nstruct H(L L)\nvar h H\nfunc main() { Println(h) }\n", "field-default-value"},
+		{"a field default on a default-case field of its own type", "package main\nsealed type L { case E()\n default case N(Next L = E()) }\nfunc main() { var l L\n Println(l) }\n", "field-default-value"},
 		{"stable identifier of a type with its own Equal", "package main\nstruct P(X int, Y int)\nfunc (p P) Equal(o P) bool = p.X == o.X\nval Origin = P(0, 0)\n" +
 			"func main() { val r = P(0, 1) match { case Origin => 1\n case _ => 2 }\n Println(r) }\n", "custom-equal"},
 		{"a function type argument", "package main\nfunc id[T any](x T) T = x\nfunc main() { val f = id((x int) => x)\n Println(f(1)) }\n", "func-type-arg"},

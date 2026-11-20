@@ -88,7 +88,8 @@ func (g *gen) zero(t coreexport.Node) string {
 // value. It is zero's unless it takes a declared field default, which is
 // outside the subset (field-default-value): the default would have to be
 // evaluated where the declaration is, and its references counted for the
-// initialization order.
+// initialization order. The walk stops at the first field outside the
+// subset, so another reason (nil, sealed-zero-value, ...) may come first.
 func (g *gen) defaultValue(t coreexport.Node) string {
 	return g.zeroDepth(t, 0, true)
 }
