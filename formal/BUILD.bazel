@@ -84,6 +84,13 @@ REQUIRED_THEOREMS = [
     "Gala.M5.eval_pure",
     "Gala.M5.expr_correct",
     "Gala.M5.expr_correct_instance",
+    "Gala.M5.stmts_correct",
+    "Gala.M5.block_correct",
+    "Gala.M5.stmts_correct_instance",
+    "Gala.M5.inst_gocore_ok",
+    "Gala.M5.hSs_lowered",
+    "Gala.M5.gc_runsStep2",
+    "Gala.M5.leftToRight_runsStep2",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -144,6 +151,8 @@ GALA_SRCS = [
     "Gala/AlphaProg.lean",
     "Gala/M5/SpecPure.lean",
     "Gala/M5/Expr.lean",
+    "Gala/M5/Stmt.lean",
+    "Gala/M5/StmtOrder.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

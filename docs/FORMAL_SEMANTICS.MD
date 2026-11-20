@@ -475,6 +475,20 @@ column lists what each milestone's claim rests on beyond them.
   evaluation is unobservable here; it is proved for GoCore's, left to right. For later
   steps, the fixtures `panic_order_divide` and `panic_order_shift` pin gc 1.25.5's
   order of two failing operands that are not calls (left to right).
+  Step 2b is proved: `val`/`var`, `if` statements and blocks (`stmts_correct` and
+  `block_correct` in `formal/Gala/M5/Stmt.lean`). A local `val x = e` or `var x = e`
+  lowers to Go's `var x = e`, an `if` with block branches (an `else` a block or another
+  `if`) to Go's `if`/`else if`, a block to Go's block, as the transformer emits them.
+  From related states, wherever galaspec's run of a lowered statement list ends
+  normally, GoCore's run of the lowering, at every depth from a bound on, ends normally
+  in related states (galaspec's locals only extended, both sides' cells only added to);
+  wherever galaspec's panics, GoCore's panics the same way, with equal outputs.
+  `stmts_correct_instance` meets every hypothesis on a body GALA and Go accept, and
+  `inst_gocore_ok` shows galaspec's run of it ends normally, so GoCore's does too. It is
+  stated for GoCore's evaluator as it is. The order hypothesis step 3's theorem will take,
+  `RunsStep2AsWritten`, is met by left to right and by GoCore's model of gc's order
+  (`gc_runsStep2`, `leftToRight_runsStep2`; see [Evaluation order](#evaluation-order)).
+  Assignments, expression statements and calls are step 3.
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
   order](#evaluation-order)); fuel adequacy is not proved yet.
@@ -615,9 +629,10 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   another text. There it hoists those operands into temporaries as order.go does;
   every other statement is left as it is. That gc's order and left to right give the
   same outcome and output on the statements left alone is a lemma a later step owes
-  (`untriggered_orders_agree`, the obligation step 2 of the steps below takes on);
-  the differential run tests it meanwhile. One choice of gc depends on static types
-  GoCore's syntax does not carry: a value converted to an interface is copied early or
+  (`untriggered_orders_agree`, carried to step 3 of the steps below: step 2's
+  statements are left alone by the rewrite, which is proved, but real gc still copies
+  an `&&` or `||` in them into a temporary); the differential run tests it meanwhile.
+  One choice of gc depends on static types GoCore's syntax does not carry: a value converted to an interface is copied early or
   read late by its type; the rewrite settles it from the declared types the syntax shows
   (a declared function's parameters, a composite literal's fields) where it can. Where
   it cannot and the difference could be observed, and where the rewrite needs a place
@@ -630,7 +645,18 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   order parameter, constrained to the orders the spec allows; the harness runs gc's.
   `Order` itself is any rewrite of the program: the theorems carry the constraint as a
   hypothesis on `ord`, a predicate step 2 defines with the statements it covers, and
-  show it holds of `Order.gc` and `Order.leftToRight`.
+  show it holds of `Order.gc` and `Order.leftToRight`. Step 2's predicate,
+  `RunsStep2AsWritten`, is narrower than "every order the spec allows": it admits the
+  orders that run step 2's lowered function bodies as written, and constrains nothing
+  else in the program. Both of GoCore's orders meet it: left to right and GoCore's model
+  of gc 1.25.5's order (`gc_runsStep2`, `leftToRight_runsStep2`). Real gc copies an `&&`
+  or `||` into a temporary before the statement (order.go), which rewrites these bodies
+  and is outside the predicate, although in them the copy cannot be observed (they
+  change no state, and their only panic, an integer division by zero, has one text).
+  That such full hoisting agrees with left to right is an obligation step 3 carries. No
+  theorem takes the predicate as a hypothesis yet: tying a function body to a run of the
+  program (`runProgramAt ord`) needs calls, and step 3's theorem will take it, widened
+  to the whole program.
   Then `EvalOperand` carries weight: without it, some allowed order breaks the theorem,
   which is how a #996-class bug shows. If the parameter proves too heavy, the theorems
   fall back to gc's order and say "for gc 1.25.5's operand order".

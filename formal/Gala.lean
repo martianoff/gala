@@ -23,6 +23,8 @@ import Gala.AlphaConst
 import Gala.AlphaProg
 import Gala.M5.SpecPure
 import Gala.M5.Expr
+import Gala.M5.Stmt
+import Gala.M5.StmtOrder
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems
