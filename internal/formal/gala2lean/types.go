@@ -81,61 +81,21 @@ func typeName(t coreexport.Node) string {
 // leaves out the field defaults a type declares, which GALA's default value
 // takes (docs/GALA.MD, "Default Values"; defaultValue).
 func (g *gen) zero(t coreexport.Node) string {
-	return g.zeroDepth(t, 0)
+	return g.zeroDepth(t, 0, false)
 }
 
 // defaultValue is the value `var x T` with no value gives: type t's default
-// value. zero gives it unless the type's default value takes a declared
-// field default, which is outside the subset (field-default-value): the
-// default would have to be evaluated where the declaration is, and its
-// references counted for the initialization order.
+// value. It is zero's unless it takes a declared field default, which is
+// outside the subset (field-default-value): the default would have to be
+// evaluated where the declaration is, and its references counted for the
+// initialization order.
 func (g *gen) defaultValue(t coreexport.Node) string {
-	if g.takesFieldDefault(t, 0) {
-		unsup(posOf(t), "field-default-value")
-	}
-	return g.zero(t)
+	return g.zeroDepth(t, 0, true)
 }
 
-// takesFieldDefault reports whether type t's default value takes a declared
-// field default: a field of the struct, of the sealed type's default case or
-// of a tuple's element types declares one, or its type's default value takes
-// one. Past zero's depth bound it reports false: zero stops there.
-func (g *gen) takesFieldDefault(t coreexport.Node, depth int) bool {
-	if depth > 64 {
-		return false
-	}
-	name := typeHead(t)
-	var fields []*coreexport.Field
-	switch {
-	case g.structs[name] != nil:
-		fields = fieldsOf(g.structs[name].Fields)
-	case g.sealeds[name] != nil:
-		for _, vn := range g.sealeds[name].Variants {
-			if v := vn.(*coreexport.Variant); v.Default {
-				fields = fieldsOf(v.Fields)
-			}
-		}
-	default:
-		st, _ := g.stdType(name)
-		if tn, ok := t.(*coreexport.TypeName); ok && slices.Contains([]string{"T2", "T3", "T4"}, st.lean) {
-			for _, a := range tn.Args {
-				if g.takesFieldDefault(a, depth+1) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	args := g.typeArgsOf(name, t)
-	for _, f := range fields {
-		if f.Default != nil || f.Type != nil && g.takesFieldDefault(substType(f.Type, args), depth+1) {
-			return true
-		}
-	}
-	return false
-}
-
-func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
+// zeroDepth is zero at nesting depth; withDefaults stops at a field that
+// declares a default (defaultValue).
+func (g *gen) zeroDepth(t coreexport.Node, depth int, withDefaults bool) string {
 	if depth > 64 {
 		unsup(posOf(t), "zero-value-depth")
 	}
@@ -180,7 +140,7 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 		case "T2", "T3", "T4":
 			parts := []string{std + ".mk"}
 			for _, a := range t.(*coreexport.TypeName).Args {
-				parts = append(parts, g.zeroDepth(a, depth+1))
+				parts = append(parts, g.zeroDepth(a, depth+1, withDefaults))
 			}
 			return typed(strings.Join(parts, " "))
 		}
@@ -193,7 +153,10 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 			if f.Type == nil {
 				unsup(f.Pos, "untyped-field")
 			}
-			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1))
+			if withDefaults && f.Default != nil {
+				unsup(f.Pos, "field-default-value")
+			}
+			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1, withDefaults))
 		}
 		return typed(strings.Join(parts, " "))
 	}
@@ -211,7 +174,10 @@ func (g *gen) zeroDepth(t coreexport.Node, depth int) string {
 			if slices.Contains(typeNamesIn(f.Type), name) {
 				unsup(f.Pos, "sealed-zero-value")
 			}
-			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1))
+			if withDefaults && f.Default != nil {
+				unsup(f.Pos, "field-default-value")
+			}
+			parts = append(parts, g.zeroDepth(substType(f.Type, args), depth+1, withDefaults))
 		}
 		if len(parts) == 1 {
 			return typed(parts[0])

@@ -930,10 +930,7 @@ def omittedDefaults (ds : Decls) (x : String) (as : List Expr) : List (Nat × Li
     let ps := f.params.map (·.name)
     omittedSlots (givenSlots ps as) f.defaults (ps.take ·)
   | none =>
-    let fields : Option (List Field) := match ds.structs.lookup x with
-      | some fs => some fs
-      | none => (ds.variant? x).map (·.2.fields)
-    match fields with
+    match fieldsOf ds x with
     | some fs => omittedSlots (givenSlots (fs.map (·.name)) as) (fs.map (·.default)) fun _ => []
     | none => []
 where

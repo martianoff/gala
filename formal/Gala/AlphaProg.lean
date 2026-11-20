@@ -436,7 +436,7 @@ theorem omitted_rel {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     (hD : DeclsR pkg pm ds ds') (x : String) {Γ : Ren} {as as' : List Expr}
     (ha : ArgsR pkg pm (pm x) Γ as as') :
     Fall2 (OmitR pkg pm) (omittedDefaults ds x as) (omittedDefaults ds' x as') := by
-  unfold omittedDefaults
+  unfold omittedDefaults fieldsOf
   rcases funcs_rel hD x with
     ⟨h1, h2⟩ | ⟨f, f', h1, h2, hf⟩
   · -- Not a function: a struct or a case, the same on both sides.
@@ -519,7 +519,7 @@ theorem omitted_nil {pkg : List String} {pm : String → Ren} {ds ds' : Decls}
     rcases variant_rel hD x with ⟨_, h2⟩ | ⟨_, _, _, h1, _, _⟩
     · exact h2
     · rw [hv] at h1; cases h1
-  unfold omittedDefaults
+  unfold omittedDefaults fieldsOf
   simp only [hf, hs, hv, hf', hs', hv', Option.map_none, and_self]
 
 /-- `mentionsUpTo` at budget `k` commutes with the renaming. -/
