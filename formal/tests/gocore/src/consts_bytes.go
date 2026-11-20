@@ -27,5 +27,10 @@ func main() {
 	for _, c := range []byte("ab") {
 		fmt.Print(c, " ")
 	}
+	// A range over the bytes of a string variable: the slice is never observed.
+	word := "hé"
+	for i, c := range []byte(word) {
+		fmt.Print(i, ":", c, " ")
+	}
 	fmt.Println()
 }

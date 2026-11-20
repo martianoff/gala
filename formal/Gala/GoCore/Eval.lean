@@ -2123,7 +2123,22 @@ def rangeLoop (c : Ctx) : Nat → Env → Option Expr → Option Expr → String
     -- With one iteration variable, Go does not evaluate an array (or pointer to one)
     -- whose length is constant (Go spec, "For statements with range clause"); GoCore
     -- does not know the static type, so a panic evaluating it ends the run instead.
-    let xv ← if (v.map (· matches .ident "_")).getD true then constantOperand c n env x else evalExpr c n env x
+    -- `range []byte(s)` ranges over a new array of the string's bytes, which nothing
+    -- else can reach, so its capacity is never observed (Go spec, "Conversions to and
+    -- from a string type"), of any string.
+    let bytesOf? : GM (Option Val) := do
+      let .call fn [a] false := x | return none
+      let some t ← typeOf? c n env fn | return none
+      let .slice et ← underlying c n t | return none
+      let .int .uint8 ← underlying c n et | return none
+      let av ← evalExpr c n env a
+      let .str _ s := av | return some (← conversion c n t av)
+      let bs := s.toUTF8.toList.toArray.map fun b => Val.int et b.toNat
+      if bs.size > maxSliceCap then unsupported "slice-of-string-large"
+      return some (.slice t (some (← newArray c n et bs bs.size)))
+    let xv ← match ← bytesOf? with
+      | some bv => pure bv
+      | none => if (v.map (· matches .ident "_")).getD true then constantOperand c n env x else evalExpr c n env x
     let intVal := fun (i : Nat) => Val.int (.int .int) i
     -- The number of iterations, and the key and value of each.
     let (count, item) : Nat × (Nat → GM (Val × Val)) ← match xv with
