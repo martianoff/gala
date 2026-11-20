@@ -1004,7 +1004,9 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 			continue
 		}
 		if key, value, ok := tryParseKeyValue(itemPart); ok {
-			child, np := parseCompactMapping(lines, i, indent, key, value)
+			// The key starts after the dash and the spaces that follow it.
+			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
 			continue
@@ -1016,15 +1018,14 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 }
 
 // parseCompactMapping parses the mapping a sequence item on lines[start]
-// starts on the dash's line ("- key: value"), whose dash is at column
-// parentIndent. Its first pair is key and value; the keys on the lines
+// starts on the dash's line ("- key: value"), whose first key starts at
+// column keyIndent. Its first pair is key and value; the keys on the lines
 // below, aligned with the first one, belong to the same item, whatever
 // form the first key's value took.
-func parseCompactMapping(lines []pLine, start, parentIndent int, key, value string) (*yNode, int) {
-	itemKeyIndent := parentIndent + 2
-	first, i := parseMappingValue(lines, start, itemKeyIndent, value)
+func parseCompactMapping(lines []pLine, start, keyIndent int, key, value string) (*yNode, int) {
+	first, i := parseMappingValue(lines, start, keyIndent, value)
 	m := &yNode{kind: yMap, mapKeys: []string{key}, mapVals: []*yNode{first}}
-	return m, addMappingPairs(m, lines, i, itemKeyIndent)
+	return m, addMappingPairs(m, lines, i, keyIndent)
 }
 
 func splitKeyValue(line string, lineNum int) (string, string) {

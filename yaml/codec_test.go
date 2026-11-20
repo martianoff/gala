@@ -623,6 +623,10 @@ func TestDecoder_SequenceItemKeysAfterBlockValue(t *testing.T) {
 		{"- a:\n    x: 1\n  b: 2", "[{a: {x: 1}, b: 2}]"},
 		{"- a:\n  b: 2", "[{a: ~, b: 2}]"},
 		{"- a:\n    - 1\n  b: 2\n- c: 3", "[{a: [1], b: 2}, {c: 3}]"},
+		// The item's keys line up with the first key, wherever the spaces
+		// after the dash put it.
+		{"-   a: 1\n    b: 2", "[{a: 1, b: 2}]"},
+		{"-   a:\n    - 1\n    b: 2", "[{a: [1], b: 2}]"},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
@@ -638,6 +642,8 @@ func TestDecoder_SequenceAtKeyIndentErrors(t *testing.T) {
 		{"a: x\n- 1", "error: yaml: unexpected content at line 2"},
 		{"a:\n  b:\n- 1", "error: yaml: unexpected content at line 3"},
 		{"- a: x\n  - 1", "error: yaml: unexpected indent at line 2"},
+		{"-   a:\n  - 1", "error: yaml: unexpected indent at line 2"},
+		{"-  a:\n  - 1\n  b: 2", "error: yaml: unexpected indent at line 2"},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
