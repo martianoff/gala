@@ -5202,15 +5202,16 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 // `func() int`, an Action (`type Action func()`) for a `func()` however it is
 // reached — a variable, a field, a call, a conversion. It is the thunk's
 // value where the slot's function type is another: a Getter for a
-// `func() Getter`, or for a `func() T` whose T is not yet inferred
-// (`Try(g)` is a `Try[Getter]`).
+// `func() Getter`, or for a `func() T` whose result names a type parameter,
+// the callee's not yet inferred or the enclosing declaration's (`Try(g)` is a
+// `Try[Getter]`).
 func (t *galaASTTransformer) passesNamedFunctionAsThunk(fn, ft transpiler.FuncType) bool {
 	if len(ft.Results) > 1 {
 		return true
 	}
-	// A result naming a type parameter is not known to be fn's: a callee's
-	// not yet inferred and the enclosing declaration's own share names here,
-	// so neither is taken for the other.
+	// A callee's uninferred type parameter and the enclosing declaration's
+	// can share a name (T), so neither check alone tells them apart: a result
+	// naming any type parameter is left undecided.
 	if len(ft.Results) == 1 && (t.hasTypeParams(ft.Results[0]) || t.mentionsUnboundTypeParam(ft.Results[0])) {
 		return false
 	}

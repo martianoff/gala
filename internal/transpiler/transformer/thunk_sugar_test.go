@@ -288,6 +288,28 @@ func build(f func() Holder) Holder = f()`
 	}
 }
 
+// Inside a generic declaration whose type parameter is named like Try's, a
+// named function value passed to Try is still the thunk's result: Try's T is
+// not yet inferred, whatever the enclosing T is called.
+func TestThunkSugar_NamedFunctionValueTryInGenericBody(t *testing.T) {
+	trans := newThunkSugarTranspiler()
+	input := `package main
+
+type Getter func() int
+
+func one() int = 1
+
+func tryIn[T any](g Getter, x T) Try[Getter] = Try(g)
+
+func main() {
+    val g Getter = one
+    Println(tryIn(g, 1).Get()())
+}`
+	out, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+	assert.Contains(t, out, "func() Getter {", "generated:\n%s", out)
+}
+
 // An explicit lambda argument must keep working unchanged (the sugar only adds a
 // path for bare expressions; lambdas already self-infer their return type).
 func TestThunkSugar_ExplicitLambdaStillWorks(t *testing.T) {
