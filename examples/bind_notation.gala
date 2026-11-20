@@ -30,14 +30,6 @@ func processOrder(id int) Try[Receipt] {
     Success(Receipt(o.Id, payment))
 }
 
-// `bind _ = e` runs e for its effect; a later `_ = x` is still a discard, not
-// an assignment to the `_` the clause binds.
-func audited(id int) Try[int] {
-    bind _ = fetchOrder(id)
-    _ = s"audited $id"
-    Success(id)
-}
-
 func describe(t Try[Receipt]) string = t match {
     case Success(r) => s"ok: order=${r.OrderId} charged=${r.Charged}"
     case Failure(e) => s"err: ${e.Error()}"
@@ -46,5 +38,4 @@ func describe(t Try[Receipt]) string = t match {
 func main() {
     Println(describe(processOrder(1)))   // happy path, all binds succeed
     Println(describe(processOrder(0)))   // breaks at the first bind, short-circuits
-    Println(audited(7))
 }

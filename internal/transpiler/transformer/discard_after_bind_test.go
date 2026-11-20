@@ -18,6 +18,15 @@ func TestDiscardAfterBindUnderscore(t *testing.T) {
 		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    _ = \"ignored\"\n    Some(2)\n}\n\nfunc main() {\n    Println(run())\n}\n", "")
 		require.NoError(t, err)
 	})
+	t.Run("a discard among several targets after the clause", func(t *testing.T) {
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    var n = 0\n    n, _ = 5, 6\n    Some(n)\n}\n\nfunc main() {\n    Println(run())\n}\n", "")
+		require.NoError(t, err)
+	})
+	t.Run("an increment of the clause's `_`", func(t *testing.T) {
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    _++\n    Some(2)\n}\n\nfunc main() {\n    Println(run())\n}\n", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(galaerr.CodeUnderscoreBindingRead))
+	})
 	t.Run("a read of the clause's `_`", func(t *testing.T) {
 		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    Some(_)\n}\n\nfunc main() {\n    Println(run())\n}\n", "")
 		require.Error(t, err)

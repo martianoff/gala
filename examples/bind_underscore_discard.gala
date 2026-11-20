@@ -1,0 +1,19 @@
+package main
+
+// `bind _ = e` runs e for its effect and binds `_` to nothing readable. A
+// later `_ = x`, or a `_` among several targets, is Go's blank identifier: a
+// discard, not an assignment to the `_` the clause binds.
+
+func step() Option[int] = Some(1)
+
+func discards() Option[int] {
+    bind _ = step()
+    _ = "ignored"
+    var n = 0
+    n, _ = 5, 6
+    Some(n)
+}
+
+func main() {
+    Println(discards())
+}
