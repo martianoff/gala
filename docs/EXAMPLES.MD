@@ -1155,12 +1155,10 @@ Output:
 ```
 
 An argument that is already a function value is passed through untouched (never
-double-wrapped). A value of a named function type is passed through where that
-alone is known to be valid Go (a `type Getter func() int` value for a
-`func() int`, a `type Action func()` variable for a `func()`), and is otherwise the
-thunk's result (for a `func() Getter`, a `func() any`, or `Try(g)`); the
-language reference lists the cases. Multi-argument function parameters still
-require an explicit lambda.
+double-wrapped), and so is a value of a named function type whose function type
+is the slot's (a `type Getter func() int` value for a `func() int`); for a
+`func() Getter` or `Try(g)` it is the thunk's result. Multi-argument function
+parameters still require an explicit lambda.
 
 ## Future - Asynchronous Computations
 

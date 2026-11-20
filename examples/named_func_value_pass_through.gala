@@ -1,0 +1,28 @@
+package main
+
+// A value of a named function type whose function type is the slot's is the
+// function itself, however it is reached: a field, a call, a conversion. The
+// callee runs it, as it would run a value of the function type as written.
+
+type Action func()
+
+struct Holder(act Action)
+
+func callTwice(f func()) {
+    f()
+    f()
+}
+
+func mkAction() Action {
+    Println("made")
+    () => Println("made action")
+}
+
+func main() {
+    val h = Holder(() => Println("field action"))
+    callTwice(h.act)
+
+    callTwice(mkAction())
+
+    callTwice(Action(() => Println("converted action")))
+}

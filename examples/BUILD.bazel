@@ -1687,7 +1687,14 @@ gala_exec_test(
     expected = "go_results_call_body_assignable.out",
 )
 
-# A named function type value fills a func() T or func() slot as itself where only that is valid Go
+# A named function type value of the slot's function type is passed as itself, however it is reached
+gala_exec_test(
+    name = "named_func_value_pass_through",
+    src = "named_func_value_pass_through.gala",
+    expected = "named_func_value_pass_through.out",
+)
+
+# A named function type value fills a func() T or func() slot as itself, or as the thunk's result for a slot of another function type
 gala_exec_test(
     name = "named_func_type_thunk_slot",
     src = "named_func_type_thunk_slot.gala",

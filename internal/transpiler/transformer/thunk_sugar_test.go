@@ -142,11 +142,11 @@ func main() {
 }
 
 // A value of a function type as written is passed to a zero-argument
-// function slot as itself. A value of a named function type fills it the one
-// way Go accepts when only one is: as itself when its function type is the
-// slot's, as the thunk's value when the slot's result holds it. When both
-// are, or neither, or a slot's result is still a type parameter, it is the
-// thunk's value.
+// function slot as itself. So is a value of a named function type whose
+// function type is the slot's, however it is reached — a variable, a field,
+// a call, a conversion. Where the slot's function type is another — its
+// result is the named type, or a type parameter not yet inferred — the value
+// is the thunk's result.
 func TestThunkSugar_FunctionValueSlots(t *testing.T) {
 	trans := newThunkSugarTranspiler()
 	const decls = `type Getter func() int
@@ -220,12 +220,14 @@ func build(f func() Holder) Holder = f()`
 		{
 			name:     "a call returning a named void function for a func() slot",
 			main:     "run(mkAction())",
-			contains: "run(func() {",
+			contains: "run(mkAction())",
+			absent:   "run(func() {",
 		},
 		{
-			name:     "a named value for a func() any slot",
+			name:     "a named value for a func() any slot of its own function type",
 			main:     "val h AnyGetter = () => 1\n    Println(takeAny(h))",
-			contains: "takeAny(func() any {",
+			contains: "takeAny(h)",
+			absent:   "takeAny(func() any {",
 		},
 		{
 			name:     "a value as written for its own function type",
@@ -250,10 +252,16 @@ func build(f func() Holder) Holder = f()`
 			contains: "call(h.g.Get())",
 		},
 		{
-			// A field read is a call of Get, which Go runs as a statement.
 			name:     "a named void field value for a func() slot",
 			main:     "val h = Holder(one, () => Println(1))\n    run(h.act)",
-			contains: "run(func() {",
+			contains: "run(h.act.Get())",
+			absent:   "run(func() {",
+		},
+		{
+			name:     "a conversion to a named void function type for a func() slot",
+			main:     "run(Action(() => Println(1)))",
+			contains: "run(Action(",
+			absent:   "run(func() {",
 		},
 		{
 			name:     "a named value for a func() any slot as written",
