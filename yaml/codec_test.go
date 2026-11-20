@@ -511,3 +511,137 @@ func TestDecoder_QuotedKeyValueComment(t *testing.T) {
 		}
 	}
 }
+
+// ----- Block sequences at their key's indentation ----------------------------
+
+// dumpNode writes a parsed document in a compact flow form, so that two
+// documents can be compared by their structure.
+func dumpNode(n *yNode) string {
+	switch {
+	case n == nil:
+		return "<nil>"
+	case n.kind == yScalar && n.nullish:
+		return "~"
+	case n.kind == yScalar:
+		return n.scalar
+	case n.kind == ySeq:
+		items := make([]string, len(n.seq))
+		for i, c := range n.seq {
+			items[i] = dumpNode(c)
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	default:
+		pairs := make([]string, len(n.mapKeys))
+		for i, k := range n.mapKeys {
+			pairs[i] = k + ": " + dumpNode(n.mapVals[i])
+		}
+		return "{" + strings.Join(pairs, ", ") + "}"
+	}
+}
+
+// parseDump parses src and dumps it, or returns the error the parse
+// panicked with.
+func parseDump(src string) (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = "error: " + fmt.Sprint(r)
+		}
+	}()
+	return dumpNode(parseYAML(src))
+}
+
+// A block sequence that is a mapping value may sit at the key's own
+// indentation (#1295), as kubectl writes it. Each document parses to the
+// same structure as its indented form.
+func TestDecoder_SequenceAtKeyIndent(t *testing.T) {
+	tests := []struct{ name, zero, indented, want string }{
+		{
+			"root key",
+			"items:\n- 1\n- 2",
+			"items:\n  - 1\n  - 2",
+			"{items: [1, 2]}",
+		},
+		{
+			"keys before and after",
+			"a: x\nitems:\n- 1\n- 2\nb: y",
+			"a: x\nitems:\n  - 1\n  - 2\nb: y",
+			"{a: x, items: [1, 2], b: y}",
+		},
+		{
+			"two sequences in a row",
+			"n:\n- 1\nm:\n- 2\n- 3",
+			"n:\n  - 1\nm:\n  - 2\n  - 3",
+			"{n: [1], m: [2, 3]}",
+		},
+		{
+			"nested mapping key",
+			"spec:\n  containers:\n  - name: app\n    image: img\n  - name: side\n  restart: Always",
+			"spec:\n  containers:\n    - name: app\n      image: img\n    - name: side\n  restart: Always",
+			"{spec: {containers: [{name: app, image: img}, {name: side}], restart: Always}}",
+		},
+		{
+			"key inside a sequence item",
+			"- name: app\n  ports:\n  - 80\n  - 443\n  image: img",
+			"- name: app\n  ports:\n    - 80\n    - 443\n  image: img",
+			"[{name: app, ports: [80, 443], image: img}]",
+		},
+		{
+			"first key of a sequence item",
+			"- args:\n  - run\n  image: img",
+			"- args:\n    - run\n  image: img",
+			"[{args: [run], image: img}]",
+		},
+		{
+			"sequence of sequences",
+			"m:\n-\n  - 1\n  - 2\n-\n  - 3",
+			"m:\n  -\n    - 1\n    - 2\n  -\n    - 3",
+			"{m: [[1, 2], [3]]}",
+		},
+		{
+			"empty items and comments",
+			"m:\n# note\n-\n- x # c\nk: v",
+			"m:\n  # note\n  -\n  - x # c\nk: v",
+			"{m: [~, x], k: v}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseDump(tt.zero); got != tt.want {
+				t.Errorf("zero-indented:\n%s\n=> %s, want %s", tt.zero, got, tt.want)
+			}
+			if got := parseDump(tt.indented); got != tt.want {
+				t.Errorf("indented:\n%s\n=> %s, want %s", tt.indented, got, tt.want)
+			}
+		})
+	}
+}
+
+// A key of a sequence item whose value is on the lines below no longer ends
+// the item: the keys after it belong to the same item.
+func TestDecoder_SequenceItemKeysAfterBlockValue(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"- a:\n    x: 1\n  b: 2", "[{a: {x: 1}, b: 2}]"},
+		{"- a:\n  b: 2", "[{a: ~, b: 2}]"},
+		{"- a:\n    - 1\n  b: 2\n- c: 3", "[{a: [1], b: 2}, {c: 3}]"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// What is not a value of the key before it still fails: a sequence after a
+// key that has an inline value, and a sequence less indented than its key.
+func TestDecoder_SequenceAtKeyIndentErrors(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"a: x\n- 1", "error: yaml: unexpected content at line 2"},
+		{"a:\n  b:\n- 1", "error: yaml: unexpected content at line 3"},
+		{"- a: x\n  - 1", "error: yaml: unexpected indent at line 2"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}

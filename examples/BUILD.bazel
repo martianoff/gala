@@ -1321,6 +1321,17 @@ gala_exec_test(
     ],
 )
 
+# A block sequence may sit at its mapping key's own indentation (#1295).
+gala_exec_test(
+    name = "yaml_codec_sequence_at_key_indent",
+    src = "yaml_codec_sequence_at_key_indent.gala",
+    expected = "yaml_codec_sequence_at_key_indent.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "yaml_codec_collections",
     src = "yaml_codec_collections.gala",

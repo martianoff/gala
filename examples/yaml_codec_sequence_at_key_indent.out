@@ -1,0 +1,3 @@
+Success(R(a, Array(1, 2), Array(In(k, 1))))
+Success(R(a, Array(1, 2), Array(In(k, 1))))
+Success(Pod(Pod, Spec(Array(Container(Array(serve, --port=8080), app:1.0, app, Array(Port(8080))), Container(Array(), proxy:2.1, proxy, Array(Port(80), Port(443)))), Always)))
