@@ -484,9 +484,13 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
         if e then
           if let .iface _ ← underlying c n t then unsupported "embedded-interface-field"
           let base := match t with | .ptr b => b | b => b
+          -- A type of a package the document holds none or only some of has
+          -- methods GoCore may not see: taken as having some. A type that embeds
+          -- such a field in turn stops here when its own type is evaluated.
           if let .named p tn _ := base then
             let pre := tn ++ "."
-            if ((c.pkgs.get? p).map fun pk => pk.methods.fold (fun b k _ => b || k.startsWith pre) false).getD false then
+            if partialPkg c p ||
+                ((c.pkgs.get? p).map fun pk => pk.methods.fold (fun b k _ => b || k.startsWith pre) false).getD false then
               unsupported "embedded-methods"
       return .struct_ ((fieldNames fs).zip tys)
     | .interfaceType es =>
@@ -511,6 +515,10 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
       if k < 0 then stuck "negative array length"
       return .array k.toNat (← evalType c n env elt)
     | .unsupported k => unsupported k
+    -- So that a pointer to, or a parenthesized, type GoCore does not hold reaches the
+    -- checks below.
+    | .star x => return .ptr (← evalType c n env x)
+    | .paren x => evalType c n env x
     | _ =>
       match ← typeOf? c n env e with
       | some t => pure t

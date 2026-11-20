@@ -11,7 +11,8 @@
 # (unsupported_map), at a capacity that depends on gc's escape analysis
 # (unsupported_escape), at constraint type inference (unsupported_inference),
 # at panic(nil) (unsupported_panic_nil), at a struct that embeds an interface
-# (unsupported_embedded) or a type with methods (unsupported_embedded_methods),
+# (unsupported_embedded) or a type with methods, directly, through another
+# embedded type or of a package GoCore does not hold (unsupported_embedded_*),
 # at what fmt prints as an error (unsupported_printf_*), and at a name a runnable
 # standard-library file lacks (unsupported_stdlib).
 # Their files are written by hand.
