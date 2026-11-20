@@ -831,9 +831,9 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 		if k := scalarKindOfPrimitive(v.Name); (k == scalarInt || k == scalarUint) && !defined && v.Name != "rune" {
 			// `for i := range n` binds i to n's type. A Go defined integer
 			// type (time.Duration) keeps the int key it has always had: its
-			// String method would change what `s"$i"` prints. So does a
-			// rune: an untyped rune constant (unicode.MaxASCII) is typed
-			// rune here, while Go binds i to int.
+			// String method would change what `s"$i"` prints. So does a rune
+			// (Go binds i to rune): `s"$i"` would print characters (%c), not
+			// the numbers it prints today (#1317).
 			return v, transpiler.NilType{}
 		}
 	case transpiler.FuncType:

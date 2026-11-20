@@ -88,7 +88,7 @@ func main() {
     }
 }
 `, []string{"func() int64"}},
-		// Go binds i to int over an untyped rune constant: %d, not %c.
+		// A rune keeps the int key: typed rune, `s"$i"` would pick %c (#1317).
 		{"an untyped rune constant (unicode.MaxASCII)", `package main
 
 import "unicode"
