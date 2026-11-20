@@ -437,7 +437,8 @@ def typeOf? (c : Ctx) : Nat → Env → Expr → GM (Option Ty)
             if alias then return some (← evalType c n { pkg := path, file := fi } te)
             if tps.isEmpty then return some (.named path sel []) else stuck s!"generic type {sel} without type arguments"
           | _ => return none
-        | none => return none
+        -- A package the document does not hold: a type GoCore knows without its source.
+        | none => return (libType? path sel).map fun _ => .named path sel []
       | none => return none
     | .index x args =>
       -- A generic type instantiated: `T[args]` or `pkg.T[args]`.
@@ -471,6 +472,12 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
   | n + 1, env, e => do
     match e with
     | .structType fs =>
+      -- An embedded interface would promote its methods to the struct (Go spec,
+      -- "Struct types"), which GoCore's method sets do not include.
+      for .mk ns te in fs do
+        if ns.isEmpty then
+          if let .iface _ ← underlying c n (← evalType c n env te) then
+            unsupported "embedded-interface-field"
       let tys ← (fieldTypes fs).mapM (evalType c n env)
       return .struct_ ((fieldNames fs).zip tys)
     | .interfaceType es =>
@@ -502,7 +509,6 @@ def evalType (c : Ctx) : Nat → Env → Expr → GM Ty
         -- A type of a package the document does not hold (Go's own standard library).
         if let .selector (.ident q) sel := e then
           if let some path := importOf c env q then
-            if (libType? path sel).isSome then return .named path sel []
             if partialPkg c path then unsupported s!"{path}.{sel}"
         match e with
         | .index (.selector (.ident q) sel) _ =>

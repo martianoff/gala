@@ -3,7 +3,10 @@
 // distinct from an identical literal interface (Go spec, "Type identity").
 package main
 
-import "fmt"
+import (
+	"fmt"
+	fm "fmt"
+)
 
 type named struct{ n int }
 
@@ -46,4 +49,12 @@ func main() {
 	_, same := f.(func(interface{ String() string }))
 	_, self := f.(func(fmt.Stringer))
 	fmt.Println(same, self)
+	// As a conversion, a pointer's element, a slice's element, in parentheses, and
+	// through another import name.
+	conv := fmt.Stringer(named{3})
+	var p *fmt.Stringer = &conv
+	xs := []fmt.Stringer{named{4}, &ptrOnly{}}
+	var q fm.Stringer = *p
+	ys := [](fmt.Stringer){q}
+	fmt.Println(conv, *p, xs[0], xs[1], len(xs), q, ys[0])
 }
