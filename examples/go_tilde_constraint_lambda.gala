@@ -41,4 +41,10 @@ func main() {
     for k, v := range Pairs(MakeScores()) {
         Println(s"$k has $v")
     }
+
+    val r = Load()
+    Println(r.Err == nil, r.Value + 1)
+    for w := range MakeBag().All() {
+        Println(w + "!", w.Size())
+    }
 }

@@ -239,8 +239,8 @@ import (
 // (MethodMetadata.ParamNames), so a call through the interface can pass
 // arguments by name. A v49 payload lacks them.
 //
-// v51: a Go generic type instance keeps its type arguments wherever they
-// spell exactly (iter.Seq2[string, int]), not only in an anonymous struct,
+// v51: an instance of a generic Go function, slice, map or channel type keeps
+// its type arguments wherever they spell exactly (iter.Seq2[string, int]),
 // and a GoFuncSignature records its type parameters' core types (CoreTypes).
 const CacheVersion = "v51"
 

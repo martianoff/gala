@@ -48,6 +48,32 @@ type Scores map[string]int
 // MakeScores returns a Scores.
 func MakeScores() Scores { return Scores{"ann": 3, "bob": 1} }
 
+// Result is a generic struct: its fields are read through an instance.
+type Result[T any] struct {
+	Err   error
+	Value T
+}
+
+// Load returns a Result[int].
+func Load() Result[int] { return Result[int]{Value: 7} }
+
+// Bag is a generic slice type with an iterator method.
+type Bag[T any] []T
+
+// All iterates over the bag's elements.
+func (b Bag[T]) All() iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for _, x := range b {
+			if !yield(x) {
+				return
+			}
+		}
+	}
+}
+
+// MakeBag returns a Bag[string].
+func MakeBag() Bag[string] { return Bag[string]{"p", "q"} }
+
 // Pairs is an iterator over a Scores, sorted by name.
 func Pairs(s Scores) iter.Seq2[string, int] {
 	return func(yield func(string, int) bool) {
