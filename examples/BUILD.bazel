@@ -1331,6 +1331,17 @@ gala_exec_test(
     ],
 )
 
+# A scalar that starts with a quote must be one complete quoted scalar (#1296).
+gala_exec_test(
+    name = "yaml_codec_quoted_scalars",
+    src = "yaml_codec_quoted_scalars.gala",
+    expected = "yaml_codec_quoted_scalars.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "codec_root_shapes",
     src = "codec_root_shapes.gala",
