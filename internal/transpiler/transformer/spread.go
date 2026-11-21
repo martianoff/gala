@@ -137,24 +137,35 @@ func checkMethodSpreads(c callSrc, methodMeta *transpiler.MethodMetadata) error 
 
 // checkValueApplySpread is checkSpreads for the Apply a call of fun makes
 // through a value (`joiner(parts...)`, `Joiner(",")(parts...)`, a call's
-// result); nothing when the value's type is not known exactly
-// (calleeApplyType).
+// result, one given type arguments); nothing when the value's type is not
+// known exactly (calleeApplyType).
 func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) error {
-	meta := t.calleeApplyType(fun)
-	if meta == nil || meta.Methods["Apply"] == nil {
+	base, _ := splitCallFunTypeArgs(fun)
+	meta := t.calleeApplyType(base)
+	if meta == nil {
 		return nil
 	}
 	// The type as the file names it, `lib.Joiner` (under an import alias too),
 	// as a same-named type of this package may have an Apply.
 	name := meta.Name
-	if cl, ok := fun.(*ast.CompositeLit); ok {
+	if cl, ok := base.(*ast.CompositeLit); ok {
 		if written, qualified := qualifiedLitType(cl); qualified {
 			name = written
 		}
 	} else if meta.Package != "" {
 		name = t.diagQualifier(meta.Package) + name
 	}
-	return methodParamList(name+".Apply", meta.Methods["Apply"]).checkSpreads(c.args)
+	return t.checkApplySpread(meta, name, c)
+}
+
+// checkApplySpread is checkSpreads for the call c of the Apply of meta's
+// type, which diagnostics spell name.
+func (t *galaASTTransformer) checkApplySpread(meta *transpiler.TypeMetadata, name string, c callSrc) error {
+	apply := meta.Methods["Apply"]
+	if apply == nil {
+		return nil
+	}
+	return methodParamList(name+".Apply", apply).checkSpreads(c.args)
 }
 
 // spreadSlotElem is the element type of the variadic parameter a spread

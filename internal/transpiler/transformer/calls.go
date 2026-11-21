@@ -2977,8 +2977,12 @@ func (t *galaASTTransformer) isStructMeta(meta *transpiler.TypeMetadata) bool {
 	if meta == nil || meta.IsOpaque || meta.IsInterface {
 		return false
 	}
-	_, isAlias := t.lookupTypeAlias(meta.Name)
-	return !isAlias
+	// Either spelling of an alias, so another package's is not missed.
+	if _, isAlias := t.lookupTypeAlias(meta.Name); isAlias {
+		return false
+	}
+	_, isAlias := t.lookupTypeAlias(meta.Package + "." + meta.Name)
+	return t.isLocalPackage(meta.Package) || !isAlias
 }
 
 // resultApplyType is the metadata of the type of fun when fun is a call, a
@@ -3000,14 +3004,18 @@ func (t *galaASTTransformer) fieldApplyType(lookupBaseName, field string) *trans
 		return nil
 	}
 	fieldType, isField := meta.Fields[field]
-	if !isField || slices.Contains(meta.TypeParams, fieldType.BaseName()) {
+	if !isField {
+		return nil
+	}
+	fieldType = unwrapValueMarkers(fieldType)
+	if slices.Contains(meta.TypeParams, fieldType.BaseName()) {
 		return nil
 	}
 	// Another package's struct names its field's type as that package does:
 	// a bare name is its own type, never a same-named one of this package.
-	if fieldType = unwrapValueMarkers(fieldType); !t.isLocalPackage(meta.Package) && fieldType.GetPackage() == "" &&
+	if !t.isLocalPackage(meta.Package) && fieldType.GetPackage() == "" &&
 		!strings.Contains(fieldType.BaseName(), ".") && !transpiler.IsPrimitiveType(fieldType.BaseName()) {
-		return t.applyTypeMeta(meta.Package + "." + fieldType.BaseName())
+		return t.applyTypeByName(meta.Package + "." + fieldType.BaseName())
 	}
 	return t.applyTypeOf(fieldType)
 }
@@ -3022,7 +3030,19 @@ func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMe
 	if _, isPtr := typ.(transpiler.PointerType); isPtr {
 		return nil
 	}
-	return t.applyTypeMeta(typ.BaseName())
+	return t.applyTypeByName(typ.BaseName())
+}
+
+// applyTypeByName is applyTypeMeta for the type named name, except one whose
+// Apply a hand-written .go file declares: that type may be a Go function
+// type (`type Option func(*Config)` with an Apply), whose value is called as
+// the function it is.
+func (t *galaASTTransformer) applyTypeByName(name string) *transpiler.TypeMetadata {
+	meta := t.applyTypeMeta(name)
+	if meta == nil || meta.Methods["Apply"] == nil || meta.Methods["Apply"].GoDeclared {
+		return nil
+	}
+	return meta
 }
 
 // litApplyType is the metadata of the type of the composite literal cl when
@@ -3182,7 +3202,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 	// A struct field, `x.f(...)`, whose type has an Apply is called through
 	// it (Section 1.5), now that the receiver's type is known.
-	if callee, ok := t.fieldApplyCallee(fun, lookupBaseName, method); ok && receiver != nil {
+	if id, isIdent := receiver.(*ast.Ident); receiver == nil || isIdent && t.importManager.IsPackage(id.Name) {
+		// A package's member is no field.
+	} else if callee, ok := t.fieldApplyCallee(fun, lookupBaseName, method); ok {
+		if slices.ContainsFunc(c.args.list, argSrc.spread) {
+			meta := t.fieldApplyType(lookupBaseName, method)
+			if err := t.checkApplySpread(meta, t.diagQualifier(meta.Package)+meta.Name, c); err != nil {
+				return nil, err
+			}
+		}
 		fun = callee
 		receiver, method, typeArgs = t.splitCallTarget(fun)
 		recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)

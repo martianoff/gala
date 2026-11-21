@@ -154,6 +154,41 @@ func main() {
 `)
 	require.ErrorContains(t, err, `a spread argument must be the only argument of variadic parameter "parts" of Join.Apply`)
 
+	// A function value held in a field, or returned by a call, is called as
+	// the function it is.
+	out, err = transpileBareVariant(t, `package main
+
+struct Has(f func(int) int)
+
+func mk() func(int) int = (x) => x + 1
+
+func main() {
+    val h = Has(mk())
+    Println(mk()(3), h.f(4))
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "mk()(3)")
+	require.Contains(t, out, "h.f.Get()(4)")
+
+	// A misplaced spread names the field's type too.
+	_, err = transpileBareVariant(t, `package main
+
+import "martianoff/gala/go_interop"
+
+struct Join()
+
+func (j Join) Apply(parts ...string) int = parts.Size()
+
+struct Box(var j Join)
+
+func main() {
+    val b = Box(Join())
+    Println(b.j("a", go_interop.SliceOf("b")...))
+}
+`)
+	require.ErrorContains(t, err, `a spread argument must be the only argument of variadic parameter "parts" of Join.Apply`)
+
 	// Another package's struct field is called through its own type's
 	// Apply, not a same-named type's of this package.
 	files := map[string]string{
