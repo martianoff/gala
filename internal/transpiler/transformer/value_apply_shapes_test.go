@@ -190,6 +190,24 @@ func main() {
 	require.Contains(t, out, "mk()(3)")
 	require.Contains(t, out, "h.f.Get()(4)")
 
+	// A field typed by its struct's type parameter is called through the
+	// Apply of the type the receiver gives it.
+	out, err = transpileBareVariant(t, `package main
+
+struct Plain(n int)
+
+func (p Plain) Apply(f func(int) int) int = f(p.n)
+
+struct Box[T any](var v T)
+
+func main() {
+    val b = Box[Plain](Plain(1))
+    Println(b.v((x) => x + 1))
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "b.v.Apply(func(x int) int")
+
 	// A misplaced spread names the field's type too.
 	_, err = transpileBareVariant(t, `package main
 
