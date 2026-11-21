@@ -1,0 +1,10 @@
+--- defined escapes ---
+Success(R(tab	here))
+Success(R(café é 😀))
+Success(R(back\slash "quote"))
+--- undefined escapes ---
+Failure(yaml: invalid escape \q in double-quoted scalar)
+Failure(yaml: invalid escape \x4 in double-quoted scalar)
+Failure(yaml: invalid escape \xZZ in double-quoted scalar)
+Failure(yaml: invalid escape \uD800 in double-quoted scalar)
+Failure(yaml: invalid escape \U00110000 in double-quoted scalar)

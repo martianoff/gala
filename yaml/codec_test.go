@@ -286,11 +286,8 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 		{"16-bit code point", `"caf\u00e9"`, "café"},
 		{"32-bit code point", `"smile \U0001F600"`, "smile 😀"},
 		{"ASCII control from the encoder", `"bell\x07"`, "bell\a"},
-		{"invalid hex kept verbatim", `"bad\xZZ!"`, `bad\xZZ!`},
-		{"truncated escape kept verbatim", `"short\u00e"`, `short\u00e`},
-		{"surrogate code point kept verbatim", `"\uD800"`, `\uD800`},
-		{"out-of-range code point kept verbatim", `"\U00110000"`, `\U00110000`},
-		{"unknown escape kept verbatim", `"\q"`, `\q`},
+		{"highest code point", `"\U0010FFFF"`, "\U0010FFFF"},
+		{"escaped backslash before a letter", `"\\q"`, `\q`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -306,6 +303,34 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 			d.ReadString()
 			d.EndObject()
 		})
+	}
+}
+
+// An escape YAML does not define fails the decode (#1316), in a value and in
+// a key alike, instead of reaching the string as written.
+func TestDecoder_UndefinedEscapesFail(t *testing.T) {
+	tests := []struct{ quoted, escape string }{
+		{`"\q"`, `\q`},
+		{`"a\qb"`, `\q`},
+		{`"\'"`, `\'`},
+		{`"bad\xZZ!"`, `\xZZ`},
+		{`"\x4"`, `\x4`},
+		{`"short\u00e"`, `\u00e`},
+		{`"\u00g9"`, `\u00g9`},
+		{`"\uD800"`, `\uD800`},
+		{`"\U00110000"`, `\U00110000`},
+		{`"\U0000"`, `\U0000`},
+		{`"\é"`, `\é`},
+		{`"\x4é"`, `\x4é`},
+	}
+	for _, tt := range tests {
+		want := "yaml: invalid escape " + tt.escape + " in double-quoted scalar"
+		for _, src := range []string{"k: " + tt.quoted, tt.quoted + ": v"} {
+			_, _, err := readKeyValue(src)
+			if err != want {
+				t.Errorf("%s: error %q, want %q", src, err, want)
+			}
+		}
 	}
 }
 

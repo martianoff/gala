@@ -1351,6 +1351,17 @@ gala_exec_test(
     ],
 )
 
+# An escape YAML does not define fails a double-quoted scalar (#1316).
+gala_exec_test(
+    name = "yaml_codec_undefined_escapes",
+    src = "yaml_codec_undefined_escapes.gala",
+    expected = "yaml_codec_undefined_escapes.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "codec_root_shapes",
     src = "codec_root_shapes.gala",

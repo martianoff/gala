@@ -1307,10 +1307,9 @@ var yamlCodePointEscapes = map[byte]int{'x': 2, 'u': 4, 'U': 8}
 // text between the quotes). A code-point escape names a Unicode character and
 // is written out as UTF-8, so `\xe9` and `é` both decode to "é".
 //
-// An escape that cannot be decoded (an unknown letter, too few or invalid
-// hex digits, a surrogate or out-of-range code point) is kept as written
-// rather than silently dropped; unlike a malformed quote, it does not fail
-// the decode.
+// An escape YAML does not define (an unknown letter, too few or invalid hex
+// digits, a surrogate or out-of-range code point) fails the decode, as YAML
+// parsers do, rather than reaching the value as written.
 func unescapeDoubleQuoted(body string) string {
 	if strings.IndexByte(body, '\\') < 0 {
 		return body
@@ -1319,9 +1318,12 @@ func unescapeDoubleQuoted(body string) string {
 	sb.Grow(len(body))
 	for i := 0; i < len(body); i++ {
 		c := body[i]
-		if c != '\\' || i+1 >= len(body) {
+		if c != '\\' {
 			sb.WriteByte(c)
 			continue
+		}
+		if i+1 == len(body) {
+			panic(`yaml: invalid escape \ at the end of a double-quoted scalar`)
 		}
 		esc := body[i+1]
 		if r, ok := yamlCharEscape(esc); ok {
@@ -1329,15 +1331,21 @@ func unescapeDoubleQuoted(body string) string {
 			i++
 			continue
 		}
-		if digits, ok := yamlCodePointEscapes[esc]; ok && i+2+digits <= len(body) {
-			v, err := strconv.ParseUint(body[i+2:i+2+digits], 16, 4*digits)
-			if err == nil && v <= utf8.MaxRune && utf8.ValidRune(rune(v)) {
-				sb.WriteRune(rune(v))
-				i += 1 + digits
-				continue
-			}
+		digits, ok := yamlCodePointEscapes[esc]
+		if !ok {
+			_, size := utf8.DecodeRuneInString(body[i+1:])
+			panic(fmt.Sprintf("yaml: invalid escape %s in double-quoted scalar", body[i:i+1+size]))
 		}
-		sb.WriteByte(c) // not decodable: keep the backslash and what follows
+		end := min(i+2+digits, len(body))
+		v, err := strconv.ParseUint(body[i+2:end], 16, 4*digits)
+		if end-i-2 != digits || err != nil || v > utf8.MaxRune || !utf8.ValidRune(rune(v)) {
+			for end < len(body) && !utf8.RuneStart(body[end]) {
+				end++ // show whole characters
+			}
+			panic(fmt.Sprintf("yaml: invalid escape %s in double-quoted scalar", body[i:end]))
+		}
+		sb.WriteRune(rune(v))
+		i += 1 + digits
 	}
 	return sb.String()
 }
