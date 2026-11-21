@@ -816,7 +816,13 @@ func splitSignificantLines(input string) []pLine {
 		content := raw[indent:]
 		if endsWithLiteralBlock(content) {
 			joined, consumed := takeLiteralBlock(rawLines, i+1, indent)
-			collapsed := stripLiteralBlockMarker(content) + " " + doubleQuoted(joined)
+			// The block becomes a double-quoted scalar on its header's line.
+			// A bare "|" leaves no text before it, so the line starts with
+			// the quote and reads as a quoted scalar, never as a key.
+			collapsed := doubleQuoted(joined)
+			if before := stripLiteralBlockMarker(content); before != "" {
+				collapsed = before + " " + collapsed
+			}
 			out = append(out, pLine{indent: indent, raw: collapsed, lineNum: i + 1})
 			i += consumed
 			continue
@@ -991,7 +997,18 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		if !isSequenceLine(line.raw) {
 			break
 		}
-		itemPart := withoutComment(trimYamlSpace(line.raw[1:]))
+		itemPart := trimYamlSpace(line.raw[1:])
+		// A "- key: value" item drops its comment while the pair is split,
+		// where a quoted value is known; any other item drops it here.
+		if key, value, ok := tryParseKeyValue(itemPart); ok {
+			// The key starts after the dash and the spaces that follow it.
+			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
+			l.seq = append(l.seq, child)
+			i = np
+			continue
+		}
+		itemPart = withoutComment(itemPart)
 		if itemPart == "" {
 			// Bare "-" — value lives on subsequent indented lines.
 			if i+1 >= len(lines) || lines[i+1].indent <= indent {
@@ -1000,14 +1017,6 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 				continue
 			}
 			child, np := parseBlock(lines, i+1, lines[i+1].indent)
-			l.seq = append(l.seq, child)
-			i = np
-			continue
-		}
-		if key, value, ok := tryParseKeyValue(itemPart); ok {
-			// The key starts after the dash and the spaces that follow it.
-			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
-			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
 			continue
@@ -1041,7 +1050,7 @@ func tryParseKeyValue(line string) (string, string, bool) {
 	if len(line) > 0 && (line[0] == '"' || line[0] == '\'') {
 		return parseQuotedKey(line)
 	}
-	ci := findUnquotedColon(line)
+	ci := findKeyColon(line)
 	if ci < 0 {
 		return "", "", false
 	}
@@ -1058,100 +1067,112 @@ func tryParseKeyValue(line string) (string, string, bool) {
 // space or another Unicode space at either end is part of the text.
 func trimYamlSpace(s string) string { return strings.Trim(s, " \t") }
 
-// withoutComment drops a trailing comment (" # ...", outside quotes) from a
-// scalar's text.
+// withoutComment drops a trailing comment (" # ...", outside a quoted
+// scalar) from a scalar's text.
 func withoutComment(s string) string {
-	if hi := findUnquotedHash(s); hi >= 0 {
+	if hi := findComment(s, 0); hi >= 0 {
 		return trimYamlSpace(s[:hi])
 	}
 	return s
 }
 
-// findUnquotedColon returns the index of the first ':' followed by whitespace
-// (or end-of-line) that is not inside a quoted region; -1 if none.
-func findUnquotedColon(s string) int {
-	inSingle, inDouble := false, false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\\' && inDouble && i+1 < len(s) {
-			i++
-			continue
+// findKeyColon returns the index of the first ':' followed by white space
+// (or the end of the line) in a line whose key is a plain scalar; -1 if
+// there is none before a comment. A plain scalar has no quoted regions: a
+// quote inside it, as in it's, is text.
+func findKeyColon(s string) int {
+	return scanPlain(s, 0, true)
+}
+
+// findComment returns the index of the '#' that starts a comment in the
+// value text s, at index from or later; -1 if there is none. A '#' starts
+// a comment at the start of s or after white space. When the value opens
+// with a quote it is a quoted scalar, and a comment can only follow its
+// closing quote; a quote anywhere else is text.
+func findComment(s string, from int) int {
+	t := 0
+	for t < len(s) && (s[t] == ' ' || s[t] == '\t') {
+		t++
+	}
+	if t < len(s) && (s[t] == '"' || s[t] == '\'') {
+		end := closingQuote(s[t:])
+		if end < 0 {
+			return -1 // unterminated: the scalar parser reports it
 		}
+		from = max(from, t+end+1)
+	}
+	return scanPlain(s, from, false)
+}
+
+// scanPlain returns, from index from on, the index of the '#' that starts a
+// comment, or with wantColon the index of the first ':' followed by white
+// space (or the end) before any comment; -1 if there is none. In plain text
+// a quote is text. Flow-style text ("[a, \"b # c\"]", "{...}"), which this
+// parser keeps as a string, is different: a quote inside it opens a quoted
+// item that may hold "#" or ": ", so quotes are tracked there.
+func scanPlain(s string, from int, wantColon bool) int {
+	// Whether s is flow text depends on its first character, not on where
+	// the scan starts.
+	t := 0
+	for t < len(s) && (s[t] == ' ' || s[t] == '\t') {
+		t++
+	}
+	flow := t < len(s) && (s[t] == '[' || s[t] == '{')
+	quote := byte(0)
+	for i := from; i < len(s); i++ {
+		c := s[i]
 		switch {
-		case c == '\'' && !inDouble:
-			inSingle = !inSingle
-		case c == '"' && !inSingle:
-			inDouble = !inDouble
-		case c == ':' && !inSingle && !inDouble:
-			if i+1 == len(s) {
-				return i
+		case quote == '"' && c == '\\':
+			i++ // an escaped character never closes the quote
+		case quote != 0:
+			if c == quote {
+				quote = 0
 			}
-			if next := s[i+1]; next == ' ' || next == '\t' {
-				return i
+		case flow && (c == '"' || c == '\''):
+			quote = c
+		case c == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
+			if wantColon {
+				return -1 // the rest is a comment
 			}
+			return i
+		case wantColon && c == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'):
+			return i
 		}
 	}
 	return -1
 }
 
-func findUnquotedHash(s string) int {
-	inSingle, inDouble := false, false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\\' && inDouble && i+1 < len(s) {
-			i++
-			continue
-		}
-		switch {
-		case c == '\'' && !inDouble:
-			inSingle = !inSingle
-		case c == '"' && !inSingle:
-			inDouble = !inDouble
-		case c == '#' && !inSingle && !inDouble:
-			if i == 0 || s[i-1] == ' ' || s[i-1] == '\t' {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
+// parseQuotedKey splits a line whose key is a quoted scalar into the key
+// and the value text after the colon; false when the line is not
+// `"key": ...` or `'key': ...`.
 func parseQuotedKey(line string) (string, string, bool) {
-	quote := line[0]
-	for i := 1; i < len(line); i++ {
-		c := line[i]
-		if quote == '"' && c == '\\' {
-			i++ // an escaped character never closes the key
-			continue
-		}
-		if c != quote {
-			continue
-		}
-		j := i + 1
-		for j < len(line) && (line[j] == ' ' || line[j] == '\t') {
-			j++
-		}
-		if j >= len(line) || line[j] != ':' {
-			return "", "", false
-		}
-		rest := ""
-		if j+1 < len(line) {
-			// Drop a trailing comment, as for a plain key's value. The
-			// search starts at the ':' so that a '#' right after it, as in
-			// "k":#x, is text: a comment needs white space before it.
-			rest = line[j+1:]
-			if hi := findUnquotedHash(line[j:]); hi > 0 {
-				rest = rest[:hi-1]
-			}
-			rest = trimYamlSpace(rest)
-		}
-		key := line[1:i]
-		if quote == '"' {
-			key = unescapeDoubleQuoted(key)
-		}
-		return key, rest, true
+	i := closingQuote(line)
+	if i < 0 {
+		return "", "", false
 	}
-	return "", "", false
+	j := i + 1
+	for j < len(line) && (line[j] == ' ' || line[j] == '\t') {
+		j++
+	}
+	if j >= len(line) || line[j] != ':' {
+		return "", "", false
+	}
+	rest := line[j+1:]
+	// Drop a trailing comment, as for a plain key's value. A '#' right
+	// after the colon, as in "k":#x, is text: a comment needs white space
+	// before it.
+	from := 0
+	if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+		from = 1
+	}
+	if hi := findComment(rest, from); hi >= 0 {
+		rest = rest[:hi]
+	}
+	rest = trimYamlSpace(rest)
+	if line[0] == '"' {
+		return unescapeDoubleQuoted(line[1:i]), rest, true
+	}
+	return unescapeSingleQuoted(line[1:i]), rest, true
 }
 
 func parseInlineScalar(raw string) *yNode {

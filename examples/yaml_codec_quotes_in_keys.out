@@ -1,0 +1,4 @@
+it's: 1
+Success(HashMap(it's -> 1))
+Success(HashMap(it's -> 2))
+Success(R(it's, Array(don't, say "hi")))

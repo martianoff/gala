@@ -746,3 +746,155 @@ func TestDecoder_SequenceAtKeyIndentErrors(t *testing.T) {
 		}
 	}
 }
+
+// ----- Quotes inside keys and plain scalars ----------------------------------
+
+// A quote starts a quoted scalar only as its first character (#1314): inside
+// a plain key or value it is text, so it hides neither the key's colon nor a
+// comment. A single-quoted key may hold a quote written twice (#1315).
+func TestDecoder_QuotesInsideScalars(t *testing.T) {
+	tests := []struct{ src, key, value string }{
+		{"it's: 1", "it's", "1"},
+		{`say "hi: there`, `say "hi`, "there"},
+		{`a"b: c # note`, `a"b`, "c"},
+		{"S: it's # note", "S", "it's"},
+		{`S: a"b # note`, "S", `a"b`},
+		{"S: it's", "S", "it's"},
+		{"'it''s': 1", "it's", "1"},
+		{"'a''b''': v", "a'b'", "v"},
+		{"'': v", "", "v"},
+		{`"k\"q": v`, `k"q`, "v"},
+		{"S: 'it''s' # note", "S", "it's"},
+		{"'k': 'v # w' # note", "k", "v # w"},
+		{`"k": "a # b" # note`, "k", "a # b"},
+	}
+	for _, tt := range tests {
+		if k, s, err := readKeyValue(tt.src); k != tt.key || s != tt.value || err != "" {
+			t.Errorf("%s => (%q, %q, error %q), want (%q, %q)", tt.src, k, s, err, tt.key, tt.value)
+		}
+	}
+}
+
+// The same holds for a sequence item, and for a key the encoder writes
+// plain: a map with the key it's reads back.
+func TestDecoder_QuotesInsideScalarsElsewhere(t *testing.T) {
+	d := NewYamlDecoder("- it's # note\n- it's: 1")
+	d.StartArray()
+	if s := d.ReadString(); s != "it's" {
+		t.Errorf("item 0 = %q, want %q", s, "it's")
+	}
+	d.StartObject()
+	if k := d.ReadKey(); k != "it's" {
+		t.Errorf("item 1 key = %q, want %q", k, "it's")
+	}
+	if n := d.ReadInt(); n != 1 {
+		t.Errorf("item 1 value = %d, want 1", n)
+	}
+	d.EndObject()
+	d.EndArray()
+
+	e := NewYamlEncoder()
+	e.WriteStartObject()
+	e.WriteKey("it's")
+	e.WriteInt(1)
+	e.WriteEndObject()
+	d = NewYamlDecoder(e.String())
+	d.StartObject()
+	if k := d.ReadKey(); k != "it's" {
+		t.Errorf("encoded %q: key = %q, want %q", e.String(), k, "it's")
+	}
+	if n := d.ReadInt(); n != 1 {
+		t.Errorf("encoded value = %d, want 1", n)
+	}
+	d.EndObject()
+}
+
+// A "- key: value" item splits the pair before it drops a comment, so a
+// quoted value holding " #" stays whole, as in a mapping line.
+func TestDecoder_CompactItemQuotedValueWithHash(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`- k: "a # b"`, "[{k: a # b}]"},
+		{`- k: "a # b" # note`, "[{k: a # b}]"},
+		{`- "k": 'a # b' # note`, "[{k: a # b}]"},
+		{`- k: it's # note`, "[{k: it's}]"},
+		{"- k: v\n  j: \"c # d\" # note", "[{k: v, j: c # d}]"},
+		{"- # note: x", "[<null>]"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+
+	// An item whose first value the encoder quotes for its " #" reads back.
+	e := NewYamlEncoder()
+	e.WriteStartArray()
+	e.WriteStartObject()
+	e.WriteKey("S")
+	e.WriteString("a # b")
+	e.WriteEndObject()
+	e.WriteEndArray()
+	if got, want := parseDump(e.String()), "[{S: a # b}]"; got != want {
+		t.Errorf("encoded %q => %s, want %s", e.String(), got, want)
+	}
+}
+
+// A ": " inside a comment is not a key's colon.
+func TestDecoder_ColonInCommentIsNotAKey(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"hello # note: x", "hello"},
+		{"k: v # note: x", "{k: v}"},
+		{"k: v\ntitle # the user's: x", "error: yaml: expected 'key:' at line 2, got \"title # the user's: x\""},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// Quotes in the middle of a plain scalar hide nothing (YAML 1.2): a ": "
+// after them still makes a key, and a " #" after them still starts a
+// comment. A value with either has to be quoted as a whole.
+func TestDecoder_QuotedPartOfPlainScalar(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`- echo "Status: ok"`, `[{echo "Status: ok"}]`},
+		{`k: echo "a # b"`, `{k: echo "a}`},
+		{`- "echo Status: ok"`, `[echo Status: ok]`},
+		{`k: 'echo "a # b"'`, `{k: echo "a # b"}`},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// Flow-style text, which this parser keeps as a string, keeps its quoted
+// items whole: a "#" or ": " inside one is neither a comment nor a key's
+// colon. A comment after the flow text is still dropped.
+func TestDecoder_FlowTextKeepsQuotedItems(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`key: [a, "b # c"]`, `{key: [a, "b # c"]}`},
+		{`key: [a, "b # c"] # note`, `{key: [a, "b # c"]}`},
+		{`k: {"a": "b # c"}`, `{k: {"a": "b # c"}}`},
+		{`- [1, "a # b"]`, `[[1, "a # b"]]`},
+		{`- ["x: y"]`, `[["x: y"]]`},
+		{`- ['it''s: x']`, `[['it''s: x']]`},
+		{`"k":[a, "b # c"]`, `{k: [a, "b # c"]}`},
+		{`"k":{"a": "b # c"} # note`, `{k: {"a": "b # c"}}`},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// A document that is a literal block reads as a string, whatever its body
+// holds: a ": " in it does not make a key.
+func TestDecoder_BareLiteralBlockIsAString(t *testing.T) {
+	if got, want := parseDump("|\n  a: b\n  c\n"), "a: b\nc\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
