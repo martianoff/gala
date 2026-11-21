@@ -932,8 +932,8 @@ func TestDecoder_BlocksOnSequenceItemLine(t *testing.T) {
 // ends in ": |" does not open a block.
 func TestDecoder_LiteralBlockAndComments(t *testing.T) {
 	tests := []struct{ src, want string }{
-		{"script: | # shell\n  echo hi", "{script: echo hi\n}"},
-		{"- | # note\n  a", "[a\n]"},
+		{"script: | # shell\n  echo hi\n", "{script: echo hi\n}"},
+		{"- | # note\n  a\n", "[a\n]"},
 		{"parent: # list: |\n  child: 1", "{parent: {child: 1}}"},
 		{"- k: v # ex: |\n  j: w", "[{k: v, j: w}]"},
 	}
@@ -987,8 +987,8 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		{"k: 'x: | # y'\nm: 1", "{k: x: | # y, m: 1}"},
 		{"- 'a: | # b'\n- c", "[a: | # b, c]"},
 		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body\n, c: 1}]"},
-		{"- - 'k # x': |\n      body", "[[{k # x: body\n}]]"},
-		{"\"a|b\": | # note\n  body", "{a|b: body\n}"},
+		{"- - 'k # x': |\n      body\n", "[[{k # x: body\n}]]"},
+		{"\"a|b\": | # note\n  body\n", "{a|b: body\n}"},
 		// With no space after a quoted key's colon, "|" is the plain value.
 		{"\"k\":|", "{k: |}"},
 	}
@@ -1010,7 +1010,11 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"clip", "k: |\n  a\n  b\nj: 1", "a\nb\n"},
 		{"clip, blank lines after", "k: |\n  a\n\n\nj: 1", "a\n"},
 		{"clip, end of document", "k: |\n  a\n", "a\n"},
-		{"clip, no final line break", "k: |\n  a", "a\n"},
+		// A block that ends the document without a line break gains none.
+		{"clip, no final line break", "k: |\n  a", "a"},
+		{"keep, no final line break", "k: |+\n  a", "a"},
+		{"keep, final line break", "k: |+\n  a\n", "a\n"},
+		{"keep, two blank lines at the end", "k: |+\n  a\n\n\n", "a\n\n\n"},
 		{"strip", "k: |-\n  a\n  b\nj: 1", "a\nb"},
 		{"strip, blank lines after", "k: |-\n  a\n\n\nj: 1", "a"},
 		{"keep", "k: |+\n  a\nj: 1", "a\n"},

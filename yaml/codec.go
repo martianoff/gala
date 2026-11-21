@@ -812,6 +812,9 @@ func parseYAML(input string) *yNode {
 func splitSignificantLines(input string) []pLine {
 	// A final line break ends the last line; it does not start another one,
 	// which a literal block kept with "|+" would count as a blank line.
+	// Without it the last line has no break, which a block ending there
+	// must not gain.
+	lastHasBreak := strings.HasSuffix(input, "\n")
 	rawLines := strings.Split(strings.TrimSuffix(input, "\n"), "\n")
 	var out []pLine
 	for i := 0; i < len(rawLines); i++ {
@@ -822,7 +825,7 @@ func splitSignificantLines(input string) []pLine {
 		indent := countLeadingSpaces(raw)
 		content := raw[indent:]
 		if before, parent, indicator, ok := literalBlockHeader(content, indent); ok {
-			joined, consumed := takeLiteralBlock(rawLines, i+1, parent, indicator)
+			joined, consumed := takeLiteralBlock(rawLines, i+1, parent, indicator, lastHasBreak)
 			out = append(out, pLine{indent: indent, raw: before + doubleQuoted(joined), lineNum: i + 1})
 			i += consumed
 			continue
@@ -926,7 +929,8 @@ func itemPrefix(s string) (n, lastDash int) {
 // blank lines among them. YAML 1.2 (section 8.1.1.2) chomps the line breaks
 // at the end: "|" (clip) keeps one, "|-" (strip) keeps none and "|+" (keep)
 // keeps them all. Blank lines before the first text line are kept.
-func takeLiteralBlock(raw []string, start, parentIndent int, indicator string) (string, int) {
+// lastHasBreak says whether the document's last line ends in a line break.
+func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, lastHasBreak bool) (string, int) {
 	var body []string
 	consumed := 0
 	bodyIndent := -1
@@ -955,17 +959,23 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string) (
 		consumed++
 	}
 	text := strings.Join(body, "\n")
+	// The line breaks after the text: the last text line's own, then one
+	// per blank line after it, less one when the block's last line ends the
+	// document without a break (YAML 1.2, rule 165).
+	breaks := blanks
+	if len(body) > 0 {
+		breaks++
+	}
+	if breaks > 0 && start+consumed == len(raw) && !lastHasBreak {
+		breaks--
+	}
 	switch {
 	case indicator == "|-":
 		return text, consumed
 	case indicator == "|+":
-		// The last text line's break, then one per trailing blank line.
-		if len(body) == 0 {
-			return strings.Repeat("\n", blanks), consumed
-		}
-		return text + "\n" + strings.Repeat("\n", blanks), consumed
-	case len(body) == 0:
-		return "", consumed
+		return text + strings.Repeat("\n", breaks), consumed
+	case len(body) == 0 || breaks == 0:
+		return text, consumed
 	default:
 		return text + "\n", consumed
 	}
