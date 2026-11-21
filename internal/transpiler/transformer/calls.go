@@ -1574,13 +1574,13 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 // filling a parameter of type slot, is typed by the type arguments the other
 // arguments bind (genericGoLambdaSlot): a lambda, or a thunk for a parameter
 // taking nothing and giving several results, or a placeholder lambda
-// (`_ > 1`) filling a slot of a generic Go defined type (`Pred[T]`), which
-// names the callee's type parameters until they are bound. Any other value
-// there (a val, a spread slice) has a type of its own and is lowered as is.
-func readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
-	_, instance := slot.(transpiler.GenericType)
+// (`_ > 1`) filling a function-typed slot (`func(E) bool`, or a generic Go
+// defined type over one, `Pred[T]`), which names the callee's type
+// parameters until they are bound. Any other value there (a val, a spread
+// slice) has a type of its own and is lowered as is.
+func (t *galaASTTransformer) readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
 	return v.lambda.ok() || isGoResultsThunkSlot(slot) ||
-		instance && !v.spread && v.expr.ok() && countPlaceholders(v.expr) > 0
+		!v.spread && v.expr.ok() && countPlaceholders(v.expr) > 0 && t.resolveTranspilerTypeAsFuncType(slot) != nil
 }
 
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
@@ -2165,7 +2165,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		case transpiler.IsUnusable(expectedType) && !v.spread:
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
-		if genericGo && (readsGenericGoSlot(v, expectedType) || readsGenericGoSlot(v, goSigParamType(goSig, slotIdx))) {
+		if genericGo && (t.readsGenericGoSlot(v, expectedType) || !v.spread && t.readsGenericGoSlot(v, goSigParamType(goSig, slotIdx))) {
 			// The arguments lowered so far, each at its parameter, bind the
 			// type parameters: those passed by name too.
 			prior := positional
@@ -2268,7 +2268,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 
 		// Positional argument, or one passed by name to a Go function.
-		if argName != "" && genericGo && !v.spread && readsGenericGoSlot(v, goSigParamType(goSig, slotIdx)) {
+		if argName != "" && genericGo && !v.spread && t.readsGenericGoSlot(v, goSigParamType(goSig, slotIdx)) {
 			deferred = append(deferred, deferredArg{v, argName, slotIdx})
 			continue
 		}
@@ -4362,7 +4362,7 @@ func (t *galaASTTransformer) unifyFieldArgForInference(fieldType transpiler.Type
 	if transpiler.IsUnusable(valType) {
 		return
 	}
-	t.unifyForInference(fieldType, valType, typeParams, inferred)
+	t.unifyGoParam(fieldType, valType, typeParams, inferred)
 }
 
 // buildGoCompositeLiteralWithNamedArgs emits a plain Go composite literal
@@ -5071,6 +5071,9 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 	switch f := fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		base, _ := splitCallFunTypeArgs(f)
+		if sel, ok := base.(*ast.SelectorExpr); ok {
+			base = sel.X // a local shadowing the package qualifier
+		}
 		if id, ok := base.(*ast.Ident); ok && t.shadowingScope(id.Name) != nil {
 			return nil
 		}

@@ -108,6 +108,49 @@ func main() {
     Println(slices.Collect(k()))
 }
 `, []string{"func() iter.Seq[string]"}},
+		{"a placeholder lambda in a generic Go function slot", `package main
+
+import "slices"
+import "martianoff/gala/go_interop"
+
+func main() {
+    Println(slices.IndexFunc(go_interop.SliceOf(1, 2, 3), _ > 1))
+}
+`, []string{"int) bool"}},
+		{"a GALA function to a GALA alias of iter.Seq[T]", `package main
+
+import "iter"
+import "slices"
+
+type SeqOf[T any] iter.Seq[T]
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func viaAlias[T any](s SeqOf[T]) []T = slices.Collect(s)
+
+func main() {
+    val a = viaAlias(gen)
+    val k = () => a
+    Println(k())
+}
+`, []string{"func() []int"}},
+		{"a GALA function to an iter.Seq[T] struct field", `package main
+
+import "iter"
+
+struct Holder[T any](Src iter.Seq[T])
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func main() {
+    val h = Holder(gen)
+    Println(h.Src != nil)
+}
+`, []string{"Holder[int]"}},
 		{"a lambda converted to iter.Seq[string]", `package main
 
 import "iter"

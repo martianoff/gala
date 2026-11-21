@@ -1622,10 +1622,10 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 // directly, through a GALA alias or behind an Immutable or Sendable marker)
 // unifies through its underlying type.
 func (t *galaASTTransformer) unifyGoParam(param, arg transpiler.Type, typeParams []string, inferred map[string]transpiler.Type) {
-	if _, paramIsInstance := param.(transpiler.GenericType); paramIsInstance {
+	if instance, paramIsInstance := t.followAliasChain(param).(transpiler.GenericType); paramIsInstance {
 		switch unaliased := t.followAliasChain(unwrapValueMarkers(arg)); unaliased.(type) {
 		case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType, transpiler.PointerType:
-			if u := t.goDefinedUnderlying(param, nil); u != nil {
+			if u := t.goDefinedUnderlying(instance, nil); u != nil {
 				param, arg = u, unaliased
 			}
 		}
