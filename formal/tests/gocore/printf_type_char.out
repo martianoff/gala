@@ -1,0 +1,13 @@
+int|string|bool|float64|int32
+main.T|main.S|*main.S|[]int
+[3]string|map[string]int|map[main.T][]*main.S
+main.Box[int]|main.Box[main.T]|main.Box[main.Box[string]]
+main.Pair[int,string]|main.Pair[*main.T,[]main.T]
+func()|func(int, string) (bool, *main.S)|func(...int) int
+*main.Box[int]|main.T|<nil>|*int
+struct {}|[]interface {}|main.Box[struct {}]
+int8|uint64|float32
+main.L|main.G[int]
+  int|string|mai|2
+a|A|世|�|�|�
+z|  b|c  |B|

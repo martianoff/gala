@@ -185,7 +185,7 @@ def constExpr (c : Ctx) (env : Env) : Expr → Bool
 def libFuncs : List String := ["FormatStruct", "Copy", "Equal", "EvalOperand", "recoveredError"]
 
 /-- The `fmt` functions modelled (see `Fmt` below). -/
-def fmtFuncs : List String := ["Println", "Print", "Printf", "Sprintf", "Sprint"]
+def fmtFuncs : List String := ["Println", "Print", "Printf", "Sprintf", "Sprint", "Errorf"]
 
 /-- The names a field list declares: parameters, type parameters, interface methods. -/
 def fieldListNames (fs : List Field) : List String := fs.flatMap fun | .mk ns _ => ns
@@ -394,6 +394,64 @@ def FmtSpec.float (spec : FmtSpec) (neg special : Bool) (body : String) : String
       else spec.pad num
     | none => num
   else spec.pad body
+
+mutual
+/-- A type as `%T` prints it, `reflect.Type`'s `String` (`fmt/print.go`, `printArg`):
+    a defined type as `pkgname.Name[args]`, the arguments joined by `,` alone, and the
+    literal types as Go writes them, a function's `...T` and its results in parentheses
+    when there are several. An untyped constant has its default type (Go spec,
+    "Constants"). `error` and a literal interface with the same methods are one type to
+    GoCore but print differently, so an interface type with methods is not run; nor is
+    a struct type with fields (embedded fields and tags are not kept), nor a defined type
+    of a package whose name is not the last element of its path. -/
+def typeText (c : Ctx) : Ty → Except String String
+  | .int k => pure k.name
+  | .bool => pure "bool"
+  | .string => pure "string"
+  | .float b => pure s!"float{b}"
+  | .untyped .int => pure "int"
+  | .untyped .rune => pure "int32"
+  | .untyped .float => pure "float64"
+  | .untyped .bool => pure "bool"
+  | .untyped .string => pure "string"
+  | .untyped .nil => throw "untyped-nil"
+  | .named p n args => do
+    let q := (p.splitOn "/").getLast!
+    if let some pk := c.pkgs.get? p then
+      if pk.name != q then throw "package-name"
+    let n := (n.splitOn localTypeSep.toString).head!
+    let base := if p.isEmpty then n else s!"{q}.{n}"
+    if args.isEmpty then pure base else pure (base ++ "[" ++ ",".intercalate (← typeTexts c args) ++ "]")
+  | .ptr t => return "*" ++ (← typeText c t)
+  | .slice t => return "[]" ++ (← typeText c t)
+  | .array k t => return s!"[{k}]" ++ (← typeText c t)
+  | .map k v => return "map[" ++ (← typeText c k) ++ "]" ++ (← typeText c v)
+  | .iface [] => pure "interface {}"
+  | .iface _ => throw "interface"
+  | .struct_ [] => pure "struct {}"
+  | .struct_ _ => throw "struct"
+  | .func_ ps rs variadic => do
+    let ps ← typeTexts c ps
+    -- A final `...T` parameter has type `[]T` (Go spec, "Function types").
+    let ps := if variadic then ps.dropLast ++ (ps.getLast?.map fun p => "..." ++ String.ofList (p.toList.drop 2)).toList else ps
+    let rs ← typeTexts c rs
+    let res := match rs with
+      | [] => ""
+      | [r] => " " ++ r
+      | rs => " (" ++ ", ".intercalate rs ++ ")"
+    pure ("func(" ++ ", ".intercalate ps ++ ")" ++ res)
+  | .tuple _ => throw "tuple"
+def typeTexts (c : Ctx) : List Ty → Except String (List String)
+  | [] => pure []
+  | t :: ts => return (← typeText c t) :: (← typeTexts c ts)
+end
+
+/-- `%c` of an integer (`fmt.fmtC`): the rune, or U+FFFD for a value past
+    `utf8.MaxRune` (a negative one too, as `uint64`) or a surrogate
+    (`utf8.AppendRune`), padded. -/
+def FmtSpec.char (spec : FmtSpec) (x : Int) : String :=
+  let r := if x < 0 || x > 0x10FFFF || (0xD800 ≤ x && x ≤ 0xDFFF) then 0xFFFD else x
+  spec.pad (String.singleton (Char.ofNat r.toNat))
 
 /-- A string truncated to the precision, in runes, and padded (`fmt.fmtS`). -/
 def FmtSpec.string (spec : FmtSpec) (s : String) : String :=
@@ -2534,11 +2592,19 @@ def rhsValues (c : Ctx) : Nat → Env → Nat → List Expr → GM (List Val)
 
 -- Library models
 
+/-- `errors.New(s)`, run from Go's own errors/errors.go (a runnable standard-library
+    file), not modelled: only when the program's document holds it. -/
+def errorsNew (c : Ctx) : Nat → String → GM Val
+  | 0, _ => throw .fuel
+  | n + 1, s => do
+    if !c.pkgs.contains "errors" then unsupported "errors.New"
+    Val.single (← callValue c n (← funcVal c n "errors" "New" []) [.str .string s] false)
+
 /-- `fmt` (fmt package documentation; `fmt/print.go`). `Println` prints its operands
     with `%v`, always separated by spaces, and a newline; `Print` puts a space between
     two operands when neither is a string; `Sprint` is `Print` into a string;
-    `Sprintf` and `Printf` with the verbs `%v %d %s %t %x %X %%` and the flags,
-    width and precision `fmtSpec` models. -/
+    `Sprintf` and `Printf` with the verbs and the flags, width and precision `fmtSpec`
+    models; `Errorf` without `%w`. -/
 def fmtCall (c : Ctx) : Nat → String → List Val → GM (List Val)
   | 0, _, _ => throw .fuel
   | n + 1, f, vs => do
@@ -2559,6 +2625,11 @@ def fmtCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     | "Printf" =>
       let fmtStr :: args := vs | stuck "Printf without a format"
       printed (← sprintf c n (← asStr fmtStr).toList args)
+    -- `Errorf` without `%w` is `errors.New` of `Sprintf`'s text (fmt/errors.go,
+    -- `Errorf`, `len(p.wrappedErrs) == 0`); `%w` is a verb `sprintf` does not run.
+    | "Errorf" =>
+      let fmtStr :: args := vs | stuck "Errorf without a format"
+      pure [← errorsNew c n (← sprintf c n (← asStr fmtStr).toList args)]
     | _ => unsupported s!"fmt.{f}"
 
 /-- `Print`'s text: a space between operands when neither is a string (`fmt/print.go`,
@@ -2591,7 +2662,7 @@ def sprintf (c : Ctx) : Nat → List Char → List Val → GM String
       -- Go refuses a width or precision over 10^6 (`parsenum`'s `tooLarge`).
       if spec.wid.any (· > 1000000) || spec.prec.any (· > 1000000) then unsupported "fmt-large-width"
       let verb :: rest := rest | unsupported "fmt-no-verb"
-      if !['v', 'd', 's', 't', 'x', 'X', 'e', 'E', 'f', 'F', 'g', 'G'].contains verb then
+      if !['v', 'd', 's', 't', 'x', 'X', 'e', 'E', 'f', 'F', 'g', 'G', 'T', 'c'].contains verb then
         unsupported s!"fmt-verb-{verb}"
       let a :: args := args | unsupported "fmt-missing-arg"
       pure ((← fmtSpec c n a verb spec) ++ (← sprintf c n rest args))
@@ -2611,6 +2682,15 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
   | n + 1, v, verb, spec => do
     let v := v.materialize
     if spec.plain && ['v', 's', 'd', 't'].contains verb then return ← fmtArg c n v verb
+    -- `%T` and `%c` pad with zeros under `0` as no other string does; not modelled.
+    if (verb == 'T' || verb == 'c') && spec.zero then unsupported s!"fmt-flag-zero-{verb}"
+    -- `%T`, before any method: the operand's dynamic type, `<nil>` for none, as `fmtS`
+    -- prints a string (`printArg`).
+    if verb == 'T' then
+      if let .nilIface _ := v then return spec.pad "<nil>"
+      match typeText c v.dyn.ty with
+      | .ok s => return spec.string s
+      | .error why => unsupported s!"fmt-verb-T-{why}"
     if verb == 'v' && (spec.sharp || spec.plus) then unsupported "fmt-flag-v"
     -- A nil operand: `padString("<nil>")`, padded, never truncated.
     if let .nilIface _ := v then
@@ -2632,6 +2712,7 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
       | 'd' | 'v' => pure (spec.integer x 10 false)
       | 'x' => pure (spec.integer x 16 false)
       | 'X' => pure (spec.integer x 16 true)
+      | 'c' => pure (spec.char x)
       | _ => unsupported s!"fmt-verb-{verb}-int"
     | .bool _ b =>
       if verb == 'v' || verb == 't' then pure (spec.pad (if b then "true" else "false"))
@@ -2747,8 +2828,8 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     | "EvalOperand", [v] => pure [v]
     -- `recoveredError(r any) error` (std/types.go, lines 318-335), the error a Try
     -- Failure holds for a recovered panic: a `*panicError` as it is; else a new
-    -- `*panicError` of the error, of `errors.New(s)` for a string, or (not modelled)
-    -- of `fmt.Errorf("panic: %v", r)`. Its `pcs`, the stack `runtime.Callers` records,
+    -- `*panicError` of the error, of `errors.New(s)` for a string, or of
+    -- `fmt.Errorf("panic: %v", r)`, which is `errors.New` of its text. Its `pcs`, the stack `runtime.Callers` records,
     -- are left nil: only `(*panicError).stack` reads them, through
     -- `runtime.CallersFrames`, which GoCore does not run (`TestRecoveredErrorShape` and
     -- `TestPanicErrorPcsReaders` in internal/formal/gocoreexport pin both).
@@ -2758,10 +2839,8 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
       if d.ty == .ptr pt then return [← convert c n errorTy d]
       let err ← if (← methodOfType c n d.ty "Error" (.func_ [] [.string] false)).isSome then pure d
         else match d with
-          | .str .string _ =>
-            if !c.pkgs.contains "errors" then unsupported "errors.New"
-            Val.single (← callValue c n (← funcVal c n "errors" "New" []) [d] false)
-          | _ => unsupported "fmt.Errorf"
+          | .str .string s => errorsNew c n s
+          | _ => do errorsNew c n (← sprintf c n "panic: %v".toList [r])
       -- `err` is the first field (TestRecoveredErrorShape), as `stdFormatted?` reads it.
       let .struct_ _ (_ :: rest) ← zero c n pt | stuck "panicError is not a struct"
       let vals := (← convert c n errorTy err) :: rest
