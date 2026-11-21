@@ -860,7 +860,7 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 		return
 	}
 	prefix := c.cachePrefix(pkgPath)
-	keepPath := c.cachePath(pkgPath, keepHash)
+	keepName := cacheName(prefix, keepHash)
 
 	entries, err := ioutil.ReadDir(c.dir)
 	if err != nil {
@@ -870,19 +870,16 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 		if entry.IsDir() {
 			continue
 		}
-		full := filepath.Join(c.dir, entry.Name())
-		if strings.HasPrefix(entry.Name(), prefix) && full != keepPath {
-			os.Remove(full)
+		if name := entry.Name(); strings.HasPrefix(name, prefix) && name != keepName {
+			os.Remove(filepath.Join(c.dir, name))
 		}
 	}
 }
 
 // cachePrefix is the start of the name of every entry of the package at
-// pkgPath, which evictStale matches on: its path made a file name, for
-// reading, then a hash of the path. The hash keeps the prefix of each
-// package to its own entries: without it a package's prefix began the names
-// of its subpackages' entries (lib_ those of lib/util), and the path made a
-// file name is not unique (a/b_c and a_b/c are both a_b_c).
+// pkgPath, which evictStale matches on: the path, readable, then a hash of
+// it, so that no package's prefix starts another's entry names (lib_ those
+// of lib/util; a/b_c and a_b/c, both a_b_c, each other's).
 func (c *analysisCache) cachePrefix(pkgPath string) string {
 	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
 	sum := sha256.Sum256([]byte(slashed))
@@ -890,10 +887,16 @@ func (c *analysisCache) cachePrefix(pkgPath string) string {
 }
 
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
-	// Extension is decorative — the directory's CacheVersion key is the
-	// real format identifier. Kept as ".bin" for v2 to make the binary
-	// codec switch visible at a glance when inspecting the cache tree.
-	return filepath.Join(c.dir, c.cachePrefix(pkgPath)+contentHash[:12]+".bin")
+	return filepath.Join(c.dir, cacheName(c.cachePrefix(pkgPath), contentHash))
+}
+
+// cacheName is the name of the entry for contentHash of the package whose
+// prefix is prefix. The extension is decorative — the directory's
+// CacheVersion key is the real format identifier. Kept as ".bin" for v2 to
+// make the binary codec switch visible at a glance when inspecting the cache
+// tree.
+func cacheName(prefix, contentHash string) string {
+	return prefix + contentHash[:12] + ".bin"
 }
 
 // pkgFingerprint is the per-process memo of the three derived quantities
