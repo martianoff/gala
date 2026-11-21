@@ -299,4 +299,101 @@ theorem hOS_noTrig (s : Scope) : ∀ (els : Option Stmt), NoTrigOS s els → ∀
   | some st, hst, h => ⟨afterS s st, by simp only [hOS, hS_noTrig s st hst h]; rfl⟩
 end
 
+
+/-! ## No local of these bodies is one a call may change -/
+
+mutual
+theorem chE_cc (pm : Bool → String → Bool) (lit : Bool) : ∀ (e : Expr), CC e → chE pm lit e = []
+  | .ident _, _ | .intLit _, _ | .strLit _, _ => by simp [chE]
+  | .paren x, hc => by simp only [chE]; exact chE_cc pm lit x hc
+  | .unary op x, ⟨hop, hc⟩ => by
+    have : (op == "&") = false := by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+      rcases hop with rfl | rfl | rfl | rfl <;> rfl
+    simp [chE, this, chE_cc pm lit x hc]
+  | .binary _ x y, ⟨hx, hy⟩ => by simp [chE, chE_cc pm lit x hx, chE_cc pm lit y hy]
+  | .call (.ident f) args false, hc => by simp [chE, chEs_cc pm lit args hc]
+theorem chEs_cc (pm : Bool → String → Bool) (lit : Bool) : ∀ (es : List Expr), CCs es → chEs pm lit es = []
+  | [], _ => by simp [chEs]
+  | e :: es, ⟨he, hes⟩ => by simp [chEs, chE_cc pm lit e he, chEs_cc pm lit es hes]
+end
+
+mutual
+theorem chS_noTrig (pm : Bool → String → Bool) (s : Scope) : ∀ (st : Stmt), NoTrigS s st → chS pm false st = []
+  | .decl d, hst => by
+    simp only [NoTrigS] at hst
+    obtain ⟨x, e, hd, hc, -⟩ := hst
+    rw [declExpr?_some hd]
+    simp [chS, chSpecs, chEs, chE_cc pm false e hc]
+  | .ret es, hst => by
+    simp only [NoTrigS] at hst
+    obtain ⟨e, rfl, hc, -⟩ := hst
+    simp [chS, chEs, chE_cc pm false e hc]
+  | .block ss, hst => by simp only [NoTrigS] at hst; simp only [chS]; exact chSs_noTrig pm s ss hst
+  | .if_ init c b els, hst => by
+    simp only [NoTrigS] at hst
+    obtain ⟨rfl, hc, -, hb, he⟩ := hst
+    simp [chS, chOS, chE_cc pm false c hc, chSs_noTrig pm s b hb, chOS_noTrig pm s els he]
+  | .expr _, h' | .incDec .., h' | .assign .., h' | .branch _, h' | .switch .., h'
+  | .typeSwitch .., h' | .for_ .., h' | .range .., h' | .defer_ _, h'
+  | .empty, h' | .unsupported _, h' => by simp only [NoTrigS] at h'
+theorem chSs_noTrig (pm : Bool → String → Bool) (s : Scope) : ∀ (ss : List Stmt), NoTrigSs s ss → chSs pm false ss = []
+  | [], _ => by simp [chSs]
+  | st :: ss, ⟨h1, h2⟩ => by simp [chSs, chS_noTrig pm s st h1, chSs_noTrig pm (afterS s st) ss h2]
+theorem chOS_noTrig (pm : Bool → String → Bool) (s : Scope) : ∀ (els : Option Stmt), NoTrigOS s els →
+    chOS pm false els = []
+  | none, _ => by simp [chOS]
+  | some st, h => by simp only [chOS]; exact chS_noTrig pm s st h
+end
+
+/-! ## The orders step 3a allows -/
+
+/-- **A body no statement of which fires gc's trigger**, in any scope where no local is one
+    a call may change. -/
+def Body3 (body : List Stmt) : Prop :=
+  ∀ s : Scope, (∀ x, s.changeable.contains x = false) → NoTrigSs s body
+
+/-- **An order step 3a's bodies run as written in:** every function body `Body3` holds of
+    is in its place unchanged. -/
+def RunsAsWritten3 (ord : Order) : Prop :=
+  ∀ p pi fi i name recv tps sig body, Body3 body →
+    declAt p pi fi i = some (.func name recv tps sig (some body)) →
+    declAt (ord p) pi fi i = some (.func name recv tps sig (some body))
+
+/-- Left to right, GoCore's evaluator as it is, is such an order. -/
+theorem leftToRight_runs3 : RunsAsWritten3 Order.leftToRight :=
+  fun _ _ _ _ _ _ _ _ _ _ h => h
+
+/-- A scope with nothing in it: no local is changeable there. -/
+def emptyScope : Scope := { c := default, pkg := "", file := 0 }
+
+/-- **GoCore's model of gc 1.25.5's order runs `Body3` bodies as written**: no local of
+    such a body is changeable (it takes no address, has no function literal), so the scope
+    gc's rewrite gives it is one `Body3` speaks of, where no statement fires the trigger,
+    and the rewrite leaves every statement as it is. -/
+theorem gc_runs3 : RunsAsWritten3 Order.gc := by
+  intro p pi fi i name recv tps sig body hb hd
+  simp only [declAt, Option.bind_eq_bind, Option.bind_eq_some_iff] at hd
+  obtain ⟨pk, hpk, f, hf, hdi⟩ := hd
+  simp only [Order.gc, gcOrder, declAt, Option.bind_eq_bind, Option.bind_eq_some_iff,
+    StateT.run']
+  refine Exists.imp (fun a ⟨h1, h2⟩ => ⟨h1, h2⟩) (mapM_getElem (σ := HState) _ _ p.packages {} pi pk hpk ?_)
+  intro h'
+  simp only [StateT.run_bind, StateT.run_pure, idbp]
+  refine Exists.imp (fun a ⟨h1, h2⟩ => ⟨h1, h2⟩)
+    (mapM_getElem (σ := HState) _ _ pk.files.zipIdx h' fi (f, fi) (by simp [List.getElem?_zipIdx, hf]) ?_)
+  intro h''
+  simp only [StateT.run_bind, StateT.run_pure, idbp]
+  have hch : ∀ pm, chSs pm false body = [] := fun pm =>
+    chSs_noTrig pm emptyScope body (hb emptyScope (fun x => by simp [emptyScope]))
+  obtain ⟨d', hd', hP⟩ := mapM_getElem
+    (hDecl (buildCtx p) (structFields (buildCtx p)) (allMethods (buildCtx p)) pk.path fi)
+    (· = Decl.func name recv tps sig (some body)) f.decls h'' i _ hdi (by
+      intro h3
+      simp only [hDecl, StateT.run_bind, StateT.run_pure]
+      rw [hSs_noTrig _ body (hb _ (fun x => by cases sig; simp [Scope.withIfaces, Scope.enter, Scope.bind, hch])) h3]
+      rfl)
+  subst hP
+  exact hd'
+
 end Gala.M5
