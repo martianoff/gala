@@ -711,7 +711,7 @@ Every name an `unsupported` node can carry.
 | `nil` | `nil` |
 | `interpolated-string` | an `s"..."` string one of whose embedded expressions does not parse |
 | `format-string` | `f"..."` |
-| `interpolated-escape` | an embedded expression written with a backslash, such as an escaped quote, `s"${f(\"a\")}"` |
+| `interpolated-escape` | an embedded expression with an escaped quote outside a string literal, `s"${f(\"a\")}"` (an escape inside a string literal, `s"${"a\"b"}"`, is exported) |
 | `string-escape` | a string literal whose escapes Go does not accept |
 | `invalid-utf8` | a string literal, or a run of an interpolated string, that is not valid UTF-8, `"\xff"`: JSON cannot carry its bytes |
 | `qualified-type` | a type named by a qualified name of more than two parts, `a.b.T` |

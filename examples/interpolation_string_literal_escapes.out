@@ -1,0 +1,5 @@
+quote: say 'hi'
+one literal: x"+"
+brace after quote: a"}b
+padded:    "q"|
+escaped-quote form: abab"

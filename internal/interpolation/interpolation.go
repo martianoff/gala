@@ -27,7 +27,8 @@ type Part struct {
 	// IsLiteral is true for literal text, false for an embedded expression.
 	IsLiteral bool
 	// Text is the literal text (still escaped as written) or, for an embedded
-	// expression, the GALA expression source (with `\"` unescaped so it re-parses).
+	// expression, the GALA expression source (with each `\"` outside a string
+	// literal unescaped so it re-parses).
 	Text string
 	// FormatSpec is an explicit printf spec that followed an embedded expression
 	// in a format string (e.g. "%04d"); empty otherwise.
@@ -40,9 +41,10 @@ type Part struct {
 	// transforming that expression points at the code the user wrote.
 	//
 	// Exactness caveat: for an embedded expression Text is unescaped (`\"` →
-	// `"`), so Offset locates the expression's START exactly, while positions
-	// further into an expression that contains an escaped quote drift left by
-	// one byte per escape. Literal parts carry the offset of their first byte.
+	// `"` outside a string literal), so Offset locates the expression's START
+	// exactly, while positions further into an expression written with
+	// escaped quotes drift left by one byte per escape. Literal parts carry
+	// the offset of their first byte.
 	Offset int
 	// Start and End delimit the part's source within the content: a literal
 	// run as written (`$$` included), or an embedded expression from its `$`
@@ -242,16 +244,26 @@ func endOfStringLiteral(content string, open int) int {
 	return len(content)
 }
 
-// unescapeExpr turns each `\"` in an embedded expression back into `"`, so an
-// expression written with escaped quotes (`${f(\"x\")}`) re-parses. It reads
-// escapes in pairs, as the lexer does, so any other escape is kept whole: the
-// `\\` in `"\\"` stays an escaped backslash rather than lending its second `\`
-// to the closing quote.
+// unescapeExpr turns each `\"` written outside a string literal in an
+// embedded expression back into `"`, so an expression written with escaped
+// quotes (`${f(\"x\")}`) re-parses. It reads escapes in pairs, as the lexer
+// does, and copies a `"`-quoted string literal whole: escapes inside one keep
+// their usual meaning, so `"\""` is a one-character string and the `\\` in
+// `"\\"` an escaped backslash.
 func unescapeExpr(expr string) string {
+	if strings.IndexByte(expr, '\\') < 0 {
+		return expr // nothing to unescape: most expressions
+	}
 	var b strings.Builder
 	b.Grow(len(expr))
 	for i := 0; i < len(expr); i++ {
-		if expr[i] == '\\' && i+1 < len(expr) {
+		switch {
+		case expr[i] == '"':
+			end := min(endOfStringLiteral(expr, i)+1, len(expr))
+			b.WriteString(expr[i:end])
+			i = end - 1
+			continue
+		case expr[i] == '\\' && i+1 < len(expr):
 			i++
 			if expr[i] != '"' {
 				b.WriteByte('\\')
