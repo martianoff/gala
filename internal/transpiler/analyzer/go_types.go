@@ -58,6 +58,9 @@ func GoSDKRoot() string {
 		// A GOROOT that names no SDK, which findGOROOT skipped, is cleared so
 		// that the go commands gala runs find their own SDK, not fail on it.
 		if v := os.Getenv("GOROOT"); v != "" && !isGoRoot(v) {
+			if v != "GOROOT" { // rules_go's placeholder
+				fmt.Fprintf(os.Stderr, "Warning: GOROOT %s is not a Go SDK; ignoring it.\n", v)
+			}
 			os.Unsetenv("GOROOT")
 		}
 	})
@@ -372,7 +375,10 @@ func findGOROOT() string {
 	if abs, err := filepath.Abs(goroot); err == nil {
 		goroot = abs // the probe runs the go command from another directory
 	}
-	goPath := filepath.Join(goroot, "bin", "go")
+	goPath, err := exec.LookPath(filepath.Join(goroot, "bin", "go"))
+	if err != nil {
+		return goroot // no go command to ask (a source tree, say)
+	}
 	return switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) })
 }
 
