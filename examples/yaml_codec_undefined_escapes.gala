@@ -18,8 +18,9 @@ func main() {
     Println("--- defined escapes ---")
     ArrayOf(
         `S: "tab\there"`,
-        `S: "caf\xe9 é \U0001F600"`,
+        `S: "caf\xe9 \u00e9 \U0001F600"`,
         `S: "back\\slash \"quote\""`,
+        `S: "\uD83D\uDE00 as JSON writes it"`,
     ).ForEach((s) => Println(codec.Decode(s)))
 
     Println("--- undefined escapes ---")

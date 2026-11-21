@@ -2,6 +2,7 @@
 Success(R(tab	here))
 Success(R(café é 😀))
 Success(R(back\slash "quote"))
+Success(R(😀 as JSON writes it))
 --- undefined escapes ---
 Failure(yaml: invalid escape \q in double-quoted scalar)
 Failure(yaml: invalid escape \x4 in double-quoted scalar)

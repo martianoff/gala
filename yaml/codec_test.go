@@ -287,7 +287,7 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 		{"32-bit code point", `"smile \U0001F600"`, "smile 😀"},
 		{"ASCII control from the encoder", `"bell\x07"`, "bell\a"},
 		{"highest code point", `"\U0010FFFF"`, "\U0010FFFF"},
-		{"surrogate pair, as JSON writes it", `"😀 😀"`, "😀 😀"},
+		{"surrogate pair, as JSON writes it", `"\uD83D\uDE00 \ud83d\ude00"`, "\U0001F600 \U0001F600"},
 		{"escaped backslash before a letter", `"\\q"`, `\q`},
 	}
 	for _, tt := range tests {
@@ -326,8 +326,8 @@ func TestDecoder_UndefinedEscapesFail(t *testing.T) {
 		{`"\uDE00"`, `\uDE00`},
 		{`"\uD83D x"`, `\uD83D`},
 		{`"\uD83D\uD83D"`, `\uD83D`},
-		{`"\uD83D�"`, `\uD83D`},
 		{"\"\\\x7f\"", `"\\\x7f"`},
+		{`"\uD83D\uFFFD"`, `\uD83D`},
 	}
 	for _, tt := range tests {
 		want := "yaml: invalid escape " + tt.escape + " in double-quoted scalar"
@@ -349,6 +349,18 @@ func TestUnescapeDoubleQuoted_TrailingBackslash(t *testing.T) {
 		}
 	}()
 	unescapeDoubleQuoted(`a\`)
+}
+
+// An escape that holds an invalid UTF-8 byte is quoted in the error. The
+// decoder replaces such bytes before parsing, so this calls the unescaper
+// directly.
+func TestUnescapeDoubleQuoted_InvalidByteQuoted(t *testing.T) {
+	defer func() {
+		if r, want := fmt.Sprint(recover()), `yaml: invalid escape "\\\xff" in double-quoted scalar`; r != want {
+			t.Errorf("panic = %q, want %q", r, want)
+		}
+	}()
+	unescapeDoubleQuoted("a\\\xff")
 }
 
 // Strings the encoder double-quotes decode back to the original.

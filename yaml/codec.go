@@ -1378,7 +1378,7 @@ func hexRune(body string, from, to int) (rune, bool) {
 // invalidEscape fails the decode for the escape esc, shown as written when
 // it is printable and quoted when it is not.
 func invalidEscape(esc string) {
-	if strings.IndexFunc(esc, func(r rune) bool { return !strconv.IsPrint(r) }) >= 0 {
+	if !utf8.ValidString(esc) || strings.IndexFunc(esc, func(r rune) bool { return !strconv.IsPrint(r) }) >= 0 {
 		esc = strconv.Quote(esc)
 	}
 	panic("yaml: invalid escape " + esc + " in double-quoted scalar")
