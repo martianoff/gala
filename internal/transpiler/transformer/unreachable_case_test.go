@@ -96,6 +96,16 @@ func TestUnreachableCase(t *testing.T) {
 			at: "line 7:4 ", catchAll: "`case (n, s)` on line 6",
 		},
 		{
+			name: "a literal after a capitalized name that binds",
+			src: `func f(n int) int = n match {
+    case A => A + 1
+    case 1 => 0
+    case _ => 2
+}
+`,
+			at: "line 7:4 ", catchAll: "`case A` on line 6",
+		},
+		{
 			name: "`case _` after a tuple binding a capitalized name",
 			src: `func f(t Tuple[int, int]) int = t match {
     case (A, b) => A + b

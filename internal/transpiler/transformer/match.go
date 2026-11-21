@@ -302,16 +302,17 @@ func (t *galaASTTransformer) exprMatchesEveryValue(e patExpr, matchedType transp
 
 // exprMatchesEveryValueBinding is exprMatchesEveryValue for e, a whole case
 // pattern when bound is nil, else an element of a tuple pattern whose earlier
-// elements bind the names in bound. A whole pattern binds as a match's
-// default does (isBindingPatternOf); an element, as a tuple's lowering binds
-// it (isPatternBinding). A name bound twice is an error the pattern's
-// lowering reports, so such a pattern is not counted.
+// elements bind the names in bound. A name binds as its lowering binds it:
+// as a match's default (isBindingPatternOf), or in its own arm or a tuple
+// (isPatternBinding). A name bound twice is an error the pattern's lowering
+// reports, so such a pattern is not counted.
 func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType transpiler.Type, typeKnown bool, bound map[string]bool) bool {
 	text := e.text()
 	if isWildcard(text) {
 		return true
 	}
-	if bound == nil && t.isBindingPatternOf(text, matchedType) {
+	// A capitalized name that names nothing binds too, in its own arm.
+	if bound == nil && (t.isBindingPatternOf(text, matchedType) || t.isPatternBinding(text, matchedType)) {
 		return true
 	}
 	if bound != nil && t.isPatternBinding(text, matchedType) {

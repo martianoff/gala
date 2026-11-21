@@ -1472,7 +1472,6 @@ Otherwise the rule is scoped to the type being matched. A bare identifier that d
 val n = 42
 val d = n match {
     case Rectangle => s"bound $Rectangle"   // OK — `int` has no `Rectangle` variant
-    case _         => "other"
 }
 ```
 

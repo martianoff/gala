@@ -219,7 +219,6 @@ func main() {
     val n = 42
     val r = n match {
         case Circle => s"bound $Circle"
-        case _      => "other"
     }
     Println(r)
     Println(Circle(1.0))
