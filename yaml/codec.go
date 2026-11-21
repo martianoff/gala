@@ -17,6 +17,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"martianoff/gala/std"
@@ -1289,10 +1290,12 @@ var yamlCodePointEscapes = map[byte]int{'x': 2, 'u': 4, 'U': 8}
 // text between the quotes). A code-point escape names a Unicode character and
 // is written out as UTF-8, so `\xe9` and `é` both decode to "é".
 //
-// An escape that cannot be decoded (an unknown letter, too few or invalid
-// hex digits, a surrogate or out-of-range code point) is kept as written
-// rather than silently dropped; unlike a malformed quote, it does not fail
-// the decode.
+// A \u escape of a high surrogate followed by a \u escape of a low one is
+// JSON's spelling of a character above U+FFFF, and decodes to it.
+//
+// An escape YAML does not define (an unknown letter, too few or invalid hex
+// digits, an unpaired surrogate or an out-of-range code point) fails the
+// decode, as YAML parsers do, rather than reaching the value as written.
 func unescapeDoubleQuoted(body string) string {
 	if strings.IndexByte(body, '\\') < 0 {
 		return body
@@ -1301,9 +1304,14 @@ func unescapeDoubleQuoted(body string) string {
 	sb.Grow(len(body))
 	for i := 0; i < len(body); i++ {
 		c := body[i]
-		if c != '\\' || i+1 >= len(body) {
+		if c != '\\' {
 			sb.WriteByte(c)
 			continue
+		}
+		if i+1 == len(body) {
+			// The callers find the closing quote first, so a body never
+			// ends in a lone backslash; fail cleanly if one ever does.
+			invalidEscape(body[i:])
 		}
 		esc := body[i+1]
 		if r, ok := yamlCharEscape(esc); ok {
@@ -1311,15 +1319,54 @@ func unescapeDoubleQuoted(body string) string {
 			i++
 			continue
 		}
-		if digits, ok := yamlCodePointEscapes[esc]; ok && i+2+digits <= len(body) {
-			v, err := strconv.ParseUint(body[i+2:i+2+digits], 16, 4*digits)
-			if err == nil && v <= utf8.MaxRune && utf8.ValidRune(rune(v)) {
-				sb.WriteRune(rune(v))
-				i += 1 + digits
-				continue
+		digits, ok := yamlCodePointEscapes[esc]
+		if !ok {
+			_, size := utf8.DecodeRuneInString(body[i+1:])
+			invalidEscape(body[i : i+1+size])
+		}
+		end := i + 2 + digits
+		r, ok := hexRune(body, i+2, end)
+		if ok && esc == 'u' && utf16.IsSurrogate(r) && strings.HasPrefix(body[end:], `\u`) {
+			if low, lowOK := hexRune(body, end+2, end+6); lowOK {
+				if pair := utf16.DecodeRune(r, low); pair != utf8.RuneError {
+					r, end = pair, end+6
+				}
 			}
 		}
-		sb.WriteByte(c) // not decodable: keep the backslash and what follows
+		if !ok || !utf8.ValidRune(r) {
+			// Show the escape: its letter and up to as many characters as it
+			// takes digits, stopping at white space or the next backslash.
+			end = i + 2
+			for n := 0; n < digits && end < len(body) && !strings.ContainsRune(" \t\\", rune(body[end])); n++ {
+				_, size := utf8.DecodeRuneInString(body[end:])
+				end += size
+			}
+			invalidEscape(body[i:end])
+		}
+		sb.WriteRune(r)
+		i = end - 1
 	}
 	return sb.String()
+}
+
+// hexRune reads the code point written in hex as body[from:to]; false when
+// body is too short, the digits are not hex or the value is above U+10FFFF.
+func hexRune(body string, from, to int) (rune, bool) {
+	if to > len(body) {
+		return 0, false
+	}
+	v, err := strconv.ParseUint(body[from:to], 16, 32)
+	if err != nil || v > utf8.MaxRune {
+		return 0, false
+	}
+	return rune(v), true
+}
+
+// invalidEscape fails the decode for the escape esc, shown as written when
+// it is printable and quoted when it is not.
+func invalidEscape(esc string) {
+	if !utf8.ValidString(esc) || strings.IndexFunc(esc, func(r rune) bool { return !strconv.IsPrint(r) }) >= 0 {
+		esc = strconv.Quote(esc)
+	}
+	panic("yaml: invalid escape " + esc + " in double-quoted scalar")
 }

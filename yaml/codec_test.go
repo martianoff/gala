@@ -286,11 +286,8 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 		{"16-bit code point", `"caf\u00e9"`, "café"},
 		{"32-bit code point", `"smile \U0001F600"`, "smile 😀"},
 		{"ASCII control from the encoder", `"bell\x07"`, "bell\a"},
-		{"invalid hex kept verbatim", `"bad\xZZ!"`, `bad\xZZ!`},
-		{"truncated escape kept verbatim", `"short\u00e"`, `short\u00e`},
-		{"surrogate code point kept verbatim", `"\uD800"`, `\uD800`},
-		{"out-of-range code point kept verbatim", `"\U00110000"`, `\U00110000`},
-		{"unknown escape kept verbatim", `"\q"`, `\q`},
+		{"highest code point", `"\U0010FFFF"`, "\U0010FFFF"},
+		{"escaped backslash before a letter", `"\\q"`, `\q`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -306,6 +303,92 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 			d.ReadString()
 			d.EndObject()
 		})
+	}
+}
+
+// An escape YAML does not define fails the decode (#1316), in a value and in
+// a key alike, instead of reaching the string as written.
+func TestDecoder_UndefinedEscapesFail(t *testing.T) {
+	tests := []struct{ quoted, escape string }{
+		{`"\q"`, `\q`},
+		{`"a\qb"`, `\q`},
+		{`"\'"`, `\'`},
+		{`"bad\xZZ!"`, `\xZZ`},
+		{`"\x4"`, `\x4`},
+		{`"\x4\n"`, `\x4`},
+		{`"\u12 abc"`, `\u12`},
+		{`"short\u00e"`, `\u00e`},
+		{`"\u00g9"`, `\u00g9`},
+		{`"\uD800"`, `\uD800`},
+		{`"\U00110000"`, `\U00110000`},
+		{`"\U0000"`, `\U0000`},
+		{`"\U80000000"`, `\U80000000`},
+		{`"\UFFFFFFFF"`, `\UFFFFFFFF`},
+		{`"\é"`, `\é`},
+		{`"\x4é"`, `\x4é`},
+		{`"\uDE00"`, `\uDE00`},
+		{`"\uD83D x"`, `\uD83D`},
+		{`"\uD83D\uD83D"`, `\uD83D`},
+		{"\"\\\x7f\"", `"\\\x7f"`},
+		{`"\uD83D\uFFFD"`, `\uD83D`},
+	}
+	for _, tt := range tests {
+		want := "yaml: invalid escape " + tt.escape + " in double-quoted scalar"
+		for _, src := range []string{"k: " + tt.quoted, tt.quoted + ": v"} {
+			_, _, err := readKeyValue(src)
+			if err != want {
+				t.Errorf("%s: error %q, want %q", src, err, want)
+			}
+		}
+	}
+}
+
+// Bodies the parser never passes on still fail cleanly: one that ends in a
+// lone backslash, and one with an invalid UTF-8 byte (the decoder replaces
+// those before parsing), whose escape is quoted in the error.
+func TestUnescapeDoubleQuoted_UnreachableBodies(t *testing.T) {
+	tests := []struct{ body, want string }{
+		{`a\`, `yaml: invalid escape \ in double-quoted scalar`},
+		{"a\\\xff", `yaml: invalid escape "\\\xff" in double-quoted scalar`},
+	}
+	for _, tt := range tests {
+		func() {
+			defer func() {
+				if r := fmt.Sprint(recover()); r != tt.want {
+					t.Errorf("unescapeDoubleQuoted(%q) panicked with %q, want %q", tt.body, r, tt.want)
+				}
+			}()
+			unescapeDoubleQuoted(tt.body)
+		}()
+	}
+}
+
+// A high and a low surrogate written as two escapes, as JSON writes a
+// character above U+FFFF, decode to that character; either half alone is an
+// error. The escapes are built from bytes, and their length checked, so that
+// no editor can turn them into the character they name.
+func TestDecoder_SurrogatePairEscape(t *testing.T) {
+	high := string([]byte{'\\', 'u', 'D', '8', '3', 'D'})
+	low := string([]byte{'\\', 'u', 'D', 'E', '0', '0'})
+	if len(high) != 6 || len(low) != 6 {
+		t.Fatalf("escape lengths %d and %d, want 6 and 6", len(high), len(low))
+	}
+	want := string(rune(0x1F600))
+	for _, pair := range []string{high + low, strings.ToLower(high + low)} {
+		if _, s, err := readKeyValue(`k: "` + pair + ` x"`); s != want+" x" || err != "" {
+			t.Errorf("value %s => (%q, error %q), want %q", pair, s, err, want+" x")
+		}
+		if k, _, err := readKeyValue(`"` + pair + ` x": v`); k != want+" x" || err != "" {
+			t.Errorf("key %s => (%q, error %q), want %q", pair, k, err, want+" x")
+		}
+	}
+	for _, half := range []string{high, low, low + high} {
+		wantErr := "yaml: invalid escape " + half[:6] + " in double-quoted scalar"
+		for _, src := range []string{`k: "` + half + `"`, `"` + half + `": v`} {
+			if _, _, err := readKeyValue(src); err != wantErr {
+				t.Errorf("%s => error %q, want %q", src, err, wantErr)
+			}
+		}
 	}
 }
 

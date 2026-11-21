@@ -1,0 +1,35 @@
+package main
+
+// A double-quoted YAML scalar may only use the escapes YAML defines (#1316).
+// An undefined escape, a code-point escape with too few or invalid hex
+// digits, or one that names an unpaired surrogate or a code point above U+10FFFF is a
+// decode Failure instead of text that keeps the backslash. A high and a low
+// surrogate written as two escapes, as JSON writes them, name one character.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct R(S string)
+
+val codec = yaml.Codec[R](yaml.AsIs())
+
+func main() {
+    Println("--- defined escapes ---")
+    ArrayOf(
+        `S: "tab\there"`,
+        `S: "caf\xe9 \u00e9 \U0001F600"`,
+        `S: "back\\slash \"quote\""`,
+        `S: "\uD83D\uDE00 as JSON writes it"`,
+    ).ForEach((s) => Println(codec.Decode(s)))
+
+    Println("--- undefined escapes ---")
+    ArrayOf(
+        `S: "a\qb"`,
+        `S: "\x4"`,
+        `S: "\xZZ"`,
+        `S: "\uD800"`,
+        `S: "\U00110000"`,
+    ).ForEach((s) => Println(codec.Decode(s)))
+}
