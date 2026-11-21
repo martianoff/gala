@@ -406,3 +406,180 @@ func TestDecoder_SkipInsideArray(t *testing.T) {
 	d.EndArray()
 	d.End()
 }
+
+// ----- Decoder: separators --------------------------------------------------
+
+// valueReader reads the value at the decoder's position through the typed
+// reads Codec.Decode uses, choosing each read by the value's first byte.
+// With probe, every value is first probed with IsNull, as an Option field
+// is, so the probe makes the separator check and the read after it repeats
+// it. Without probe, the read itself makes the check, as for a plain field.
+func valueReader(probe bool) func(*JsonDecoderImpl) {
+	var read func(*JsonDecoderImpl)
+	read = func(d *JsonDecoderImpl) {
+		if probe && d.IsNull() {
+			d.ReadNull()
+			return
+		}
+		switch peekValueByte(d) {
+		case '{':
+			d.StartObject()
+			for d.HasMoreFields() {
+				d.ReadKey()
+				read(d)
+			}
+			d.EndObject()
+		case '[':
+			d.StartArray()
+			for d.HasMoreElements() {
+				read(d)
+			}
+			d.EndArray()
+		case '"':
+			d.ReadString()
+		case 't', 'f':
+			d.ReadBool()
+		case 'n':
+			d.ReadNull()
+		default:
+			d.ReadFloat64()
+		}
+	}
+	return read
+}
+
+// peekValueByte returns the first byte of the next value without moving the
+// decoder: it looks past whitespace and at most one ',' separator.
+func peekValueByte(d *JsonDecoderImpl) byte {
+	i := d.pos
+	skip := func() {
+		for i < len(d.data) && strings.IndexByte(" \t\n\r", d.data[i]) >= 0 {
+			i++
+		}
+	}
+	skip()
+	if i < len(d.data) && d.data[i] == ',' {
+		i++
+		skip()
+	}
+	if i >= len(d.data) {
+		return 0
+	}
+	return d.data[i]
+}
+
+// separatorReaders are the paths that check a separator: the typed reads
+// with and without an IsNull probe before each, Skip on the members of a
+// container the caller opened, and Skip over a whole document.
+var separatorReaders = map[string]func(*JsonDecoderImpl){
+	"decode with IsNull probes": valueReader(true),
+	"decode":                    valueReader(false),
+	"Skip each member":          skipMembers,
+	"Skip":                      skipValue,
+}
+
+// skipMembers opens the container at the decoder's position and skips each
+// member value or element, so every Skip call happens inside a container
+// and makes the separator check itself.
+func skipMembers(d *JsonDecoderImpl) {
+	switch peekValueByte(d) {
+	case '{':
+		d.StartObject()
+		for d.HasMoreFields() {
+			d.ReadKey()
+			d.Skip()
+		}
+		d.EndObject()
+	case '[':
+		d.StartArray()
+		for d.HasMoreElements() {
+			d.Skip()
+		}
+		d.EndArray()
+	default:
+		d.Skip()
+	}
+}
+
+// Members of an object and elements of an array are separated by exactly one
+// ',' (#1293): a missing, doubled, leading or trailing separator is an error,
+// as it is in encoding/json, wherever the container sits.
+func TestDecoder_SeparatorsRequired(t *testing.T) {
+	tests := []struct {
+		in    string
+		valid bool
+	}{
+		{`[]`, true},
+		{`{}`, true},
+		{`[1]`, true},
+		{`[1,2,3]`, true},
+		{` [ 1 , 2 ,3 ] `, true},
+		{"[1\n,\t2]", true},
+		{`[1,null,2]`, true},
+		{`[null,null]`, true},
+		{`["a","b"]`, true},
+		{`[true,false]`, true},
+		{`[[1],[2,3],[]]`, true},
+		{`[{"a":1},{"a":2}]`, true},
+		{`{"a":1,"b":2}`, true},
+		{` { "a" : 1 , "b" : [ 1 , 2 ] , "c" : { "d" : null } } `, true},
+		{`{"a":[{"b":[1,2]},{"b":[]}],"c":"x"}`, true},
+
+		{`[1 2]`, false},
+		{`[1 2 3]`, false},
+		{`[1,2 3]`, false},
+		{`[1 null]`, false},
+		{`[null 1]`, false},
+		{`["a" "b"]`, false},
+		{`[true false]`, false},
+		{`[[1] [2]]`, false},
+		{`[[1 2]]`, false},
+		{`[{"a":1} {"a":2}]`, false},
+		{`[1,,2]`, false},
+		{`[,1]`, false},
+		{`[1,]`, false},
+		{`{"a":1 "b":2}`, false},
+		{`{"a":"x" "b":2}`, false},
+		{`{"a":[1] "b":2}`, false},
+		{`{"a":{"x":1} "b":2}`, false},
+		{`{"a":{"x":1 "y":2}}`, false},
+		{`{"a":1,,"b":2}`, false},
+		{`{,"a":1}`, false},
+		{`{"a":1,}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := stdjson.Valid([]byte(tt.in)); got != tt.valid {
+				t.Fatalf("test table disagrees with encoding/json: Valid(%s) = %v", tt.in, got)
+			}
+			for name, read := range separatorReaders {
+				err := decodeDocument(tt.in, read)
+				if tt.valid && err != "" {
+					t.Fatalf("%s(%s) failed: %s", name, tt.in, err)
+				}
+				if !tt.valid && err == "" {
+					t.Fatalf("%s(%s) did not fail", name, tt.in)
+				}
+			}
+		})
+	}
+}
+
+// A missing separator is reported where the separator belongs, naming the
+// closing bracket that could stand there instead, whether the value is read
+// or skipped.
+func TestDecoder_MissingSeparatorError(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{`[1 2]`, `json at pos 3: expected ',' or ']'`},
+		{`[1}`, `json at pos 2: expected ',' or ']'`},
+		{`{"a":1 "b":2}`, `json at pos 7: expected ',' or '}'`},
+		{`{"a":1]`, `json at pos 6: expected ',' or '}'`},
+	}
+	for _, tt := range tests {
+		for name, read := range separatorReaders {
+			if got := decodeDocument(tt.in, read); got != tt.want {
+				t.Errorf("%s(%s): error = %q, want %q", name, tt.in, got, tt.want)
+			}
+		}
+	}
+}

@@ -1,0 +1,64 @@
+package main
+
+// Codec.Decode requires the ',' between object members and between array
+// elements (#1293). A document with a missing separator is a Failure wherever
+// the separator is missing: between declared fields, inside an array or a
+// map, after a nested object, at the root, or inside an unknown field that
+// is skipped. The same documents with their separators decode as before.
+
+import (
+    "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct In(K string)
+struct R(S string, I int, N Array[int], M HashMap[string, int], X In, O Array[Option[int]])
+
+val records = json.Codec[R](json.AsIs())
+val ints = json.Value[Array[int]]()
+
+// section prints the decode of each record document, then of each root
+// Array[int] document.
+func section(title string, recordDocs Array[string], intDocs Array[string]) {
+    Println(title)
+    recordDocs.ForEach((s) => Println(records.Decode(s)))
+    intDocs.ForEach((s) => Println(ints.Decode(s)))
+}
+
+func main() {
+    section(
+        "--- well-formed ---",
+        ArrayOf(
+            "{\"S\":\"a\",\"I\":1}",
+            "{\"N\":[1,2,3]}",
+            "{\"M\":{\"a\":1}}",
+            "{\"X\":{\"K\":\"v\"} , \"I\":7}",
+            "{\"O\":[1,null,3]}",
+            "{ \"N\" : [ 1 ,\n 2 ] , \"Z\" : [ 1 , 2 ] , \"I\" : 7 }",
+        ),
+        ArrayOf("[1,2,3]"),
+    )
+    section(
+        "--- missing separator ---",
+        ArrayOf(
+            "{\"S\":\"a\" \"I\":1}",
+            "{\"N\":[1 2 3]}",
+            "{\"M\":{\"a\":1 \"b\":2}}",
+            "{\"X\":{\"K\":\"v\"} \"I\":7}",
+            "{\"O\":[1 null]}",
+            "{\"O\":[null 1]}",
+            "{\"Z\":[1 2] , \"I\":7}",
+        ),
+        ArrayOf("[1 2 3]"),
+    )
+    section(
+        "--- extra separator ---",
+        ArrayOf(
+            "{\"N\":[1,,2]}",
+            "{\"S\":\"a\",,\"I\":1}",
+            "{\"O\":[1,,2]}",
+            "{\"O\":[,1]}",
+        ),
+        EmptyArray(),
+    )
+}

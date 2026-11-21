@@ -211,7 +211,20 @@ type JsonDecoderImpl struct {
     var data          []byte
     var pos           int
     var stack         []byte
+    // firstConsumed records, per open container, whether ReadKey has read
+    // a key in it yet, so it is only meaningful for objects. It has an
+    // entry per container to stay in step with stack; arrays check their
+    // separators with elemStart instead.
     var firstConsumed []bool
+    // elemStart is the position at which an array element's separator was
+    // last settled: the first byte that is not whitespace after a
+    // container's opening byte or after a ','. A separator check there
+    // repeats the one for the same element (a read after an IsNull probe)
+    // and needs no ','. A check anywhere else is a new element. That holds
+    // because pos never moves backwards and every value, nested containers
+    // included, is at least one byte, so a decode path that rewinds pos
+    // must reset elemStart as well.
+    var elemStart     int
     var pendingKey    string
     var hasPendingKey bool
 }
@@ -219,20 +232,22 @@ type JsonDecoderImpl struct {
 func NewJsonDecoder(s string) Ptr[JsonDecoderImpl] = &JsonDecoderImpl{data: toBytes(s), pos: 0}
 
 func (d Ptr[JsonDecoderImpl]) StartObject() {
-    // Container openers must consume the inter-element comma when the
-    // enclosing context is an array — otherwise Array[Foo] of structs
-    // panics on the leading ',' of element 2+. The primitive Read* paths
-    // already do this; objects/arrays were missing the same hook.
+    // An object that is an array element makes the element's separator
+    // check first, as every read of an element does (see consumeElemComma).
     d.consumeElemComma()
     d.openContainer('{', 'o')
 }
 
 // openContainer steps over the opening byte of an object or array that the
-// caller decodes, and records it as kind ('o' or 'a') on the stack.
+// caller decodes, and records it as kind ('o' or 'a') on the stack. It
+// settles elemStart at the first byte inside that is not whitespace, so the
+// first element needs no ',' (see elemStart).
 func (d Ptr[JsonDecoderImpl]) openContainer(open byte, kind byte) {
     d.skipWs()
     d.checkDepth(d.stack.Size() + 1)
     d.expectByte(open)
+    d.skipWs()
+    d.elemStart = d.pos
     d.stack = go_interop.SliceAppend(d.stack, kind)
     d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
 }
@@ -258,8 +273,7 @@ func (d Ptr[JsonDecoderImpl]) EndObject() {
 }
 
 func (d Ptr[JsonDecoderImpl]) StartArray() {
-    // See StartObject — the enclosing array context's leading ',' must be
-    // consumed before we can recognise the '[' of a nested array element.
+    // See StartObject: a nested array makes its element's separator check.
     d.consumeElemComma()
     d.openContainer('[', 'a')
 }
@@ -282,16 +296,16 @@ func (d Ptr[JsonDecoderImpl]) HasMoreElements() bool {
     return d.data[d.pos] != ']'
 }
 
+// ReadKey reads the next member's key and the ':' after it. Every member
+// after the first must follow a ',' separator.
 func (d Ptr[JsonDecoderImpl]) ReadKey() string {
-    d.skipWs()
-    val depth = d.firstConsumed.Size() - 1
-    if depth >= 0 && d.firstConsumed[depth] {
-        if d.pos < d.data.Size() && d.data[d.pos] == ',' {
-            d.pos = d.pos + 1
-            d.skipWs()
+    val depth = d.stack.Size() - 1
+    if depth >= 0 {
+        if d.firstConsumed[depth] {
+            d.expectSeparator('}')
         }
+        d.firstConsumed[depth] = true
     }
-    if depth >= 0 { d.firstConsumed[depth] = true }
 
     val key = d.readJsonString()
     d.expectByte(':')
@@ -421,16 +435,18 @@ func (d Ptr[JsonDecoderImpl]) skipWs() {
     }
 }
 
+// consumeElemComma steps over the ',' before an array element; every element
+// after the first must have one. A read may follow IsNull for the same
+// element, so a second call at that element's start does nothing.
 func (d Ptr[JsonDecoderImpl]) consumeElemComma() {
-    val depth = d.firstConsumed.Size() - 1
-    if depth >= 0 && d.stack.Size() > 0 && d.stack[depth] == 'a' && d.firstConsumed[depth] {
+    val depth = d.stack.Size() - 1
+    if depth >= 0 && d.stack[depth] == 'a' {
         d.skipWs()
-        if d.pos < d.data.Size() && d.data[d.pos] == ',' {
-            d.pos = d.pos + 1
+        if d.pos != d.elemStart {
+            d.expectSeparator(']')
+            d.skipWs()
+            d.elemStart = d.pos
         }
-    }
-    if depth >= 0 && d.stack.Size() > 0 && d.stack[depth] == 'a' {
-        d.firstConsumed[depth] = true
     }
 }
 
@@ -614,7 +630,7 @@ func (d Ptr[JsonDecoderImpl]) skipContainer(close byte, depth int) {
         if d.skipByte(close) {
             return
         }
-        d.expectByte(',')
+        d.expectSeparator(close)
     }
 }
 
@@ -633,6 +649,15 @@ func (d Ptr[JsonDecoderImpl]) skipByte(c byte) bool {
 func (d Ptr[JsonDecoderImpl]) expectByte(c byte) {
     if !d.skipByte(c) {
         go_builtins.Panic(f"json at pos ${d.pos}: expected ${c}%q")
+    }
+}
+
+// expectSeparator steps over the ',' between two members or elements, after
+// any whitespace. The error names close too: a wrong closing bracket, as in
+// `[1}`, is the other mistake that ends up here.
+func (d Ptr[JsonDecoderImpl]) expectSeparator(close byte) {
+    if !d.skipByte(',') {
+        go_builtins.Panic(f"json at pos ${d.pos}: expected ',' or ${close}%q")
     }
 }
 
