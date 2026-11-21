@@ -17,7 +17,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -1347,7 +1346,7 @@ func unescapeDoubleQuoted(body string) string {
 		r, ok := hexRune(body, i+2, end)
 		if ok && esc == 'u' && utf16.IsSurrogate(r) && strings.HasPrefix(body[end:], `\u`) {
 			if low, lowOK := hexRune(body, end+2, end+6); lowOK {
-				if pair := utf16.DecodeRune(r, low); pair != unicode.ReplacementChar {
+				if pair := utf16.DecodeRune(r, low); pair != utf8.RuneError {
 					r, end = pair, end+6
 				}
 			}

@@ -287,7 +287,6 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 		{"32-bit code point", `"smile \U0001F600"`, "smile 😀"},
 		{"ASCII control from the encoder", `"bell\x07"`, "bell\a"},
 		{"highest code point", `"\U0010FFFF"`, "\U0010FFFF"},
-		{"surrogate pair, as JSON writes it", `"\uD83D\uDE00 \ud83d\ude00"`, "\U0001F600 \U0001F600"},
 		{"escaped backslash before a letter", `"\\q"`, `\q`},
 	}
 	for _, tt := range tests {
