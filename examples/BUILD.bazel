@@ -1150,6 +1150,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A placeholder `_` inside an if expression, a match or a block makes the
+# whole argument the lambda's body.
+gala_exec_test(
+    name = "placeholder_compound_body",
+    src = "placeholder_compound_body.gala",
+    expected = "placeholder_compound_body.out",
+    deps = ["//collection_immutable"],
+)
+
 # A `_` inside an interpolated string is GALA-E0137; the forms that stay valid
 # around it (a placeholder outside the string, a placeholder lambda or a
 # pattern `_` written inside an interpolation) still build and run.

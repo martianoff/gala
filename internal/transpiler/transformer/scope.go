@@ -56,8 +56,9 @@ type scope struct {
 	// thunk of Try(...). See checkInoutCapture.
 	lambda, tryRegion bool
 	// placeholder marks the scope a placeholder lambda pushes to bind its
-	// `_` (see tryRewriteAsPlaceholderLambda), as against a `_` parameter.
-	placeholder bool
+	// `_` (see tryRewriteAsPlaceholderLambda), as against a `_` parameter,
+	// and records the `_` it takes.
+	placeholder *placeholderTakes
 	// onPop runs, last first, when the scope is popped: it puts back what a
 	// declaration scoped to the block replaced, such as the metadata a local
 	// type declaration registers (see lowerLocalTypeDecl).
