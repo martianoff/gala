@@ -3,8 +3,10 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Under Bazel, transpilation must resolve GOROOT from the hermetic Go SDK that
@@ -108,43 +110,40 @@ func TestSwitchedGoRoot(t *testing.T) {
 	sdk := func(name, version string) string {
 		dir := filepath.Join(root, name)
 		mustMkdir(t, filepath.Join(dir, "src", "fmt"))
-		if version != "" {
-			if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte(version+"\ntime 2024-01-01T00:00:00Z\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "VERSION"), []byte(version+"\ntime 2024-01-01T00:00:00Z\n"), 0o644))
 		return dir
 	}
 	old, current := sdk("old", "go1.23.4"), sdk("current", "go"+GeneratedGoVersion+".5")
 	switched := sdk("switched", "go"+GeneratedGoVersion+".0")
 
-	var goModSeen string
-	goEnv := func(dir string) string {
-		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if err != nil {
-			t.Fatalf("go env GOROOT ran outside a module: %v", err)
-		}
-		goModSeen = string(data)
-		return switched
+	cases := []struct {
+		name, goroot, gotoolchain string
+		answer                    string // what `go env GOROOT` reports
+		want                      string
+		probes                    bool
+	}{
+		{"an old SDK follows the switch", old, "", switched, switched, true},
+		{"a named toolchain is followed", current, "go1.26.0", switched, switched, true},
+		{"a new enough SDK is kept without asking", current, "auto", switched, current, false},
+		{"no answer keeps the SDK", old, "", "", old, true},
 	}
-	if got := switchedGoRoot(old, "", goEnv); got != switched {
-		t.Errorf("switchedGoRoot(go1.23.4) = %q, want the switched toolchain %q", got, switched)
-	}
-	if want := "\ngo " + GeneratedGoVersion + "\n"; !strings.Contains(goModSeen, want) {
-		t.Errorf("go env GOROOT ran with go.mod %q, want one containing %q", goModSeen, want)
-	}
-	if got := switchedGoRoot(current, "go1.26.0", goEnv); got != switched {
-		t.Errorf("switchedGoRoot(%q) with GOTOOLCHAIN=go1.26.0 = %q, want %q", current, got, switched)
-	}
-	if got := switchedGoRoot(current, "auto", func(string) string {
-		t.Error("go env GOROOT ran for an SDK that needs no toolchain switch")
-		return switched
-	}); got != current {
-		t.Errorf("switchedGoRoot(%q) = %q, want it unchanged", current, got)
-	}
-	// The go command cannot tell (GOTOOLCHAIN=local fails, say): keep the root.
-	if got := switchedGoRoot(old, "", func(string) string { return "" }); got != old {
-		t.Errorf("switchedGoRoot with no answer = %q, want %q", got, old)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var goMod string
+			probed := false
+			got := switchedGoRoot(c.goroot, c.gotoolchain, func(dir string) string {
+				probed = true
+				data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+				require.NoError(t, err, "go env GOROOT ran outside a module")
+				goMod = string(data)
+				return c.answer
+			})
+			assert.Equal(t, c.want, got)
+			assert.Equal(t, c.probes, probed)
+			if probed {
+				assert.Contains(t, goMod, "\ngo "+GeneratedGoVersion+"\n")
+			}
+		})
 	}
 }
 
@@ -162,6 +161,7 @@ func TestToolchainMaySwitch(t *testing.T) {
 		{newer, "", false},
 		{newer, "auto", false},
 		{newer, "path", false},
+		{newer, "local+auto", false},
 		{newer, newer, false},
 		{newer, newer + "+auto", false},
 		{newer, "go1.26.0", true},
@@ -170,9 +170,7 @@ func TestToolchainMaySwitch(t *testing.T) {
 		{"", "local", false},
 	}
 	for _, c := range cases {
-		if got := toolchainMaySwitch(c.host, c.gotoolchain); got != c.want {
-			t.Errorf("toolchainMaySwitch(%q, %q) = %t, want %t", c.host, c.gotoolchain, got, c.want)
-		}
+		assert.Equal(t, c.want, toolchainMaySwitch(c.host, c.gotoolchain), "host %q, GOTOOLCHAIN %q", c.host, c.gotoolchain)
 	}
 }
 
@@ -180,26 +178,24 @@ func TestToolchainMaySwitch(t *testing.T) {
 // the user's go env file, else the SDK's go.env.
 func TestGoToolchain(t *testing.T) {
 	dir := t.TempDir()
-	userFile := filepath.Join(dir, "user.env")
 	sdkRoot := filepath.Join(dir, "sdk")
 	mustMkdir(t, sdkRoot)
-	if err := os.WriteFile(filepath.Join(sdkRoot, "go.env"), []byte("GOPROXY=direct\nGOTOOLCHAIN=auto\n"), 0o644); err != nil {
-		t.Fatal(err)
+	require.NoError(t, os.WriteFile(filepath.Join(sdkRoot, "go.env"), []byte("GOPROXY=direct\nGOTOOLCHAIN=auto\n"), 0o644))
+	userFile := filepath.Join(dir, "user.env")
+	require.NoError(t, os.WriteFile(userFile, []byte("GOTOOLCHAIN=go1.26.0\n"), 0o644))
+
+	cases := []struct {
+		name, env, goenv, want string
+	}{
+		{"the SDK's go.env", "", "off", "auto"},
+		{"the user's go env file", "", userFile, "go1.26.0"},
+		{"the environment", "local", userFile, "local"},
 	}
-	t.Setenv("GOENV", userFile)
-	t.Setenv("GOTOOLCHAIN", "")
-	if got := goToolchain(sdkRoot); got != "auto" {
-		t.Errorf("SDK go.env only: goToolchain = %q, want auto", got)
-	}
-	if err := os.WriteFile(userFile, []byte("GOTOOLCHAIN=go1.26.0\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := goToolchain(sdkRoot); got != "go1.26.0" {
-		t.Errorf("user go env file: goToolchain = %q, want go1.26.0", got)
-	}
-	t.Setenv("GOTOOLCHAIN", "local")
-	if got := goToolchain(sdkRoot); got != "local" {
-		t.Errorf("environment: goToolchain = %q, want local", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("GOTOOLCHAIN", c.env)
+			t.Setenv("GOENV", c.goenv)
+			assert.Equal(t, c.want, goToolchain(sdkRoot))
+		})
 	}
 }
-

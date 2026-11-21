@@ -302,7 +302,7 @@ func toolchainMaySwitch(host, gotoolchain string) bool {
 		return true
 	}
 	name, _, _ := strings.Cut(gotoolchain, "+")
-	named := name != "" && name != "auto" && name != "path"
+	named := name != "" && name != "auto" && name != "path" && name != "local" // local+auto is auto
 	if version.Compare(host, "go"+GeneratedGoVersion) < 0 {
 		return true
 	}
@@ -457,6 +457,7 @@ func switchedGoRoot(goroot, gotoolchain string, goEnv func(dir string) string) s
 	if switched := goEnv(dir); switched != "" {
 		return switched
 	}
+	fmt.Fprintf(os.Stderr, "Warning: could not tell which Go toolchain builds GALA code (go %s may switch away from %s); Go type inference reads %s.\n", GeneratedGoVersion, goroot, goroot)
 	return goroot
 }
 
@@ -476,12 +477,14 @@ func goEnvGoroot(goPath, dir string) string {
 	// A go that switches toolchain on Windows runs the other one as a child,
 	// which killing the parent leaves holding the output pipe.
 	cmd.WaitDelay = 5 * time.Second
+	// GOROOT, when set, is one findGOROOT rejected: let go find its own.
+	cmd.Env = append(os.Environ(), "GOROOT=")
 	if dir != "" {
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GOWORK=off")
+		cmd.Env = append(cmd.Env, "GOWORK=off")
 		cmd.Stderr = os.Stderr
 	} else {
-		cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
+		cmd.Env = append(cmd.Env, "GOTOOLCHAIN=local")
 	}
 	out, err := cmd.Output()
 	if err != nil {
