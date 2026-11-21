@@ -651,16 +651,23 @@ def lowerTail (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : 
 def paramKinds (xks : List (String × Kind)) : String → Option Kind :=
   xks.foldl (fun κ xk => upd κ xk.1 xk.2) fun _ => none
 
+/-- Parameter names Go accepts and that bind: distinct, none `_`, `true` or `false`. -/
+def ParamsOK (names : List String) : Prop := names.Nodup ∧ ∀ x ∈ names, x ≠ "_" ∧ x ≠ "true" ∧ x ≠ "false"
+
+instance (names : List String) : Decidable (ParamsOK names) := by unfold ParamsOK; infer_instance
+
 /-- **The lowering of a function's body**: parameters of distinct names (none `_`, `true` or
     `false`), each of a kind, and a result of one; the body `= e` is Go's `return e`, a
     block body its statements and then `return` of its last element. -/
-def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) := do
-  let (xks, ρ) ← sigOf F
-  let names := xks.map (·.1)
-  if !names.Nodup ∨ "_" ∈ names ∨ "true" ∈ names ∨ "false" ∈ names then none
-  match F.body with
-  | .block ss => lowerTail K sg ρ (paramKinds xks) ss
-  | e => (lowerLast K sg ρ (paramKinds xks) e).map fun le => [.ret [le]]
+def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) :=
+  match sigOf F with
+  | none => none
+  | some (xks, ρ) =>
+    if ParamsOK (xks.map (·.1)) then
+      match F.body with
+      | .block ss => lowerTail K sg ρ (paramKinds xks) ss
+      | e => (lowerLast K sg ρ (paramKinds xks) e).map fun le => [.ret [le]]
+    else none
 
 /-! ## The relations, with calls -/
 
@@ -1788,3 +1795,219 @@ theorem nameOwner_kinds (cx : Ctx) (P : String) (fi : Nat) (p : PkgCtx) (hpk : c
   nameOwner_none cx _ _ p hpk (hobj _ (by cases k <;> simp [kindName])) (by cases k <;> decide)
 
 end CallHelpers
+
+/-! ## A call -/
+
+section CallSim
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+/-- The function bodies, at galaspec depth `d` and GoCore depth from `K * d + 3` on. -/
+def BodySim (d : Nat) : Prop :=
+  ∀ F xks ρ lb, sigOf F = some (xks, ρ) → lowerBody K sg F = some lb → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg (paramKinds xks) s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d + 3 ≤ N →
+      ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g)
+
+theorem lowerC_call {κ : String → Option Kind} {f : String} {args : List Spec.Expr} {k : Kind} {le : Expr}
+    (h : lowerC K sg κ (.call (.name f) args) = some (k, le)) :
+    κ f = none ∧ ∃ ks las, sg f = some (ks, k) ∧ lowerArgs K sg κ ks args = some las ∧
+      le = .call (.ident f) las false := by
+  simp only [lowerC] at h
+  split at h
+  · cases h
+  · rename_i hf
+    have hκ : κ f = none := by cases h' : κ f <;> simp_all
+    simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at h
+    obtain ⟨⟨ks, k'⟩, hsg, las, hlas, hp⟩ := h
+    simp only [Prod.mk.injEq] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    exact ⟨hκ, ks, las, hsg, hlas, rfl⟩
+
+theorem lowerBody_names {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind} {lb : List Stmt}
+    (hs : sigOf F = some (xks, ρ)) (h : lowerBody K sg F = some lb) :
+    ∀ x ∈ xks.map (·.1), x ≠ "_" ∧ x ≠ "true" ∧ x ≠ "false" := by
+  simp only [lowerBody, hs] at h
+  split at h
+  · rename_i hc; exact hc.2
+  · cases h
+
+theorem argsRel_of_krel : ∀ {xks : List (String × Kind)} {vs : List Spec.Val} {ws : List Val},
+    KRel (xks.map (·.2)) vs ws → ArgsRel xks ws
+  | [], [], [], _ => trivial
+  | _ :: _, _ :: _, _ :: _, ⟨hv, hk, h⟩ => ⟨⟨_, hv, hk⟩, argsRel_of_krel h⟩
+  | [], _ :: _, _, h | [], [], _ :: _, h | _ :: _, [], _, h | _ :: _, _ :: _, [], h => by simp [KRel] at h
+
+theorem krel_length : ∀ {ks : List Kind} {vs : List Spec.Val} {ws : List Val}, KRel ks vs ws →
+    vs.length = ks.length
+  | [], [], [], _ => rfl
+  | _ :: _, _ :: _, _ :: _, ⟨_, _, h⟩ => by simp [krel_length h]
+  | [], _ :: _, _, h | [], [], _ :: _, h | _ :: _, [], _, h | _ :: _, _ :: _, [], h => by simp [KRel] at h
+
+theorem sframe_mk {c c' : Spec.Core} (hh : Pre c.heap c'.heap) (hl : c'.locals = c.locals)
+    (hg : c'.globals = c.globals) (ho : c'.out = c.out) : SFrame c c' := by
+  refine ⟨hh, ?_⟩
+  cases c; cases c'; simp_all
+
+theorem evalExpr_call (c : Ctx) (n : Nat) (env : Env) (fn : Expr) (args : List Expr) :
+    evalExpr c (n + 1) env (.call fn args false) = (do Val.single (← evalCall c n env fn args false)) := by
+  rw [evalExpr]
+
+/-- **A call of a function the lowering calls**: galaspec's call against Go's. GoCore takes
+    one step for it (in `callBody`, after the arguments); galaspec took one for the call
+    node before the arguments, so GoCore's steps keep up. -/
+theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : ExprSim ds cx P K sg d)
+    (ihB : BodySim ds cx P K sg d) (κ : String → Option Kind) (f : String) (args : List Spec.Expr) (k : Kind)
+    (le : Expr) (hl : lowerC K sg κ (.call (.name f) args) = some (k, le)) (s : Spec.St) (g : St) (env : Env)
+    (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ERes3 k (isLitE (.call (.name f) args)) s g ((Spec.eval ds (d + 1) (.call (.name f) args)).run.run s)
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨hκ, ks, las, hsgf, hlas, rfl⟩ := lowerC_call K sg hl
+  rw [show isLitE (.call (.name f) args) = false by simp [isLitE]]
+  obtain ⟨p, hpk, hobjs, hfun⟩ := hF.pkg
+  obtain ⟨F, xks, ρ, lb, fi, hFl, hsig, hks, hlb, hobj⟩ := hfun f _ hsgf
+  simp only [Prod.mk.injEq] at hks
+  obtain ⟨rfl, hkρ⟩ := hks
+  subst k
+  obtain ⟨hnames, htys, hres⟩ := sigOf_facts hsig
+  obtain ⟨hargsU, hargsL⟩ := lowerArgs_facts K sg κ _ args las hlas
+  obtain ⟨m, rfl⟩ : ∃ m, N = m + 6 := ⟨N - 6, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k1 =>
+  obtain ⟨hlocf, henvf⟩ := hi.closed f hκ
+  have hglob := hi.globals f (by rw [hsgf]; rfl)
+  have hresolve : Spec.resolve ds s.locals s.globals f = .func F := by
+    simp [Spec.resolve, Spec.lookupVar, hlocf, hglob, hFl]
+  rw [eval_call_run ds d k1 f args F s hs hresolve]
+  have hpk' : cx.pkgs.get? env.pkg = some p := hi.pkg ▸ hpk
+  rw [show m + 6 = (m + 5) + 1 from rfl, evalExpr_call, grun_bind,
+    evalCall_fn cx env f p fi (lowerSigOf xks ρ) lb hpk' henvf hi.tenv hobj (m + 3), grun_bind]
+  have hlenP : F.params.length = xks.length := by
+    have := congrArg List.length hnames; simpa using this
+  have hfa : ∀ s', (Spec.funcArgs ds d F args).run.run s' = (Spec.evalList ds d args).run.run s' := by
+    intro s'
+    rw [Spec.funcArgs.eq_def]
+    refine bindArgs_pos ds d _ _ _ args hargsU (by simp [hargsL, hlenP]) (fun j hj => ?_) s'
+    rw [htys]
+    simp only [List.length_map] at hj
+    exact ⟨kindName xks[j].2, by simp [List.getD_eq_getElem?_getD, hlenP ▸ hj]⟩
+  rw [Spec.run_bind_eq, hfa]
+  have hA := args_sim ds cx P K sg d ihE κ _ args las hlas { s with steps := k1 } g env hi
+    (by show k1 ≤ g.steps; omega) (m + 3) (by rw [Nat.mul_succ] at hN; omega)
+  rcases hra : (Spec.evalList ds d args).run.run { s with steps := k1 } with ⟨ra, sa⟩
+  rw [hra] at hA
+  have ht := ticked_of s k1 hs
+  cases ra with
+  | error e =>
+    cases e with
+    | panic pc msg =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hA
+      rw [hg]
+      exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+    | ret => exact hA.elim
+    | _ => trivial
+  | ok vs =>
+  obtain ⟨ws, ga, hg, hkr, hsfa, hgfa, hspa⟩ := hA
+  rw [hg]
+  simp only
+  rw [hi.pkg, callValue_fn cx P f p fi _ lb hpk hobj hF.notStd (m + 3) ws ga]
+  obtain ⟨k2, hk2⟩ : ∃ k2, ga.steps = k2 + 1 := ⟨ga.steps - 1, by unfold Spent at hspa; simp at hspa; omega⟩
+  have hia := inv3_frame hi hsfa hgfa
+  -- The callee's frame.
+  have hlenV : vs.length = F.params.length := by rw [hlenP, krel_length hkr, List.length_map]
+  have hnm := lowerBody_names K sg hsig hlb
+  have hfr := frameRel_params xks F.params vs ws (fun _ => none) { sa.toCore with locals := [] }
+    (calleeEnv P fi).push { ga with steps := k2 } hnames hkr (fun x hx => (hnm x hx).1)
+    ⟨fun _ _ h => (by cases h), fun x _ => ⟨rfl, by simp [calleeEnv, Env.push, Env.lookup, List.findSome?]⟩⟩
+  have hzip : ∀ a ∈ (xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws,
+      a.1.1 ≠ "_" ∧ a.1.1 ≠ "true" ∧ a.1.1 ≠ "false" := by
+    intro a ha
+    have := (List.of_mem_zip ha).1
+    simp only [List.mem_map] at this
+    obtain ⟨xk, hxk, he⟩ := this
+    rw [← he]
+    exact hnm xk.1 (List.mem_map_of_mem hxk)
+  obtain ⟨hepkg, hetenv, hepre⟩ := params_env _ ((calleeEnv P fi).push, { ga with steps := k2 }) cx hzip
+    (predeclared_callee cx P fi p hpk hobjs)
+  obtain ⟨hpst, hpsteps⟩ := params_st ((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws)
+    ((calleeEnv P fi).push, { ga with steps := k2 })
+  have hgac : GFrame ga { ga with steps := k2 } := ⟨pre_refl _, by cases ga; rfl⟩
+  have hpst' := gframe_trans hgac hpst
+  have hic : Inv3 cx P sg (paramKinds xks) { sa with locals := specFrame F.params vs }.toCore
+      { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers }
+      (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).1 := by
+    refine ⟨⟨hfr.1, ?_, hepre⟩, hepkg, hetenv, hfr.2, ?_⟩
+    · show sa.out = (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2.out
+      rw [paramsBound, gframe_out hpst']; exact hia.inv.out
+    · intro x hx; exact hia.globals x hx
+  have hB := ihB F xks ρ lb hsig hlb { sa with locals := specFrame F.params vs } _ _ hic
+    (by show sa.steps ≤ _; simp only [paramsBound]; rw [hpsteps]; unfold Spent at hspa; simp at hspa ⊢; omega)
+    (m + 2) (by rw [Nat.mul_succ] at hN; omega)
+  have hnames' := nameOwner_kinds cx P fi p hpk hobjs
+  have hstSteps : ((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl
+      (fun s a => paramStep a s) ((calleeEnv P fi).push, { ga with steps := k2 }) =
+      paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 } := rfl
+  rcases hrb : (Spec.eval ds d F.body).run.run { sa with locals := specFrame F.params vs } with ⟨rb, t⟩
+  rw [hrb] at hB
+  -- What galaspec's call gives, from its body's result.
+  have hcall : ∀ r t', r ≠ .ok .unit → (Spec.runIn ds d (specFrame F.params vs) F.body).run.run sa = (r, t') →
+      (Spec.callFunc ds d F vs).run.run sa = (r, t') := fun r t' hr hrun =>
+    callFunc_run ds d F vs sa (params_typed htys) ρ hres hlenV r t' hrun hr
+  -- Both sides return a value: the call's result.
+  have hok : ∀ v, RetOK ρ { sa with locals := specFrame F.params vs }
+      { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers } v t
+      ((execStmts cx (m + 2) (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).1 lb).run.run
+        { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers }) →
+      (Spec.runIn ds d (specFrame F.params vs) F.body).run.run sa = (.ok v, { t with locals := sa.locals }) →
+      ERes3 ρ false s g ((Spec.callFunc ds d F vs).run.run sa)
+        ((do Val.single (← callBody cx (m + 3) (calleeEnv P fi) (lowerSigOf xks ρ) (some lb) none ws false)).run.run ga) := by
+    intro v hret hrun
+    obtain ⟨w, g1, hgo, hvw, hkv, hheap, hglob', hout', hgf1, hsp1⟩ := hret
+    have hv1 : v ≠ .unit := by intro h; subst h; cases hvw
+    rw [hcall (.ok v) _ (fun h => hv1 (by cases h; rfl)) hrun]
+    rw [grun_bind, callBody_ret cx m P fi xks ρ lb ws ga k2 hk2 (argsRel_of_krel hkr) hnames' v w hvw hkv g1
+      hgo (by rw [gframe_defers hgf1])]
+    obtain ⟨hvd, hnu, -, -⟩ := vrel_default hvw
+    refine ⟨defaultVal w, { g1 with defers := ga.defers }, rfl, hvd, hkv, fun _ => hnu, ?_, ?_, ?_⟩
+    · obtain ⟨hl1, hg1, ho1⟩ := sframe_parts hsfa
+      exact sframe_mk (pre_trans hsfa.1 hheap) hl1 (hglob'.trans hg1) (hout'.trans ho1)
+    · exact gframe_trans hgfa (call_frame [] hpst' hgf1)
+    · unfold Spent at hspa hsp1 ⊢
+      simp only [paramsBound] at hsp1
+      rw [hpsteps] at hsp1
+      simp only [hs] at hspa ⊢
+      simp at hsp1 hspa ⊢
+      omega
+  cases rb with
+  | ok v =>
+    have h := hok v hB (by rw [runIn_res, hrb])
+    rw [grun_bind] at h
+    simp only [calleeEnv] at h
+    exact h
+  | error e =>
+    cases e with
+    | ret v =>
+      have h := hok v hB (by rw [runIn_res, hrb])
+      rw [grun_bind] at h
+      simp only [calleeEnv] at h
+      exact h
+    | panic pc msg =>
+      obtain ⟨pv, g1, hgo, hp, ho, hgf1⟩ := hB
+      have hcb := callBody_panic cx m P fi xks ρ lb ws ga k2 hk2 (argsRel_of_krel hkr) hnames' pv true g1 hgo
+          (by rw [gframe_defers hgf1])
+      simp only [calleeEnv] at hcb
+      rw [hcall (.error (.panic pc msg)) _ (fun h => nomatch h) (by rw [runIn_res, hrb]), hcb]
+      refine panOK_tick ht ⟨pv, _, rfl, hp, ?_, gframe_trans hgfa (call_frame [] hpst' hgf1)⟩
+      rw [ho]; exact (sframe_parts hsfa).2.2
+    | fuel =>
+      rw [hcall (.error .fuel) _ (fun h => nomatch h) (by rw [runIn_res, hrb])]
+      trivial
+    | stuck m' =>
+      rw [hcall (.error (.stuck m')) _ (fun h => nomatch h) (by rw [runIn_res, hrb])]
+      trivial
+    | unsupported a b =>
+      rw [hcall (.error (.unsupported a b)) _ (fun h => nomatch h) (by rw [runIn_res, hrb])]
+      trivial
+
+end CallSim
