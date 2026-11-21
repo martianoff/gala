@@ -771,9 +771,10 @@ var _ std.FieldDecoder = (*YamlDecoderImpl)(nil)
 // YAML parser — builds the AST from raw text.
 //
 // Subset (per DESIGN.md §4.5): block-style mappings, block-style sequences,
-// plain / single-quoted / double-quoted scalars, literal block scalars (`|`),
-// comments, blank lines. Out of scope: anchors, aliases, flow style, custom
-// tags, folded blocks (`>`), explicit document markers (`---`).
+// plain / single-quoted / double-quoted scalars, literal block scalars (`|`,
+// `|-`, `|+`, chomped as YAML 1.2 says), comments, blank lines. Out of
+// scope: anchors, aliases, flow style, custom tags, folded blocks (`>`),
+// indentation indicators (`|2`), explicit document markers (`---`).
 // ============================================================================
 
 type pLine struct {
@@ -937,12 +938,15 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 	blanks := 0 // blank lines since the last text line
 	for i := start; i < len(raw); i++ {
 		line := strings.TrimRight(raw[i], "\r")
-		if line == "" {
+		indent := countLeadingSpaces(line)
+		// A line of only white space is blank, as an editor that keeps the
+		// indentation leaves it, unless it reaches past the body's
+		// indentation: the spaces beyond it are then the line's text.
+		if strings.TrimLeft(line, " \t") == "" && (bodyIndent < 0 || indent <= bodyIndent) {
 			blanks++
 			consumed++
 			continue
 		}
-		indent := countLeadingSpaces(line)
 		if indent <= parentIndent {
 			break
 		}

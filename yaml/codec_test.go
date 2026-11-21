@@ -1024,7 +1024,11 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"blank lines before", "k: |\n\n\n  a\nj: 1", "\n\na\n"},
 		{"empty, clip", "k: |\nj: 1", ""},
 		{"empty, keep", "k: |+\n\n\nj: 1", "\n\n"},
-		{"keep, comment after", "k: |+ # note\n  a\n\nj: 1", "a\n\n"},
+		{"blank line holding spaces, clip", "k: |\n  a\n  \nj: 1", "a\n"},
+		{"blank line holding spaces, strip", "k: |-\n  a\n  \nj: 1", "a"},
+		{"short blank line inside", "k: |\n    a\n  \n    b\nj: 1", "a\n\nb\n"},
+		{"blank line with spaces past the body", "k: |\n  a\n     \n  b\nj: 1", "a\n   \nb\n"},
+		{"keep, comment after","k: |+ # note\n  a\n\nj: 1", "a\n\n"},
 		{"keep, sequence item", "- |+\n  a\n\n- b", "a\n\n"},
 	}
 	for _, tt := range tests {
