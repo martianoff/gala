@@ -237,6 +237,18 @@ func TestRun(t *testing.T) {
 			check: "GOROOT", want: Warn,
 		},
 		{
+			// The go on PATH switches toolchain to build, and type inference
+			// reads that one: no advice to point GOROOT back at the old SDK.
+			name: "type inference reads the toolchain an old go switches to",
+			mutate: func(_ *testing.T, env *Env) {
+				env.GoEnv = func(string, ...string) ([]string, error) {
+					return []string{"go1.23.4", goRoot, goCache}, nil
+				}
+				env.GoSDKRoot = func() string { return "/opt/go1.25.0" }
+			},
+			check: "GOROOT", want: OK, failed: true, // the go check fails
+		},
+		{
 			name: "large go build cache",
 			mutate: func(_ *testing.T, env *Env) {
 				env.GoCacheWarnBytes = 1 << 20

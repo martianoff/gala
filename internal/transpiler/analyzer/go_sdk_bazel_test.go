@@ -100,9 +100,10 @@ func TestGorootFromGoBinarySymlink(t *testing.T) {
 // A go on PATH older than the go line GALA's go.mod files declare does not
 // build GALA's code: the go command switches to a newer toolchain (#1322,
 // where go1.23.4 on PATH hid strings.SplitSeq from type inference while the
-// build compiled with go1.25). switchedGoRoot must then take the root the go
-// command reports in a module with that go line, and leave a new enough SDK,
-// or one whose version it cannot read, as it is.
+// build compiled with go1.25), and so does one GOTOOLCHAIN names.
+// switchedGoRoot must then take the root the go command reports in a module
+// with that go line, and leave a new enough SDK with no toolchain named, or
+// one whose version it cannot read, as it is.
 func TestSwitchedGoRoot(t *testing.T) {
 	root := t.TempDir()
 	sdk := func(name, version string) string {
@@ -127,11 +128,15 @@ func TestSwitchedGoRoot(t *testing.T) {
 		goModSeen = string(data)
 		return switched
 	}
-	if got := switchedGoRoot(old, goEnv); got != switched {
+	if got := switchedGoRoot(old, false, goEnv); got != switched {
 		t.Errorf("switchedGoRoot(go1.23.4) = %q, want the switched toolchain %q", got, switched)
 	}
 	if want := "\ngo " + GeneratedGoVersion + "\n"; !strings.Contains(goModSeen, want) {
 		t.Errorf("go env GOROOT ran with go.mod %q, want one containing %q", goModSeen, want)
+	}
+	// GOTOOLCHAIN names a toolchain: even a new enough SDK asks.
+	if got := switchedGoRoot(current, true, goEnv); got != switched {
+		t.Errorf("switchedGoRoot(%q) with a toolchain named = %q, want %q", current, got, switched)
 	}
 
 	noCall := func(string) string {
@@ -139,12 +144,26 @@ func TestSwitchedGoRoot(t *testing.T) {
 		return switched
 	}
 	for _, dir := range []string{current, devel} {
-		if got := switchedGoRoot(dir, noCall); got != dir {
+		if got := switchedGoRoot(dir, false, noCall); got != dir {
 			t.Errorf("switchedGoRoot(%q) = %q, want it unchanged", dir, got)
 		}
 	}
 	// The go command cannot tell (GOTOOLCHAIN=local fails, say): keep the root.
-	if got := switchedGoRoot(old, func(string) string { return "" }); got != old {
+	if got := switchedGoRoot(old, false, func(string) string { return "" }); got != old {
 		t.Errorf("switchedGoRoot with no answer = %q, want %q", got, old)
+	}
+}
+
+// GOTOOLCHAIN names a toolchain unless it leaves the choice to the go line.
+func TestGoToolchainNamed(t *testing.T) {
+	t.Setenv("GOENV", "off")
+	for v, want := range map[string]bool{
+		"": false, "auto": false, "local": false, "path": false,
+		"go1.26.0": true, "go1.26.0+auto": true, "go1.26.0+path": true,
+	} {
+		t.Setenv("GOTOOLCHAIN", v)
+		if got := goToolchainNamed(); got != want {
+			t.Errorf("GOTOOLCHAIN=%q: goToolchainNamed() = %t, want %t", v, got, want)
+		}
 	}
 }
