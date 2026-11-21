@@ -340,16 +340,17 @@ func checkProject(env Env) []Check {
 	}
 	return append(checks, problem(Warn, "go.mod",
 		fmt.Sprintf("gala.mod and go.mod disagree on %d Go dependencies: %s", len(drift), summarize(drift, 3)),
-		"run gala mod add <path>@<version> --go with the version go.mod requires", anchorModDrift))
+		"run gala mod add <path>@<version> --go with the version go.mod requires, and give gala.mod go.mod's replace directives", anchorModDrift))
 }
 
 // modDrift lists the Go dependencies gala.mod and go.mod disagree on. gala
 // build takes Go module versions from gala.mod and go build from go.mod, so
 // each difference is a dependency the two builds resolve differently. go.mod's
 // side is what `gala mod init` copies from it (build.GoRequirementsOf), which
-// leaves out replaced modules and GALA's own packages. Drift is a module both
-// require at different versions, a direct go.mod requirement gala.mod lacks,
-// and a Go dependency of gala.mod that go.mod does not require.
+// leaves out GALA's own packages. Drift is a module both require at different
+// versions, a direct go.mod requirement gala.mod lacks, a Go dependency of
+// gala.mod that go.mod does not require, and a replace directive one file has
+// and the other does not.
 //
 // An indirect requirement gala.mod lacks is not drift: `go mod tidy` adds one
 // for every module the build reaches, and gala.mod need not list them all.
@@ -359,7 +360,8 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 		inGala[r.Path] = r.Version
 	}
 	var drift []string
-	wanted, _ := build.GoRequirementsOf(goMod)
+	wanted, wantedReplaces, _ := build.GoRequirementsOf(goMod)
+	drift = append(drift, replaceDrift(galaMod, wantedReplaces)...)
 	for _, r := range wanted {
 		switch galaVer, found := inGala[r.Path]; {
 		case !found && !r.Indirect:
@@ -378,6 +380,35 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 		}
 	}
 	sort.Strings(drift)
+	return drift
+}
+
+// replaceDrift lists the replace directives go.mod has (goReplaces) and
+// gala.mod lacks, and those gala.mod has for a Go dependency and go.mod lacks.
+// A replace of a GALA module in gala.mod is not drift: go.mod has no reason to
+// carry it.
+func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace) []string {
+	inGala := make(map[mod.Replace]bool)
+	for _, r := range galaMod.Replace {
+		inGala[r] = true
+	}
+	inGo := make(map[mod.Replace]bool)
+	var drift []string
+	for _, r := range goReplaces {
+		inGo[r] = true
+		if !inGala[r] {
+			drift = append(drift, fmt.Sprintf("replace %s (go.mod only)", mod.FormatReplaceEntry(r)))
+		}
+	}
+	goDeps := make(map[string]bool)
+	for _, r := range galaMod.GoRequires() {
+		goDeps[r.Path] = true
+	}
+	for _, r := range galaMod.Replace {
+		if goDeps[r.Old.Path] && !inGo[r] {
+			drift = append(drift, fmt.Sprintf("replace %s (gala.mod only)", mod.FormatReplaceEntry(r)))
+		}
+	}
 	return drift
 }
 

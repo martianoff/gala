@@ -353,7 +353,7 @@ Creates:
 - Empty `gala.sum` file
 - A `.gala/` line in `.gitignore` (the file is created if there is none)
 
-In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The command prints each requirement it copied. A requirement `go.mod` replaces is not copied (`gala build` does not apply replace directives to Go dependencies), nor is a GALA standard library package; the command lists those with the reason. The copy is made once: after changing a version in `go.mod`, run `gala mod add path@version --go` to change it in `gala.mod`.
+In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The `replace` directives of `go.mod` are copied too: `gala build` applies those of `gala.mod`, to Go dependencies as to GALA ones. The command prints each requirement and replace it copied. A GALA standard library package is not copied; the command lists it with the reason. The copy is made once: after changing a version in `go.mod`, run `gala mod add path@version --go` to change it in `gala.mod`.
 
 ### gala mod add
 
@@ -576,6 +576,7 @@ require (
 2. The transpiler generates correct Go imports for Go packages
 3. For non-Bazel builds: `gala build` and `gala test` read each Go dependency's source for its types before transpiling, downloading it first if it is not cached, and `go mod tidy` fetches it for the Go compile. A GALA library's own Go dependencies are read the same way when it is built as a dependency, so they need not be repeated in your `gala.mod`
 4. For Bazel builds: Gazelle's `go_deps` extension fetches them
+5. For non-Bazel builds, a `replace` in your `gala.mod` applies to a Go dependency as it would in `go.mod`: `replace example.com/greet => ../greet` builds the module from that directory, and `replace github.com/google/uuid => github.com/google/uuid v1.6.0` builds it at that version. As in Go, only the replaces of the module being built count, not those of its dependencies
 
 **Usage in GALA code:**
 

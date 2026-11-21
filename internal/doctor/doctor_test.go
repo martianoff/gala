@@ -406,9 +406,26 @@ func TestModDrift(t *testing.T) {
 			goMod:   "require a.com/galalib v1.0.0",
 		},
 		{
-			name:    "a module go.mod replaces is not copied, so not drift",
-			galaMod: "",
+			name:    "a replaced module, replaced in both",
+			galaMod: "require a.com/x v0.0.0 // go\n\nreplace a.com/x => ../x",
 			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => ../x",
+		},
+		{
+			name:    "a go.mod replace missing from gala.mod",
+			galaMod: "require a.com/x v0.0.0 // go",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => ../x",
+			want:    []string{"replace a.com/x => ../x (go.mod only)"},
+		},
+		{
+			name:    "replaced with a different version",
+			galaMod: "require a.com/x v1.0.0 // go\n\nreplace a.com/x => a.com/x v1.1.0",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x => a.com/x v1.2.0",
+			want:    []string{"replace a.com/x => a.com/x v1.1.0 (gala.mod only)", "replace a.com/x => a.com/x v1.2.0 (go.mod only)"},
+		},
+		{
+			name:    "a gala.mod replace of a GALA dependency is not drift",
+			galaMod: "require a.com/galalib v1.0.0\n\nreplace a.com/galalib => ../galalib",
+			goMod:   "",
 		},
 		{
 			name:    "gala.mod Go dependency missing from go.mod",

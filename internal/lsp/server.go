@@ -507,7 +507,7 @@ func (h *GalaHandler) loadProjectModule(rootPath string) {
 	}
 	// Wire third-party Go module source directories so the analyzer can resolve
 	// their concrete types (completion) and definition can navigate into them.
-	if dirs := build.GoModuleSrcDirs(galaMod, config); len(dirs) > 0 {
+	if dirs := build.GoModuleSrcDirs(galaMod, rootPath, config); len(dirs) > 0 {
 		h.goSrcDirs = dirs
 	}
 }

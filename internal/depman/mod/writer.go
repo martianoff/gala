@@ -42,7 +42,7 @@ func Format(f *File) string {
 			sb.WriteString("replace (\n")
 			for _, r := range f.Replace {
 				sb.WriteString("\t")
-				sb.WriteString(formatReplaceEntry(r))
+				sb.WriteString(FormatReplaceEntry(r))
 				sb.WriteString("\n")
 			}
 			sb.WriteString(")\n")
@@ -92,11 +92,12 @@ func FormatRequireEntry(r Require) string {
 
 // formatReplaceLine formats a single replace directive.
 func formatReplaceLine(r Replace) string {
-	return fmt.Sprintf("replace %s\n", formatReplaceEntry(r))
+	return fmt.Sprintf("replace %s\n", FormatReplaceEntry(r))
 }
 
-// formatReplaceEntry formats the content of a replace entry (without "replace" prefix).
-func formatReplaceEntry(r Replace) string {
+// FormatReplaceEntry formats a replace entry as gala.mod writes it, without
+// the "replace" keyword.
+func FormatReplaceEntry(r Replace) string {
 	var sb strings.Builder
 
 	sb.WriteString(r.Old.Path)

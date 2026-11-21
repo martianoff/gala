@@ -52,6 +52,9 @@ type Builder struct {
 	goSrcDirs         map[string]string
 	goSrcDirsResolved bool
 	goSrcDirsComplete bool
+	// goReqs memoizes goRequires.
+	goReqs         []mod.Require
+	goReqsResolved bool
 	// requiredModules memoizes requiredModulePaths.
 	requiredModules []string
 }
@@ -353,47 +356,24 @@ func (b *Builder) ensureDeps() error {
 // isLocal flag, and ok=true. A replace matches when Old.Path equals req.Path
 // and Old.Version is either empty (wildcard) or equals req.Version.
 func (b *Builder) resolveReplace(req mod.Require) (path string, isLocal bool, ok bool) {
-	if b.galaMod == nil {
+	rep, ok := b.galaMod.ReplaceFor(req.Path, req.Version)
+	if !ok {
 		return "", false, false
 	}
-	for _, rep := range b.galaMod.Replace {
-		if rep.Old.Path != req.Path {
-			continue
-		}
-		if rep.Old.Version != "" && rep.Old.Version != req.Version {
-			continue
-		}
-		if rep.New.IsLocal() {
-			resolved := rep.New.Path
-			if !filepath.IsAbs(resolved) {
-				resolved = filepath.Join(b.workspace.ProjectDir, resolved)
-			}
-			return filepath.Clean(resolved), true, true
-		}
-		return b.config.GalaModulePath(rep.New.Path, rep.New.Version), false, true
+	if rep.New.IsLocal() {
+		return replacementDir(b.workspace.ProjectDir, rep.New.Path), true, true
 	}
-	return "", false, false
+	return b.config.GalaModulePath(rep.New.Path, rep.New.Version), false, true
 }
 
 // resolveModuleReplace returns the replacement module coordinates (path,
 // version) for a non-local replace directive, or ok=false if none applies.
 func (b *Builder) resolveModuleReplace(req mod.Require) (path, version string, ok bool) {
-	if b.galaMod == nil {
+	rep, ok := b.galaMod.ReplaceFor(req.Path, req.Version)
+	if !ok || rep.New.IsLocal() {
 		return "", "", false
 	}
-	for _, rep := range b.galaMod.Replace {
-		if rep.Old.Path != req.Path {
-			continue
-		}
-		if rep.Old.Version != "" && rep.Old.Version != req.Version {
-			continue
-		}
-		if rep.New.IsLocal() {
-			return "", "", false
-		}
-		return rep.New.Path, rep.New.Version, true
-	}
-	return "", "", false
+	return rep.New.Path, rep.New.Version, true
 }
 
 // effectiveDepDir returns the on-disk directory where a dependency's source
@@ -412,10 +392,25 @@ func (b *Builder) effectiveDepDir(req mod.Require) string {
 // and shared by the project's and the dependencies' transpiles.
 func (b *Builder) goModuleSrcDirs() map[string]string {
 	if !b.goSrcDirsResolved {
-		b.goSrcDirs, b.goSrcDirsComplete = resolveGoModuleSrcDirs(b.config, goRequiresWithDeps(b.galaMod, b.effectiveDepDir), b.verbose)
+		b.goSrcDirs, b.goSrcDirsComplete = resolveGoModuleSrcDirs(b.config, b.goRequires(), b.goReplacement(), b.verbose)
 		b.goSrcDirsResolved = true
 	}
 	return b.goSrcDirs
+}
+
+// goRequires is goRequiresWithDeps for the project, computed once per build.
+func (b *Builder) goRequires() []mod.Require {
+	if !b.goReqsResolved {
+		b.goReqs = goRequiresWithDeps(b.galaMod, b.effectiveDepDir)
+		b.goReqsResolved = true
+	}
+	return b.goReqs
+}
+
+// goReplacement applies the project's replace directives to a required Go
+// module (see goReplacements).
+func (b *Builder) goReplacement() goReplacementFunc {
+	return goReplacements(b.galaMod, b.workspace.ProjectDir)
 }
 
 // goSourcesComplete reports whether every Go module the build requires
@@ -500,14 +495,17 @@ func newerVersion(a, b string) bool {
 }
 
 // GoModuleSrcDirs is goModuleSrcDirs for the LSP: the Go modules galaMod and its
-// GALA dependencies in the module cache require, mapped to the cached source
-// directories, without downloading anything. Returns nil when none resolve.
-func GoModuleSrcDirs(galaMod *mod.File, config *Config) map[string]string {
+// GALA dependencies require, mapped to the cached source directories (or to
+// the directories gala.mod replaces them with), without downloading anything.
+// projectDir is the directory of galaMod. Returns nil when none resolve.
+func GoModuleSrcDirs(galaMod *mod.File, projectDir string, config *Config) map[string]string {
 	if galaMod == nil || config == nil {
 		return nil
 	}
-	reqs := goRequiresWithDeps(galaMod, func(req mod.Require) string { return config.GalaModulePath(req.Path, req.Version) })
-	dirs, _ := goModuleSrcDirClosure(config, reqs, nil)
+	reqs := goRequiresWithDeps(galaMod, func(req mod.Require) string {
+		return resolveEffectiveDepDir(config, galaMod, projectDir, req)
+	})
+	dirs, _ := goModuleSrcDirClosure(config, reqs, goReplacements(galaMod, projectDir), nil)
 	return dirs
 }
 
@@ -537,9 +535,14 @@ func goModuleSrcDir(config *Config, req mod.Require) (string, bool) {
 // download is best effort; a module it cannot fetch (offline, a private module
 // without credentials) stays unresolved, complete is false, and the transpile
 // reports what it then cannot type (GALA-E0067).
-func resolveGoModuleSrcDirs(config *Config, reqs []mod.Require, verbose bool) (dirs map[string]string, complete bool) {
-	return goModuleSrcDirClosure(config, reqs, func(missing []mod.Require) { downloadGoModules(config, missing, verbose) })
+func resolveGoModuleSrcDirs(config *Config, reqs []mod.Require, replacement goReplacementFunc, verbose bool) (dirs map[string]string, complete bool) {
+	return goModuleSrcDirClosure(config, reqs, replacement, func(missing []mod.Require) { downloadGoModules(config, missing, verbose) })
 }
+
+// goReplacementFunc maps a required Go module to the module whose source
+// stands in for it (req itself when nothing replaces it) or to the directory
+// that does.
+type goReplacementFunc func(req mod.Require) (target mod.Require, dir string)
 
 // goModuleSrcDirClosure maps each module in reqs to its cached source
 // directory, and with them the modules their go.mod files require: a module's
@@ -551,30 +554,56 @@ func resolveGoModuleSrcDirs(config *Config, reqs []mod.Require, verbose bool) (d
 // neither cache holds before they are looked up again. complete reports that
 // every module of reqs resolved; one their go.mod files add is best effort
 // (it may serve only a test of the module), so it is not counted.
-func goModuleSrcDirClosure(config *Config, reqs []mod.Require, download func([]mod.Require)) (dirs map[string]string, complete bool) {
+//
+// A module replacement applies before the lookup: the source of the module
+// replacement names is looked up (and downloaded) in the module's place, and a
+// directory replacement is the module's directory. Either way dirs keys the
+// source by the required module's path, the one its packages are imported by.
+func goModuleSrcDirClosure(config *Config, reqs []mod.Require, replacement goReplacementFunc, download func([]mod.Require)) (dirs map[string]string, complete bool) {
 	dirs = make(map[string]string, len(reqs))
 	versions := make(map[string]string, len(reqs))
+	if replacement == nil {
+		replacement = func(req mod.Require) (mod.Require, string) { return req, "" }
+	}
 	resolve := func(reqs []mod.Require) bool {
-		var missing []mod.Require
+		type lookup struct {
+			path   string     // the required module's path
+			target mod.Require // the module whose source stands in for it
+		}
+		var missing []lookup
+		all := true
 		for _, req := range reqs {
 			versions[req.Path] = req.Version
-			if dir, ok := goModuleSrcDir(config, req); ok {
+			target, dir := replacement(req)
+			if dir != "" {
+				// A directory replacement is not downloaded: present or not.
+				if info, err := os.Stat(dir); err == nil && info.IsDir() {
+					dirs[req.Path] = dir
+				} else {
+					all = false
+				}
+				continue
+			}
+			if dir, ok := goModuleSrcDir(config, target); ok {
 				dirs[req.Path] = dir
 			} else {
-				missing = append(missing, req)
+				missing = append(missing, lookup{req.Path, target})
 			}
 		}
 		if len(missing) == 0 {
-			return true
+			return all
 		}
 		if download == nil {
 			return false
 		}
-		download(missing)
-		all := true
-		for _, req := range missing {
-			if dir, ok := goModuleSrcDir(config, req); ok {
-				dirs[req.Path] = dir
+		targets := make([]mod.Require, len(missing))
+		for i, m := range missing {
+			targets[i] = m.target
+		}
+		download(targets)
+		for _, m := range missing {
+			if dir, ok := goModuleSrcDir(config, m.target); ok {
+				dirs[m.path] = dir
 			} else {
 				all = false
 			}
