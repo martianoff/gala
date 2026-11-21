@@ -617,7 +617,7 @@ end
 mutual
 /-- **The lowering of a statement**, step 2b's shapes with calls in their expressions, and
     `return e` of the result's kind `ρ`. -/
-def lowerS3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : Spec.Expr →
+def lowerS3 (K : Nat) (sg : Sigs) (ρ : Option Kind) (κ : String → Option Kind) : Spec.Expr →
     Option ((String → Option Kind) × Stmt)
   | .decl _ [x] false none [e] =>
     if x = "_" ∨ x = "true" ∨ x = "false" then none
@@ -629,16 +629,16 @@ def lowerS3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : Sp
     | _, _, _ => none
   | .ret (some e) =>
     match lowerC K sg κ e with
-    | some (k, le) => if k = ρ then some (κ, .ret [le]) else none
+    | some (k, le) => if some k = ρ then some (κ, .ret [le]) else none
     | none => none
   | _ => none
-def lowerElse3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) :
+def lowerElse3 (K : Nat) (sg : Sigs) (ρ : Option Kind) (κ : String → Option Kind) :
     Option Spec.Expr → Option (Option Stmt)
   | none => some none
   | some (.block ss) => (lowerSs3 K sg ρ κ ss).map fun (_, l) => some (.block l)
   | some (.ifStmt c a els) => (lowerS3 K sg ρ κ (.ifStmt c a els)).map fun (_, l) => some l
   | some _ => none
-def lowerSs3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : List Spec.Expr →
+def lowerSs3 (K : Nat) (sg : Sigs) (ρ : Option Kind) (κ : String → Option Kind) : List Spec.Expr →
     Option ((String → Option Kind) × List Stmt)
   | [] => some (κ, [])
   | s :: ss => do
@@ -663,7 +663,7 @@ def lowerTail (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : 
   | [] => none
   | [e] => (lowerLast K sg ρ κ e).map fun le => [.ret [le]]
   | s :: s' :: ss => do
-    let (κ₁, l) ← lowerS3 K sg ρ κ s
+    let (κ₁, l) ← lowerS3 K sg (some ρ) κ s
     let ls ← lowerTail K sg ρ κ₁ (s' :: ss)
     pure (l :: ls)
 
@@ -721,8 +721,8 @@ def PanOK (s : Spec.St) (g : St) (pc : Spec.PanicClass) (m : String) (s' : Spec.
   | r => ∃ pv g', r = (.error (.panic pv true), g') ∧ PanicRel pc m pv ∧ s'.out = s.out ∧ GFrame g g'
 
 /-- A value `v` of kind `ρ` returned: GoCore returns a related one. -/
-def RetOK (ρ : Kind) (s : Spec.St) (g : St) (v : Spec.Val) (s' : Spec.St) : Except Stop α × St → Prop
-  | r => ∃ w g', r = (.error (.ret [w]), g') ∧ VRel v w ∧ valKind v = some ρ ∧ Pre s.heap s'.heap ∧
+def RetOK (ρ : Option Kind) (s : Spec.St) (g : St) (v : Spec.Val) (s' : Spec.St) : Except Stop α × St → Prop
+  | r => ∃ w g', r = (.error (.ret [w]), g') ∧ VRel v w ∧ valKind v = ρ ∧ Pre s.heap s'.heap ∧
       s'.globals = s.globals ∧ s'.out = s.out ∧ GFrame g g' ∧ Spent s s' g g'
 
 /-- **An expression's results agree**: a related value of kind `k` (not an untyped integer
@@ -755,7 +755,7 @@ def ARes3 (ks : List Kind) (s : Spec.St) (g : St) :
 /-- **A statement list's results agree**: ending normally, related states with the kinds
     `κ'` the list declared (galaspec's locals only extended); a panic, the same panic; a
     `return` of a value of the result's kind `ρ`, the same `return`. -/
-def ResL3 (cx : Ctx) (P : String) (sg : Sigs) (ρ : Kind) (κ' : String → Option Kind) (s : Spec.St) (g : St) :
+def ResL3 (cx : Ctx) (P : String) (sg : Sigs) (ρ : Option Kind) (κ' : String → Option Kind) (s : Spec.St) (g : St) :
     Except Spec.Stop Spec.Val × Spec.St → Except Stop Env × St → Prop
   | (.ok _, s'), r => ∃ env' g', r = (.ok env', g') ∧ Inv3 cx P sg κ' s'.toCore g' env' ∧
       Pre s.heap s'.heap ∧ s'.globals = s.globals ∧ (∃ pre, s'.locals = pre ++ s.locals) ∧
@@ -765,7 +765,7 @@ def ResL3 (cx : Ctx) (P : String) (sg : Sigs) (ρ : Kind) (κ' : String → Opti
   | _, _ => True
 
 /-- The same for a block or an `if`, which leaves galaspec's locals as they were. -/
-def ResU3 (ρ : Kind) (Q : α → Prop) (s : Spec.St) (g : St) :
+def ResU3 (ρ : Option Kind) (Q : α → Prop) (s : Spec.St) (g : St) :
     Except Spec.Stop Spec.Val × Spec.St → Except Stop α × St → Prop
   | (.ok _, s'), r => ∃ a g', r = (.ok a, g') ∧ Q a ∧ SFrame s.toCore s'.toCore ∧ GFrame g g' ∧ Spent s s' g g'
   | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
@@ -775,8 +775,8 @@ def ResU3 (ρ : Kind) (Q : α → Prop) (s : Spec.St) (g : St) :
 /-- **A function body's results agree**: the value galaspec's body gives or returns, of
     the result's kind, is the value GoCore's `return`s; or the same panic. -/
 def ResB (ρ : Kind) (s : Spec.St) (g : St) : Except Spec.Stop Spec.Val × Spec.St → Except Stop Env × St → Prop
-  | (.ok v, s'), r => RetOK ρ s g v s' r
-  | (.error (.ret v), s'), r => RetOK ρ s g v s' r
+  | (.ok v, s'), r => RetOK (some ρ) s g v s' r
+  | (.error (.ret v), s'), r => RetOK (some ρ) s g v s' r
   | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
   | _, _ => True
 
@@ -2109,7 +2109,7 @@ theorem inv3_push {κ : String → Option Kind} {c : Spec.Core} {g : St} {env : 
     (h : Inv3 cx P sg κ c g env) : Inv3 cx P sg κ c g env.push :=
   ⟨inv_push h.inv, h.pkg, h.tenv, fun x hx => by rw [Env.lookup_push]; exact h.closed x hx, h.globals⟩
 
-theorem retOK_trans {ρ : Kind} {s s₁ : Spec.St} {g g₁ : St} (hh : Pre s.heap s₁.heap) (hgl : s₁.globals = s.globals)
+theorem retOK_trans {ρ : Option Kind} {s s₁ : Spec.St} {g g₁ : St} (hh : Pre s.heap s₁.heap) (hgl : s₁.globals = s.globals)
     (ho : s₁.out = s.out) (hg : GFrame g g₁) (hsp : Spent s s₁ g g₁) {v s' r}
     (h : RetOK ρ s₁ g₁ v s' r) : RetOK (α := α) ρ s g v s' r := by
   obtain ⟨w, g', hr, hv, hk, hh', hgl', ho', hg', hsp'⟩ := h
@@ -2158,7 +2158,7 @@ theorem blockSim_succ (d : Nat) (ihL : ListSim3 ds cx P K sg d) : BlockSim3 ds c
     · unfold Spent at hsp ⊢; simp at hsp ⊢; omega
 
 /-- A list, from its statements. -/
-theorem resL3_after {ρ : Kind} {κ' : String → Option Kind} {s t : Spec.St} {g g₁ : St}
+theorem resL3_after {ρ : Option Kind} {κ' : String → Option Kind} {s t : Spec.St} {g g₁ : St}
     (hh : Pre s.heap t.heap) (hgl : t.globals = s.globals) (ho : t.out = s.out) (hg : GFrame g g₁)
     (hsp : Spent s t g g₁) {pre : List (String × Spec.Binding)} (hl : t.locals = pre ++ s.locals)
     {sr : Except Spec.Stop Spec.Val × Spec.St} {r : Except Stop Env × St}
@@ -2298,7 +2298,7 @@ theorem inv3_decl {κ : String → Option Kind} {t : Spec.St} {g : St} {env : En
     rw [hglob]; exact hi.globals f hf
 
 /-- **A declaration**, its expression one level down. -/
-theorem decl_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : Kind) (κ κ' : String → Option Kind)
+theorem decl_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : Option Kind) (κ κ' : String → Option Kind)
     (m : Spec.Mut) (x : String) (e : Spec.Expr) (l : Stmt)
     (hl : lowerS3 K sg ρ κ (.decl m [x] false none [e]) = some (κ', l)) (s : Spec.St) (g : St) (env : Env)
     (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
@@ -2345,7 +2345,7 @@ theorem decl_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : 
       unfold Spent at hsp ⊢; simp only [declG] at *; rw [this]; simp at hsp ⊢; omega
 
 /-- **`return e`**, its expression one level down. -/
-theorem ret_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : Kind) (κ κ' : String → Option Kind)
+theorem ret_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : Option Kind) (κ κ' : String → Option Kind)
     (x : Spec.Expr) (l : Stmt) (hl : lowerS3 K sg ρ κ (.ret (some x)) = some (κ', l)) (s : Spec.St) (g : St)
     (env : Env) (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
     ResL3 cx P sg ρ κ' s g ((Spec.eval ds (d + 1) (.ret (some x))).run.run s)
@@ -2400,7 +2400,7 @@ def IfSim3 (d : Nat) : Prop :=
     Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d ≤ N →
       ResU3 ρ (· = env) s g ((Spec.eval ds d (.ifStmt c a els)).run.run s) ((execStmt cx N env l).run.run g)
 
-theorem resU3_withEnv {ρ : Kind} {Q : α → Prop} {s : Spec.St} {g : St} {sr : Except Spec.Stop Spec.Val × Spec.St}
+theorem resU3_withEnv {ρ : Option Kind} {Q : α → Prop} {s : Spec.St} {g : St} {sr : Except Spec.Stop Spec.Val × Spec.St}
     {r : Except Stop α × St} (env : Env) (h : ResU3 ρ Q s g sr r) : ResU3 ρ (· = env) s g sr (withEnv env r) := by
   rcases sr with ⟨_ | v, s'⟩
   · rename_i e
@@ -2411,7 +2411,7 @@ theorem resU3_withEnv {ρ : Kind} {Q : α → Prop} {s : Spec.St} {g : St} {sr :
   · obtain ⟨a, g', rfl, -, rest⟩ := h
     exact ⟨env, g', rfl, rfl, rest⟩
 
-theorem resU3_after {ρ : Kind} {Q : α → Prop} {s t : Spec.St} {g g₁ : St} (hsf : SFrame s.toCore t.toCore)
+theorem resU3_after {ρ : Option Kind} {Q : α → Prop} {s t : Spec.St} {g g₁ : St} (hsf : SFrame s.toCore t.toCore)
     (hg : GFrame g g₁) (hsp : Spent s t g g₁) {sr : Except Spec.Stop Spec.Val × Spec.St} {r : Except Stop α × St}
     (h : ResU3 ρ Q t g₁ sr r) : ResU3 ρ Q s g sr r := by
   obtain ⟨-, hgl, ho⟩ := sframe_parts hsf
@@ -2424,7 +2424,7 @@ theorem resU3_after {ρ : Kind} {Q : α → Prop} {s t : Spec.St} {g g₁ : St} 
   · obtain ⟨a, g', hr, hq, hsf', hg', hsp'⟩ := h
     exact ⟨a, g', hr, hq, sframe_trans hsf hsf', gframe_trans hg hg', spent_trans hsp hsp'⟩
 
-theorem resL3_of_resU3 {ρ : Kind} {κ : String → Option Kind} {s : Spec.St} {g : St} {env : Env}
+theorem resL3_of_resU3 {ρ : Option Kind} {κ : String → Option Kind} {s : Spec.St} {g : St} {env : Env}
     (hi : Inv3 cx P sg κ s.toCore g env) {sr : Except Spec.Stop Spec.Val × Spec.St} {r : Except Stop Env × St}
     (h : ResU3 ρ (· = env) s g sr r) : ResL3 cx P sg ρ κ s g sr r := by
   rcases sr with ⟨_ | v, s'⟩
@@ -2434,7 +2434,7 @@ theorem resL3_of_resU3 {ρ : Kind} {κ : String → Option Kind} {s : Spec.St} {
     obtain ⟨hl, hgl, -⟩ := sframe_parts hsf
     exact ⟨a, g', hr, inv3_frame hi hsf hg, hsf.1, hgl, ⟨[], by simp [hl]⟩, hg, hsp⟩
 
-theorem lowerS3_if {ρ : Kind} {κ κ' : String → Option Kind} {c a : Spec.Expr} {els : Option Spec.Expr} {l : Stmt}
+theorem lowerS3_if {ρ : Option Kind} {κ κ' : String → Option Kind} {c a : Spec.Expr} {els : Option Spec.Expr} {l : Stmt}
     (h : lowerS3 K sg ρ κ (.ifStmt c a els) = some (κ', l)) :
     κ' = κ ∧ ∃ as lc κ₁ la le, a = .block as ∧ lowerC K sg κ c = some (.bool, lc) ∧
       lowerSs3 K sg ρ κ as = some (κ₁, la) ∧ lowerElse3 K sg ρ κ els = some le ∧ l = .if_ none lc la le := by
@@ -2923,7 +2923,7 @@ section MonoK2
 variable {K K' : Nat} (sg : Sigs)
 
 mutual
-theorem lowerS3_mono (hKK : K ≤ K') (ρ : Kind) (κ : String → Option Kind) : ∀ (st : Spec.Expr)
+theorem lowerS3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Option Kind) : ∀ (st : Spec.Expr)
     (r : (String → Option Kind) × GoCore.Full.Stmt), lowerS3 K sg ρ κ st = some r → lowerS3 K' sg ρ κ st = some r
   | .decl m [x] false none [e], r, h => by
     simp only [lowerS3] at h ⊢
@@ -2972,7 +2972,7 @@ theorem lowerS3_mono (hKK : K ≤ K') (ρ : Kind) (κ : String → Option Kind) 
   | .paren _, _, h | .tuple _, _, h | .ifExpr .., _, h | .mtch .., _, h | .assign .., _, h
   | .incdec .., _, h | .interp _, _, h | .lambda .., _, h | .named .., _, h | .unsupported _, _, h => by
     simp [lowerS3] at h
-theorem lowerElse3_mono (hKK : K ≤ K') (ρ : Kind) (κ : String → Option Kind) : ∀ (els : Option Spec.Expr)
+theorem lowerElse3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Option Kind) : ∀ (els : Option Spec.Expr)
     (r : Option GoCore.Full.Stmt), lowerElse3 K sg ρ κ els = some r → lowerElse3 K' sg ρ κ els = some r
   | none, r, h => h
   | some (.block ss), r, h => by
@@ -2990,7 +2990,7 @@ theorem lowerElse3_mono (hKK : K ≤ K') (ρ : Kind) (κ : String → Option Kin
   | some (.ifExpr ..), _, h | some (.mtch ..), _, h | some (.ret _), _, h | some (.assign ..), _, h
   | some (.incdec ..), _, h | some (.decl ..), _, h | some (.interp _), _, h | some (.lambda ..), _, h
   | some (.named ..), _, h | some (.unsupported _), _, h => by simp [lowerElse3] at h
-theorem lowerSs3_mono (hKK : K ≤ K') (ρ : Kind) (κ : String → Option Kind) : ∀ (ss : List Spec.Expr)
+theorem lowerSs3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Option Kind) : ∀ (ss : List Spec.Expr)
     (r : (String → Option Kind) × List GoCore.Full.Stmt), lowerSs3 K sg ρ κ ss = some r → lowerSs3 K' sg ρ κ ss = some r
   | [], r, h => h
   | st :: ss, r, h => by
