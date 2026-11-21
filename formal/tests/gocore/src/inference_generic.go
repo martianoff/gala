@@ -1,5 +1,5 @@
-// Type inference GoCore runs: an untyped constant's default type for a parameter
-// whose constraint is an interface of methods only (no core type); a generic defined
+// Type inference GoCore runs: an untyped constant's default type for a parameter no
+// constraint mentions, beside one constrained by an interface of methods; a generic defined
 // function type against a function literal (inexact unification); and a generic
 // function passed by name, inferred with the call.
 package main
