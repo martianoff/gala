@@ -1,0 +1,4 @@
+clip: "echo a\necho b\n"
+strip: "echo a"
+keep: "echo a\n\n"
+next: 1

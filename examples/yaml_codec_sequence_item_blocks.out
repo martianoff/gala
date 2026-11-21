@@ -1,4 +1,6 @@
 Success(Job(Array(echo build
-echo test, make install)))
-Success(Array(Step(go build ./..., build), Step(go vet ./..., lint)))
+echo test
+, make install)))
+Success(Array(Step(go build ./...
+, build), Step(go vet ./..., lint)))
 Success(Array(Array(1, 2), Array(3)))
