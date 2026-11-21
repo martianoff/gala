@@ -2180,7 +2180,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
 		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, slotIdx) && !thunkReturnsError(expectedType)
-		expr, aerr := t.lowerFunctionArg(v, expectedType, callCtx, tryThunk)
+		expr, aerr := t.lowerFunctionArg(v, expectedType, callCtx, funcParamIndex(callCtx.funcMeta, slotIdx), tryThunk)
 		if aerr != nil {
 			return nil, aerr
 		}
@@ -2254,7 +2254,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 				return nil, nil, false, cerr
 			}
 
-			expr, aerr := t.lowerFunctionArg(v, namedExpectedType, callCtx, false)
+			expr, aerr := t.lowerFunctionArg(v, namedExpectedType, callCtx, -1, false)
 			if aerr != nil {
 				return nil, nil, false, aerr
 			}
@@ -2300,11 +2300,14 @@ func (t *galaASTTransformer) transformFunctionArgs(
 // generic struct or sealed-variant constructor, an argument whose lowering
 // depends on its slot type (a lambda, a placeholder lambda, or an if/match of
 // lambdas) first has the constructor's still-unbound type parameters masked out
-// of that type (see genericCtorLambdaExpectation).
+// of that type (see genericCtorLambdaExpectation). paramIdx is the parameter
+// of the GALA callee the argument fills, -1 when it is not known (no GALA
+// callee, or a named argument).
 func (t *galaASTTransformer) lowerFunctionArg(
 	v argValue,
 	expected transpiler.Type,
 	callCtx functionCallContext,
+	paramIdx int,
 	tryThunk bool,
 ) (ast.Expr, error) {
 	strict := false
@@ -2312,7 +2315,17 @@ func (t *galaASTTransformer) lowerFunctionArg(
 		(v.lambda.ok() || t.needsExpectedType(v.expr) || t.isPlaceholderLambdaArg(v.expr, expected)) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
-	return t.lowerArg(v, slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
+	s := slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}
+	// A parameter `f func(A) B` whose type parameters no other argument binds
+	// has no expected type (see resolveExpectedFuncArgType), but it still
+	// takes a function with one result.
+	if transpiler.IsUnusable(expected) && paramIdx >= 0 && len(callCtx.inferredTypeSubst) == 0 {
+		typeParams := callCtx.funcMeta.TypeParams
+		if ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx]); ft != nil && len(ft.Results) == 1 && funcTypeParamsMentionTypeParams(ft.Params, typeParams) {
+			s.funcResult = maskTypeParamResults(ft.Results, typeParams)[0]
+		}
+	}
+	return t.lowerArg(v, s, strict)
 }
 
 // isPlaceholderLambdaArg reports whether e, filling a slot of type
@@ -4998,13 +5011,21 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		defer func() { t.tryThunkLambda = prev }()
 	}
 	expectedRetType, expectedParamTypes, isFunc := t.lambdaExpectation(s.typ)
+	declaredResult := t.declaresAnyResult(s)
+	if !isFunc && s.funcResult != nil {
+		// A result is expected: the parameter's own type, which may spell
+		// `any`, or the body's type where it names a type parameter or does
+		// not resolve (an unusable part, spelled `any` like a placeholder).
+		expectedRetType = t.typeToExpr(s.funcResult)
+		declaredResult = !transpiler.ContainsUnusable(s.funcResult)
+	}
 	if !isFunc && s.typ != nil && (s.typ.IsAny() || s.typ.String() == "interface{}") {
 		// A slot typed `any` (a Go `func Register(h any)`) takes the lambda as
 		// it is: each parameter is `any`, as the callee declares.
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
 	b := t.goResultsBodyFor(s.typ, "this lambda").withBody(l.expression())
-	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
+	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, declaredResult, b)
 	if err != nil {
 		return nil, err
 	}

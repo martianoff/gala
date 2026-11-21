@@ -717,6 +717,14 @@ type slot struct {
 	// passesThrough) is checked by noteGoResultsValue, not against typ, the
 	// body's Try, which need not be its own.
 	goCallBody *goResultsBody
+	// funcResult: typ is unusable, but the slot is a function with one result
+	// — a parameter `f func(A) B` of a generic callee whose type parameters
+	// only the lambda filling it binds — and this is that result, NilType
+	// where it names a type parameter. A lambda there produces a value of it,
+	// a block lambda its trailing value, as one filling a known `func(A) B`
+	// does. Only lowerLambdaArg reads it: a lambda inside another argument
+	// form (an if, a match) does not get it. Nil for any other slot.
+	funcResult transpiler.Type
 }
 
 // typedSlot is the slot of type typ: an argument, a declaration, a function
