@@ -1188,7 +1188,8 @@ const (
 
 	// E0139: a read of `_`: of a `_` that a lambda parameter, typed pattern
 	// or `bind _ = m` clause binds (`(_) => _ + 1`, `case _: int => _`), or
-	// of `_` by `_++`, `_--` or a compound assignment `_ += x`. Such a `_`
+	// of `_` by `_++`, `_--` or a compound assignment `_ += x`, or of a `_`
+	// that nothing binds (`inc(_)` where inc takes no function). Such a `_`
 	// names no value; it used to reach Go as the blank identifier and fail
 	// `go build` with "cannot use _ as value or type".
 	CodeUnderscoreBindingRead ErrorCode = "GALA-E0139"

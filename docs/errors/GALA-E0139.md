@@ -3,14 +3,18 @@
 **When it fires.** A `_` is read as a value where its innermost binding is a
 lambda parameter written `_`, a typed pattern `case _: T` or a `bind _ = m`
 clause. Such a `_` binds the value without naming it, so there is nothing to
-read: `(_) => _ + 1` and `case _: int => _` have no value for the second `_`. It fires inside an
-interpolated string too (`(_) => s"v${_}"`). A placeholder lambda's `_` is its
-parameter, so `_ + 1` passed where a function is expected is not this error,
-even inside a lambda with a `_` parameter.
+read: `(_) => _ + 1` and `case _: int => _` have no value for the second `_`.
+It fires inside an interpolated string too (`(_) => s"v${_}"`). A placeholder
+lambda's `_` is its parameter, so `_ + 1` passed where a function is expected
+is not this error, even inside a lambda with a `_` parameter.
 
 An increment, decrement or compound assignment of `_` (`_++`, `_--`,
 `_ += x`) is the same error, with or without a `_` binding in scope: each
 reads `_` before writing it. Only `=` writes to `_`, and `_ = x` discards x.
+
+A `_` that nothing binds is the same error when it is read: `inc(_)` where
+`inc` takes an `int` is no placeholder lambda, since a placeholder lambda
+takes `_` only where a function is expected.
 
 **Minimal repro.**
 

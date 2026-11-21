@@ -186,7 +186,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0136](/docs/errors/gala-e0136/) | Argument given more than once | Declarations |
 | [GALA-E0137](/docs/errors/gala-e0137/) | A `_` inside an interpolated string | Functions |
 | [GALA-E0138](/docs/errors/gala-e0138/) | Spread `xs...` of a value that is not a Go slice of the variadic parameter's element type | Collections |
-| [GALA-E0139](/docs/errors/gala-e0139/) | A read of `_`: a `_` binding, or `_++` and `_ += x` | Functions |
+| [GALA-E0139](/docs/errors/gala-e0139/) | A read of `_`: a `_` binding, an unbound `_`, or `_++` and `_ += x` | Functions |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
