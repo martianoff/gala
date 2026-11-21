@@ -662,6 +662,13 @@ func (t *galaASTTransformer) isGenericFuncRef(expr ast.Expr) bool {
 	return fm != nil && len(fm.TypeParams) > 0
 }
 
+// isNullaryGenericFuncRef is isGenericFuncRef for a function of no
+// parameters (`zero` for `func zero[X any]() X`): a thunk itself.
+func (t *galaASTTransformer) isNullaryGenericFuncRef(expr ast.Expr) bool {
+	fm := t.lookupBareFuncRefMeta(expr)
+	return fm != nil && len(fm.TypeParams) > 0 && len(fm.ParamTypes) == 0
+}
+
 // anyGenericFuncRef reports whether a value of named is isGenericFuncRef.
 func (t *galaASTTransformer) anyGenericFuncRef(named map[string]ast.Expr) bool {
 	for _, e := range named {

@@ -5291,9 +5291,10 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
 		return expr, false
 	}
-	// So is a reference to a generic function (`mk` for `func mk[X any]()
-	// X`), whose type arguments the slot gives once it is instantiated.
-	if t.isGenericFuncRef(expr) {
+	// So is a reference to a generic function of no parameters (`zero` for
+	// `func zero[X any]() X`), whose type arguments the slot gives once it
+	// is instantiated. One with parameters (`id`) is the thunk's value.
+	if t.isNullaryGenericFuncRef(expr) {
 		return expr, false
 	}
 	if fn := t.resolveTranspilerTypeAsFuncType(exprType); fn != nil && t.passesNamedFunctionAsThunk(*fn, ft) {

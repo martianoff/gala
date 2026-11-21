@@ -365,89 +365,88 @@ func main() {
 	assert.Contains(t, body, "Try[int]{}.Apply(", "must dispatch to Try's companion Apply with T=int")
 }
 
-// A by-name argument to a method with type parameters of its own (lowered to
-// the free function Box_Lazy) is lifted to its thunk as it is for a generic
-// function, and the thunk's result binds the method's U (#1302).
-func TestThunkSugar_GenericMethodOwnTypeParam(t *testing.T) {
-	trans := newThunkSugarTranspiler()
-
-	input := `package main
+// By-name arguments to a method with type parameters of its own, lowered to
+// a free function (#1302): a plain expression is lifted to its thunk as it
+// is for a generic function, the thunk's result binding the method's U; a
+// reference to a generic function of no parameters is a thunk itself, and
+// one with parameters is the thunk's value; a thunk lifted for a Sendable
+// parameter is checked as a lambda there is (GALA-E0037).
+func TestThunkSugar_GenericMethodByName(t *testing.T) {
+	const decls = `package main
 
 struct Box[T any](V T)
 
 func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 
-func side() int = 1
-
-func main() {
-    val b = Box(1)
-    Println(b.Lazy(side(), true))
-    Println(b.Lazy(on = false, d = side()))
-    Println(b.Lazy[int](side(), true))
-}`
-
-	out, err := trans.Transpile(input, "")
-	require.NoError(t, err)
-	body := mainBodyOf(t, out)
-
-	assert.Equal(t, 3, strings.Count(body, "return side()"), "each by-name argument must be lifted into a thunk:\n%s", body)
-	assert.NotContains(t, body, "(b, side()", "the bare expression must not be passed:\n%s", body)
-}
-
-// A reference to a generic function in a `func() U` slot is a function value,
-// passed as it is, never lifted to a thunk returning the function.
-func TestThunkSugar_GenericFuncRefNotLifted(t *testing.T) {
-	trans := newThunkSugarTranspiler()
-
-	input := `package main
-
-struct Box[T any](V T)
-
 func (b Box[T]) Seeded[U any](seed U, d func() U) U = d()
 
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
 func seeded[U any](d func() U, seed U) U = d()
+
+func (b Box[T]) Fn(d func() func(int) int) int = d()(4)
+
+func side() int = 1
+
+func id[X any](x X) X = x
 
 func zero[X any]() X {
     var z X
     z
 }
 
-func main() {
-    val b = Box(1)
-    Println(b.Seeded(1, zero), seeded(zero, 1))
-}`
-
-	out, err := trans.Transpile(input, "")
-	require.NoError(t, err)
-	body := mainBodyOf(t, out)
-
-	assert.NotContains(t, body, "return zero", "a generic function reference must not be lifted:\n%s", body)
-	assert.Contains(t, body, "Box_Seeded(b, 1, zero", "the reference must be passed as it is:\n%s", body)
-}
-
-// A by-name argument for a Sendable[func() U] parameter of such a method is
-// lifted too, and its thunk is checked as a lambda crossing the boundary is:
-// capturing a reassignable var is GALA-E0037, as for a generic function.
-func TestThunkSugar_GenericMethodSendableByName(t *testing.T) {
-	src := func(decl string) string {
-		return `package main
-
-struct Box[T any](V T)
-
-func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
-
-func main() {
-    ` + decl + ` n = 1
-    val b = Box(1)
-    Println(b.Run(n + 1))
-}`
+`
+	tests := []struct {
+		name        string
+		main        string
+		contains    []string
+		notContains []string
+		wantErr     string
+	}{
+		{
+			name:        "positional, named and explicit type argument",
+			main:        "val b = Box(1)\n    Println(b.Lazy(side(), true))\n    Println(b.Lazy(on = false, d = side()))\n    Println(b.Lazy[int](side(), true))",
+			contains:    []string{"Box_Lazy(b, func() int {", "Box_Lazy[int, int](b, func() int {"},
+			notContains: []string{"(b, side()"},
+		},
+		{
+			name:        "nullary generic function reference passed as itself",
+			main:        "val b = Box(1)\n    Println(b.Seeded(1, zero), seeded(zero, 1))",
+			contains:    []string{"Box_Seeded(b, 1, zero"},
+			notContains: []string{"return zero"},
+		},
+		{
+			name:     "generic function reference with parameters is the thunk's value",
+			main:     "val b = Box(1)\n    Println(b.Fn(id))",
+			contains: []string{"return id"},
+		},
+		{
+			name:     "Sendable parameter over a val",
+			main:     "val n = 1\n    val b = Box(1)\n    Println(b.Run(n + 1))",
+			contains: []string{"return n + 1"},
+		},
+		{
+			name:    "Sendable parameter over a var",
+			main:    "var n = 1\n    val b = Box(1)\n    Println(b.Run(n + 1))",
+			wantErr: "GALA-E0037",
+		},
 	}
-
-	out, err := newThunkSugarTranspiler().Transpile(src("val"), "")
-	require.NoError(t, err)
-	assert.Contains(t, mainBodyOf(t, out), "return n + 1", "the by-name argument must be lifted into a thunk")
-
-	_, err = newThunkSugarTranspiler().Transpile(src("var"), "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "GALA-E0037")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := newThunkSugarTranspiler().Transpile(decls+"func main() {\n    "+tt.main+"\n}", "")
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			body := mainBodyOf(t, out)
+			for _, want := range tt.contains {
+				assert.Contains(t, body, want)
+			}
+			for _, unwanted := range tt.notContains {
+				assert.NotContains(t, body, unwanted)
+			}
+		})
+	}
 }
