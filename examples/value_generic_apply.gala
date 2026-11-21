@@ -1,0 +1,54 @@
+package main
+
+import "martianoff/gala/go_interop"
+
+// A value whose type has a generic Apply (an Apply with its own type
+// parameters) is called like any other value with an Apply. The call goes to
+// the same function `v.Apply(...)` written out goes to.
+
+// Counted counts the elements of type T it is called with.
+struct Counted[T any]()
+
+// Apply labels the count of xs with label.
+func (c Counted[T]) Apply[U any](label U, xs ...T) string = s"$label:${xs.Size()}"
+
+// Box holds a value that a call passes to a function.
+struct Box[T any](v T)
+
+// Apply gives f the boxed value.
+func (b Box[T]) Apply[U any](f func(T) U) U = f(b.v)
+
+// Show brackets what it is called with.
+struct Show()
+
+// Apply brackets a.
+func (s Show) Apply[A any](a A) string = s"<$a>"
+
+// Missing yields an empty Option of the type the call's slot asks for.
+struct Missing(reason string)
+
+// Apply is an empty Option[A]; only its result names A.
+func (m Missing) Apply[A any]() Option[A] = None[A]()
+
+val shower = Show()
+
+func main() {
+    val counted = Counted[string]()
+    Println(counted(1, go_interop.SliceOf("a", "b")...))
+    Println(counted("words", "a", "b", "c"))
+    Println(counted.Apply(true, go_interop.SliceOf("z")...))
+
+    val box = Box(5)
+    Println(box(_ * 2))
+    Println(box(f = (x) => s"n=$x"))
+    Println(Box("hello")(_.Size()))
+
+    val show = Show()
+    Println(show(3))
+    Println(show("x"))
+    Println(shower(2.5))
+
+    val missing = Missing("none yet")
+    val n Option[int] = missing()
+    Println(n.GetOrElse(7) + 1)
+}

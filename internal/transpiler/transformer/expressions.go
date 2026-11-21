@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"martianoff/gala/internal/transpiler"
 	"slices"
+	"strings"
 )
 
 // unaryOperation builds `op expr` from the lowered operand expr of the unary
@@ -979,10 +980,120 @@ func (t *galaASTTransformer) consumesSlotType(e exprSrc, hint transpiler.Type) b
 		return true
 	}
 	name, typeArgs, noArgs := calleeOfCall(e)
-	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isResultGenericCall(name, noArgs)) {
+	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && (t.isResultGenericCall(name, noArgs) || t.isResultGenericValueApply(name))) {
 		return true
 	}
-	return t.isResultGenericMethodCall(e)
+	return t.isResultGenericMethodCall(e) || t.isResultGenericLitApply(e)
+}
+
+// isResultGenericValueApply reports whether name (see calleeOfCall) is a val
+// or var, or an imported `pkg.Name` one, whose type's Apply has type
+// parameters its result mentions: the call is `name.Apply(...)` (Section 1.5
+// of transformCallWithArgsCtx), which the slot it fills binds them for as for
+// any such method call (isResultGenericMethodCall).
+func (t *galaASTTransformer) isResultGenericValueApply(name string) bool {
+	if !t.resultGenericMethods["Apply"] {
+		return false
+	}
+	var ref ast.Expr = ast.NewIdent(name)
+	if pkg, member, qualified := strings.Cut(name, "."); qualified {
+		if !t.importManager.IsPackage(pkg) || t.shadowingScope(pkg) != nil {
+			return false
+		}
+		ref = &ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent(member)}
+	}
+	return resultGenericApply(t.bindingApplyType(ref))
+}
+
+// isResultGenericLitApply reports whether e is a construction called at once,
+// `T(...)(...)`, `pkg.T(...)(...)` or either with type arguments
+// (`T[int](...)(...)`), whose type's Apply has type parameters its result
+// mentions, as isResultGenericValueApply does for a val. The first call must
+// build the struct, not call that Apply as a companion (firstCallBuilds).
+func (t *galaASTTransformer) isResultGenericLitApply(e exprSrc) bool {
+	if !t.resultGenericMethods["Apply"] {
+		return false
+	}
+	p := e.solePostfix()
+	if !p.ok() || p.hasCases() {
+		return false
+	}
+	name := p.primaryIdent()
+	if name == "" {
+		return false
+	}
+	var typ ast.Expr = ast.NewIdent(name)
+	// A binding of the name, or a function the package declares, is called,
+	// never the same-named type.
+	if t.shadowingScope(name) != nil || t.namesOwnFunction(typ) {
+		return false
+	}
+	suffixes := p.suffixes()
+	if member, _, ok := firstMember(suffixes); ok {
+		if !t.importManager.IsPackage(name) {
+			return false
+		}
+		typ = &ast.SelectorExpr{X: typ, Sel: ast.NewIdent(member)}
+		suffixes = suffixes[1:]
+	}
+	if len(suffixes) > 0 && suffixes[0].opener() == "[" {
+		suffixes = suffixes[1:]
+	}
+	if len(suffixes) != 2 || suffixes[0].opener() != "(" || suffixes[1].opener() != "(" {
+		return false
+	}
+	meta := t.valueApplyType(&ast.CompositeLit{Type: typ})
+	return resultGenericApply(meta) && t.firstCallBuilds(meta, suffixes[0].args())
+}
+
+// firstCallBuilds reports whether a call of the type meta describes with args
+// builds the struct rather than calling its Apply as a companion: by name,
+// when every name given is a field; with no arguments, when Apply takes parameters
+// none of which has a default (lowerCallSuffix); otherwise by position
+// (positionalCallBuildsStructLiteral).
+func (t *galaASTTransformer) firstCallBuilds(meta *transpiler.TypeMetadata, args argsSrc) bool {
+	if len(args.list) == 0 {
+		// A sealed case's Apply is generated, never generic, so only the
+		// parameters, their defaults and a sole injected metadata one decide
+		// (lowerCallSuffix).
+		apply := meta.Methods["Apply"]
+		return len(apply.ParamTypes) > 0 && len(apply.DefaultExprs) == 0 && !meta.IsSealed &&
+			!(len(apply.ParamTypes) == 1 && t.injectedMetaParam(apply.ParamTypes[0]) != noInjectedMeta)
+	}
+	if slices.ContainsFunc(args.list, argSrc.named) {
+		// Positional arguments fill the leading fields; each named one must
+		// name a field. A sealed parent is no construction target.
+		if meta.IsSealed || len(args.list) > len(meta.FieldNames) {
+			return false
+		}
+		for _, a := range args.list {
+			if name, _ := a.name(); name != "" && !slices.Contains(meta.FieldNames, name) {
+				return false
+			}
+		}
+		return true
+	}
+	return t.positionalCallBuildsStructLiteral(meta, meta.FieldNames, len(args.list))
+}
+
+// firstMember is the member the first of suffixes selects, `.name`.
+func firstMember(suffixes []suffixSrc) (string, srcNode, bool) {
+	if len(suffixes) == 0 {
+		return "", srcNode{}, false
+	}
+	return suffixes[0].member()
+}
+
+// resultGenericApply reports whether meta, a type's metadata, has an Apply
+// whose own type parameters its result mentions. An Apply genericApply routes
+// only because the analyzer marks it generic has no type parameters of its
+// own, so there is none for a slot to bind.
+func resultGenericApply(meta *transpiler.TypeMetadata) bool {
+	if meta == nil {
+		return false
+	}
+	apply := meta.Methods["Apply"]
+	return apply != nil && typeMentionsTypeParam(apply.ReturnType, apply.TypeParams)
 }
 
 // isResultGenericMethodCall reports whether e is a method call written
