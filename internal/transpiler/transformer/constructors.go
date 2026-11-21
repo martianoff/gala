@@ -122,9 +122,10 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 }
 
 // underscoreBindingRead is GALA-E0139 when name, a primary written at at, is
-// a `_` whose innermost binding is a `_` lambda parameter or typed pattern
-// (`(_) => _ + 1`, `case _: int => _`): such a `_` names no value, and Go
-// has no value to read for it. A placeholder lambda's `_` is its parameter.
+// a `_` whose innermost binding is a `_` lambda parameter, typed pattern or
+// `bind _ = m` clause (`(_) => _ + 1`, `case _: int => _`): such a `_` names
+// no value, and Go has no value to read for it. A placeholder lambda's `_` is
+// its parameter.
 func (t *galaASTTransformer) underscoreBindingRead(name string, at srcNode) error {
 	if name != "_" {
 		return nil
@@ -136,6 +137,17 @@ func (t *galaASTTransformer) underscoreBindingRead(name string, at srcNode) erro
 	return spanErrorAt(galaerr.CodeUnderscoreBindingRead, r, r,
 		"`_` reads a `_` binding, which names no value",
 		"bind a name instead of `_` and read that name; for example `(x) => x + 1` or `case n: int => n`")
+}
+
+// underscoreWriteRead is GALA-E0139 for op, an increment, decrement or
+// compound assignment of `_` written at at (`_++`, `_ += ...`): each reads
+// `_` before writing it, and `_` names no value. Only `=` writes to `_`, as
+// a discard.
+func underscoreWriteRead(at srcNode, op string) error {
+	r := at.rng()
+	return spanErrorAt(galaerr.CodeUnderscoreBindingRead, r, r,
+		fmt.Sprintf("`%s` reads `_`, which names no value", op),
+		"use a named variable; only `=` writes to `_`, and that discards the value")
 }
 
 // lowerParenthesized lowers `(elems)` written at at: a tuple literal of two

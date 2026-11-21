@@ -106,8 +106,30 @@ func (t *galaASTTransformer) checkForbiddenStatementKeywordSrc(e exprSrc) error 
 	)
 }
 
+// isBlankTarget reports whether e, written as an assignment or inc/dec target,
+// is `_`, also in grouping parentheses (`(_)`).
+func (t *galaASTTransformer) isBlankTarget(e exprSrc) bool {
+	for {
+		if e.bareIdent() == "_" {
+			return true
+		}
+		inner, n := t.parenthesized(e)
+		if n != 1 {
+			return false
+		}
+		e = inner
+	}
+}
+
 // lowerIncDec lowers an increment or decrement.
 func (t *galaASTTransformer) lowerIncDec(d incDecDecl) (ast.Stmt, error) {
+	if t.isBlankTarget(d.expr) {
+		op := "_++"
+		if d.dec {
+			op = "_--"
+		}
+		return nil, underscoreWriteRead(d.expr.at(), op)
+	}
 	if err := t.immutableWriteError(d.at, d.expr, "increment/decrement"); err != nil {
 		return nil, err
 	}
@@ -186,6 +208,15 @@ func (t *galaASTTransformer) lowerStatement(s stmtSrc) (stmt ast.Stmt, pre []ast
 // lowerAssignment lowers an assignment.
 func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	targets := d.lhs.exprs()
+	// A compound assignment reads its target first, so `_ += x` is
+	// GALA-E0139, whatever binds `_`.
+	if d.op != "=" {
+		for _, target := range targets {
+			if t.isBlankTarget(target) {
+				return nil, underscoreWriteRead(target.at(), "_ "+d.op+" ...")
+			}
+		}
+	}
 	for _, target := range targets {
 		// `if (c) a() else x = v` parses as an assignment to the whole
 		// if-expression: an if-expression's branch is an expression, and an
@@ -211,7 +242,7 @@ func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
 	discards := make([]bool, len(targets))
 	lhsExprs := make([]ast.Expr, len(targets))
 	for i, target := range targets {
-		if d.op == "=" && target.bareIdent() == "_" {
+		if t.isBlankTarget(target) {
 			discards[i], lhsExprs[i] = true, ast.NewIdent("_")
 			continue
 		}

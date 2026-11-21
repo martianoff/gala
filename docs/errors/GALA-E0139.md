@@ -1,12 +1,16 @@
-# GALA-E0139 — Read of a `_` binding
+# GALA-E0139 — Read of `_`
 
 **When it fires.** A `_` is read as a value where its innermost binding is a
-lambda parameter written `_` or a typed pattern `case _: T`. Such a `_` binds
-the value without naming it, so there is nothing to read: `(_) => _ + 1` and
-`case _: int => _` have no value for the second `_`. It fires inside an
+lambda parameter written `_`, a typed pattern `case _: T` or a `bind _ = m`
+clause. Such a `_` binds the value without naming it, so there is nothing to
+read: `(_) => _ + 1` and `case _: int => _` have no value for the second `_`. It fires inside an
 interpolated string too (`(_) => s"v${_}"`). A placeholder lambda's `_` is its
 parameter, so `_ + 1` passed where a function is expected is not this error,
 even inside a lambda with a `_` parameter.
+
+An increment, decrement or compound assignment of `_` (`_++`, `_--`,
+`_ += x`) is the same error, with or without a `_` binding in scope: each
+reads `_` before writing it. Only `=` writes to `_`, and `_ = x` discards x.
 
 **Minimal repro.**
 
@@ -50,6 +54,7 @@ func main() {
 
 For a typed pattern, bind a name: `case n: int => n` in place of
 `case _: int => _`. A `_` parameter or `case _: T` that is never read is fine.
+In place of `_ += x`, use a named variable.
 
 **Rationale.** `_` in a parameter list or a pattern says the value is not
 needed. Reading it contradicts that, and Go has no value for its blank
