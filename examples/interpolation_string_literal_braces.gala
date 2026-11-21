@@ -1,0 +1,17 @@
+package main
+
+import (
+    "strings"
+    . "martianoff/gala/collection_immutable"
+)
+
+// A string literal inside ${...} is opaque: a brace or an escaped backslash
+// in it neither nests nor ends the embedded expression.
+func main() {
+    Println(s"close: ${strings.ReplaceAll("a}b", "}", "!")}")
+    Println(s"open: ${strings.ReplaceAll("a{b", "{", "!")}")
+    Println(s"path: ${strings.ReplaceAll("C:\\dir\\file", "\\", "/")}")
+    Println(s"set: ${"{" + ArrayOf("x", "y", "z").MkString(", ") + "}"}")
+    Println(f"padded: ${strings.Trim("{42}", "{}")}%5s|")
+    Println(s"ends with backslash: ${"a\\" + "}"}")
+}

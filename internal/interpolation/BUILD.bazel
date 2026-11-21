@@ -1,8 +1,15 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "interpolation",
     srcs = ["interpolation.go"],
     importpath = "martianoff/gala/internal/interpolation",
     visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "interpolation_test",
+    srcs = ["interpolation_test.go"],
+    embed = [":interpolation"],
+    deps = ["@com_github_stretchr_testify//assert"],
 )
