@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
 )
 
 // dupBoxPackage is the package pkg of module example.com/dup, which declares
@@ -117,6 +119,35 @@ func TestImportedPackageSyntaxErrorReportedBeforeImporterCascade(t *testing.T) {
 			require.Equal(t, 7, diags[0].Line)
 		})
 	}
+}
+
+// The editor shows a file's own analysis error, where it is in the file, not
+// the error of an imported package whose metadata is partial.
+func TestLSPAnalysisKeepsOwnErrorOverDependencyError(t *testing.T) {
+	root := t.TempDir()
+	files := dupBoxPackage("zlib", map[string]string{
+		"main.gala": "package main\n\nimport \"example.com/dup/zlib\"\n\nstruct Own(A int)\n\nstruct Own(B int)\n\n" +
+			"func main() {\n    Println(zlib.Box(1).Plain(w = 2, u = 1))\n}\n",
+	})
+	// The build reports zlib's error.
+	_, err := transpileInModuleAt(t, root, files, "main.gala")
+	requireTypeRedefinedIn(t, err, filepath.Join(root, "zlib"))
+
+	mainPath := filepath.Join(root, "main.gala")
+	searchPaths := []string{root}
+	for _, sp := range getStdSearchPath() {
+		abs, absErr := filepath.Abs(sp)
+		require.NoError(t, absErr)
+		searchPaths = append(searchPaths, abs)
+	}
+	p := transpiler.NewAntlrGalaParser()
+	_, err = analyzer.NewGalaAnalyzerForLSP(p, searchPaths, root).AnalyzeParsed(p.ParseFile(files["main.gala"]), mainPath)
+	require.Error(t, err)
+	diags := galaerr.Diagnostics(galaerr.WithFilePath(err, mainPath))
+	require.NotEmpty(t, diags, "err: %v", err)
+	require.Equal(t, string(galaerr.CodeTypeRedefinition), diags[0].Code, "diagnostic %q", diags[0].Message)
+	require.Equal(t, mainPath, diags[0].File, "diagnostic %q", diags[0].Message)
+	require.Contains(t, diags[0].Message, `type "Own"`)
 }
 
 // What an earlier analysis of the package, before its second declaration

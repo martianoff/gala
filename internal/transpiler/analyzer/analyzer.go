@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -241,6 +242,12 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
+	// keepOwnErrors, set for the LSP, reports the analyzed file's own
+	// analysis error even when an imported package's metadata is partial:
+	// the editor shows the file's diagnostics, at their places in it, and a
+	// dependency's error is the build's to report (see
+	// RichAST.ReportDependencyErrors).
+	keepOwnErrors bool
 	// onInferInit, when set, is told of each package-level initializer
 	// inferPackageValInitTypeNative types, and the type it got. It observes
 	// and changes nothing; TestValInitTypeShapes sets it.
@@ -456,6 +463,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipUndefinedCheck:  true,
+		keepOwnErrors:       true,
 	}
 }
 
@@ -684,7 +692,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	// declarations cause here (see RichAST.ReportDependencyErrors).
 	var richAST *transpiler.RichAST
 	defer func() {
-		if asInternal(err) == nil {
+		if asInternal(err) == nil && !(isTopLevel && a.keepOwnErrors) {
 			err = richAST.ReportDependencyErrors(err)
 		}
 	}()
@@ -2713,13 +2721,20 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// The error of the first file left out of the package's metadata — it
 	// did not parse, or its analysis failed — is why the metadata is
 	// partial (see RichAST.DependencyErrors). The first only: two files
-	// declaring a type each fail on the other.
+	// declaring a type each fail on the other. An error with no place to
+	// stamp the file on names it in its text, as it is reported for an
+	// importer.
 	dropped := false
 	drop := func(err error, filePath string) {
-		if err != nil && !dropped {
-			dropped = true
-			pkgAST.AddDependencyErrors(galaerr.WithFilePath(err, filePath))
+		if err == nil || dropped {
+			return
 		}
+		dropped = true
+		var ge galaerr.GalaError
+		if !errors.As(err, &ge) {
+			err = fmt.Errorf("%s: %w", filePath, err)
+		}
+		pkgAST.AddDependencyErrors(galaerr.WithFilePath(err, filePath))
 	}
 
 	for i, entry := range entries {
