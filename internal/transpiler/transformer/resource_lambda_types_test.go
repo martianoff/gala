@@ -434,6 +434,12 @@ struct Box[U any](m Mapper2[int, U])
 
 func run() int = Box(m = (x) => x * 2).m(1)
 `},
+		{"a generic struct field with only the result open, positional", `package main
+
+struct Box[U any](m Mapper2[int, U])
+
+func run() int = Box((x) => x * 2).m(1)
+`},
 		{"only the result open", `package main
 
 func run2[U any](m Mapper2[int, U]) U = m(1)

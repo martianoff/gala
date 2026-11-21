@@ -367,6 +367,12 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		ft := ctx.structFields[argIdx]
 		switch {
 		case ft == nil || ft.IsNil():
+		case t.isGoFuncInstance(ft):
+			// A generic Go function-type field, as by name (structFieldSlot):
+			// the struct's unbound type parameters are the open ones.
+			if slot, ok := t.goInstanceSlot(ft, nil, ctx.unboundStructTypeParams); ok && !slot.IsNil() {
+				expectedType = slot
+			}
 		case t.isFuncOrTupleType(ft), ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
 			// The field's recorded type is its value's type
 			// (see transpiler.ShorthandFieldType).

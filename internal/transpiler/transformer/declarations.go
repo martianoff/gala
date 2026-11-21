@@ -1316,7 +1316,7 @@ func (t *galaASTTransformer) aliasedFuncType(tp transpiler.Type) *transpiler.Fun
 // parameter of some callee, left unbound.
 func (t *galaASTTransformer) namesNoType(typ transpiler.Type) bool {
 	return typeNameMatches(typ, func(name string) bool {
-		if strings.Contains(name, ".") || transpiler.IsPrimitiveType(name) || name == "interface{}" || t.activeTypeParams[name] {
+		if !token.IsIdentifier(name) || transpiler.IsPrimitiveType(name) || t.activeTypeParams[name] {
 			return false
 		}
 		if t.getTypeMeta(name) != nil {
