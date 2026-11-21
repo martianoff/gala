@@ -166,8 +166,8 @@ func TestToolchainMaySwitch(t *testing.T) {
 		{newer, newer + "+auto", false},
 		{newer, "go1.26.0", true},
 		{newer, "go1.26.0+auto", true},
-		{"", "", false},
-		{"", "go1.26.0", true},
+		{"", "", true},
+		{"", "local", false},
 	}
 	for _, c := range cases {
 		if got := toolchainMaySwitch(c.host, c.gotoolchain); got != c.want {

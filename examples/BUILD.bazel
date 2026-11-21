@@ -2030,8 +2030,9 @@ gala_exec_test(
 )
 
 # #1322: the strings iterators (SplitSeq, Lines, FieldsSeq) range over strings.
-# Bazel reads its own Go SDK, so this covers the range typing; the toolchain
-# switch a go on PATH older than 1.25 makes is covered by TestSwitchedGoRoot.
+# Bazel reads its own Go SDK, so this covers the range typing only; the
+# decision to follow the toolchain switch a go on PATH older than 1.25 makes
+# is unit-tested by TestSwitchedGoRoot and TestToolchainMaySwitch.
 gala_exec_test(
     name = "range_go_strings_seq",
     src = "range_go_strings_seq.gala",

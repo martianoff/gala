@@ -291,18 +291,18 @@ func goToolchain(goroot string) string {
 // toolchainMaySwitch reports whether a go command of version host ("go1.23.4",
 // "" when unknown) may build a module whose go line is GeneratedGoVersion with
 // another toolchain, given GOTOOLCHAIN. It is false only where it surely does
-// not: GOTOOLCHAIN=local; host new enough with the choice left to the go line
-// (auto, path, unset); or GOTOOLCHAIN naming host itself (go1.25.5,
-// go1.25.5+auto) with host new enough.
+// not: GOTOOLCHAIN=local; host known and new enough with the choice left to
+// the go line (auto, path, unset); or GOTOOLCHAIN naming host itself
+// (go1.25.5, go1.25.5+auto) with host new enough.
 func toolchainMaySwitch(host, gotoolchain string) bool {
 	if gotoolchain == "local" {
 		return false
 	}
+	if !version.IsValid(host) {
+		return true
+	}
 	name, _, _ := strings.Cut(gotoolchain, "+")
 	named := name != "" && name != "auto" && name != "path"
-	if !version.IsValid(host) {
-		return named
-	}
 	if version.Compare(host, "go"+GeneratedGoVersion) < 0 {
 		return true
 	}
@@ -464,11 +464,11 @@ func switchedGoRoot(goroot, gotoolchain string, goEnv func(dir string) string) s
 // download one; offline, that must not hang every gala process.
 const goEnvTimeout = 2 * time.Minute
 
-// goEnvGoroot is `go env GOROOT` as goPath reports it when run in dir (the
-// current directory when dir is ""), or "" when that fails or is no Go SDK.
-// In dir, only dir's go.mod picks the toolchain: a go.work (GOWORK) or a
-// -modfile in GOFLAGS is ignored, and its stderr is the user's, so that a
-// toolchain download reports there.
+// goEnvGoroot is `go env GOROOT` as goPath reports it, or "" when that fails
+// or is no Go SDK. Run in dir, its toolchain is the one dir's go.mod picks (a
+// go.work is ignored), and its stderr is the user's, so that a toolchain
+// download reports there. With dir "", it is goPath's own root: it runs in
+// the current directory with no toolchain switch.
 func goEnvGoroot(goPath, dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
 	defer cancel()
@@ -478,8 +478,10 @@ func goEnvGoroot(goPath, dir string) string {
 	cmd.WaitDelay = 5 * time.Second
 	if dir != "" {
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
+		cmd.Env = append(os.Environ(), "GOWORK=off")
 		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
 	}
 	out, err := cmd.Output()
 	if err != nil {
