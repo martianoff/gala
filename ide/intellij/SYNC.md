@@ -137,6 +137,26 @@ a live template in `liveTemplates/GALA.xml`, and a parser test-data pair
 missing from the `keywords` patterns. Contextual keywords keep their context in a
 lookahead: `default` is matched only before `case`, `map` only before `[`.
 
+### 6e. Tree-sitter Grammar
+
+**Grammar files:** `ide/tree-sitter-gala/grammar.js` (one rule per gala.g4
+rule, each naming it), `src/scanner.c` (the line-break rule),
+`queries/*.scm`, and the committed `src/parser.c` generated from them
+
+**Source of truth:** `internal/parser/grammar/gala.g4` for the syntax and
+keywords; `internal/parser/newline.go` for the line-break rule;
+`internal/transpiler/types.go` (`IsPrimitiveType`) for the `@type.builtin`
+names in `queries/highlights.scm`
+
+**How to verify:** in `ide/tree-sitter-gala`, `tree-sitter generate --abi 14`,
+`tree-sitter test`, `script/parse-all.sh`, which parses every `.gala` file in
+the repository, and `script/check-queries.sh`, which fails when a gala.g4
+keyword has no highlight capture or the builtin types differ from
+`IsPrimitiveType` (see its README). The `Tree-sitter grammar` workflow runs
+them on any change to the grammar, gala.g4, newline.go, types.go or a `.gala`
+file, so a construct the grammar does not know fails there. A new construct
+gets a corpus test in `test/corpus/`.
+
 ## When to Sync
 
 Sync the plugin after any of these changes:

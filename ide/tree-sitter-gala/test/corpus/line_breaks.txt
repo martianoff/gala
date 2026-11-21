@@ -1,0 +1,275 @@
+==================
+A '(' that starts a line begins a new statement
+==================
+
+package main
+
+func f() {
+    Println("zero")
+    (1, 2)
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list
+            (interpreted_string_literal
+              (string_content)))))
+      (expression_statement
+        (tuple_expression
+          (int_literal)
+          (int_literal))))))
+
+==================
+A '(' on the same line is a call
+==================
+
+package main
+
+func f() {
+    g (1, 2)
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list
+            (int_literal)
+            (int_literal)))))))
+
+==================
+A '*' or '&' against its operand at line start is a prefix operator
+==================
+
+package main
+
+func f() {
+    val p = &n
+    *p = 5
+    &n
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (val_declaration
+        (identifier)
+        (unary_expression
+          (identifier)))
+      (assignment_statement
+        (expression_list
+          (unary_expression
+            (identifier)))
+        (expression_list
+          (int_literal)))
+      (expression_statement
+        (unary_expression
+          (identifier))))))
+
+==================
+A '*' followed by a space continues the line before
+==================
+
+package main
+
+func f() {
+    val x = a
+        * b
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (val_declaration
+        (identifier)
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+==================
+Inside parentheses a line-start '*' continues the expression
+==================
+
+package main
+
+val x = f(a
+    *b)
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+==================
+Binary operators and method chains continue across lines
+==================
+
+package main
+
+val x = a
+    + b
+    - c
+val y = xs
+    .Map((x) => x)
+    .Filter((x) => x > 0)
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (identifier))
+      (identifier)))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (selector_expression
+        (call_expression
+          (selector_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (lambda_expression
+              (parameter_list
+                (parameter
+                  (identifier)))
+              (identifier))))
+        (field_identifier))
+      (argument_list
+        (lambda_expression
+          (parameter_list
+            (parameter
+              (identifier)))
+          (binary_expression
+            (identifier)
+            (int_literal)))))))
+
+==================
+Result type on the next line is a new method
+==================
+
+package main
+
+type Traversable[T any] interface {
+    ForEach(f func(T))
+    Size() int
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (type_declaration
+    (type_identifier)
+    (type_parameter_list
+      (type_parameter
+        (type_identifier)
+        (type_identifier)))
+    (interface_type
+      (method_spec
+        (field_identifier)
+        (parameter_list
+          (parameter
+            (identifier)
+            (function_type
+              (parameter_list
+                (parameter
+                  (type_identifier)))))))
+      (method_spec
+        (field_identifier)
+        (parameter_list)
+        (type_identifier)))))
+
+==================
+A comment between a line break and '(' keeps the line break
+==================
+
+package main
+
+func f() {
+    Println("zero")
+    /* note */ (1, 2)
+    g /* same line */ (3)
+    x
+    // why
+    *p = 5
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list
+            (interpreted_string_literal
+              (string_content)))))
+      (expression_statement
+        (tuple_expression
+          (int_literal)
+          (int_literal)))
+      (expression_statement
+        (call_expression
+          (identifier)
+          (comment)
+          (argument_list
+            (int_literal))))
+      (expression_statement
+        (identifier))
+      (assignment_statement
+        (expression_list
+          (unary_expression
+            (identifier)))
+        (expression_list
+          (int_literal))))))

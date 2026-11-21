@@ -1,0 +1,11 @@
+# Repository-relative .gala files that are not expected to parse, one per line,
+# each with the reason. script/parse-all.sh parses every other .gala file in
+# the repository and fails on any ERROR or MISSING node.
+
+# A deliberate syntax error: the VS Code extension's test checks that the
+# language server reports it.
+ide/vscode/src/test/fixtures/workspace/main.gala
+
+# Uses `[]T` as an explicit type argument, which gala.g4 does not allow (the
+# compiler reports GALA-E0040); the transpiler's tests skip it as unparsable.
+examples/slice_type_param.gala

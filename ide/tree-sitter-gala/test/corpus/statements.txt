@@ -1,0 +1,426 @@
+==================
+Bind and also
+==================
+
+package main
+
+func order() Option[int] {
+    bind a = fetch()
+    also b int = log(a)
+    Some(a + b)
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)))
+    (block
+      (bind_declaration
+        (identifier)
+        (call_expression
+          (identifier)
+          (argument_list)))
+      (also_declaration
+        (identifier)
+        (type_identifier)
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier))))
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list
+            (binary_expression
+              (identifier)
+              (identifier))))))))
+
+==================
+Use
+==================
+
+package main
+
+func read(path string) Try[string] = Try(() => {
+    use f = os.Open(path).Get()
+    io.ReadAll(f).Get()
+})
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)))
+    (call_expression
+      (identifier)
+      (argument_list
+        (lambda_expression
+          (parameter_list)
+          (block
+            (use_declaration
+              (identifier)
+              (call_expression
+                (selector_expression
+                  (call_expression
+                    (selector_expression
+                      (identifier)
+                      (field_identifier))
+                    (argument_list
+                      (identifier)))
+                  (field_identifier))
+                (argument_list)))
+            (expression_statement
+              (call_expression
+                (selector_expression
+                  (call_expression
+                    (selector_expression
+                      (identifier)
+                      (field_identifier))
+                    (argument_list
+                      (identifier)))
+                  (field_identifier))
+                (argument_list)))))))))
+
+==================
+If statement
+==================
+
+package main
+
+func f(x int) {
+    if x > 0 {
+        Println("pos")
+    } else if x < 0 {
+        Println("neg")
+    } else {
+        Println("zero")
+    }
+    if (ok) { a } else { b }
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (block
+      (if_statement
+        (binary_expression
+          (identifier)
+          (int_literal))
+        (block
+          (expression_statement
+            (call_expression
+              (identifier)
+              (argument_list
+                (interpreted_string_literal
+                  (string_content))))))
+        (if_statement
+          (binary_expression
+            (identifier)
+            (int_literal))
+          (block
+            (expression_statement
+              (call_expression
+                (identifier)
+                (argument_list
+                  (interpreted_string_literal
+                    (string_content))))))
+          (block
+            (expression_statement
+              (call_expression
+                (identifier)
+                (argument_list
+                  (interpreted_string_literal
+                    (string_content))))))))
+      (if_statement
+        (parenthesized_expression
+          (identifier))
+        (block
+          (expression_statement
+            (identifier)))
+        (block
+          (expression_statement
+            (identifier)))))))
+
+==================
+For statements
+==================
+
+package main
+
+func f() {
+    for i := 0; i < 10; i++ {
+        Println(i)
+    }
+    for k, v := range m {
+        Println(k, v)
+    }
+    for x < 3 {
+        x++
+    }
+    for {
+        return
+    }
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (for_statement
+        (for_clause
+          (short_var_declaration
+            (identifier)
+            (expression_list
+              (int_literal)))
+          (binary_expression
+            (identifier)
+            (int_literal))
+          (inc_dec_statement
+            (identifier)))
+        (block
+          (expression_statement
+            (call_expression
+              (identifier)
+              (argument_list
+                (identifier))))))
+      (for_statement
+        (range_clause
+          (identifier)
+          (identifier)
+          (identifier))
+        (block
+          (expression_statement
+            (call_expression
+              (identifier)
+              (argument_list
+                (identifier)
+                (identifier))))))
+      (for_statement
+        (binary_expression
+          (identifier)
+          (int_literal))
+        (block
+          (inc_dec_statement
+            (identifier))))
+      (for_statement
+        (block
+          (return_statement))))))
+
+==================
+Assignments and short declarations
+==================
+
+package main
+
+func f() {
+    var n = 0
+    n = 1
+    n += 2
+    n -= 1
+    n *= 3
+    n /= 2
+    a, b := 1, 2
+    p.x = 5
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (var_declaration
+        (identifier)
+        (int_literal))
+      (assignment_statement
+        (expression_list
+          (identifier))
+        (expression_list
+          (int_literal)))
+      (assignment_statement
+        (expression_list
+          (identifier))
+        (expression_list
+          (int_literal)))
+      (assignment_statement
+        (expression_list
+          (identifier))
+        (expression_list
+          (int_literal)))
+      (assignment_statement
+        (expression_list
+          (identifier))
+        (expression_list
+          (int_literal)))
+      (assignment_statement
+        (expression_list
+          (identifier))
+        (expression_list
+          (int_literal)))
+      (short_var_declaration
+        (identifier)
+        (identifier)
+        (expression_list
+          (int_literal)
+          (int_literal)))
+      (assignment_statement
+        (expression_list
+          (selector_expression
+            (identifier)
+            (field_identifier)))
+        (expression_list
+          (int_literal))))))
+
+==================
+Semicolons
+==================
+
+package main
+
+func f(v int) {
+    if v < 0 { neg = true; v = -v }
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (block
+      (if_statement
+        (binary_expression
+          (identifier)
+          (int_literal))
+        (block
+          (assignment_statement
+            (expression_list
+              (identifier))
+            (expression_list
+              (true)))
+          (assignment_statement
+            (expression_list
+              (identifier))
+            (expression_list
+              (unary_expression
+                (identifier)))))))))
+
+==================
+Return
+==================
+
+package main
+
+func f() (int, error) {
+    return
+}
+
+func g() int {
+    return
+        42
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (result_list
+      (type_identifier)
+      (type_identifier))
+    (block
+      (return_statement)))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (type_identifier)
+    (block
+      (return_statement
+        (int_literal)))))
+
+==================
+Local function and type declarations
+==================
+
+package main
+
+func f() {
+    type Local struct {
+        X int
+    }
+    import "strings"
+    val helper = (x int) int => x + 1
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (type_declaration
+        (type_identifier)
+        (struct_type
+          (field_declaration
+            (field_identifier)
+            (type_identifier))))
+      (import_declaration
+        (import_spec
+          (interpreted_string_literal
+            (string_content))))
+      (val_declaration
+        (identifier)
+        (lambda_expression
+          (parameter_list
+            (parameter
+              (identifier)
+              (type_identifier)))
+          (type_identifier)
+          (binary_expression
+            (identifier)
+            (int_literal)))))))
