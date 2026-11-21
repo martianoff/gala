@@ -898,3 +898,82 @@ func TestDecoder_BareLiteralBlockIsAString(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+// ----- Blocks opened on a sequence item's line ------------------------------
+
+// A sequence item can open a literal block ("- |") or a nested sequence
+// ("- - x") on the dash's line, and a literal block on an item's first key
+// ends where the item's next key starts (#1320).
+func TestDecoder_BlocksOnSequenceItemLine(t *testing.T) {
+	tests := []struct{ name, src, want string }{
+		{"literal item", "script:\n- |\n  echo hi\n  echo bye\n- make", "{script: [echo hi\necho bye, make]}"},
+		{"literal item, strip", "- |-\n  a\n- b", "[a, b]"},
+		{"literal item, indented", "script:\n  - |\n    echo hi\n  - make", "{script: [echo hi, make]}"},
+		{"literal on the first key", "- run: |\n    echo hi\n  name: x", "[{run: echo hi, name: x}]"},
+		{"empty literal on the first key", "- run: |\n  name: x", "[{run: , name: x}]"},
+		{"literal on a later key", "- name: x\n  run: |\n    echo hi\n  shell: sh", "[{name: x, run: echo hi, shell: sh}]"},
+		{"nested sequence", "- - x\n  - y\n- z", "[[x, y], z]"},
+		{"nested sequence of mappings", "- - a: 1\n    b: 2\n  - a: 3", "[[{a: 1, b: 2}, {a: 3}]]"},
+		{"nested sequence under a key", "m:\n- - 1\n  - 2\n- - 3", "{m: [[1, 2], [3]]}"},
+		{"nested bare dash", "- -\n  - x", "[[<null>, x]]"},
+		{"three levels", "- - - x", "[[[x]]]"},
+		{"literal item one level down", "- - |\n    a\n- b", "[[a], b]"},
+		{"literal on a nested item's first key", "- - run: |\n    name: x", "[[{run: , name: x}]]"},
+		{"literal on a nested item's first key, with body", "- - run: |\n      echo hi\n    name: x", "[[{run: echo hi, name: x}]]"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%s: %q => %s, want %s", tt.name, tt.src, got, tt.want)
+		}
+	}
+}
+
+// A comment after a block indicator does not hide it, and a comment that
+// ends in ": |" does not open a block.
+func TestDecoder_LiteralBlockAndComments(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"script: | # shell\n  echo hi", "{script: echo hi}"},
+		{"- | # note\n  a", "[a]"},
+		{"parent: # list: |\n  child: 1", "{parent: {child: 1}}"},
+		{"- k: v # ex: |\n  j: w", "[{k: v, j: w}]"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// A tab between an item's dash and a block indicator ("- \t|") does not
+// open a block: the item's text is not decoded as the block's body.
+func TestDecoder_TabBeforeItemBlockIndicator(t *testing.T) {
+	for _, src := range []string{"- \t|\n  a\n- b", "- - \t|\n    a"} {
+		if got := parseDump(src); !strings.HasPrefix(got, "error: ") {
+			t.Errorf("%q => %s, want an error", src, got)
+		}
+	}
+}
+
+// A line of nested dashes parses to that many nested sequences, up to a cap
+// on the items one line may open; past it the decode fails instead of
+// recursing until the stack runs out, which would end the process.
+func TestDecoder_DeeplyNestedSequenceLine(t *testing.T) {
+	want := fmt.Sprintf("error: yaml: more than %d nested sequence items on line 1", maxItemsPerLine)
+	for _, dashes := range []int{maxItemsPerLine + 1, 4_000_000} {
+		if got := parseDump(strings.Repeat("- ", dashes) + "x"); got != want {
+			t.Fatalf("%d nested dashes: %.100s, want %s", dashes, got, want)
+		}
+	}
+	depth := maxItemsPerLine
+	src := strings.Repeat("- ", depth) + "x"
+	n := parseYAML(src)
+	for level := 0; level < depth; level++ {
+		if n.kind != ySeq || len(n.seq) != 1 {
+			t.Fatalf("level %d: %s, want a one-item sequence", level, n.kindName())
+		}
+		n = n.seq[0]
+	}
+	if n.kind != yScalar || n.scalar != "x" {
+		t.Fatalf("innermost value %q, want %q", n.scalar, "x")
+	}
+}

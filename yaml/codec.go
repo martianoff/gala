@@ -780,7 +780,12 @@ type pLine struct {
 	indent  int
 	raw     string
 	lineNum int
+	nested  int // sequence items opened on this line before raw ("- - x" re-read as "- x" has 1)
 }
+
+// maxItemsPerLine caps the sequence items a single line may open ("- - - x"
+// opens three). Each one is a level of recursion in the parser.
+const maxItemsPerLine = 1000
 
 func parseYAML(input string) *yNode {
 	lines := splitSignificantLines(input)
@@ -814,13 +819,13 @@ func splitSignificantLines(input string) []pLine {
 		}
 		indent := countLeadingSpaces(raw)
 		content := raw[indent:]
-		if endsWithLiteralBlock(content) {
-			joined, consumed := takeLiteralBlock(rawLines, i+1, indent)
+		if header, ok := literalBlockHeader(content); ok {
+			joined, consumed := takeLiteralBlock(rawLines, i+1, literalBlockParent(header, indent))
 			// The block becomes a double-quoted scalar on its header's line.
 			// A bare "|" leaves no text before it, so the line starts with
 			// the quote and reads as a quoted scalar, never as a key.
 			collapsed := doubleQuoted(joined)
-			if before := stripLiteralBlockMarker(content); before != "" {
+			if before := stripLiteralBlockMarker(header); before != "" {
 				collapsed = before + " " + collapsed
 			}
 			out = append(out, pLine{indent: indent, raw: collapsed, lineNum: i + 1})
@@ -853,12 +858,64 @@ func countLeadingSpaces(s string) int {
 	return n
 }
 
+// literalBlockHeader returns content without a trailing comment, which may
+// follow a block indicator ("key: | # note"), and whether it opens a literal
+// block scalar. Only a line holding a '|' can, so only such a line pays for
+// the comment scan.
+func literalBlockHeader(content string) (string, bool) {
+	if strings.IndexByte(content, '|') < 0 {
+		return "", false
+	}
+	header := withoutComment(content)
+	return header, endsWithLiteralBlock(header)
+}
+
+// endsWithLiteralBlock reports whether a line opens a literal block scalar:
+// a bare "|", a sequence item "- |" or a "key: |" pair, optionally "|-".
 func endsWithLiteralBlock(content string) bool {
 	t := strings.TrimRight(content, " \t")
-	if t == "|" || t == "|-" {
-		return true
+	return isBlockIndicator(t) || isBlockIndicatorItem(t) ||
+		strings.HasSuffix(t, ": |") || strings.HasSuffix(t, ": |-")
+}
+
+func isBlockIndicator(s string) bool { return s == "|" || s == "|-" }
+
+// itemPrefix measures the "- " markers a line starts with, one per sequence
+// item opened on that line ("- - key: |" has two). It returns the length of
+// all of them and the offset of the last dash. Only a dash with text after
+// it counts, so a bare "-" (alone, or last as in "- -") is not counted, and
+// a line with no such dash gives 0, 0.
+func itemPrefix(s string) (n, lastDash int) {
+	for len(s) > n+1 && isSequenceLine(s[n:]) {
+		lastDash = n
+		n += 1 + countLeadingSpaces(s[n+1:])
 	}
-	return strings.HasSuffix(t, ": |") || strings.HasSuffix(t, ": |-")
+	return n, lastDash
+}
+
+// isBlockIndicatorItem reports whether s is a sequence item whose value is
+// a literal block ("- |", or "- - |" one level down).
+func isBlockIndicatorItem(s string) bool {
+	n, _ := itemPrefix(s)
+	// Only spaces separate the dash from the indicator; itemPrefix counted
+	// them, so a tab there ("- \t|") is not a block header.
+	return n > 0 && isBlockIndicator(strings.TrimRight(s[n:], " \t"))
+}
+
+// literalBlockParent returns the column the body of the literal block that
+// header opens must be indented past: the dash's column for a "- |" item,
+// the key's column for a "- key: |" item, and the header line's own
+// indentation otherwise.
+func literalBlockParent(header string, indent int) int {
+	n, lastDash := itemPrefix(header)
+	switch {
+	case n == 0:
+		return indent
+	case isBlockIndicator(strings.TrimRight(header[n:], " \t")):
+		return indent + lastDash
+	default:
+		return indent + n
+	}
 }
 
 func stripLiteralBlockMarker(content string) string {
@@ -997,13 +1054,31 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		if !isSequenceLine(line.raw) {
 			break
 		}
+		// The item's content starts after the dash and the spaces that follow
+		// it: a nested sequence's items, or a mapping's keys, line up there.
+		contentIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+		if rest := line.raw[contentIndent-indent:]; isSequenceLine(rest) {
+			// A nested sequence that starts on the dash's line ("- - x").
+			// This line is rewritten in place as that sequence's first item
+			// and parsed again; the parser reads each line once otherwise.
+			// This check comes before any scan of the rest of the line, so a
+			// line of many nested dashes still parses in linear time, and
+			// their number is capped: each one is a level of recursion, and
+			// running out of stack would end the process, not fail the decode.
+			if line.nested+2 > maxItemsPerLine { // the items this line holds after opening one more
+				panic(fmt.Sprintf("yaml: more than %d nested sequence items on line %d", maxItemsPerLine, line.lineNum))
+			}
+			lines[i] = pLine{indent: contentIndent, raw: rest, lineNum: line.lineNum, nested: line.nested + 1}
+			child, np := parseSequence(lines, i, contentIndent)
+			l.seq = append(l.seq, child)
+			i = np
+			continue
+		}
 		itemPart := trimYamlSpace(line.raw[1:])
 		// A "- key: value" item drops its comment while the pair is split,
 		// where a quoted value is known; any other item drops it here.
 		if key, value, ok := tryParseKeyValue(itemPart); ok {
-			// The key starts after the dash and the spaces that follow it.
-			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
-			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
+			child, np := parseCompactMapping(lines, i, contentIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
 			continue
