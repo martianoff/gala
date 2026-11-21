@@ -61,7 +61,9 @@ def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String 
     | some lb => if body3Ss lb then "lowered" else "order-predicate"
     | none =>
       let es := subs F.body
-      if es.any (fun | .name x => globals.contains x && !names.contains x | _ => false) then
+      -- A name the body declares (`val`, `var`) is a local, shadowing a package-level one.
+      let locals := names ++ es.flatMap (fun | .decl _ ns _ _ _ => ns | _ => [])
+      if es.any (fun | .name x => globals.contains x && !locals.contains x | _ => false) then
         "reads-package-level"
       else if es.any (fun
           | .call (.name g) as => match ds.funcs.lookup g with

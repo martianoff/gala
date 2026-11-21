@@ -5,18 +5,19 @@
   about GoCore's evaluator as it is, left to right. GoCore's model of gc 1.25.5's order
   (`Order.gc`, the rewrite in `Gala/GoCore/Hoist.lean`) rewrites a statement only where its
   rewrite's trigger (`Hoist.triggers`) fires on the statement's events. `Body3` says no
-  statement of a lowered body fires it, in every scope in which no local is one a call may
-  change; `gc_runs3` shows `Order.gc` then runs the body as written.
+  statement of a lowered body fires it on `canon`, the events read without a scope;
+  `canon_eq` proves those are the model's events in any scope the body fits (`FitsE`: no
+  name it reads may be changed by a call there, and each name it calls is a call of a
+  single-result function). `gc_runs3` shows `Order.gc` runs a `Body3` body as written when
+  it fits the scope the rewrite gives it (`gcScope`), a hypothesis (`FitsSs`) that step 3d
+  owes for lowered programs.
 
-  In plain words: no statement in which an operand that may panic (a division or modulo by
-  something other than a non-zero literal, a shift by something other than a literal)
-  precedes a call in the same operand list, a call's arguments being a list of their own
-  (`f(x / z) + g()` is allowed: the division is in `f`'s arguments; `x / z + f(x)` and
-  `g(x / z, f())` are not). The other half of the trigger, a read of a variable a call may
-  change before the call, never fires in these bodies: they take no addresses and have no
-  function literals, so no local is changeable (`chSs_noTrig`). Quantifying over scopes is
-  conservative: the scope decides only whether `f(...)` is a call, a builtin or a
-  conversion, and a conversion never fires the trigger.
+  In plain words: no statement in which an operand that may panic (`/` or `%` by a
+  non-literal, a shift by a non-literal count) precedes a call in the same operand list, a
+  call's arguments being a list of their own (`f(x / z) + g()` is allowed: the division is
+  in `f`'s arguments; `x / z + f(x)` and `g(x / z, f())` are not). The other half of the
+  trigger, a read of a variable a call may change before the call, is ruled out by
+  `FitsSs`, not proved here.
 
   This is about GoCore's model of gc, not real gc: real gc copies every call into a
   temporary, which agrees with the model only where the model's trigger is right; that full
