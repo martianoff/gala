@@ -855,3 +855,73 @@ theorem eval_mono (ds : Spec.Decls) : ∀ (e : Spec.Expr) (d : Nat), CFShape e �
     all_goals (exfalso; simp_all)
 
 end Mono
+
+/-! ## A call-free expression never returns -/
+
+section NoRet
+open Spec (H)
+
+/-- A step-free computation that never ends with a `return`. -/
+def NoRet (x : H α) : Prop := ∀ c v, (x.run.run c).1 ≠ .error (.ret v)
+
+theorem noRet_pure (a : α) : NoRet (pure a : H α) := fun _ _ h => nomatch h
+theorem noRet_bind {x : H α} {f : α → H β} (hx : NoRet x) (hf : ∀ a, NoRet (f a)) : NoRet (x >>= f) := by
+  intro c v
+  rw [Spec.run_bind_eq]
+  rcases h : x.run.run c with ⟨r, t⟩
+  cases r with
+  | error e => intro he; cases he; exact hx c v (by rw [h])
+  | ok a => exact hf a t v
+
+theorem noRet_unop (op : String) (v : Spec.Val) : NoRet (Spec.unop op v) := by
+  intro c w; unfold Spec.unop; split <;> exact fun h => nomatch h
+theorem noRet_intLit (n : Int) : NoRet (Spec.intLit n) := by
+  intro c w; unfold Spec.intLit; split <;> exact fun h => nomatch h
+theorem noRet_binop (op : String) (a b : Spec.Val) : NoRet (Spec.binop op a b) := by
+  intro c w; unfold Spec.binop
+  split <;> (try split) <;> (try split) <;> exact fun h => nomatch h
+theorem noRet_asBool (v : Spec.Val) : NoRet (Spec.asBool v) := by
+  intro c w; unfold Spec.asBool; split <;> exact fun h => nomatch h
+theorem noRet_deref (v : Spec.Val) : NoRet (Spec.deref v) := by
+  intro c w; unfold Spec.deref; split
+  · rw [Spec.run_get_bind]; split <;> exact fun h => nomatch h
+  · exact fun h => nomatch h
+
+theorem pureEval_noRet (ds : Spec.Decls) : ∀ e, NoRet (pureEval ds e)
+  | .lit (.int n) => noRet_intLit n
+  | .lit (.bool _) | .lit (.str _) => noRet_pure _
+  | .paren x => pureEval_noRet ds x
+  | .name x => by
+    intro c w
+    unfold pureEval Spec.getCore
+    rw [Spec.run_get_bind]
+    split
+    · exact noRet_deref _ c w
+    · exact fun h => nomatch h
+  | .unary op x => by
+    by_cases hneg : ∃ n, op = "-" ∧ x = .lit (.int n)
+    · obtain ⟨n, rfl, rfl⟩ := hneg; exact noRet_intLit _
+    · rw [pureEval_unary ds op x (fun n h => hneg ⟨n, h⟩)]
+      exact noRet_bind (pureEval_noRet ds x) fun _ => noRet_unop _ _
+  | .binary op l r => by
+    by_cases hand : op = "&&"
+    · subst hand
+      simp only [pureEval]
+      exact noRet_bind (pureEval_noRet ds l) fun _ => noRet_bind (noRet_asBool _) fun b => by
+        split
+        · exact noRet_bind (pureEval_noRet ds r) fun _ => noRet_bind (noRet_asBool _) fun _ => noRet_pure _
+        · exact noRet_pure _
+    by_cases hor : op = "||"
+    · subst hor
+      simp only [pureEval]
+      exact noRet_bind (pureEval_noRet ds l) fun _ => noRet_bind (noRet_asBool _) fun b => by
+        split
+        · exact noRet_pure _
+        · exact noRet_bind (pureEval_noRet ds r) fun _ => noRet_bind (noRet_asBool _) fun _ => noRet_pure _
+    rw [pureEval_binary ds op l r hand hor]
+    exact noRet_bind (pureEval_noRet ds l) fun _ => noRet_bind (pureEval_noRet ds r) fun _ => noRet_binop _ _ _
+  | .call .. | .select .. | .tuple _ | .ifExpr .. | .mtch .. | .block _ | .ifStmt .. | .ret _
+  | .assign .. | .incdec .. | .decl .. | .interp _ | .lambda .. | .named .. | .unsupported _ => by
+    intro c w; unfold pureEval; exact fun h => nomatch h
+
+end NoRet
