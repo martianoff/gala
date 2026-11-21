@@ -3,8 +3,13 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/transpiler"
 )
@@ -231,6 +236,81 @@ func TestPruneStaleCaches_SkippedByEnv(t *testing.T) {
 	pruneStaleCaches(parent, CacheVersion+"-dev-current")
 	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
 		t.Errorf("expected stale dir to be pruned by direct call, but it remains")
+	}
+}
+
+// Storing a package evicts its own entries for earlier contents, and only
+// those. Entry names were the package's path made a file name: storing
+// example.com/ev/lib evicted example.com/ev/lib/util's entries, which that
+// name begins, and a/b_c and a_b/c, both a_b_c, shared their entries'
+// names (#1354).
+func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
+	c := &analysisCache{dir: t.TempDir(), enabled: true}
+	put := func(pkg, contentHash string) {
+		t.Helper()
+		c.Put(pkg, contentHash, "deps", &transpiler.RichAST{PackageName: pkg}, nil)
+	}
+	// cached says whether pkg's own entry for contentHash is there, not
+	// another package's under the same name.
+	cached := func(pkg, contentHash string) bool {
+		t.Helper()
+		got, _ := c.Get(pkg, contentHash, "deps")
+		return got != nil && got.PackageName == pkg
+	}
+	const oldHash, newHash = "111111111111aaaa", "222222222222bbbb"
+	pkgs := []string{"example.com/ev/lib/util", "example.com/ev/lib", "example.com/a/b_c", "example.com/a_b/c"}
+	for _, pkg := range pkgs {
+		put(pkg, oldHash)
+	}
+	for _, pkg := range pkgs {
+		assert.True(t, cached(pkg, oldHash), "%s: its entry was evicted by another package's", pkg)
+	}
+
+	for _, restore := range []struct{ pkg, other string }{
+		{"example.com/ev/lib", "example.com/ev/lib/util"},
+		{"example.com/a/b_c", "example.com/a_b/c"},
+	} {
+		put(restore.pkg, newHash)
+		assert.False(t, cached(restore.pkg, oldHash), "%s: its entry for earlier contents was kept", restore.pkg)
+		assert.True(t, cached(restore.pkg, newHash), "%s: its new entry is missing", restore.pkg)
+		assert.True(t, cached(restore.other, oldHash), "%s: storing %s evicted its entry", restore.other, restore.pkg)
+	}
+}
+
+// A package's entries are found by the path hash that leads their names, so
+// an entry whose readable part a file system rewrote (normalizing a
+// non-ASCII name, say) is evicted, and one for the contents stored is kept.
+func TestAnalysisCacheEvictsEntryWithRewrittenName(t *testing.T) {
+	c := &analysisCache{dir: t.TempDir(), enabled: true}
+	const pkg, oldHash, newHash = "example.com/проект", "111111111111aaaa", "222222222222bbbb"
+	rewritten := func(contentHash string) string {
+		return filepath.Join(c.dir, pathHash(pkg)+"_rewritten_"+contentHash[:12]+".bin")
+	}
+	for _, h := range []string{oldHash, newHash} {
+		require.NoError(t, os.WriteFile(rewritten(h), []byte("x"), 0644))
+	}
+	c.Put(pkg, newHash, "deps", &transpiler.RichAST{PackageName: pkg}, nil)
+	assert.NoFileExists(t, rewritten(oldHash), "the entry for earlier contents was kept")
+	assert.FileExists(t, rewritten(newHash), "the entry for the contents stored was evicted")
+}
+
+// An entry's name stays within file-name limits however long its package's
+// path, and holds whole runes: the readable part of the name is cut at a
+// rune's start, and the hash keeps the name unique.
+func TestAnalysisCacheEntryNameOfLongPath(t *testing.T) {
+	for _, long := range []string{
+		"example.com/" + strings.Repeat("segment/", 40) + "pkg",
+		// Two-byte runes after an odd prefix: a cut 96 bytes from the end
+		// would otherwise fall inside one.
+		"example.com/x/" + strings.Repeat("проект/", 20) + "пакет",
+	} {
+		c := &analysisCache{dir: t.TempDir(), enabled: true}
+		name := filepath.Base(c.cachePath(long, "333333333333cccc"))
+		assert.LessOrEqual(t, len(name), len("hhhhhhhhhhhh_")+maxReadableCacheName+len("_cccccccccccc.bin"), "entry name %s", name)
+		assert.True(t, utf8.ValidString(name), "entry name %q is not valid UTF-8", name)
+		c.Put(long, "333333333333cccc", "deps", &transpiler.RichAST{PackageName: "pkg"}, nil)
+		got, _ := c.Get(long, "333333333333cccc", "deps")
+		require.NotNil(t, got, "the entry of %s was not stored", long)
 	}
 }
 

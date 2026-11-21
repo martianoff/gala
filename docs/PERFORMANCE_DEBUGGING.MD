@@ -124,12 +124,16 @@ standard error, for the report.
 
 ## When the disk cache eats space
 
-Each analyzed package is gob-serialised under
-`<project>/.gala/cache/v1[-<version-commit>]/<pkg>_<hash>.gob`.
+Each analyzed package is serialised under
+`<project>/.gala/cache/v<N>[-<version-commit>][-<binary-hash>]-<go-sdk>/<path-hash>_<pkg>_<content-hash>.bin`,
+where `<path-hash>` is the first 12 hex digits of the SHA-256 of the
+package's path (with `\` made `/`), `<pkg>` is that path with `/` and `\` made `_`, cut to at
+most its last 96 bytes at a character boundary, and `<content-hash>` is the first 12 hex digits of the package's
+source hash.
 
 ```bash
 du -sh <project>/.gala/cache
-ls -la <project>/.gala/cache/v1*/ | sort -k5 -n | tail
+ls -la <project>/.gala/cache/v*/ | sort -k5 -n | tail
 ```
 
 A single package cache file should be a few KB to a few MB. Hundreds of

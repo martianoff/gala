@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
@@ -242,7 +243,13 @@ import (
 // v51: an instance of a generic Go function, slice, map or channel type keeps
 // its type arguments wherever they spell exactly (iter.Seq2[string, int]),
 // and a GoFuncSignature records its type parameters' core types (CoreTypes).
-const CacheVersion = "v51"
+//
+// v52: an entry's name starts with a hash of its package's path (see
+// cachePrefix), so storing a package no longer evicts its subpackages'
+// entries, and two packages no longer share a name (#1354). A v51
+// directory's entries would never be evicted under the new names; the bump
+// leaves the directory to the stale-cache GC.
+const CacheVersion = "v52"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -848,40 +855,74 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	}
 }
 
-// evictStale removes old cache entries for the same package with different content hashes.
+// evictStale removes old cache entries for the same package with different
+// content hashes. It finds them by the hash that leads their names (see
+// cachePrefix) alone, which no other package's names start with, and which
+// a file system that rewrites names (normalizing a non-ASCII readable part,
+// say) leaves as it is.
 func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 	if !c.enabled {
 		return
 	}
-	prefix := c.cachePrefix(pkgPath)
-	keepPath := c.cachePath(pkgPath, keepHash)
+	hashPrefix := pathHash(pkgPath) + "_"
+	// The kept entry is told by its end, which no rewriting touches either.
+	keepSuffix := cacheName("_", keepHash)
 
-	entries, err := ioutil.ReadDir(c.dir)
+	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		full := filepath.Join(c.dir, entry.Name())
-		if strings.HasPrefix(entry.Name(), prefix) && full != keepPath {
-			os.Remove(full)
+		name := entry.Name()
+		if !entry.IsDir() && strings.HasPrefix(name, hashPrefix) && !strings.HasSuffix(name, keepSuffix) {
+			os.Remove(filepath.Join(c.dir, name))
 		}
 	}
 }
 
-func (c *analysisCache) cachePrefix(pkgPath string) string {
-	safe := strings.ReplaceAll(pkgPath, "/", "_")
-	safe = strings.ReplaceAll(safe, "\\", "_")
-	return safe + "_"
+// cachePrefix is the start of the name of every entry of the package at
+// pkgPath: a hash of the path (pathHash), then the path made a file name,
+// for reading. Led by the hash, no package's prefix starts another's entry
+// names, as the path alone did (lib_ those of lib/util; a/b_c and a_b/c,
+// both a_b_c, each other's). The hash tells packages apart, so the readable
+// part is cut to keep a long path's names within file-name limits.
+func cachePrefix(pkgPath string) string {
+	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
+	readable := strings.ReplaceAll(slashed, "/", "_")
+	if cut := len(readable) - maxReadableCacheName; cut > 0 {
+		// The cut moves on to a rune's start: a file name of invalid
+		// UTF-8 is rejected (APFS) or rewritten (Windows), and then no
+		// listing matches the prefix.
+		for cut < len(readable) && !utf8.RuneStart(readable[cut]) {
+			cut++
+		}
+		readable = readable[cut:]
+	}
+	return pathHash(pkgPath) + "_" + readable + "_"
 }
 
+// pathHash is the first 12 hex digits of the SHA-256 of pkgPath, with `\`
+// made `/`: the part of the package's entry names that tells it apart.
+func pathHash(pkgPath string) string {
+	sum := sha256.Sum256([]byte(strings.ReplaceAll(pkgPath, "\\", "/")))
+	return hex.EncodeToString(sum[:6])
+}
+
+// maxReadableCacheName bounds, in bytes, the readable part of an entry's
+// name (see cachePrefix); its end, the most specific part of a path, is kept.
+const maxReadableCacheName = 96
+
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
-	// Extension is decorative — the directory's CacheVersion key is the
-	// real format identifier. Kept as ".bin" for v2 to make the binary
-	// codec switch visible at a glance when inspecting the cache tree.
-	return filepath.Join(c.dir, c.cachePrefix(pkgPath)+contentHash[:12]+".bin")
+	return filepath.Join(c.dir, cacheName(cachePrefix(pkgPath), contentHash))
+}
+
+// cacheName is the name of the entry for contentHash of the package whose
+// prefix is prefix. The extension is decorative — the directory's
+// CacheVersion key is the real format identifier. Kept as ".bin" for v2 to
+// make the binary codec switch visible at a glance when inspecting the cache
+// tree.
+func cacheName(prefix, contentHash string) string {
+	return prefix + contentHash[:12] + ".bin"
 }
 
 // pkgFingerprint is the per-process memo of the three derived quantities
