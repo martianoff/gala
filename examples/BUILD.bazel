@@ -2101,6 +2101,16 @@ gala_exec_test(
     ],
 )
 
+# #1378: a range over a type parameter whose Go constraint has an integer
+# core type binds the type parameter. In a directory of its own for the same
+# reason as go_tilde_constraint_lambda.
+gala_exec_test(
+    name = "range_type_param_int",
+    src = "range_type_param_int/main.gala",
+    expected = "range_type_param_int/main.out",
+    deps = ["//examples/go_tilde_constraint_bridge"],
+)
+
 gala_exec_test(
     name = "variadic_functions",
     src = "variadic_functions.gala",

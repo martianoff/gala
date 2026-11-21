@@ -531,16 +531,22 @@ func (t *galaASTTransformer) isComparableConstraint(c transpiler.Type) bool {
 	if transpiler.ConstraintIs(c, "comparable") {
 		return true
 	}
+	data := t.goConstraintData(c)
+	return data != nil && data.EmbedsComparable
+}
+
+// goConstraintData is the Go type information of the interface c, a type
+// parameter's constraint, or nil when c is any or no Go interface.
+func (t *galaASTTransformer) goConstraintData(c transpiler.Type) *transpiler.GoTypeData {
 	if transpiler.ConstraintIs(c, "any") || t.goTypeInfo == nil {
-		return false
+		return nil
 	}
 	base := receiverBase(c)
 	key := t.goTypeLookupName(base)
 	if t.goTypeInfo.GetTypeData(key) == nil {
 		key, _ = t.resolveTypeName(base.BaseName(), func(n string) bool { return t.goTypeInfo.GetTypeData(n) != nil })
 	}
-	data := t.goTypeInfo.GetTypeData(key)
-	return data != nil && data.EmbedsComparable
+	return t.goTypeInfo.GetTypeData(key)
 }
 
 // goEqualMethod reports whether typ is a Go type whose value method set has
