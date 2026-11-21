@@ -267,6 +267,8 @@ construct a run reached, so a program may stop at another once it is modelled.
   (arithmetic and printing), and Go library packages used by a single program each
   (`net/url`, `net`, `regexp`, `sync`, `sort`, `math`, `crypto/sha256`, `testing`,
   `fmt.Fprintf` to an `io.Writer`); a selector promoted through an embedded field.
+- **Not yet modelled, reachable:** generic local types (`type Box[T any] ...` in a
+  function body), which gc 1.25.5 accepts; the run stops at the declaration.
 
 The differential run (`internal/formal/difftest`) runs every compiled program's Go through
 GoCore and compares it with `go run`; its results are in the "GoCore" part of the
