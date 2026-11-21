@@ -33,3 +33,25 @@ func TestDiscardAfterBindUnderscore(t *testing.T) {
 		require.Contains(t, err.Error(), string(galaerr.CodeUnderscoreBindingRead))
 	})
 }
+
+// TestAlsoUnderscoreClause pins that the `_` of a `bind _ = m` clause that
+// starts a Zip-lowered `also` group is bound as on the sequential path: a
+// read is GALA-E0139, `_ = x` is a discard, and the group still runs.
+func TestAlsoUnderscoreClause(t *testing.T) {
+	const header = "package main\n\nimport . \"martianoff/gala/concurrent\"\n\nfunc compute(n int) Future[int] = Future[int](n * n)\n\nfunc total() Future[int] {\n    bind _ = compute(2)\n    also b = compute(3)\n"
+	const footer = "    Future[int](b)\n}\n\nfunc main() {\n    Println(total().Get())\n}\n"
+	t.Run("a read of the clause's `_`", func(t *testing.T) {
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    Println(_)\n"+footer, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(galaerr.CodeUnderscoreBindingRead))
+		require.Contains(t, err.Error(), "line 10:12 ")
+	})
+	t.Run("a discard after the group", func(t *testing.T) {
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    _ = \"ignored\"\n"+footer, "")
+		require.NoError(t, err)
+	})
+	t.Run("no read of the clause's `_`", func(t *testing.T) {
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+footer, "")
+		require.NoError(t, err)
+	})
+}
