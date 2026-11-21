@@ -18,7 +18,9 @@
 # embedded type or of a package GoCore does not hold (unsupported_embedded_*),
 # at an operand whose order of evaluation gc decides by its static type
 # (unsupported_eval_order),
-# and at what fmt prints as an error (unsupported_printf_*).
+# at what fmt prints as an error (unsupported_printf_verb, unsupported_printf_x), and at
+# %T of a type with an interface with methods in it (unsupported_printf_type_iface) or of
+# a generic type with a local type argument (unsupported_printf_type_local_arg).
 # Their files are written by hand.
 #
 # Run from formal/tests/gocore with GOCOREJSON naming the exporter binary, and a
