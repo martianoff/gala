@@ -55,7 +55,7 @@ func TestUnreachableCase(t *testing.T) {
 	}
 	for _, tc := range rejected {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.src+"\nfunc main() {}\n", "")
+			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.src+footer, "")
 			require.Error(t, err)
 			require.Contains(t, err.Error(), string(galaerr.CodeUnreachableCase))
 			require.Contains(t, err.Error(), tc.at+"unreachable case: "+tc.catchAll+" matches every value")
@@ -77,12 +77,16 @@ func TestUnreachableCase(t *testing.T) {
 			"func f(t Tuple[int, string]) string = t match {\n    case (1, s) => s\n    case _ => \"other\"\n}\n"},
 		{"a lowercase sealed variant name tests the value",
 			"sealed type Frame {\n    case endFrame()\n    case lineFrame(text string)\n}\n\nfunc f(fr Frame) string = fr match {\n    case endFrame => \"end\"\n    case other => \"other\"\n}\n"},
+		{"a typed pattern of the subject's own type closes the match",
+			"func f(x int) int = x match {\n    case y: int => y + 1\n}\n"},
+		{"a tuple pattern of the subject's arity closes the match",
+			"func f(t Tuple[int, string]) string = t match {\n    case (n, s) => s\"$n $s\"\n}\n"},
 		{"partial-function cases after a guarded binding",
 			"func f() Array[string] = ArrayOf(1, 2, 3).Collect({ case n if n > 2 => \"big\" case 1 => \"one\" case _ => \"other\" })\n"},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.src+"\nfunc main() {}\n", "")
+			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.src+footer, "")
 			require.NoError(t, err)
 		})
 	}

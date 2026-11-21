@@ -785,10 +785,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		// An unguarded irrefutable tuple arm — `case (_, _, err) =>` against a
 		// Tuple3 — matches every value, so the match is complete without a
-		// default. It lowers to an ordinary clause, so the if-chain still
-		// needs a terminating else: give it the same unreachable panic an
-		// exhaustive sealed match gets.
-		if !hasDefault && irrefutableTupleArm {
+		// default; so does any other arm the catch-all scan found to match
+		// every value, such as `case p: Point` over a Point. It lowers to an
+		// ordinary clause, so the if-chain still needs a terminating else:
+		// give it the same unreachable panic an exhaustive sealed match gets.
+		if !hasDefault && (irrefutableTupleArm || catchAll.matched) {
 			hasDefault = true
 			defaultBody = unreachableDefaultBody()
 		}

@@ -289,8 +289,22 @@ func (t *galaASTTransformer) matchesEveryValue(pat patSrc, subjectType, matchedT
 
 // exprMatchesEveryValue is matchesEveryValue for an expression pattern.
 func (t *galaASTTransformer) exprMatchesEveryValue(e patExpr, matchedType transpiler.Type, typeKnown bool) bool {
+	return t.exprMatchesEveryValueBinding(e, matchedType, typeKnown, map[string]bool{})
+}
+
+// exprMatchesEveryValueBinding is exprMatchesEveryValue for a sub-pattern of
+// a pattern that binds the names in bound already. A name bound twice is an
+// error the pattern's lowering reports, so such a pattern is not counted.
+func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType transpiler.Type, typeKnown bool, bound map[string]bool) bool {
 	text := e.text()
-	if isWildcard(text) || t.isBindingPatternOf(text, matchedType) {
+	if isWildcard(text) {
+		return true
+	}
+	if t.isBindingPatternOf(text, matchedType) {
+		if bound[text] {
+			return false
+		}
+		bound[text] = true
 		return true
 	}
 	if !typeKnown {
@@ -305,7 +319,7 @@ func (t *galaASTTransformer) exprMatchesEveryValue(e patExpr, matchedType transp
 		return false
 	}
 	for i, elem := range elems {
-		if !t.exprMatchesEveryValue(elem, tuple.Params[i], typeKnown) {
+		if !t.exprMatchesEveryValueBinding(elem, tuple.Params[i], typeKnown, bound) {
 			return false
 		}
 	}
@@ -313,12 +327,38 @@ func (t *galaASTTransformer) exprMatchesEveryValue(e patExpr, matchedType transp
 }
 
 // typedPatternMatchesEveryValue reports whether a typed pattern `x: T` names
-// the subject's own type (see typedPatternOfType), and that type holds no
-// value of another type: it is not an interface or a type parameter. Its
-// std.As test is then always true.
+// the subject's own type (see typedPatternOfType), and that type is known to
+// hold no value of another type (see isKnownConcreteType). Its std.As test is
+// then always true.
 func (t *galaASTTransformer) typedPatternMatchesEveryValue(pat patSrc, subjectType, matchedType transpiler.Type) bool {
-	return !transpiler.IsUnusable(subjectType) && !t.holdsAnyType(subjectType) && !t.holdsAnyType(matchedType) &&
+	return t.isKnownConcreteType(subjectType) && t.isKnownConcreteType(matchedType) &&
 		t.typedPatternOfType(pat, subjectType)
+}
+
+// isKnownConcreteType reports whether typ is known not to be an interface or
+// a type parameter: a primitive other than `error`, a GALA type that is not an
+// interface, or a Go type its Go type information describes as one. A type
+// nothing describes, such as a Go type whose package was not loaded, may be
+// an interface, so it is not known.
+func (t *galaASTTransformer) isKnownConcreteType(typ transpiler.Type) bool {
+	if transpiler.IsUnusable(typ) {
+		return false
+	}
+	typ = t.followAliasChain(typ)
+	if t.isTypeParamSubject(typ) {
+		return false
+	}
+	if b, ok := typ.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(b.Name) {
+		return b.Name != "error" && !typ.IsAny()
+	}
+	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
+		return td.Kind != "interface" && td.Kind != "alias"
+	}
+	if t.isGoTypeWithoutInfo(typ) {
+		return false
+	}
+	meta := t.getTypeMeta(typ.BaseName())
+	return meta != nil && !meta.IsInterface
 }
 
 // isTuplePatternOfSubjectArity reports whether a case pattern is the

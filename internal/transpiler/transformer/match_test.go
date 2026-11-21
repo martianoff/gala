@@ -106,7 +106,6 @@ var res = std.NewImmutable(func() string {
 val x = 42
 val res = x match {
 	case y => y + 1
-	case _ => 0
 }`,
 			expected: `package main
 
@@ -115,15 +114,8 @@ import "martianoff/gala/std"
 var x = std.NewImmutable(42)
 var res = std.NewImmutable(func() int {
 	_subj := x.Get()
-	{
-		_tmp_y := _subj
-		if true {
-			y := _tmp_y
-			return y + 1
-		} else {
-			return 0
-		}
-	}
+	y := _subj
+	return y + 1
 }())
 `,
 		},
@@ -504,9 +496,9 @@ func describe(b bool) string = b match {
 			name: "Unused match variable is a compiler error",
 			input: `package main
 
-val x = 42
+val x = Some(42)
 val res = x match {
-	case y => 0
+	case Some(y) => 0
 	case _ => 0
 }`,
 			wantErr: true,

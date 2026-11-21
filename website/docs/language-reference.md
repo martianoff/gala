@@ -980,9 +980,9 @@ val status = if (score > 50) "pass" else "fail"
 ```
 
 ### Match Expression
-A default case is required unless the arms cover every value: all variants of a sealed type, both `true` and `false`, or an unguarded arm that matches anything — `case _`, a plain binding (`case n`), or a tuple pattern made only of wildcards, bindings and nested such tuples (`case (_, _, err)`). A variant is covered only when its cases match every value of its fields: `case Some(0)` covers part of `Some`, and a guarded case covers nothing ([GALA-E0002](/docs/errors/gala-e0002/)).
+A default case is required unless the arms cover every value: all variants of a sealed type, both `true` and `false`, or an unguarded arm that matches anything — `case _`, a plain binding (`case n`), a tuple pattern made only of wildcards, bindings and nested such tuples (`case (_, _, err)`), or a typed pattern of the subject's own type that is not an interface (`case n: int` over an `int`). A variant is covered only when its cases match every value of its fields: `case Some(0)` covers part of `Some`, and a guarded case covers nothing ([GALA-E0002](/docs/errors/gala-e0002/)).
 
-Cases are tried in the order they are written, and the first that matches wins. A case after an unguarded case that matches every value — those above, or a typed pattern of the subject's own type (`case n: int` over an `int`) — can never run, and is rejected ([GALA-E0141](/docs/errors/gala-e0141/)). Write the catch-all last; a guarded case is not one. The same holds in a partial-function literal `{ case ... }`.
+Cases are tried in the order they are written, and the first that matches wins. A case after an unguarded case that matches every value can never run, and is rejected ([GALA-E0141](/docs/errors/gala-e0141/)). Write the catch-all last; a guarded case is not one. The same holds in a partial-function literal `{ case ... }`.
 
 <!-- doc-check: fragment -->
 ```gala

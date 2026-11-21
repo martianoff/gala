@@ -108,7 +108,6 @@ func makeTupleArityProgram(n int) string {
 	fmt.Fprintf(&b, "    val s = t match {\n")
 	fmt.Fprintf(&b, "        case (%s) => %s\n",
 		strings.Join(bindings, ", "), strings.Join(bindings, " + "))
-	fmt.Fprintf(&b, "        case _ => 0\n")
 	fmt.Fprintf(&b, "    }\n")
 	// Field access — read .V1 explicitly to exercise position 5.
 	fmt.Fprintf(&b, "    return s + t.V1\n")
