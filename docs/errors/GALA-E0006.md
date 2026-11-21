@@ -2,7 +2,7 @@
 
 **When it fires.** A `match` expression has more than one default branch —
 either multiple `case _ =>` clauses, or, in a match without `case _`, more
-than one unguarded lowercase binding pattern (`case n =>`). A binding written before
+than one unguarded binding pattern whose name starts with a lowercase letter or `_` (`case n =>`). A binding written before
 or after `case _` is [GALA-E0141](GALA-E0141.md).
 
 **Minimal repro.** (`main.gala`)

@@ -35,7 +35,7 @@ an extractor whose fields are all bindings.
 
 A case with a guard, `case x if x > 0`, does not match every value, so the
 cases after it stay reachable. In a `match`, a second `case _` (or a second
-plain binding, when there is no `case _`) is
+binding whose name starts with a lowercase letter or `_`, when there is no `case _`) is
 [GALA-E0006](/docs/errors/gala-e0006/) instead; in a partial-function literal
 it is this error too.
 
