@@ -856,23 +856,31 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	c.evictStale(pkgPath, contentHash)
 }
 
-// evictStale removes old cache entries for the same package with different content hashes.
+// evictStale removes the package's entries for other contents than keepHash's
+// that are older than keepHash's entry. One no older is another process's
+// store of the package, made while this one was storing; it stays, for that
+// process's next build to find.
 func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 	if !c.enabled {
 		return
 	}
 	prefix := cachePrefix(pkgPath)
 	keepName := cacheName(prefix, keepHash)
+	kept, err := os.Stat(filepath.Join(c.dir, keepName))
+	if err != nil {
+		return
+	}
 
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, prefix) || name == keepName {
 			continue
 		}
-		if name := entry.Name(); strings.HasPrefix(name, prefix) && name != keepName {
+		if info, err := entry.Info(); err == nil && info.ModTime().Before(kept.ModTime()) {
 			os.Remove(filepath.Join(c.dir, name))
 		}
 	}

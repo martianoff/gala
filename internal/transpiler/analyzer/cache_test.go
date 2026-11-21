@@ -270,10 +270,30 @@ func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
 		{"example.com/ev/lib", "example.com/ev/lib/util"},
 		{"example.com/a/b_c", "example.com/a_b/c"},
 	} {
+		// Older than the entry about to be stored, however coarse the
+		// file system's clock.
+		past := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(c.cachePath(restore.pkg, oldHash), past, past))
 		put(restore.pkg, newHash)
 		assert.False(t, cached(restore.pkg, oldHash), "%s: its entry for earlier contents was kept", restore.pkg)
 		assert.True(t, cached(restore.pkg, newHash), "%s: its new entry is missing", restore.pkg)
 		assert.True(t, cached(restore.other, oldHash), "%s: storing %s evicted its entry", restore.other, restore.pkg)
+	}
+}
+
+// An entry no older than the one stored is another process's store of the
+// package, made meanwhile: it is not evicted, so neither process's work is
+// lost.
+func TestAnalysisCachePutKeepsNewerEntry(t *testing.T) {
+	c := &analysisCache{dir: t.TempDir(), enabled: true}
+	const pkg, mine, theirs = "example.com/ev/lib", "111111111111aaaa", "222222222222bbbb"
+	c.Put(pkg, theirs, "deps", &transpiler.RichAST{PackageName: pkg}, nil)
+	future := time.Now().Add(time.Hour)
+	require.NoError(t, os.Chtimes(c.cachePath(pkg, theirs), future, future))
+	c.Put(pkg, mine, "deps", &transpiler.RichAST{PackageName: pkg}, nil)
+	for _, h := range []string{mine, theirs} {
+		got, _ := c.Get(pkg, h, "deps")
+		assert.NotNil(t, got, "the entry for %s was evicted", h)
 	}
 }
 
