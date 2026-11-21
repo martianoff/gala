@@ -770,11 +770,6 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// lambda or partial function never reaches here, so a
 				// function literal is the lifted thunk).
 				expr, txErr = t.transformArgument(v.expr, slot{typ: t.substituteTranspilerTypeParams(byNameType, typeSubst), open: true}, false)
-				if txErr != nil {
-					// Lowered against the same slot, it would fail the
-					// same way later, with U unbound.
-					return true, nil, txErr
-				}
 				if _, lifted := expr.(*ast.FuncLit); lifted && sendable {
 					if err := t.enforceSendableCapturesInArg(v); err != nil {
 						return true, nil, err
