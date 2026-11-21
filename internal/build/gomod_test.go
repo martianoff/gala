@@ -8,6 +8,7 @@ import (
 
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/stdlib"
+	"martianoff/gala/internal/transpiler/analyzer"
 )
 
 // TestWorkspaceGoModDeclaresMinGoVersion: the build workspace's go.mod is the
@@ -18,6 +19,13 @@ func TestWorkspaceGoModDeclaresMinGoVersion(t *testing.T) {
 	gen := NewGoModGenerator(&Config{})
 	content := gen.GenerateGoMod(&mod.File{Module: mod.Module{Path: "example.com/app"}}, "v0.0.0", nil)
 	assert.Contains(t, content, "\ngo "+MinGoVersion+"\n")
+}
+
+// TestAnalyzerGeneratedGoVersionMatches: the analyzer picks the Go SDK it
+// reads types from by the go line GALA's go.mod files declare (a go on PATH
+// older than it switches toolchain), and keeps its own copy of that version.
+func TestAnalyzerGeneratedGoVersionMatches(t *testing.T) {
+	assert.Equal(t, stdlib.GoVersion, analyzer.GeneratedGoVersion)
 }
 
 // TestStdlibPackagesMatchEmbedded guards against drift between the stdlib

@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +94,57 @@ func TestGorootFromGoBinarySymlink(t *testing.T) {
 	gotResolved, _ := filepath.EvalSymlinks(got)
 	if gotResolved != want {
 		t.Fatalf("gorootFromGoBinary(symlink) = %q (resolved %q), want %q", got, gotResolved, want)
+	}
+}
+
+// A go on PATH older than the go line GALA's go.mod files declare does not
+// build GALA's code: the go command switches to a newer toolchain (#1322,
+// where go1.23.4 on PATH hid strings.SplitSeq from type inference while the
+// build compiled with go1.25). switchedGoRoot must then take the root the go
+// command reports in a module with that go line, and leave a new enough SDK,
+// or one whose version it cannot read, as it is.
+func TestSwitchedGoRoot(t *testing.T) {
+	root := t.TempDir()
+	sdk := func(name, version string) string {
+		dir := filepath.Join(root, name)
+		mustMkdir(t, filepath.Join(dir, "src", "fmt"))
+		if version != "" {
+			if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte(version+"\ntime 2024-01-01T00:00:00Z\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	old, current, devel := sdk("old", "go1.23.4"), sdk("current", "go"+GeneratedGoVersion+".5"), sdk("devel", "")
+	switched := sdk("switched", "go"+GeneratedGoVersion+".0")
+
+	var goModSeen string
+	goEnv := func(dir string) string {
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if err != nil {
+			t.Fatalf("go env GOROOT ran outside a module: %v", err)
+		}
+		goModSeen = string(data)
+		return switched
+	}
+	if got := switchedGoRoot(old, goEnv); got != switched {
+		t.Errorf("switchedGoRoot(go1.23.4) = %q, want the switched toolchain %q", got, switched)
+	}
+	if want := "\ngo " + GeneratedGoVersion + "\n"; !strings.Contains(goModSeen, want) {
+		t.Errorf("go env GOROOT ran with go.mod %q, want one containing %q", goModSeen, want)
+	}
+
+	noCall := func(string) string {
+		t.Error("go env GOROOT ran for an SDK that needs no toolchain switch")
+		return switched
+	}
+	for _, dir := range []string{current, devel} {
+		if got := switchedGoRoot(dir, noCall); got != dir {
+			t.Errorf("switchedGoRoot(%q) = %q, want it unchanged", dir, got)
+		}
+	}
+	// The go command cannot tell (GOTOOLCHAIN=local fails, say): keep the root.
+	if got := switchedGoRoot(old, func(string) string { return "" }); got != old {
+		t.Errorf("switchedGoRoot with no answer = %q, want %q", got, old)
 	}
 }

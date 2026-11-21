@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"go/version"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -338,24 +339,82 @@ func findGOROOT() string {
 // in order: the literal parent-of-bin, the same after resolving symlinks, and
 // finally `go env GOROOT` which is authoritative. Returns "" if none is a valid
 // Go SDK root.
+// The root found goes through switchedGoRoot.
 func gorootFromGoBinary(goPath string) string {
 	candidates := []string{filepath.Dir(filepath.Dir(goPath))}
 	if resolved, err := filepath.EvalSymlinks(goPath); err == nil && resolved != goPath {
 		candidates = append(candidates, filepath.Dir(filepath.Dir(resolved)))
 	}
+	goEnv := func(dir string) string { return goEnvGoroot(goPath, dir) }
 	for _, c := range candidates {
 		if isGoRoot(c) {
-			return c
+			return switchedGoRoot(c, goEnv)
 		}
 	}
 	// Authoritative fallback: ask the toolchain itself.
-	if out, err := exec.Command(goPath, "env", "GOROOT").Output(); err == nil {
-		goroot := strings.TrimSpace(string(out))
-		if goroot != "" && isGoRoot(goroot) {
-			return goroot
-		}
+	if goroot := goEnv(""); goroot != "" {
+		return switchedGoRoot(goroot, goEnv)
 	}
 	return ""
+}
+
+// GeneratedGoVersion is the go line of the go.mod files GALA generates, the Go
+// version every build asks the go command for. It mirrors stdlib.GoVersion
+// (asserted equal by a test in internal/build), which this package does not
+// import: that package embeds the whole standard library source.
+const GeneratedGoVersion = "1.25"
+
+// switchedGoRoot is the SDK a build compiles GALA's generated code with, given
+// goroot, the SDK of the go on PATH. Every go.mod GALA generates asks for
+// GeneratedGoVersion, so when goroot is older the go command switches to a
+// newer toolchain (GOTOOLCHAIN=auto). goEnv runs `go env GOROOT` in a given
+// directory; it is run in a temporary module with that go line to learn which
+// toolchain that is. goroot is kept when it is new enough, has no readable
+// VERSION, or goEnv gives "" (GOTOOLCHAIN=local, say).
+func switchedGoRoot(goroot string, goEnv func(dir string) string) string {
+	v := goRootVersion(goroot)
+	if !version.IsValid(v) || version.Compare(v, "go"+GeneratedGoVersion) >= 0 {
+		return goroot
+	}
+	dir, err := os.MkdirTemp("", "gala-goroot-")
+	if err != nil {
+		return goroot
+	}
+	defer os.RemoveAll(dir)
+	mod := "module gala_goroot_probe\n\ngo " + GeneratedGoVersion + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		return goroot
+	}
+	if switched := goEnv(dir); switched != "" {
+		return switched
+	}
+	return goroot
+}
+
+// goEnvGoroot is `go env GOROOT` as goPath reports it when run in dir (the
+// current directory when dir is ""), or "" when that fails or is no Go SDK.
+func goEnvGoroot(goPath, dir string) string {
+	cmd := exec.Command(goPath, "env", "GOROOT")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	if goroot := strings.TrimSpace(string(out)); goroot != "" && isGoRoot(goroot) {
+		return goroot
+	}
+	return ""
+}
+
+// goRootVersion is the Go version of the SDK at goroot, from the first line of
+// its VERSION file ("go1.25.5"), or "" when it has none.
+func goRootVersion(goroot string) string {
+	data, err := os.ReadFile(filepath.Join(goroot, "VERSION"))
+	if err != nil {
+		return ""
+	}
+	first, _, _ := strings.Cut(string(data), "\n")
+	return strings.TrimSpace(first)
 }
 
 // findBazelGoSDK locates the hermetic Go SDK that rules_go provides when the
@@ -1341,7 +1400,7 @@ func GoPackageSourceDir(importPath string) string {
 	if importPath == "" {
 		return ""
 	}
-	goroot := findGOROOT()
+	goroot := GoSDKRoot()
 	if goroot == "" {
 		return ""
 	}
