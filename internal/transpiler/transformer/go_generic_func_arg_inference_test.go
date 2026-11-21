@@ -136,6 +136,23 @@ func main() {
     Println(k())
 }
 `, []string{"func() []int"}},
+		{"a GALA function to a Sendable[iter.Seq[T]] parameter", `package main
+
+import "iter"
+import "slices"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func run[T any](s Sendable[iter.Seq[T]]) []T = slices.Collect(s)
+
+func main() {
+    val r = run(gen)
+    val k = () => r
+    Println(k())
+}
+`, []string{"func() []int"}},
 		{"a GALA function to an iter.Seq[T] struct field", `package main
 
 import "iter"
