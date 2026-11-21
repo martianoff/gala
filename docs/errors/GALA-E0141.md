@@ -24,7 +24,7 @@ an extractor whose fields are all bindings.
 
 A case with a guard, `case x if x > 0`, does not match every value, so the
 cases after it stay reachable. In a `match`, the second of two default cases
-in a row is [GALA-E0006](GALA-E0006.md) instead, which says exactly which
+in a row is [GALA-E0006](GALA-E0006.md) instead; that page says exactly which
 cases are defaults. In a partial-function literal it is this error too.
 
 **Minimal repro.**

@@ -1,11 +1,13 @@
 # GALA-E0006 — Multiple default cases
 
-**When it fires.** A `match` expression has two default cases in a row: two
-adjacent unguarded `case _ =>`, or, in a match with no unguarded `case _`, two
-adjacent unguarded bindings whose names start with a lowercase letter or `_`
-(`case n =>`). It is reported on the second. Any other case written after a
-case that matches every value (`case _` after `case n`, say, or `case n` after
-`case _`) is [GALA-E0141](GALA-E0141.md), reported on the later case.
+**When it fires.** A `match` expression has two default cases in a row, with
+no earlier case that matches every value. A default case is an unguarded
+`case _ =>`, or, in a match with no unguarded `case _`, an unguarded binding of
+the whole value whose name starts with a lowercase letter or `_` (`case n =>`;
+a name of a variant or extractor of the matched type tests the value instead).
+It is reported on the second. Any other case written after a case that matches
+every value (`case _` after `case n`, say, or `case n` after `case _`) is
+[GALA-E0141](GALA-E0141.md), reported on the later case.
 
 **Minimal repro.** (`main.gala`)
 
@@ -56,7 +58,7 @@ are written, and the first default already matches every value. Making it a
 compile error means authors notice the duplication instead of wondering why a
 branch never fires.
 
-**Related work.** The check fires on the second default encountered while
-walking the case clauses; both the expression-position and statement-position
-match lowerings emit identical text for it. Any other case written after a
-default is [GALA-E0141](GALA-E0141.md).
+**Related work.** The check fires on the second of two adjacent defaults met
+while walking the case clauses; both the expression-position and
+statement-position match lowerings emit identical text for it. Any other case
+written after a case that matches every value is [GALA-E0141](GALA-E0141.md).
