@@ -1,8 +1,14 @@
 # GALA-E0006 — Multiple default cases
 
-**When it fires.** A `match` expression has more than one default branch —
-either multiple `case _ =>` clauses, or a mix of `case _ =>` and a plain
-binding pattern (`case n =>`) that also catches everything.
+**When it fires.** A `match` expression has two default cases in a row, with
+no earlier case that matches every value. A default case is an unguarded
+`case _ =>`, or, in a match with no unguarded `case _`, an unguarded binding of
+the whole value whose name starts with a lowercase letter or `_` (`case n =>`;
+a name of a variant of the matched type or of its sealed view, or of a
+standalone zero-field extractor, tests the value instead).
+It is reported on the second. Any other case written after a case that matches
+every value (`case _` after `case n`, say, or `case n` after `case _`) is
+[GALA-E0141](GALA-E0141.md), reported on the later case.
 
 **Minimal repro.** (`main.gala`)
 
@@ -48,11 +54,12 @@ func name(n int) string = n match {
 }
 ```
 
-**Rationale.** The second default is unreachable — GALA's match emits the
-default as the final `else` of the generated if-else chain, so any branch
-after it would be dead code. Making it a compile error means authors notice
-the duplication instead of wondering why a branch never fires.
+**Rationale.** The second default is unreachable: cases run in the order they
+are written, and the first default already matches every value. Making it a
+compile error means authors notice the duplication instead of wondering why a
+branch never fires.
 
-**Related work.** The check fires on the second default encountered while
-walking the case clauses; both the expression-position and statement-position
-match lowerings emit identical text for it.
+**Related work.** The check fires on the second of two adjacent defaults met
+while walking the case clauses; both the expression-position and
+statement-position match lowerings emit identical text for it. Any other case
+written after a case that matches every value is [GALA-E0141](GALA-E0141.md).

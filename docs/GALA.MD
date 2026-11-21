@@ -1472,7 +1472,6 @@ Otherwise the rule is scoped to the type being matched. A bare identifier that d
 val n = 42
 val d = n match {
     case Rectangle => s"bound $Rectangle"   // OK — `int` has no `Rectangle` variant
-    case _         => "other"
 }
 ```
 
@@ -1872,15 +1871,16 @@ val label = if (count > 1) {
 Both forms compile to a Go IIFE (immediately invoked function expression), so they can be used anywhere an expression is expected: `val` initializers, function arguments, return values, etc.
 
 ### Match Expression
-The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases. A variant is covered only when its cases match every value of its fields: `case Some(0)` covers part of `Some`, a guarded case covers nothing, and `Some(Some(_))` with `Some(None())` covers all of `Some` for an `Option[Option[T]]` ([GALA-E0002](errors/GALA-E0002.md)). An unguarded arm that matches every value serves as the default: `case _`, a plain binding (`case n`), or a tuple pattern of the subject's arity whose every element is a wildcard, a binding, or a nested such tuple (`case (_, _, err)` over a `Tuple3`).
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases. A variant is covered only when its cases match every value of its fields: `case Some(0)` covers part of `Some`, a guarded case covers nothing, and `Some(Some(_))` with `Some(None())` covers all of `Some` for an `Option[Option[T]]` ([GALA-E0002](errors/GALA-E0002.md)). An unguarded arm that matches every value serves as the default: `case _`, a plain binding (`case n`, or a capitalized name that names nothing in scope, which binds too), or a tuple pattern of the subject's arity whose every element is a wildcard, a binding, or a nested such tuple (`case (_, _, err)` over a `Tuple3`). So does a typed pattern of the subject's own type when that type is a predeclared type other than `error` or `any`, or a GALA type that is not an interface (`case n: int` over an `int`, `case p: Point` over a `Point`); a Go type is not counted.
+
+Cases are tried in the order they are written, and the first that matches wins. A case written after an unguarded case that matches every value can never run, and is rejected ([GALA-E0141](errors/GALA-E0141.md)). Write the catch-all last. A guarded case (`case n if n > 0`) is not a catch-all, so cases after it stay reachable. The same holds in a partial-function literal `{ case ... }`, where a typed or tuple pattern counts only when the expected function type gives the parameter's type.
 
 <!-- doc-check: fragment -->
 ```gala
 val result = x match {
     case 1 => "one"
     case 2 => "two"
-    case n => "Value is " + fmt.Sprintf("%d", n) // Binding: n is bound to x
-    case _ => "other"
+    case n => "Value is " + fmt.Sprintf("%d", n) // Binding: n is bound to x, and matches every value
 }
 
 // Boolean exhaustive match — no default case needed
@@ -2070,7 +2070,7 @@ GALA supports matching against generic types. This is particularly useful for ge
 ```gala
 type Wrap[T any] struct { Value T }
 
-val w = Wrap[int](Value = 42)
+val w any = Wrap[int](Value = 42)
 val res = w match {
     case i: Wrap[int]    => s"Wrapped int ${i.Value}"
     case s: Wrap[string] => s"Wrapped string ${s.Value}"
@@ -2899,7 +2899,6 @@ val t2 = Tuple[int, string](V1 = 1, V2 = "hello")
 // Pattern matching works with both
 val msg = t match {
     case (a, b) => s"Got $a and $b"
-    case _      => "Unknown"
 }
 
 // Tuple destructuring in val declarations

@@ -97,8 +97,9 @@ jobs:
       # reject (0.15.2 still has a `val _ =`, GALA-E0060).
       GALA_TUI_REF: 27411ed20befdc76f0b8100fead8c230ac4b901e
       # gala_team 0.15.1 with its unused imports removed
-      # (martianoff/gala-team#154, GALA-E0120).
-      GALA_TEAM_REF: "53e450f9fd945f1e1c6a393675f9129306b492a7"
+      # (martianoff/gala-team#154, GALA-E0120) and two cases after a tuple
+      # catch-all removed (martianoff/gala-team#155, GALA-E0141).
+      GALA_TEAM_REF: "63d1cab6ca2ec7e9d7c78877478e1dd2c227fbd3"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 

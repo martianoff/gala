@@ -19,10 +19,11 @@ func TestMatch(t *testing.T) {
 	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
-		name     string
-		input    string
-		expected string
-		wantErr  bool
+		name       string
+		input      string
+		expected   string
+		wantErr    bool
+		wantErrMsg string // when set, the error must contain it
 	}{
 		{
 			name: "Match expression with typed variable",
@@ -106,7 +107,6 @@ var res = std.NewImmutable(func() string {
 val x = 42
 val res = x match {
 	case y => y + 1
-	case _ => 0
 }`,
 			expected: `package main
 
@@ -115,15 +115,8 @@ import "martianoff/gala/std"
 var x = std.NewImmutable(42)
 var res = std.NewImmutable(func() int {
 	_subj := x.Get()
-	{
-		_tmp_y := _subj
-		if true {
-			y := _tmp_y
-			return y + 1
-		} else {
-			return 0
-		}
-	}
+	y := _subj
+	return y + 1
 }())
 `,
 		},
@@ -504,12 +497,53 @@ func describe(b bool) string = b match {
 			name: "Unused match variable is a compiler error",
 			input: `package main
 
-val x = 42
+val x = Some(42)
 val res = x match {
-	case y => 0
+	case Some(y) => 0
 	case _ => 0
 }`,
-			wantErr: true,
+			wantErr:    true,
+			wantErrMsg: "unused variable 'y' in match branch",
+		},
+		{
+			name: "Unused binding of the whole subject in a guarded case is a compiler error",
+			input: `package main
+
+val flag = true
+val x = 42
+val res = x match {
+	case y if flag => 0
+	case _ => 1
+}`,
+			wantErr:    true,
+			wantErrMsg: "unused variable 'y' in match branch",
+		},
+		{
+			name: "Unused binding in the default case is a compiler error",
+			input: `package main
+
+val x = 42
+val res = x match {
+	case 1 => 1
+	case y => 0
+}`,
+			wantErr:    true,
+			wantErrMsg: "unused variable 'y' in match branch",
+		},
+		{
+			name: "Unused binding in a block default case is a compiler error",
+			input: `package main
+
+val x = 42
+val res = x match {
+	case 1 => 1
+	case y => {
+		val z = 2
+		z
+	}
+}`,
+			wantErr:    true,
+			wantErrMsg: "unused variable 'y' in match branch",
 		},
 		{
 			name: "Unused match variable with guard referencing it is allowed",
@@ -800,6 +834,9 @@ func describe(code int) string {
 			got, err := trans.Transpile(tt.input, "")
 			if tt.wantErr {
 				assert.Error(t, err)
+				if err != nil && tt.wantErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.wantErrMsg)
+				}
 				return
 			}
 			assert.NoError(t, err)

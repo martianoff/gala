@@ -1193,6 +1193,15 @@ const (
 	// names no value; it used to reach Go as the blank identifier and fail
 	// `go build` with "cannot use _ as value or type".
 	CodeUnderscoreBindingRead ErrorCode = "GALA-E0139"
+
+	// E0141: a case written after an unguarded case that matches every value
+	// (`case _`, a binding `case x` or a capitalized name that names nothing,
+	// a typed pattern of the subject's own non-interface GALA or primitive
+	// type, or a tuple pattern whose elements all match everything), in a
+	// match or a partial-function literal. Cases are tried in order, so it can
+	// never run. A match used to move its catch-all last, so a later case won
+	// over it without a diagnostic.
+	CodeUnreachableCase ErrorCode = "GALA-E0141"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

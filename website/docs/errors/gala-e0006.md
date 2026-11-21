@@ -1,17 +1,17 @@
 ---
 layout: default
 title: "GALA-E0006 — Multiple Default Cases in a Match Expression"
-description: "GALA-E0006 fires when a match has more than one catch-all branch. See the triggering code, the compiler message, and how to restructure so a single default handles every remaining case."
+description: "GALA-E0006 fires when a match has two default cases in a row. See the triggering code, the compiler message, and how to restructure so a single default handles every remaining case."
 keywords: "gala-e0006, multiple default cases, gala match default, unreachable match branch, gala pattern matching error"
 permalink: /docs/errors/gala-e0006/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-11-21
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0006</p>
 
 # GALA-E0006 — Multiple default cases in a match expression
 
-**What it means.** A `match` expression has more than one default branch — either two `case _ =>` clauses, or a mix of `case _ =>` and an unguarded binding pattern (`case n =>`) that also catches everything.
+**What it means.** A `match` expression has two default cases in a row, with no earlier case that matches every value. A default case is an unguarded `case _ =>`, or, in a match with no unguarded `case _`, an unguarded binding of the whole value whose name starts with a lowercase letter or `_` (`case n =>`; a name of a variant of the matched type or of its sealed view, or of a standalone zero-field extractor, tests the value instead). It is reported on the second. Any other case written after a case that matches every value (`case _` after `case n`, say, or `case n` after `case _`) is [GALA-E0141](/docs/errors/gala-e0141/), reported on the later case.
 
 ---
 
@@ -65,12 +65,13 @@ func name(n int) string = n match {
 
 ## Why the rule exists
 
-The second default is unreachable. GALA emits the default as the final `else` of the generated if-else chain, so anything after it is dead code. Making it a compile error means you notice the duplication instead of wondering why a branch never fires.
+The second default is unreachable: cases run in the order they are written, and the first default already matches every value. Making it a compile error means you notice the duplication instead of wondering why a branch never fires.
 
 ---
 
 ## Related
 
 - [GALA-E0003](/docs/errors/gala-e0003/) — no default case at all
+- [GALA-E0141](/docs/errors/gala-e0141/) — a case after one that matches every value
 - [Pattern Matching](/features/pattern-matching/) — guards and case ordering
 - [All GALA error codes](/docs/errors/)

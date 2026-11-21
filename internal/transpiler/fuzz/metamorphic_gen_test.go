@@ -1542,7 +1542,8 @@ func (g *metaGen) match(d int) mExpr {
 		a.pat = g.pattern(t, 2, false, true, region, a)
 		if a.pat == (pWild{}) {
 			// The match ends in the one default case `case _` a match
-			// may have.
+			// may have; a variable takes this arm's place, and when it
+			// is unguarded it ends the match itself (see below).
 			if t == mPair {
 				a.pat = g.ctorPat("", []mType{mInt, mInt}, 0, false, true, region, a)
 			} else {
@@ -1556,6 +1557,11 @@ func (g *metaGen) match(d int) mExpr {
 		g.useAll(a.binders, &a.body)
 		g.visible = g.visible[:mark]
 		m.arms = append(m.arms, a)
+		// An unguarded arm that matches every value is the match's last:
+		// a case after it could never run (GALA-E0141).
+		if a.guard == nil && !a.pat.refutable() {
+			return m
+		}
 	}
 	m.arms = append(m.arms, &mArm{pat: pWild{}, body: g.intExpr(d-1, false)})
 	return m

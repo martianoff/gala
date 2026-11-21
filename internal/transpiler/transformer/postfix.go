@@ -557,7 +557,16 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// and valid Go code generation when inside a generic function where type parameters are in scope.
 
 	// A user name may still spell the subject's name: then it takes a number.
-	paramName = freshName(paramName, t.visibleName)
+	// So may a case that binds the whole subject (`case _subj =>`, or
+	// `case _subj: T =>`), which may then declare its name beside the
+	// subject's.
+	bindsWhole := func(name string) bool {
+		return slices.ContainsFunc(caseClauses, func(cc caseSrc) bool {
+			pat := cc.pattern()
+			return pat.text() == name || (pat.kind() == patKindTyped && pat.typedName() == name)
+		})
+	}
+	paramName = freshName(paramName, func(name string) bool { return t.visibleName(name) || bindsWhole(name) })
 	t.pushScope()
 	defer t.popScope()
 	t.currentScope.matchSubject = paramName
@@ -615,8 +624,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// Pre-scan: check if there's an explicit, UNGUARDED wildcard `_` case.
-	// If there is, binding patterns are regular clauses. If not, the last
-	// binding pattern acts as the default (catch-all) case. A guarded wildcard
+	// If there is, binding patterns are regular clauses. If not, an unguarded
+	// binding pattern is the default; there is at most one, and it is the
+	// last case (GALA-E0006, GALA-E0141). A guarded wildcard
 	// (`case _ if g`) is conditional, not a catch-all, so it does not count.
 	hasExplicitWildcard := false
 	for i, cc := range caseClauses {
@@ -636,13 +646,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	isBinding := make([]bool, len(caseClauses))
 	isDefault := make([]bool, len(caseClauses))
 	foundDefault := false
+	// A case after one that matches every value can never run: a second
+	// default is GALA-E0006, any other case GALA-E0141.
+	var catchAll catchAllScan
 	for i, cc := range caseClauses {
 		patternText := patternTexts[i]
 		isBinding[i] = t.isBindingPatternOf(patternText, matchedType)
-		if cc.hasGuard() || !(isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i])) {
-			continue
-		}
-		if foundDefault {
+		isDefault[i] = !cc.hasGuard() && (isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i]))
+		if isDefault[i] && foundDefault {
 			line, col := cc.at().start()
 			return nil, galaerr.NewCodedSemanticError(
 				galaerr.CodeMultipleDefaults,
@@ -650,8 +661,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				"multiple default cases in match expression",
 				"keep one default case; combine logic with guards or nested matches if you need sub-cases")
 		}
-		foundDefault = true
-		isDefault[i] = true
+		catchesAll := func() bool {
+			return isDefault[i] || t.matchesEveryValue(patterns[i], subjectType, matchedType, !typedFromCases)
+		}
+		if err := catchAll.next(cc, catchesAll); err != nil {
+			return nil, err
+		}
+		foundDefault = foundDefault || isDefault[i]
 	}
 
 	arms := make([]matchArm, len(caseClauses))
@@ -701,6 +717,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if !irrefutableTupleArm && !cc.hasGuard() && armMatchesEverything(arm.clause) &&
 			t.isTuplePatternOfSubjectArity(patterns[i], matchedType) {
 			irrefutableTupleArm = true
+			// The scan above reads the source. If the lowering finds that an
+			// arm matches every value when the scan did not, a case after it
+			// can never run either.
+			if i+1 < len(caseClauses) {
+				next := caseClauses[i+1]
+				nextCatchesAll := isDefault[i+1] ||
+					(!next.hasGuard() && t.matchesEveryValue(patterns[i+1], subjectType, matchedType, !typedFromCases))
+				return nil, unreachableCaseError(next, cc, nextCatchesAll)
+			}
 		}
 		if arm.clause != nil {
 			clauses = append(clauses, arm.clause)
@@ -779,10 +804,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		// An unguarded irrefutable tuple arm — `case (_, _, err) =>` against a
 		// Tuple3 — matches every value, so the match is complete without a
-		// default. It lowers to an ordinary clause, so the if-chain still
-		// needs a terminating else: give it the same unreachable panic an
-		// exhaustive sealed match gets.
-		if !hasDefault && irrefutableTupleArm {
+		// default; so does any other arm the catch-all scan found to match
+		// every value, such as `case p: Point` over a Point. It lowers to an
+		// ordinary clause, so the if-chain still needs a terminating else:
+		// give it the same unreachable panic an exhaustive sealed match gets.
+		if !hasDefault && (irrefutableTupleArm || catchAll.matched) {
 			hasDefault = true
 			defaultBody = unreachableDefaultBody()
 		}
