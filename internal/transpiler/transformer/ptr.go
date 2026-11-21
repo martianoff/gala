@@ -662,6 +662,25 @@ func (t *galaASTTransformer) isGenericFuncRef(expr ast.Expr) bool {
 	return fm != nil && len(fm.TypeParams) > 0
 }
 
+// namesNullaryGenericFunc reports whether e, as written, is a reference to a
+// generic GALA function of no parameters, bare or package-qualified (`zero`,
+// `pkg.Zero` for `func Zero[X any]() X`): already a thunk.
+func (t *galaASTTransformer) namesNullaryGenericFunc(e exprSrc) bool {
+	var fm *transpiler.FunctionMetadata
+	var ok bool
+	if name := e.bareIdent(); name != "" {
+		fm, ok = t.functionByName(name)
+	} else if p := e.solePostfix(); p.ok() && !p.hasCases() && p.primaryIdent() != "" {
+		var buf [2]suffixSrc
+		if suffixes := p.appendSuffixes(buf[:0]); len(suffixes) == 1 {
+			if sel, _, isMember := suffixes[0].member(); isMember {
+				fm, ok = t.functionForQualifier(p.primaryIdent(), sel)
+			}
+		}
+	}
+	return ok && len(fm.TypeParams) > 0 && len(fm.ParamTypes) == 0
+}
+
 // anyGenericFuncRef reports whether a value of named is isGenericFuncRef.
 func (t *galaASTTransformer) anyGenericFuncRef(named map[string]ast.Expr) bool {
 	for _, e := range named {
