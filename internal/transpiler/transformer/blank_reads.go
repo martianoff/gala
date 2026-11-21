@@ -23,16 +23,14 @@ type blankRead struct {
 }
 
 // recordBlankRead records ident, the lowering of an unbound `_` written at at.
-// A `_` in a default is placed where the default is written when that is
-// known: in this file (also when both have no path), or in the default's own
-// file. Otherwise it is placed at the outermost use site, which is in the
-// file being transformed.
+// A `_` in a default not local to this file (transformDefaultExpr decides) is
+// placed as placeForeignDefaultError places the default's other diagnostics:
+// in the default's file when its file and position are known, else at the
+// use site, the outermost one, which is in the file being transformed.
 func (t *galaASTTransformer) recordBlankRead(ident *ast.Ident, at srcNode) {
 	read := blankRead{at: at.rng()}
 	if d := t.loweringDefault; d != nil && d.foreign {
 		switch {
-		case d.src.Pos.Line > 0 && filepath.Clean(d.src.file) == filepath.Clean(t.filePath):
-			// Written in this file: at is where.
 		case d.src.Pos.Line > 0 && d.src.file != "":
 			read.file = d.src.file
 		default:
