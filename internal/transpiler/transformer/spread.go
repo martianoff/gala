@@ -139,7 +139,7 @@ func checkMethodSpreads(c callSrc, methodMeta *transpiler.MethodMetadata) error 
 // the value's type is not known exactly (valueApplyType).
 func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) error {
 	meta := t.valueApplyType(fun)
-	if meta == nil || meta.Methods["Apply"] == nil {
+	if meta == nil {
 		return nil
 	}
 	// The type as the file names it, `lib.Joiner` (under an import alias too),

@@ -34,6 +34,12 @@ func (m Missing) Apply[A any]() Option[A] = None[A]()
 
 struct Holder(p Plain, var a Add, s Show)
 
+struct Empty(tag int)
+
+func (e Empty) Apply[A any]() Option[A] = None[A]()
+
+struct Keeper(m Empty)
+
 func makeAdd(n int) Add = Add(n)
 
 func makeShow() Show = Show()
@@ -59,6 +65,10 @@ func main() {
 		{"a call's result whose Apply is generic", `Println(makeShow()("x"))`, []string{`Show_Apply(makeShow(), "x")`}},
 		{"type arguments for a val's generic Apply", `val s = Show()
     Println(s[int64](3))`, []string{`Show_Apply[int64](s, 3)`}},
+		{"type arguments for a field's generic Apply", `val h = Holder(Plain(1), Add(2), Show())
+    Println(h.s[int64](3))`, []string{`Show_Apply[int64](h.s.Get(), 3)`}},
+		{"type arguments for a field's no-parameter generic Apply", `val k = Keeper(Empty(1))
+    Println(k.m[int]())`, []string{`Empty_Apply[int](k.m.Get())`}},
 		{"a no-parameter generic Apply of a companion called with no arguments", `val n Option[int] = Missing()
     Println(n)`, []string{`Missing_Apply[int](Missing{})`}},
 	} {

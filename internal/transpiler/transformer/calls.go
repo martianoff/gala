@@ -310,9 +310,17 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			// registry key — rather than repeating it inline.
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 			// A struct field whose type has an Apply is called through it.
-			if t.fieldApplyType(zeroArgLookupBase, sel.Sel.Name) != nil {
-				base = applySelector(base, nil)
-				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(base.(*ast.SelectorExpr).X, "Apply")
+			if callee, ok := t.fieldApplyCallee(base, zeroArgLookupBase, sel.Sel.Name); ok {
+				base = callee
+				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel, "Apply")
+			}
+		} else if inner, typeArgs := splitCallFunTypeArgs(base); len(typeArgs) > 0 {
+			// So is one given type arguments for its generic Apply.
+			if sel, ok := inner.(*ast.SelectorExpr); ok {
+				_, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
+				if callee, ok := t.fieldApplyCallee(base, lookupBaseName, sel.Sel.Name); ok {
+					base = callee
+				}
 			}
 		}
 		// A generic method takes the same rewrite to a standalone function,
@@ -2801,14 +2809,15 @@ func explicitTypeArgSubst(typeParams, typeArgs []string) typeSubstMap {
 	return subst
 }
 
-// tryTransformCompositeLitApply handles Section 11: when `fun` is already a
-// composite literal (e.g., `Append{...}` produced by an earlier partial
-// application) whose type has an Apply method, rewrite `fun(args)` as
-// `fun.Apply(args)`, keeping the spread of its last argument when spread is
-// set. Returns handled=false for all other shapes of `fun`.
-// Extracted from transformCallWithArgsCtx as part of A1 cont.
+// tryTransformCompositeLitApply handles Section 11: when `fun` is a composite
+// literal whose type is found only by the bare name of the type it writes
+// (`pkg.T{...}` with `pkg.T` not known as written, see valueApplyCallee) and
+// has an Apply method, rewrite `fun(args)` as `fun.Apply(args)`, keeping the
+// spread of its last argument when spread is set. Every other literal was
+// called through its Apply in Section 1.5. Returns handled=false for all
+// other shapes of `fun`.
 func (t *galaASTTransformer) tryTransformCompositeLitApply(fun ast.Expr, args []ast.Expr, spread bool) (ast.Expr, bool) {
-	if t.litApplyTarget(fun) == nil {
+	if t.compositeLitApplyType(fun) == nil {
 		return nil, false
 	}
 	return &ast.CallExpr{
@@ -2882,24 +2891,6 @@ func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetada
 	return t.bindingApplyType(fun)
 }
 
-// litApplyTarget is the metadata of the type whose Apply a call of fun, a
-// composite literal, calls (Section 11): by the type the literal names,
-// `alias.T` too, else by the bare name of a qualified or other type (a bare
-// name was looked up already); nil for any other fun.
-func (t *galaASTTransformer) litApplyTarget(fun ast.Expr) *transpiler.TypeMetadata {
-	cl, ok := fun.(*ast.CompositeLit)
-	if !ok {
-		return nil
-	}
-	if meta := t.litApplyType(cl); meta != nil {
-		return meta
-	}
-	if name, qualified := qualifiedLitType(cl); qualified || name == "" {
-		return t.compositeLitApplyType(fun)
-	}
-	return nil
-}
-
 // valueApplyCallee is `fun.Apply`, the method a call of fun calls when fun is
 // a value whose type has an Apply: a val, var or literal (valueApplyType), a
 // call's result (resultApplyType), and one with type arguments, `v[int](...)`
@@ -2911,21 +2902,41 @@ func (t *galaASTTransformer) litApplyTarget(fun ast.Expr) *transpiler.TypeMetada
 // one found only by its bare name is left to Section 11, as that name could
 // be another package's type.
 func (t *galaASTTransformer) valueApplyCallee(fun ast.Expr) (ast.Expr, bool) {
-	if t.valueApplyType(fun) != nil || t.resultApplyType(fun) != nil {
+	if t.calleeApplyType(fun) != nil {
 		return applySelector(fun, nil), true
 	}
 	// No value of a struct type can be indexed, so an index of one is the
 	// type arguments of its generic Apply.
 	if base, typeArgs := splitCallFunTypeArgs(fun); len(typeArgs) > 0 {
-		meta := t.valueApplyType(base)
-		if meta == nil {
-			meta = t.resultApplyType(base)
-		}
-		if genericApply(meta) && isStructMeta(meta) {
+		if meta := t.calleeApplyType(base); genericApply(meta) && isStructMeta(meta) {
 			return applySelector(base, typeArgs), true
 		}
 	}
 	return nil, false
+}
+
+// calleeApplyType is the metadata of the type of fun, a val, var, literal or
+// call's result whose type has an Apply method; nil otherwise.
+func (t *galaASTTransformer) calleeApplyType(fun ast.Expr) *transpiler.TypeMetadata {
+	if meta := t.valueApplyType(fun); meta != nil {
+		return meta
+	}
+	return t.resultApplyType(fun)
+}
+
+// fieldApplyCallee is `fun.Apply` when fun is `recv.field` of the receiver
+// type named lookupBaseName and field's type has an Apply method, or
+// `recv.field[int]` and that Apply is generic (see valueApplyCallee).
+func (t *galaASTTransformer) fieldApplyCallee(fun ast.Expr, lookupBaseName, field string) (ast.Expr, bool) {
+	meta := t.fieldApplyType(lookupBaseName, field)
+	if meta == nil {
+		return nil, false
+	}
+	base, typeArgs := splitCallFunTypeArgs(fun)
+	if len(typeArgs) > 0 && !(genericApply(meta) && isStructMeta(meta)) {
+		return nil, false
+	}
+	return applySelector(base, typeArgs), true
 }
 
 // genericApply reports whether meta, a type's metadata, has an Apply that
@@ -2947,7 +2958,7 @@ func applySelector(recv ast.Expr, typeArgs []ast.Expr) ast.Expr {
 // isStructMeta reports whether meta is a struct or sealed type's, whose
 // values Go cannot index.
 func isStructMeta(meta *transpiler.TypeMetadata) bool {
-	return !meta.IsOpaque && (meta.IsShorthand || meta.IsSealed || len(meta.FieldNames) > 0)
+	return meta != nil && !meta.IsOpaque && (meta.IsShorthand || meta.IsSealed || len(meta.FieldNames) > 0)
 }
 
 // resultApplyType is the metadata of the type of fun when fun is a call, a
@@ -3145,8 +3156,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 	// A struct field, `x.f(...)`, whose type has an Apply is called through
 	// it (Section 1.5), now that the receiver's type is known.
-	if receiver != nil && len(typeArgs) == 0 && t.fieldApplyType(lookupBaseName, method) != nil {
-		fun = applySelector(fun, nil)
+	if callee, ok := t.fieldApplyCallee(fun, lookupBaseName, method); ok && receiver != nil {
+		fun = callee
 		receiver, method, typeArgs = t.splitCallTarget(fun)
 		recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
 	}
@@ -3309,8 +3320,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	}
 
 	// --- Section 11: CompositeLit with Apply method ---
-	// Handles `Append("cherry")("apple")` where the left side is already a
-	// struct literal produced by an earlier partial-application step.
+	// A literal whose type is found only by its bare name; any other value
+	// with an Apply was called through it in Section 1.5.
 	if expr, handled := t.tryTransformCompositeLitApply(fun, args, hasSpread); handled {
 		return expr, nil
 	}
