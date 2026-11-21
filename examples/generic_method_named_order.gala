@@ -59,8 +59,6 @@ func main() {
     var n = 2
     val wide int64 = ListOf(1, 2).FoldLeft(f = mk64(), initial = 1 << n)
     Println(" ", wide)
-    val wider int64 = ListOf(1, 2).FoldLeft(f = mk64(), initial = 1 << t("s", 3))
-    Println(" ", wider)
     // The receiver is read before the arguments run.
     Println(" ", shared.Show(w = replace(7), u = shared.V))
 }

@@ -963,9 +963,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		// Reuse pre-transformed expression if available, recorded where
 		// it is written as lowerArg records the others, so the call
-		// evaluates its arguments in written order (call_order.go).
+		// evaluates its arguments in written order (call_order.go). An
+		// untyped constant expression stays in place: lowered with no
+		// slot, a temporary would give it its default type, not the
+		// parameter's (`1 << n` for an int64 U).
 		if expr, ok := preTransformed[i]; ok {
-			if expr, ok = t.orderableUntypedConst(expr, methodMeta, i, typeMeta.TypeParams, recvTypeArgTypes, typeSubst, weakConst); ok {
+			if !t.isUntypedConstArg(expr) {
 				t.recordCallArg(v, expr)
 			}
 			mArgs = append(mArgs, expr)
@@ -1101,35 +1104,6 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		return true, nil, err
 	}
 	return true, t.emitGenericMethodFreeFunc(method, receiver, recvType, lookupBaseName, typeArgs, methodMeta, mArgs, hasSpread), nil
-}
-
-// orderableUntypedConst returns expr, argument i of a call of the generic
-// method m lowered with no slot, as the call may evaluate it in written order
-// (see call_order.go), and whether it may. Any expression but an untyped
-// constant may as it is. A temporary would give an untyped constant
-// expression its default type, not the parameter's (`1 << n` for an int64 U),
-// so one that reads or calls something (`1 << n`, `1 << next()`) is converted
-// to the parameter type, once the type arguments bound so far fix it; one
-// that does not, or whose parameter type is not known yet, stays in place.
-// A type argument only an untyped constant gave (weakConst) fixes nothing:
-// Go may take another from a typed argument.
-func (t *galaASTTransformer) orderableUntypedConst(expr ast.Expr, m *transpiler.MethodMetadata, i int, recvTypeParams []string, recvTypeArgs []transpiler.Type, typeSubst typeSubstMap, weakConst map[string]transpiler.Type) (ast.Expr, bool) {
-	if !t.isUntypedConstArg(expr) {
-		return expr, true
-	}
-	pi := methodParamIndex(m, i)
-	if pi < 0 || t.inert(expr) {
-		return expr, false
-	}
-	fixed := maps.Clone(typeSubst)
-	for tp := range weakConst {
-		delete(fixed, tp)
-	}
-	param := t.substituteInType(t.substituteConcreteTypes(m.ParamTypes[pi], recvTypeParams, recvTypeArgs), fixed)
-	if transpiler.IsUnusableOrAny(param) || typeMentionsTypeParam(param, m.TypeParams) || t.mentionsUnboundTypeParam(param) {
-		return expr, false
-	}
-	return &ast.CallExpr{Fun: t.typeToExpr(param), Args: []ast.Expr{expr}}, true
 }
 
 // bindMethodArguments lays a call's arguments out in the method's parameter
