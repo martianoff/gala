@@ -41,6 +41,12 @@ func TestUnboundUnderscoreRead(t *testing.T) {
 			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    Println(ArrayOf(1, 2).FoldLeft(0, _ + _))\n}\n"},
 		{"a discard",
 			"package main\n\nfunc main() {\n    _ = 1\n}\n"},
+		{"a discard among several targets",
+			"package main\n\nfunc main() {\n    var n = 0\n    n, _ = 1, 2\n    Println(n)\n}\n"},
+		{"a wildcard sub-pattern",
+			"package main\n\nfunc main() {\n    val o = Some(1)\n    Println(o match { case Some(_) => 1 case _ => 0 })\n}\n"},
+		{"a placeholder lambda as a named argument",
+			"package main\n\nfunc apply(x int, f func(int) int) int = f(x)\n\nfunc main() {\n    Println(apply(x = 1, f = _ + 1))\n}\n"},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {

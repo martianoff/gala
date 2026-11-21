@@ -14,7 +14,12 @@ import (
 // lowered, and reported by checkBlankReads only if it is in the finished file.
 
 // recordBlankRead records ident, the lowering of an unbound `_` written at at.
+// A default of another package is written in another file, which a position
+// here cannot name, so a `_` in one is left to Go.
 func (t *galaASTTransformer) recordBlankRead(ident *ast.Ident, at srcNode) {
+	if t.loweringForeignDefault() {
+		return
+	}
 	if t.blankReads == nil {
 		t.blankReads = make(map[*ast.Ident]srcRange)
 	}
@@ -44,5 +49,5 @@ func (t *galaASTTransformer) checkBlankReads(file *ast.File) error {
 	}
 	return spanErrorAt(galaerr.CodeUnderscoreBindingRead, *first, *first,
 		"`_` is read here, but nothing binds it: `_` names no value",
-		"name the value instead; a placeholder lambda takes `_` only where a function is expected, as `(x) => g(x)` does")
+		"bind a name and read it instead; for example an explicit lambda `(x) => g(x)`")
 }
