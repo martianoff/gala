@@ -921,6 +921,13 @@ func isSequenceLine(content string) bool {
 
 func parseMapping(lines []pLine, start, indent int) (*yNode, int) {
 	m := &yNode{kind: yMap}
+	return m, addMappingPairs(m, lines, start, indent)
+}
+
+// addMappingPairs adds to m the "key: value" pairs whose keys start at
+// column indent, from lines[start] on, and returns the index of the first
+// line that is not part of them.
+func addMappingPairs(m *yNode, lines []pLine, start, indent int) int {
 	i := start
 	for i < len(lines) {
 		line := lines[i]
@@ -934,24 +941,39 @@ func parseMapping(lines []pLine, start, indent int) (*yNode, int) {
 		if isSequenceLine(line.raw) {
 			break
 		}
-		key, valueOnLine, hasValue := splitKeyValue(line.raw, line.lineNum)
+		key, valueOnLine := splitKeyValue(line.raw, line.lineNum)
+		child, np := parseMappingValue(lines, i, indent, valueOnLine)
 		m.mapKeys = append(m.mapKeys, key)
-		if hasValue {
-			m.mapVals = append(m.mapVals, parseInlineScalar(valueOnLine))
-			i++
-			continue
-		}
-		// No inline value — child block on subsequent indented lines.
-		if i+1 >= len(lines) || lines[i+1].indent <= indent {
-			m.mapVals = append(m.mapVals, newScalarNode("", true))
-			i++
-			continue
-		}
-		child, np := parseBlock(lines, i+1, lines[i+1].indent)
 		m.mapVals = append(m.mapVals, child)
 		i = np
 	}
-	return m, i
+	return i
+}
+
+// parseMappingValue parses the value of the mapping key on lines[i], whose
+// key starts at column keyIndent, and returns it with the index of the line
+// after it. The value is the text after the colon, when there is any, or
+// else the block on the lines below: lines indented deeper than the key, or
+// a block sequence at the key's own indentation. YAML allows a sequence that
+// is a mapping value to sit there, since the "- " counts as indentation, and
+// kubectl and many CI files write it that way:
+//
+//	containers:
+//	- name: app
+func parseMappingValue(lines []pLine, i, keyIndent int, value string) (*yNode, int) {
+	if value != "" {
+		return parseInlineScalar(value), i + 1
+	}
+	if i+1 < len(lines) {
+		next := lines[i+1]
+		if next.indent > keyIndent {
+			return parseBlock(lines, i+1, next.indent)
+		}
+		if next.indent == keyIndent && isSequenceLine(next.raw) {
+			return parseSequence(lines, i+1, keyIndent)
+		}
+	}
+	return newScalarNode("", true), i + 1
 }
 
 func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
@@ -981,8 +1003,10 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 			i = np
 			continue
 		}
-		if isCompactMappingItem(itemPart) {
-			child, np := parseCompactMapping(lines, i, indent, itemPart)
+		if key, value, ok := tryParseKeyValue(itemPart); ok {
+			// The key starts after the dash and the spaces that follow it.
+			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
 			continue
@@ -993,65 +1017,23 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 	return l, i
 }
 
-func isCompactMappingItem(s string) bool {
-	_, _, ok := tryParseKeyValue(s)
-	return ok
+// parseCompactMapping parses the mapping a sequence item on lines[start]
+// starts on the dash's line ("- key: value"), whose first key starts at
+// column keyIndent. Its first pair is key and value; the keys on the lines
+// below, aligned with the first one, belong to the same item, whatever
+// form the first key's value took.
+func parseCompactMapping(lines []pLine, start, keyIndent int, key, value string) (*yNode, int) {
+	first, i := parseMappingValue(lines, start, keyIndent, value)
+	m := &yNode{kind: yMap, mapKeys: []string{key}, mapVals: []*yNode{first}}
+	return m, addMappingPairs(m, lines, i, keyIndent)
 }
 
-func parseCompactMapping(lines []pLine, start, parentIndent int, firstItem string) (*yNode, int) {
-	m := &yNode{kind: yMap}
-	k, vRaw, _ := tryParseKeyValue(firstItem)
-	m.mapKeys = append(m.mapKeys, k)
-	itemKeyIndent := parentIndent + 2
-	if vRaw == "" {
-		// "- key:" with no inline value — value lives on indented lines below.
-		if start+1 < len(lines) && lines[start+1].indent > itemKeyIndent {
-			child, np := parseBlock(lines, start+1, lines[start+1].indent)
-			m.mapVals = append(m.mapVals, child)
-			return m, np
-		}
-		m.mapVals = append(m.mapVals, newScalarNode("", true))
-		return m, start + 1
-	}
-	m.mapVals = append(m.mapVals, parseInlineScalar(vRaw))
-	// Continuation lines aligned with the first key belong to the same item.
-	i := start + 1
-	for i < len(lines) {
-		line := lines[i]
-		if line.indent < itemKeyIndent {
-			break
-		}
-		if line.indent > itemKeyIndent {
-			panic(fmt.Sprintf("yaml: unexpected indent at line %d", line.lineNum))
-		}
-		if isSequenceLine(line.raw) {
-			break
-		}
-		k2, v2, has2 := splitKeyValue(line.raw, line.lineNum)
-		m.mapKeys = append(m.mapKeys, k2)
-		if has2 {
-			m.mapVals = append(m.mapVals, parseInlineScalar(v2))
-			i++
-			continue
-		}
-		if i+1 >= len(lines) || lines[i+1].indent <= itemKeyIndent {
-			m.mapVals = append(m.mapVals, newScalarNode("", true))
-			i++
-			continue
-		}
-		child, np := parseBlock(lines, i+1, lines[i+1].indent)
-		m.mapVals = append(m.mapVals, child)
-		i = np
-	}
-	return m, i
-}
-
-func splitKeyValue(line string, lineNum int) (string, string, bool) {
+func splitKeyValue(line string, lineNum int) (string, string) {
 	k, v, ok := tryParseKeyValue(line)
 	if !ok {
 		panic(fmt.Sprintf("yaml: expected 'key:' at line %d, got %q", lineNum, line))
 	}
-	return k, v, v != ""
+	return k, v
 }
 
 func tryParseKeyValue(line string) (string, string, bool) {

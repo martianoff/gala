@@ -1,0 +1,62 @@
+package main
+
+// A block sequence that is a mapping value may sit at its key's own
+// indentation (#1295): the "- " counts as indentation. kubectl writes
+// `containers:` followed by `- name: ...` this way, and many CI files do too.
+// The first two documents differ only in that layout and decode the same; the
+// third is a pod spec as kubectl writes it.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct In(K string, V int)
+struct R(S string, N Array[int], X Array[In])
+
+struct Port(ContainerPort int)
+struct Container(Args Array[string], Image string, Name string, Ports Array[Port])
+struct Spec(Containers Array[Container], RestartPolicy string)
+struct Pod(Kind string, Spec Spec)
+
+val records = yaml.Codec[R](yaml.AsIs())
+val pods = yaml.Codec[Pod](yaml.CamelCase())
+
+func main() {
+    Println(records.Decode(`S: a
+N:
+  - 1
+  - 2
+X:
+  - K: k
+    V: 1
+`))
+    Println(records.Decode(`S: a
+N:
+- 1
+- 2
+X:
+- K: k
+  V: 1
+`))
+
+    // As kubectl get -o yaml writes it: keys sorted, so a sequence-valued
+    // key can come first in an item, and sequences sit at their key's indent.
+    Println(pods.Decode(`kind: Pod
+spec:
+  containers:
+  - args:
+    - serve
+    - --port=8080
+    image: app:1.0
+    name: app
+    ports:
+    - containerPort: 8080
+  - image: proxy:2.1
+    name: proxy
+    ports:
+    - containerPort: 80
+    - containerPort: 443
+  restartPolicy: Always
+`))
+}
