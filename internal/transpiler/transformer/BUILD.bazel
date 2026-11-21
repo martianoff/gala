@@ -199,6 +199,7 @@ go_test(
         "default_lexical_scope_test.go",
         "default_type_param_binding_test.go",
         "default_values_test.go",
+        "dependency_error_test.go",
         "discard_after_bind_test.go",
         "doc_comments_test.go",
         "dot_import_generic_namedarg_test.go",

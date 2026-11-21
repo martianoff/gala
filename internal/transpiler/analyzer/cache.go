@@ -585,6 +585,7 @@ func projectOwnRichAST(r *transpiler.RichAST) *transpiler.RichAST {
 		TypeAliases:      r.TypeAliases,
 		ImportPathMap:    r.ImportPathMap,
 		PackageVals:      r.PackageVals,
+		DependencyErrors: r.DependencyErrors,
 	}
 }
 

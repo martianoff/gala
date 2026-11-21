@@ -23,7 +23,14 @@ import (
 // module root as the working directory.
 func transpileInModule(t *testing.T, files map[string]string, galaFile string) (string, error) {
 	t.Helper()
-	root := t.TempDir()
+	return transpileInModuleAt(t, t.TempDir(), files, galaFile)
+}
+
+// transpileInModuleAt is transpileInModule at the module root root, with a
+// new analyzer, as a new process would have; what a call leaves under root,
+// such as the analysis cache, the next call finds.
+func transpileInModuleAt(t *testing.T, root string, files map[string]string, galaFile string) (string, error) {
+	t.Helper()
 	for name, content := range files {
 		p := filepath.Join(root, filepath.FromSlash(name))
 		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0755))

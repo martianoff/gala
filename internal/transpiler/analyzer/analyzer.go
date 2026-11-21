@@ -679,6 +679,15 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 			result.SiblingSyntaxErrors = sibErr
 		}
 	}()
+	// An imported package with a file left out of its metadata is likewise
+	// what a failure reports, in place of the cascade the missing
+	// declarations cause here (see RichAST.ReportDependencyErrors).
+	var richAST *transpiler.RichAST
+	defer func() {
+		if asInternal(err) == nil {
+			err = richAST.ReportDependencyErrors(err)
+		}
+	}()
 	// An internal error met loading an imported package, however the load's
 	// caller took the failure, fails the analysis of the file.
 	if isTopLevel {
@@ -867,7 +876,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 
 	logPhase("sibling-discovery ("+fmt.Sprintf("%d files", len(siblings))+")", phaseStart)
 
-	richAST := &transpiler.RichAST{
+	richAST = &transpiler.RichAST{
 		PackageName:      pkgName,
 		PackageDoc:       clause.doc,
 		Types:            make(map[string]*transpiler.TypeMetadata),
@@ -2701,6 +2710,8 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// What the package's defaults mean where they were written, for a use
 	// site in an importing package (see defaultScopeRecorder).
 	scopes := newDefaultScopeRecorder(importPath)
+	// The error of the first file left out of the package's metadata.
+	var droppedErr error
 
 	for i, entry := range entries {
 		filePath := candidatePaths[i]
@@ -2714,6 +2725,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			res, err := a.analyzeFile(entry.parsed.Docs, entry.parsed.Native, entry.nf, filePath)
 			if ie := asInternal(err); ie != nil {
 				return nil, ie
+			}
+			if err != nil && droppedErr == nil {
+				droppedErr = galaerr.WithFilePath(err, filePath)
 			}
 			if err == nil {
 				if pkgAST.PackageName == "" {
@@ -2840,8 +2854,14 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// metadata (types, functions, methods declared in this package) is
 	// persisted — the direct import list is recorded separately so the
 	// transitive type closure can be reconstructed at load time without
-	// inflating each on-disk entry to N×M of the dependency graph.
-	if contentHash != "" && a.cache != nil {
+	// inflating each on-disk entry to N×M of the dependency graph. A package
+	// whose metadata is partial — a file of its own left out, or of a
+	// package it imports, as its files' merged DependencyErrors say — is not
+	// stored: the entry would hold that metadata without the errors.
+	if droppedErr != nil {
+		pkgAST.DependencyErrors = append([]error{droppedErr}, pkgAST.DependencyErrors...)
+	}
+	if contentHash != "" && a.cache != nil && len(pkgAST.DependencyErrors) == 0 {
 		a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
 	}
 
@@ -3616,11 +3636,12 @@ func funcRedeclaredError(funcName, pkgName string, line, column int, otherFile, 
 }
 
 // siblingTypeRedefinedError builds the E0011 diagnostic for a type that a
-// sibling file declares a second time. The diagnostic is rendered against the
-// file being analyzed, so when the earlier declaration lives there the caret
-// is put on it and the message names the sibling; otherwise the caret falls
-// back to the sibling declaration and the message names the earlier file.
-// Either way the message points somewhere other than the caret.
+// sibling file declares a second time. When the earlier declaration lives in
+// the file being analyzed, the diagnostic is rendered against that file, with
+// the caret on it, and the message names the sibling. Otherwise neither
+// declaration is in that file: the diagnostic is rendered against the
+// sibling, with the caret on its declaration, and the message names the
+// earlier file. Either way the message points somewhere other than the caret.
 //
 // sibPath is the sibling's path as the caller spelled it, so the message
 // quotes it the same way the build driver named the file rather than as an
@@ -3629,7 +3650,9 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 	if isSameFile(existing.DefinedIn, mainFile) {
 		return typeRedefinedError(typeName, pkgName, existing.Pos.Line, existing.Pos.Column, sibPath, mainFile, sibPos)
 	}
-	return typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, mainFile, existing.Pos)
+	err := typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, sibPath, existing.Pos)
+	err.FilePath = sibPath
+	return err
 }
 
 // siblingDeclSeen checks the entry richAST.Types[key] before the type
