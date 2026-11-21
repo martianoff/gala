@@ -164,7 +164,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// A Go type defined over a slice or map (url.Values,
 		// sort.StringSlice, an instance of a generic one) is indexed as its
 		// underlying type.
-		if u, defined := t.goUnderlying(xType); defined {
+		if u, named := t.goNamedUnderlying(xType); named {
 			xType = u
 		}
 		switch v := xType.(type) {

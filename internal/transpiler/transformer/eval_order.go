@@ -772,26 +772,9 @@ func (t *galaASTTransformer) namesType(fun ast.Expr) bool {
 			return false
 		}
 		qualified := pkg.Name + "." + b.Sel.Name
-		return t.resolveTypeMetaName(qualified) != "" || t.namesGoType(fun)
+		return t.resolveTypeMetaName(qualified) != "" || (t.goTypeInfo != nil && t.goTypeInfo.GetTypeData(t.goTypeKey(qualified)) != nil)
 	}
 	return false
-}
-
-// namesGoType reports whether fun, a callee spelled `pkg.T` or `pkg.T[...]`,
-// names a Go type that no GALA type hides: a call of it is a conversion to
-// that type.
-func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
-	base, _ := splitCallFunTypeArgs(fun)
-	sel, ok := base.(*ast.SelectorExpr)
-	if !ok || t.goTypeInfo == nil {
-		return false
-	}
-	pkg, ok := sel.X.(*ast.Ident)
-	if !ok || !t.isPackageQualifier(pkg.Name) {
-		return false
-	}
-	qualified := pkg.Name + "." + sel.Sel.Name
-	return t.resolveTypeMetaName(qualified) == "" && t.goTypeInfo.GetTypeData(t.goTypeKey(qualified)) != nil
 }
 
 // isStdHelperCall reports whether call calls one of the std functions names.
