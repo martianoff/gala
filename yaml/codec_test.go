@@ -568,6 +568,12 @@ func TestDecoder_SequenceAtKeyIndent(t *testing.T) {
 			"{a: x, items: [1, 2], b: y}",
 		},
 		{
+			"quoted key with a comment",
+			"\"items\": # list\n- 1\n- 2",
+			"\"items\": # list\n  - 1\n  - 2",
+			"{items: [1, 2]}",
+		},
+		{
 			"two sequences in a row",
 			"n:\n- 1\nm:\n- 2\n- 3",
 			"n:\n  - 1\nm:\n  - 2\n  - 3",
