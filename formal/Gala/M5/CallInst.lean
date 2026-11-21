@@ -124,7 +124,7 @@ theorem inc_spec_ok : (Spec.eval incDs 4 incCall).run.run { incCore with steps :
 theorem inc_gocore_ok (N : Nat) (hN : N ≥ 32) :
     ∃ w g', (evalExpr incCtx N incEnv incCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 6) w := by
   have h := calls_correct_instance 10 4 (by decide) N hN
-  rw [show ({ incCore with steps := 10 } : Spec.St) = { incCore with steps := 10 } from rfl, inc_spec_ok] at h
+  rw [inc_spec_ok] at h
   obtain ⟨w, g', hg, hv, -⟩ := h
   exact ⟨w, g', hg, hv⟩
 

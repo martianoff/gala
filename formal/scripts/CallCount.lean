@@ -55,12 +55,13 @@ def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String 
   else match sigOf F with
   | none => "signature"
   | some (xks, _) =>
-    if !decide (ParamsOK (xks.map (·.1))) then "param-names"
+    let names := xks.map (·.1)
+    if !decide (ParamsOK names) then "param-names"
     else match lowerBody K sg F with
     | some lb => if body3Ss lb then "lowered" else "order-predicate"
     | none =>
       let es := subs F.body
-      if es.any (fun | .name x => globals.contains x && !(xks.map (·.1)).contains x | _ => false) then
+      if es.any (fun | .name x => globals.contains x && !names.contains x | _ => false) then
         "reads-package-level"
       else if es.any (fun
           | .call (.name g) as => match ds.funcs.lookup g with
