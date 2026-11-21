@@ -61,6 +61,16 @@ func main() {
     Println(f())
 }
 `, []string{"func() string"}},
+		{"conversion through an aliased Go import, then indexed", `package main
+
+import gourl "net/url"
+
+func main() {
+    val q = gourl.Values{}
+    val f = () => gourl.Values(q)["a"]
+    Println(f())
+}
+`, []string{"func() []string"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
