@@ -31,11 +31,12 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 		return nil, err
 	}
 	ident := ast.NewIdent(name)
-	if name == "_" && t.bindingScope(name) == nil {
+	s := t.bindingScope(name)
+	if name == "_" && s == nil {
 		t.recordBlankRead(ident, at)
 	}
 	// First check if it's a local variable - if so, don't try to resolve as std type
-	if s := t.bindingScope(name); s != nil {
+	if s != nil {
 		if s.parent == nil {
 			if err := t.preludeDotImportAmbiguity(at, name, t.dotImportedVals[name], "value"); err != nil {
 				return nil, err
