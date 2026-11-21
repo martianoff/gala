@@ -65,6 +65,14 @@ theorem declaredFunc_fn (n : Nat) (g : St) :
   simp [hl, nameOwner_obj c env f p _ hpk hobj, h1, h2]
   rfl
 
+omit hl ht in
+/-- A call of a non-generic declared function never takes `genericArgs`. -/
+theorem genericArgsNeeded_fn (args : List Expr) :
+    genericArgsNeeded c env (declFn env.pkg f) args false = false := by
+  have h1 := hpk; have h2 := hobj
+  simp only [Std.HashMap.get?_eq_getElem?] at h1 h2
+  simp [genericArgsNeeded, declFn, h1, h2, fieldListNames]
+
 theorem evalCall_fn (n : Nat) (args : List Expr) (g : St) :
     (evalCall c (n + 2) env (.ident f) args false).run.run g =
       (do callValue c (n + 1) (declFn env.pkg f) (← evalArgs c (n + 1) env args) false).run.run g := by
@@ -73,6 +81,7 @@ theorem evalCall_fn (n : Nat) (args : List Expr) (g : St) :
   simp only [hl, nameOwner_obj c env f p _ hpk hobj, Option.isNone_some, Bool.and_false,
     Bool.false_eq_true, ite_false]
   rw [grun_bind, declaredFunc_fn c env f p fi sig body hpk hl hobj]
+  simp only [genericArgsNeeded_fn c env f p fi sig body hpk hobj, Bool.false_eq_true, ite_false]
   simp only [grun_bind]
 end
 
