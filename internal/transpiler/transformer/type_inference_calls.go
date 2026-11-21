@@ -221,7 +221,8 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	// arguments, `Pred[int](f)` or `iter.Seq[string](f)`.
 	switch e.Fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
-		if _, alias := t.typeAliases[t.extractFuncName(e.Fun)]; !alias && len(e.Args) == 1 &&
+		name := t.extractFuncName(e.Fun)
+		if _, alias := t.typeAliases[name]; !alias && t.getFunction(name) == nil && len(e.Args) == 1 &&
 			!t.marked(e.Fun, operandThroughPointer) && t.conversionFuncType(e.Fun) != nil {
 			return t.astTypeToTranspilerType(e.Fun)
 		}

@@ -279,7 +279,13 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		// A parameter typed by an alias of a function type (`t Thunk[T]` for
 		// `type Thunk[T any] func() T`) is that function type, so it takes
 		// the function-type path, type-parameter masking included.
-		if ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[fi]); ft != nil {
+		// So is one typed by a generic Go defined function type
+		// (`m Mapper[T, U]`, `s iter.Seq[T]`).
+		ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[fi])
+		if _, instance := t.followAliasChain(ctx.funcMeta.ParamTypes[fi]).(transpiler.GenericType); ft == nil && instance {
+			ft = t.goNamedFuncTypeOf(t.followAliasChain(ctx.funcMeta.ParamTypes[fi]))
+		}
+		if ft != nil {
 			if len(ctx.typeSubst) > 0 {
 				// Substitute inferred or explicit type args (both void and non-void)
 				expectedType = t.substituteTranspilerTypeParams(*ft, ctx.typeSubst)

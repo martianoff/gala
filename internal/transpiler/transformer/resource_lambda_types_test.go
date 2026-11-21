@@ -404,6 +404,42 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 	}
 }
 
+// TestGenericGoNamedFuncTypeSlotOfGenericGalaCallee pins a GALA generic
+// callee whose parameter is a generic Go named function type
+// (`m Mapper2[T, U]`) typed through the function-type path: the bound
+// type arguments type the lambda's parameters, and an unbound one in the
+// result is left to the lambda's body, never written as the callee's `U`
+// (#1318).
+func TestGenericGoNamedFuncTypeSlotOfGenericGalaCallee(t *testing.T) {
+	const goSrc = `package main
+
+type Mapper2[T any, U any] func(T) U
+`
+	cases := []struct{ name, gala string }{
+		{"one type argument bound by another argument", `package main
+
+func apply[T any, U any](x T, m Mapper2[T, U]) U = m(x)
+
+func run() int = apply(1, (x) => x + 1)
+`},
+		{"only the result open", `package main
+
+func run2[U any](m Mapper2[int, U]) U = m(1)
+
+func run() int = run2((x) => x * 2)
+`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, tc.gala)
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, "func(x int) int")
+			assert.NotContains(t, out, "func(x int) U")
+		})
+	}
+}
+
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for
 // `type Handler func(int) int`: the conversion's one argument has the
 // function type, so the lambda is typed by it rather than left without a type.
