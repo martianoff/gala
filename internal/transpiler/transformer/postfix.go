@@ -717,8 +717,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if !irrefutableTupleArm && !cc.hasGuard() && armMatchesEverything(arm.clause) &&
 			t.isTuplePatternOfSubjectArity(patterns[i], matchedType) {
 			irrefutableTupleArm = true
-			// The scan above reads the source; should the lowering find an
-			// arm matches every value where the scan did not, a case after it
+			// The scan above reads the source. If the lowering finds that an
+			// arm matches every value when the scan did not, a case after it
 			// can never run either.
 			if i+1 < len(caseClauses) {
 				next := caseClauses[i+1]

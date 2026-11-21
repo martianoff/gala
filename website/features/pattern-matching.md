@@ -17,7 +17,7 @@ Go's `switch` is limited to value comparison. Runtime pattern matching libraries
 
 ## Overview
 
-The `match` expression takes a subject and tests it against a series of `case` branches. The first matching branch wins, and its body becomes the result. A `case _` default is required unless the match is provably exhaustive (sealed types with all variants covered, or booleans with both `true` and `false`). An unguarded `case n` binding, a tuple pattern of bindings and wildcards, or a typed pattern of the subject's own non-interface GALA or primitive type also serves as the default. Because the first match wins, the default goes last: a case written after one that matches every value can never run, and is rejected ([GALA-E0141](/docs/errors/gala-e0141/)).
+The `match` expression takes a subject and tests it against a series of `case` branches. The first matching branch wins, and its body becomes the result. A `case _` default is required unless the match is provably exhaustive (sealed types with all variants covered, or booleans with both `true` and `false`). An unguarded binding (`case n`, or a capitalized name that names nothing in scope), a tuple pattern of bindings and wildcards, or a typed pattern of the subject's own non-interface GALA or primitive type also serves as the default. Because the first match wins, the default goes last: a case written after one that matches every value can never run, and is rejected ([GALA-E0141](/docs/errors/gala-e0141/)).
 
 <!-- doc-check: fragment -->
 ```gala
