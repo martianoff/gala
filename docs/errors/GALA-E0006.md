@@ -4,7 +4,8 @@
 no earlier case that matches every value. A default case is an unguarded
 `case _ =>`, or, in a match with no unguarded `case _`, an unguarded binding of
 the whole value whose name starts with a lowercase letter or `_` (`case n =>`;
-a name of a variant or extractor of the matched type tests the value instead).
+a name of a variant of the matched type, or of a zero-field extractor, tests
+the value instead).
 It is reported on the second. Any other case written after a case that matches
 every value (`case _` after `case n`, say, or `case n` after `case _`) is
 [GALA-E0141](GALA-E0141.md), reported on the later case.
