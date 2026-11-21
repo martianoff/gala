@@ -2980,14 +2980,21 @@ func (t *galaASTTransformer) isImportIdent(e ast.Expr) bool {
 }
 
 // takesArgs reports whether meta's Apply is not generic and has a parameter
-// with no default, so a call of it with no arguments is not a call of that
-// Apply.
+// with no default (a variadic one takes none), so a call of it with no
+// arguments is not a call of that Apply.
 func takesArgs(meta *transpiler.TypeMetadata) bool {
 	if meta == nil || genericApply(meta) {
 		return false
 	}
 	apply := meta.Methods["Apply"]
-	return apply != nil && len(apply.ParamTypes) > len(apply.DefaultExprs)
+	if apply == nil {
+		return false
+	}
+	required := len(apply.ParamTypes) - len(apply.DefaultExprs)
+	if apply.Variadic {
+		required-- // a variadic parameter takes no arguments too
+	}
+	return required > 0
 }
 
 // callsGenericApply reports whether a call of recv's Apply is a generic method
@@ -3073,13 +3080,16 @@ func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMe
 	return t.applyTypeByName(typ.BaseName())
 }
 
-// applyTypeByName is applyTypeMeta for the type named name, except one whose
-// Apply a hand-written .go file declares: that type may be a Go function
-// type (`type Option func(*Config)` with an Apply), whose value is called as
-// the function it is.
+// applyTypeByName is applyTypeMeta for the type named name, except a type
+// with no fields whose Apply a hand-written .go file declares: that type may
+// be a Go function type (`type Option func(*Config)` with an Apply), whose
+// value is called as the function it is.
 func (t *galaASTTransformer) applyTypeByName(name string) *transpiler.TypeMetadata {
 	meta := t.applyTypeMeta(name)
-	if meta == nil || meta.Methods["Apply"] == nil || meta.Methods["Apply"].GoDeclared {
+	if meta == nil || meta.Methods["Apply"] == nil {
+		return nil
+	}
+	if meta.Methods["Apply"].GoDeclared && len(meta.FieldNames) == 0 && !meta.IsShorthand && !meta.IsSealed {
 		return nil
 	}
 	return meta

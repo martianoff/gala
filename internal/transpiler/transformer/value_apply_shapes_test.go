@@ -48,6 +48,10 @@ func (k Tick) Apply() int = k.n
 
 func makeTick() Tick = Tick(5)
 
+struct Count(sep string)
+
+func (c Count) Apply(parts ...string) int = parts.Size()
+
 struct Inc(n int)
 
 func (i Inc) Apply(x int = 1) int = i.n + x
@@ -82,6 +86,8 @@ func main() {
 		{"a call's result with no arguments", `Println(makeTick()())`, []string{`makeTick().Apply()`}},
 		{"a val with no arguments for an Apply whose parameters all have defaults", `val i = Inc(1)
     Println(i())`, []string{`i.Apply(1)`}},
+		{"a val with no arguments for an Apply whose only parameter is variadic", `val n = Count(",")
+    Println(n())`, []string{`n.Apply()`}},
 		{"a no-parameter generic Apply of a companion called with no arguments", `val n Option[int] = Missing()
     Println(n)`, []string{`Missing_Apply[int](Missing{})`}},
 	} {
