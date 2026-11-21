@@ -1,0 +1,40 @@
+package main
+
+import (
+    "net/http"
+    "net/url"
+    "slices"
+    "sort"
+    "time"
+    "martianoff/gala/go_interop"
+)
+
+// A conversion to a Go named type (`sort.StringSlice(xs)`) has that type, and
+// indexing a Go type defined over a slice or map (`q["a"]` on url.Values)
+// has its element type, so lambdas, ranges and the .Size() sugar over the
+// value are typed (#1311).
+
+func main() {
+    val ss = sort.StringSlice(go_interop.SliceOf("b", "a"))
+    Println(slices.IndexFunc(ss, (x) => x == "a"))
+    for _, w := range ss {
+        Println(w + "!", w.Size())
+    }
+    Println(ss.Size())
+
+    val d = time.Duration(1500) * time.Millisecond
+    val later = () => d + time.Second
+    Println(later())
+
+    val q = url.Values{}
+    q.Set("a", "x")
+    val vs = q["a"]
+    Println(slices.IndexFunc(vs, (x) => x == "x"))
+    val first = () => vs[0]
+    Println(first() + "?")
+
+    val h = http.Header{}
+    h.Set("Accept", "text/plain")
+    val accept = h["Accept"]
+    Println(accept[0].Size())
+}

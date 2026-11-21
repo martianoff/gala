@@ -1994,6 +1994,15 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# #1311: a conversion to a Go named type has that type, and indexing a Go
+# type defined over a slice or map has its element type.
+gala_exec_test(
+    name = "go_named_type_conversion_index",
+    src = "go_named_type_conversion_index.gala",
+    expected = "go_named_type_conversion_index.out",
+    deps = ["//go_interop"],
+)
+
 # #1298: a lambda passed to a generic Go function with an `S ~[]E` or
 # `M ~map[K]V` constraint takes its parameter types from the core type.
 gala_exec_test(

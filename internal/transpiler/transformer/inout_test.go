@@ -573,6 +573,21 @@ func main() {
 		{"a pointer to a type GALA does not resolve", `package main
 
 import "os"
+import "example.com/nowhere/gonaming"
+
+func put[T any](inout x T, v T) {
+    x = v
+}
+
+func main() {
+    var m = gonaming.Current()
+    var pm = &m
+    put[os.FileMode](&pm, m)
+}
+`, "cannot lend &pm to the inout parameter of put: pm holds a pointer", "", ""},
+		{"a pointer to a Go named type a conversion makes", `package main
+
+import "os"
 
 func put[T any](inout x T, v T) {
     x = v
@@ -583,7 +598,7 @@ func main() {
     var pm = &m
     put[os.FileMode](&pm, m)
 }
-`, "cannot lend &pm to the inout parameter of put: pm holds a pointer", "", ""},
+`, "cannot lend &pm to the inout parameter of put: pm holds a Ptr[os.FileMode], and the parameter takes the os.FileMode it points to", "pass `pm` without `&`", ""},
 		{"a Ptr to a type parameter Go infers, not deep enough", `package main
 
 struct Counter(var n int)

@@ -241,6 +241,7 @@ go_test(
         "go_keyword_names_test.go",
         "go_method_func_param_test.go",
         "go_method_results_test.go",
+        "go_named_conversion_index_test.go",
         "go_results_return_test.go",
         "go_results_whole_test.go",
         "go_results_test.go",

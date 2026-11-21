@@ -79,7 +79,7 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 // (`pkg.Bag[string]`) to its underlying with the type arguments substituted.
 // Returns (nil, false) when goTypeInfo is absent, the type is unusable, or it
 // is not a resolvable package-qualified Go named type. Shared by the Sendable
-// Go-scalar check and the .Size()-sugar collection resolver.
+// Go-scalar check, the .Size()-sugar collection resolver and index typing.
 func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
 	if t.goTypeInfo == nil || transpiler.IsUnusable(typ) {
 		return nil, false
