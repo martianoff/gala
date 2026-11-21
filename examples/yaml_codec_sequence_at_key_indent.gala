@@ -3,7 +3,8 @@ package main
 // A block sequence that is a mapping value may sit at its key's own
 // indentation (#1295): the "- " counts as indentation. kubectl writes
 // `containers:` followed by `- name: ...` this way, and many CI files do too.
-// Each document below decodes the same with the sequence indented or not.
+// The first two documents differ only in that layout and decode the same; the
+// third is a pod spec as kubectl writes it.
 
 import (
     "martianoff/gala/yaml"
