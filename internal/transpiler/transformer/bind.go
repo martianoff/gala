@@ -446,11 +446,12 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []stmtSrc,
 		// `val (a, b) = tuple`.
 		// A `_`-named clause contributes its effect to the Zip but discards its
 		// value, so we skip extracting the tuple field — `_ := _zip.Vi` would be
-		// invalid Go ("no new variables on left side of :=").
+		// invalid Go ("no new variables on left side of :="). Its `_` is still
+		// bound, as in buildSequential, so a read of it is GALA-E0139.
+		t.addVal(p.name, p.elemType)
 		if p.name == "_" {
 			continue
 		}
-		t.addVal(p.name, p.elemType)
 		field := &ast.SelectorExpr{X: ast.NewIdent(tupleParam), Sel: ast.NewIdent("V" + strconv.Itoa(i+1))}
 		lambdaBody.List = append(lambdaBody.List, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(p.name)},

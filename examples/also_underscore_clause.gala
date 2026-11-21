@@ -1,0 +1,31 @@
+package main
+
+import . "martianoff/gala/concurrent"
+
+// A `_` clause in an `also` group over Future joins the Zip for its effect,
+// in any position, and the group builds and runs. Its `_` binds nothing
+// readable: TestAlsoUnderscoreClause (internal/transpiler/transformer/
+// discard_after_bind_test.go) pins a read of it as GALA-E0139. A `_ = x`
+// after the group is still a discard.
+
+func compute(n int) Future[int] = Future[int](n * n)
+
+func first() Future[int] {
+    bind _ = compute(2)
+    also b = compute(3)
+    _ = "ignored"
+    Future[int](b)
+}
+
+func later() Future[int] {
+    bind a = compute(2)
+    also _ = compute(3)
+    also c = compute(4)
+    _ = "ignored"
+    Future[int](a + c)
+}
+
+func main() {
+    Println(first().Get())
+    Println(later().Get())
+}
