@@ -821,9 +821,6 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	if !c.enabled || richAST == nil {
 		return
 	}
-	// Clean up stale entries for this package before writing new one
-	c.evictStale(pkgPath, contentHash)
-
 	path := c.cachePath(pkgPath, contentHash)
 	os.MkdirAll(filepath.Dir(path), 0755)
 
@@ -852,7 +849,11 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	// Atomic rename — readers see either the old file or the new complete file
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
+		return
 	}
+	// The package's entries for earlier contents go once the new one is in
+	// place: a store that fails leaves them be.
+	c.evictStale(pkgPath, contentHash)
 }
 
 // evictStale removes old cache entries for the same package with different content hashes.
@@ -860,10 +861,10 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 	if !c.enabled {
 		return
 	}
-	prefix := c.cachePrefix(pkgPath)
+	prefix := cachePrefix(pkgPath)
 	keepName := cacheName(prefix, keepHash)
 
-	entries, err := ioutil.ReadDir(c.dir)
+	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return
 	}
@@ -884,7 +885,7 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 // and a_b/c, both a_b_c, each other's). The hash tells packages apart, so
 // the readable part is cut to keep a long path's names within file-name
 // limits.
-func (c *analysisCache) cachePrefix(pkgPath string) string {
+func cachePrefix(pkgPath string) string {
 	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
 	sum := sha256.Sum256([]byte(slashed))
 	readable := strings.ReplaceAll(slashed, "/", "_")
@@ -905,7 +906,7 @@ func (c *analysisCache) cachePrefix(pkgPath string) string {
 const maxReadableCacheName = 96
 
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
-	return filepath.Join(c.dir, cacheName(c.cachePrefix(pkgPath), contentHash))
+	return filepath.Join(c.dir, cacheName(cachePrefix(pkgPath), contentHash))
 }
 
 // cacheName is the name of the entry for contentHash of the package whose
