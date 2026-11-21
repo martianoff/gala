@@ -1582,3 +1582,78 @@ theorem args_sim (d : Nat) (ih : ExprSim ds cx P K sg d) (κ : String → Option
   | a :: b :: rest, h => simpa [evalArgs] using h
 
 end Args
+
+/-! ## The callee's frame -/
+
+section Frame
+open Gala.GoCore.Full
+
+/-- The locals galaspec and GoCore bind, related, and nothing else bound. -/
+def FrameRel (κ : String → Option Kind) (c : Spec.Core) (cells : Array Val) (env : Env) : Prop :=
+  LocRel κ c cells env ∧ ∀ x, κ x = none → Spec.lookup c.locals x = none ∧ env.lookup x = none
+
+theorem bval_plain (h : Array Spec.Val) (v : Spec.Val) (hv : ∀ n, v ≠ .ref n) : bval h ⟨v, false⟩ = some v := by
+  unfold bval; cases v <;> simp_all
+
+/-- One parameter bound on both sides. -/
+theorem frameRel_bind {κ : String → Option Kind} {c : Spec.Core} {cells : Array Val} {env : Env}
+    (h : FrameRel κ c cells env) (y : String) (hy : y ≠ "_") (v : Spec.Val) (w : Val) (k : Kind)
+    (hv : VRel v w) (hk : valKind v = some k) :
+    FrameRel (upd κ y k) { c with locals := Spec.bind c.locals y ⟨v, false⟩ } (cells.push (defaultVal w))
+      (env.bind y cells.size) := by
+  have hb : Spec.bind c.locals y ⟨v, false⟩ = (y, ⟨v, false⟩) :: c.locals := by simp [Spec.bind, hy]
+  obtain ⟨hvd, hnu, hnb, hns⟩ := vrel_default hv
+  refine ⟨fun x k' hk' => ?_, fun x hx => ?_⟩
+  · unfold upd at hk'
+    by_cases hxy : x = y
+    · subst hxy
+      simp only [ite_true, Option.some.injEq] at hk'
+      subst hk'
+      refine ⟨⟨v, false⟩, cells.size, v, defaultVal w, ?_, bval_plain _ v (vrel_not_ref hv), ?_, ?_, hvd, hk,
+        hnu, hnb, hns⟩
+      · show Spec.lookup (Spec.bind c.locals x ⟨v, false⟩) x = _
+        rw [hb]; simp [Spec.lookup]
+      · rw [Env.lookup_bind _ _ _ _ hy]; simp
+      · simp
+    · simp only [hxy, ite_false] at hk'
+      obtain ⟨b', cell, v', w', hb', hv', hcell, hw', rest⟩ := h.1 x k' hk'
+      refine ⟨b', cell, v', w', ?_, hv', ?_, pre_get (pre_push _ _) hw', rest⟩
+      · show Spec.lookup (Spec.bind c.locals y ⟨v, false⟩) x = _
+        rw [hb]; simp only [Spec.lookup, Ne.symm hxy, ite_false]; exact hb'
+      · rw [Env.lookup_bind _ _ _ _ hy]; simp only [hxy, ite_false]; exact hcell
+  · unfold upd at hx
+    by_cases hxy : x = y
+    · simp [hxy] at hx
+    · simp only [hxy, ite_false] at hx
+      obtain ⟨h1, h2⟩ := h.2 x hx
+      refine ⟨?_, ?_⟩
+      · show Spec.lookup (Spec.bind c.locals y ⟨v, false⟩) x = _
+        rw [hb]; simp only [Spec.lookup, Ne.symm hxy, ite_false]; exact h1
+      · rw [Env.lookup_bind _ _ _ _ hy]; simp only [hxy, ite_false]; exact h2
+
+/-- **The parameters bound** on both sides, one by one: related, and nothing else bound. -/
+theorem frameRel_params : ∀ (xks : List (String × Kind)) (ps : List Spec.Param) (vs : List Spec.Val)
+    (ws : List Val) (κ : String → Option Kind) (c : Spec.Core) (env : Env) (g : St),
+    ps.map (·.name) = xks.map (·.1) → KRel (xks.map (·.2)) vs ws → (∀ x ∈ xks.map (·.1), x ≠ "_") →
+    FrameRel κ c g.cells env →
+    FrameRel (xks.foldl (fun κ xk => upd κ xk.1 xk.2) κ)
+      { c with locals := (ps.zip vs).foldl (fun ρ pv => Spec.bind ρ pv.1.name ⟨pv.2, false⟩) c.locals }
+      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).2.cells
+      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).1
+  | [], [], [], [], κ, c, env, g, _, _, _, h => by simpa using h
+  | (x, k) :: xks, p :: ps, v :: vs, w :: ws, κ, c, env, g, hn, hkr, hx, h => by
+    simp only [List.map_cons, List.cons.injEq] at hn
+    obtain ⟨hvw, hk, hkr⟩ := hkr
+    simp only [List.map_cons, List.zip_cons_cons, List.foldl_cons]
+    have hstep := frameRel_bind h x (hx x (by simp)) v w k hvw hk
+    have := frameRel_params xks ps vs ws (upd κ x k) { c with locals := Spec.bind c.locals x ⟨v, false⟩ }
+      (env.bind x g.cells.size) { g with cells := g.cells.push (defaultVal w), types := g.types.push (teTy (.ident (kindName k))) }
+      hn.2 hkr (fun y hy => hx y (by simp [hy])) hstep
+    rw [hn.1]
+    exact this
+  | [], _ :: _, _, _, _, _, _, _, hn, _, _, _ | _ :: _, [], _, _, _, _, _, _, hn, _, _, _ => by simp at hn
+  | [], [], _ :: _, _, _, _, _, _, _, hk, _, _ | [], [], [], _ :: _, _, _, _, _, _, hk, _, _ => by simp [KRel] at hk
+  | _ :: _, _ :: _, [], _, _, _, _, _, _, hk, _, _ | _ :: _, _ :: _, _ :: _, [], _, _, _, _, _, hk, _, _ => by
+    simp [KRel] at hk
+
+end Frame
