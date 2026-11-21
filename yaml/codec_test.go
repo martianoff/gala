@@ -989,6 +989,8 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body, c: 1}]"},
 		{"- - 'k # x': |\n      body", "[[{k # x: body}]]"},
 		{"\"a|b\": | # note\n  body", "{a|b: body}"},
+		// With no space after a quoted key's colon, "|" is the plain value.
+		{"\"k\":|", "{k: |}"},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {

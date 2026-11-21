@@ -877,7 +877,7 @@ func literalBlockHeader(content string, indent int) (string, int, bool) {
 		return content[:n], indent + lastDash, true
 	}
 	key, value, isPair := tryParseKeyValue(rest)
-	if !isPair || !isBlockIndicator(value) {
+	if !isPair || !isBlockIndicator(value) || !spaceAfterQuotedKey(rest) {
 		return "", 0, false
 	}
 	// The key is written back double-quoted, which reads back as the same
@@ -886,6 +886,22 @@ func literalBlockHeader(content string, indent int) (string, int, bool) {
 }
 
 func isBlockIndicator(s string) bool { return s == "|" || s == "|-" }
+
+// spaceAfterQuotedKey reports whether, in a pair whose key is quoted, white
+// space separates the colon from the value, as a block indicator needs: in
+// "k":| the "|" is plain text. A plain key's colon is always followed by
+// white space, so any other pair passes.
+func spaceAfterQuotedKey(pair string) bool {
+	if pair[0] != '"' && pair[0] != '\'' {
+		return true
+	}
+	j := closingQuote(pair) + 1
+	for j < len(pair) && (pair[j] == ' ' || pair[j] == '\t') {
+		j++
+	}
+	// tryParseKeyValue found the pair, so pair[j] is the colon.
+	return j+1 < len(pair) && (pair[j+1] == ' ' || pair[j+1] == '\t')
+}
 
 // itemPrefix measures the "- " markers a line starts with, one per sequence
 // item opened on that line ("- - key: |" has two). It returns the length of
