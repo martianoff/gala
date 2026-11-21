@@ -192,9 +192,10 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 }
 
 // namesGoType reports whether fun, a callee spelled `pkg.T` or `pkg.T[...]`,
-// names a type of a Go package the file imports: a call of it is a
-// conversion to that type. A qualifier a local binding shadows, or that
-// names a GALA package, is no Go package here (`x.T(...)` is a method call).
+// names a Go type of a package the file imports (a Go package, or the .go
+// files of a GALA one, where no GALA type of the name hides it): a call of it is
+// a conversion to that type. A qualifier a local binding shadows is no
+// package here (`x.T(...)` is a method call).
 func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
 	base, _ := splitCallFunTypeArgs(fun)
 	sel, ok := base.(*ast.SelectorExpr)
@@ -205,7 +206,8 @@ func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
 	if !ok || t.bindingScope(pkg.Name) != nil {
 		return false
 	}
-	if _, isGala, imported := t.importForQualifier(pkg.Name); !imported || isGala {
+	_, isGala, imported := t.importForQualifier(pkg.Name)
+	if !imported || isGala && t.resolveTypeMetaName(pkg.Name+"."+sel.Sel.Name) != "" {
 		return false
 	}
 	return t.goTypeInfo.GetTypeData(t.goQualifiedName(pkg.Name, sel.Sel.Name)) != nil

@@ -160,12 +160,15 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				return t.goFuncValueType(id.Name, []transpiler.Type{t.astTypeToTranspilerType(e.Index)})
 			}
 		}
-		xType := t.getExprTypeNameManual(e.X)
+		xType := t.followAliasChain(t.getExprTypeNameManual(e.X))
 		// A Go type defined over a slice or map (url.Values,
 		// sort.StringSlice, an instance of a generic one) is indexed as its
-		// underlying type.
-		if u, named := t.goNamedUnderlying(xType); named {
-			xType = u
+		// underlying type. A generic one named without type arguments is
+		// the type being instantiated (`pkg.Bag[string]`), not a value.
+		if _, td := t.goTypeDataFor(xType); td == nil || len(td.TypeParams) == 0 {
+			if u, named := t.goNamedUnderlying(xType); named {
+				xType = u
+			}
 		}
 		switch v := xType.(type) {
 		case transpiler.ArrayType:

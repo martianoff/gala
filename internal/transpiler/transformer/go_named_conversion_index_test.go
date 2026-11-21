@@ -71,6 +71,18 @@ func main() {
     Println(f())
 }
 `, []string{"func() []string"}},
+		{"index through a GALA alias of a Go named map type", `package main
+
+import "net/url"
+
+type Tags url.Values
+
+func main() {
+    val q Tags = url.Values{}
+    val f = () => q["a"]
+    Println(f())
+}
+`, []string{"func() []string"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
