@@ -1386,6 +1386,18 @@ gala_exec_test(
     ],
 )
 
+# A sequence item may open a literal block or a nested sequence on the
+# dash's line (#1320).
+gala_exec_test(
+    name = "yaml_codec_sequence_item_blocks",
+    src = "yaml_codec_sequence_item_blocks.gala",
+    expected = "yaml_codec_sequence_item_blocks.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "yaml_codec_collections",
     src = "yaml_codec_collections.gala",

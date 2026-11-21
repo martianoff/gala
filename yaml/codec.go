@@ -780,7 +780,12 @@ type pLine struct {
 	indent  int
 	raw     string
 	lineNum int
+	nested  int // sequence items opened on this line before raw ("- - x" re-read as "- x" has 1)
 }
+
+// maxItemsPerLine caps the sequence items a single line may open ("- - - x"
+// opens three). Each one is a level of recursion in the parser.
+const maxItemsPerLine = 1000
 
 func parseYAML(input string) *yNode {
 	lines := splitSignificantLines(input)
@@ -814,16 +819,9 @@ func splitSignificantLines(input string) []pLine {
 		}
 		indent := countLeadingSpaces(raw)
 		content := raw[indent:]
-		if endsWithLiteralBlock(content) {
-			joined, consumed := takeLiteralBlock(rawLines, i+1, indent)
-			// The block becomes a double-quoted scalar on its header's line.
-			// A bare "|" leaves no text before it, so the line starts with
-			// the quote and reads as a quoted scalar, never as a key.
-			collapsed := doubleQuoted(joined)
-			if before := stripLiteralBlockMarker(content); before != "" {
-				collapsed = before + " " + collapsed
-			}
-			out = append(out, pLine{indent: indent, raw: collapsed, lineNum: i + 1})
+		if before, parent, ok := literalBlockHeader(content, indent); ok {
+			joined, consumed := takeLiteralBlock(rawLines, i+1, parent)
+			out = append(out, pLine{indent: indent, raw: before + doubleQuoted(joined), lineNum: i + 1})
 			i += consumed
 			continue
 		}
@@ -853,26 +851,69 @@ func countLeadingSpaces(s string) int {
 	return n
 }
 
-func endsWithLiteralBlock(content string) bool {
-	t := strings.TrimRight(content, " \t")
-	if t == "|" || t == "|-" {
-		return true
+// literalBlockHeader reports whether content, a line without its
+// indentation, opens a literal block scalar: a bare "|", a sequence item
+// "- |" (or "- - |"), or a pair "key: |" (also as an item, "- key: |"),
+// each optionally "|-" and followed by a comment. It returns the text that
+// stands before the block's body once the body is collapsed into a
+// double-quoted scalar, and the column the body must be indented past.
+//
+// The pair is split by tryParseKeyValue, so a "#" or ": |" inside a quoted
+// or flow value, or inside a quoted key, is never taken for a comment or a
+// block indicator. Only a line holding a '|' can open a block, so only such
+// a line pays for the split.
+func literalBlockHeader(content string, indent int) (string, int, bool) {
+	if strings.IndexByte(content, '|') < 0 {
+		return "", 0, false
 	}
-	return strings.HasSuffix(t, ": |") || strings.HasSuffix(t, ": |-")
+	n, lastDash := itemPrefix(content)
+	rest := content[n:]
+	if isBlockIndicator(withoutComment(rest)) {
+		// A bare "|" leaves no text before the body, so the collapsed line
+		// starts with the quote and reads as a quoted scalar, never a key.
+		if n == 0 {
+			return "", indent, true
+		}
+		return content[:n], indent + lastDash, true
+	}
+	key, value, isPair := tryParseKeyValue(rest)
+	if !isPair || !isBlockIndicator(value) || !spaceAfterQuotedKey(rest) {
+		return "", 0, false
+	}
+	// The key is written back double-quoted, which reads back as the same
+	// key whatever it holds.
+	return content[:n] + doubleQuoted(key) + ": ", indent + n, true
 }
 
-func stripLiteralBlockMarker(content string) string {
-	t := strings.TrimRight(content, " \t")
-	if strings.HasSuffix(t, " |-") {
-		return t[:len(t)-3]
+func isBlockIndicator(s string) bool { return s == "|" || s == "|-" }
+
+// spaceAfterQuotedKey reports whether, in a pair whose key is quoted, white
+// space separates the colon from the value, as a block indicator needs: in
+// "k":| the "|" is plain text. A plain key's colon is always followed by
+// white space, so any other pair passes.
+func spaceAfterQuotedKey(pair string) bool {
+	if pair[0] != '"' && pair[0] != '\'' {
+		return true
 	}
-	if strings.HasSuffix(t, " |") {
-		return t[:len(t)-2]
+	j := closingQuote(pair) + 1
+	for j < len(pair) && (pair[j] == ' ' || pair[j] == '\t') {
+		j++
 	}
-	if t == "|" || t == "|-" {
-		return ""
+	// tryParseKeyValue found the pair, so pair[j] is the colon.
+	return j+1 < len(pair) && (pair[j+1] == ' ' || pair[j+1] == '\t')
+}
+
+// itemPrefix measures the "- " markers a line starts with, one per sequence
+// item opened on that line ("- - key: |" has two). It returns the length of
+// all of them and the offset of the last dash. Only a dash with text after
+// it counts, so a bare "-" (alone, or last as in "- -") is not counted, and
+// a line with no such dash gives 0, 0.
+func itemPrefix(s string) (n, lastDash int) {
+	for len(s) > n+1 && isSequenceLine(s[n:]) {
+		lastDash = n
+		n += 1 + countLeadingSpaces(s[n+1:])
 	}
-	return t
+	return n, lastDash
 }
 
 func takeLiteralBlock(raw []string, start, parentIndent int) (string, int) {
@@ -997,13 +1038,31 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		if !isSequenceLine(line.raw) {
 			break
 		}
+		// The item's content starts after the dash and the spaces that follow
+		// it: a nested sequence's items, or a mapping's keys, line up there.
+		contentIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+		if rest := line.raw[contentIndent-indent:]; isSequenceLine(rest) {
+			// A nested sequence that starts on the dash's line ("- - x").
+			// This line is rewritten in place as that sequence's first item
+			// and parsed again; the parser reads each line once otherwise.
+			// This check comes before any scan of the rest of the line, so a
+			// line of many nested dashes still parses in linear time, and
+			// their number is capped: each one is a level of recursion, and
+			// running out of stack would end the process, not fail the decode.
+			if line.nested+2 > maxItemsPerLine { // the items this line holds after opening one more
+				panic(fmt.Sprintf("yaml: more than %d nested sequence items on line %d", maxItemsPerLine, line.lineNum))
+			}
+			lines[i] = pLine{indent: contentIndent, raw: rest, lineNum: line.lineNum, nested: line.nested + 1}
+			child, np := parseSequence(lines, i, contentIndent)
+			l.seq = append(l.seq, child)
+			i = np
+			continue
+		}
 		itemPart := trimYamlSpace(line.raw[1:])
 		// A "- key: value" item drops its comment while the pair is split,
 		// where a quoted value is known; any other item drops it here.
 		if key, value, ok := tryParseKeyValue(itemPart); ok {
-			// The key starts after the dash and the spaces that follow it.
-			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
-			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
+			child, np := parseCompactMapping(lines, i, contentIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
 			continue

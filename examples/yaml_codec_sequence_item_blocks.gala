@@ -1,0 +1,37 @@
+package main
+
+// A sequence item may open a block on the dash's own line (#1320): a literal
+// block ("- |"), as GitLab CI writes a script, or a nested sequence
+// ("- - x"). A literal block on an item's first key ("- run: |") ends where
+// the item's next key starts, as GitHub Actions steps are written.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct Job(Script Array[string])
+struct Step(Run string, Name string)
+
+val jobs = yaml.Codec[Job](yaml.CamelCase())
+val steps = yaml.Codec[Step](yaml.CamelCase()).Array()
+val grid = yaml.Value[Array[Array[int]]]()
+
+func main() {
+    Println(jobs.Decode(`script:
+- |
+  echo build
+  echo test
+- make install
+`))
+    Println(steps.Decode(`- run: |
+    go build ./...
+  name: build
+- name: lint
+  run: go vet ./...
+`))
+    Println(grid.Decode(`- - 1
+  - 2
+- - 3
+`))
+}
