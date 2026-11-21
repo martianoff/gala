@@ -762,3 +762,96 @@ structure FunRel (K : Nat) (sg : Sigs) (ds : Spec.Decls) (cx : Ctx) (P : String)
     ∀ f sig, sg f = some sig → ∃ F xks ρ lb fi, ds.funcs.lookup f = some F ∧ sigOf F = some (xks, ρ) ∧
       sig = (xks.map (·.2), ρ) ∧ lowerBody K sg F = some lb ∧
       p.objs.get? f = some (.func fi [] (lowerSigOf xks ρ) (some lb))
+
+/-! ## galaspec's steps never grow -/
+
+section Mono
+open Spec (eval)
+
+/-- A step that spends steps, never adds any. -/
+def Mono (x : Spec.M α) : Prop := ∀ s, (x.run.run s).2.steps ≤ s.steps
+
+theorem mono_pure (a : α) : Mono (pure a : Spec.M α) := fun _ => Nat.le_refl _
+theorem mono_throw (e : Spec.Stop) : Mono (throw e : Spec.M α) := fun _ => Nat.le_refl _
+theorem mono_liftM (x : Spec.H α) : Mono (liftM x : Spec.M α) := fun s => by rw [Spec.run_liftM]; exact Nat.le_refl _
+theorem mono_tick : Mono Spec.tick := fun s => by
+  rcases s with ⟨c, n⟩; cases n <;> simp [tick_run]
+theorem mono_bind {x : Spec.M α} {f : α → Spec.M β} (hx : Mono x) (hf : ∀ a, Mono (f a)) :
+    Mono (x >>= f) := fun s => by
+  rw [Spec.run_bind_eq]
+  rcases h : x.run.run s with ⟨r, t⟩
+  have := hx s; rw [h] at this
+  cases r with
+  | error => exact this
+  | ok a => exact Nat.le_trans (hf a t) this
+
+/-- The shapes of step 2a's expressions. -/
+def CFShape : Spec.Expr → Prop
+  | .lit _ | .name _ => True
+  | .paren e | .unary _ e => CFShape e
+  | .binary _ l r => CFShape l ∧ CFShape r
+  | _ => False
+
+set_option hygiene false in
+macro "mono_step" : tactic => `(tactic| (first
+  | exact mono_pure _
+  | exact mono_throw _
+  | exact mono_liftM _
+  | exact mono_tick
+  | exact ihl
+  | exact ihr
+  | exact ih
+  | (apply mono_bind <;> intros)
+  | split))
+
+theorem eval_mono (ds : Spec.Decls) : ∀ (e : Spec.Expr) (d : Nat), CFShape e → Mono (eval ds d e)
+  | _, 0, _ => by rw [eval.eq_def]; exact mono_throw _
+  | .lit l, d + 1, _ => by
+    rw [eval.eq_def]
+    refine mono_bind mono_tick fun _ => ?_
+    cases l <;> first | exact mono_liftM _ | exact mono_pure _
+  | .name x, d + 1, _ => by
+    rw [eval.eq_def]
+    refine mono_bind mono_tick fun _ => ?_
+    dsimp only
+    refine mono_bind (mono_liftM _) fun _ => ?_
+    split <;> (try split) <;> first | exact mono_liftM _ | exact mono_pure _
+  | .paren x, d + 1, h => by
+    have ih := eval_mono ds x d h
+    rw [eval.eq_def]; exact mono_bind mono_tick fun _ => ih
+  | .unary op x, d + 1, h => by
+    have ih := eval_mono ds x d h
+    rw [eval.eq_def]
+    refine mono_bind mono_tick fun _ => ?_
+    dsimp only
+    split
+    all_goals first
+      | exact mono_liftM _
+      | exact mono_bind ih fun _ => mono_liftM _
+      | (exfalso; simp_all; done)
+      | (rename_i hh; obtain ⟨rfl, rfl⟩ := hh; exact mono_bind ih fun _ => mono_liftM _)
+  | .binary op l r, d + 1, h => by
+    have ihl := eval_mono ds l d h.1
+    have ihr := eval_mono ds r d h.2
+    rw [eval.eq_def]
+    refine mono_bind mono_tick fun _ => ?_
+    dsimp only
+    split
+    case h_11 =>
+      rename_i hh; simp only [Spec.Expr.binary.injEq] at hh; obtain ⟨rfl, rfl, rfl⟩ := hh
+      exact mono_bind ihl fun _ => mono_bind (mono_liftM _) fun b => by
+        split
+        · exact mono_bind ihr fun _ => mono_bind (mono_liftM _) fun _ => mono_pure _
+        · exact mono_pure _
+    case h_12 =>
+      rename_i hh; simp only [Spec.Expr.binary.injEq] at hh; obtain ⟨rfl, rfl, rfl⟩ := hh
+      exact mono_bind ihl fun _ => mono_bind (mono_liftM _) fun b => by
+        split
+        · exact mono_pure _
+        · exact mono_bind ihr fun _ => mono_bind (mono_liftM _) fun _ => mono_pure _
+    case h_13 =>
+      rename_i hh; simp only [Spec.Expr.binary.injEq] at hh; obtain ⟨rfl, rfl, rfl⟩ := hh
+      exact mono_bind ihl fun _ => mono_bind ihr fun _ => mono_liftM _
+    all_goals (exfalso; simp_all)
+
+end Mono
