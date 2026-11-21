@@ -57,7 +57,7 @@ func GoSDKRoot() string {
 		var src sdkSource
 		goSDKRoot, src = findGOROOT()
 		if v := os.Getenv("GOROOT"); src != sdkFromBazel && v != "" && v != "GOROOT" && !isGoRoot(v) {
-			fmt.Fprintf(os.Stderr, "Warning: GOROOT %s is not a Go SDK; ignoring it.\n", v)
+			fmt.Fprintf(os.Stderr, "Warning: GOROOT (or --goroot) %s is not a Go SDK; ignoring it.\n", v)
 		}
 		switch {
 		case goSDKRoot != "" && src != sdkSwitched:
@@ -521,10 +521,10 @@ func probeGoRoot(goEnv func(dir string) string) string {
 const goEnvTimeout = 2 * time.Minute
 
 // goEnvGoroot is `go env GOROOT` as goPath reports it, or "" when that fails
-// or is no Go SDK. Run in dir, its toolchain is the one dir's go.mod picks (a
-// go.work is ignored), and its stderr is the user's, so that a toolchain
-// download reports there. With dir "", it is goPath's own root: it runs in
-// the current directory with no toolchain switch.
+// or is no Go SDK. Run in dir, its toolchain is the one dir's go.mod picks
+// (or a GOWORK file, as for the build), and its stderr is the user's, so that
+// a toolchain download reports there. With dir "", it is goPath's own root:
+// it runs in the current directory with no toolchain switch.
 func goEnvGoroot(goPath, dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
 	defer cancel()
@@ -536,7 +536,6 @@ func goEnvGoroot(goPath, dir string) string {
 	cmd.Env = append(os.Environ(), "GOROOT=")
 	if dir != "" {
 		cmd.Dir = dir
-		cmd.Env = append(cmd.Env, "GOWORK=off")
 		cmd.Stderr = os.Stderr
 	} else {
 		cmd.Env = append(cmd.Env, "GOTOOLCHAIN=local")
