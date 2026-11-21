@@ -5050,9 +5050,11 @@ func (t *galaASTTransformer) goTypeKey(name string) string {
 // fun names a function type rather than a function: a GALA alias (through a
 // chain of them; a generic one instantiated as written, `Conv[int, string]`),
 // a Go type of the package's own .go files, or an imported Go one
-// (`http.HandlerFunc`). It returns nil otherwise, including for a generic
-// alias written without its type arguments, which names no type yet, and for
-// a generic Go named type, whose signature is not instantiated here.
+// (`http.HandlerFunc`), a generic Go one written with its type arguments
+// (`Pred[int]`, `iter.Seq[string]`) instantiated with them. It returns nil
+// otherwise, including for a generic alias or Go named type written without
+// its type arguments, which names no type yet, and for an indexed value
+// (`fns[0](...)`).
 func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncType {
 	name := t.extractFuncName(fun)
 	if name == "" {
@@ -5061,10 +5063,12 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 	if _, isAlias := t.typeAliases[name]; isAlias {
 		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
 	}
-	// A generic Go named function type with its type arguments
-	// (`Pred[int]`, `iter.Seq[string]`) is instantiated with them.
-	switch fun.(type) {
+	switch f := fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
+		base, _ := splitCallFunTypeArgs(f)
+		if id, ok := base.(*ast.Ident); ok && t.shadowingScope(id.Name) != nil {
+			return nil
+		}
 		return t.goNamedFuncTypeOf(t.astTypeToTranspilerType(fun))
 	}
 	return t.goNamedFuncType(name)

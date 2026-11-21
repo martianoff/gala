@@ -676,7 +676,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
-		t.unifyForInference(paramType, argType, freshParamNames, inferredMap)
+		t.unifyGoParam(paramType, argType, freshParamNames, inferredMap)
 	}
 	t.inferMethodFromConstraints(methodMeta, freshParamNames, structTypeParams, structTypeArgs, inferredMap)
 
@@ -1045,7 +1045,7 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
-		t.unifyForInference(paramType, argType, fMeta.TypeParams, inferredMap)
+		t.unifyGoParam(paramType, argType, fMeta.TypeParams, inferredMap)
 	}
 	t.inferFromConstraints(fMeta.TypeParams, fMeta.TypeParamConstraints, inferredMap)
 	return inferredMap
@@ -1616,7 +1616,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 	return inferred
 }
 
-// unifyGoParam unifies a Go callee's parameter type param with the type arg
+// unifyGoParam unifies a callee's parameter type param with the type arg
 // of the value filling it. A Go generic defined type (`iter.Seq[E]`,
 // `Pred[T]`) filled by a value of an unnamed type (a GALA function, a slice,
 // directly, through a GALA alias or behind an Immutable or Sendable marker)

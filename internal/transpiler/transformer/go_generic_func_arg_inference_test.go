@@ -56,6 +56,23 @@ func main() {
     }))
 }
 `, []string{"func(yield func(string) bool)"}},
+		{"a GALA function passed to a GALA generic taking iter.Seq[T]", `package main
+
+import "iter"
+import "slices"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func wrap[T any](s iter.Seq[T]) []T = slices.Collect(s)
+
+func main() {
+    val r = wrap(gen)
+    val h = () => r
+    Println(h())
+}
+`, []string{"func() []int"}},
 		{"a lambda converted to iter.Seq[string]", `package main
 
 import "iter"
