@@ -62,6 +62,16 @@ func TestUnreachableCase(t *testing.T) {
 		})
 	}
 
+	// A typed pattern of a Ptr is its own error, not a catch-all, so that
+	// error is the one reported.
+	t.Run("a typed pattern of a Ptr reports the Ptr error", func(t *testing.T) {
+		src := "func f(p Ptr[int]) int = p match {\n    case q: Ptr[int] => 1\n    case _ => 0\n}\n"
+		_, err := newForbiddenBuiltinTranspiler().Transpile(header+src+footer, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(galaerr.CodePtrNullability))
+		require.NotContains(t, err.Error(), string(galaerr.CodeUnreachableCase))
+	})
+
 	// A later case that matches every value too is only to be deleted:
 	// moving it above the first would make the first unreachable.
 	hints := []struct{ name, src, hint string }{
@@ -99,6 +109,8 @@ func TestUnreachableCase(t *testing.T) {
 			"func f(x int) int = x match {\n    case y: int => y + 1\n}\n"},
 		{"a tuple pattern of the subject's arity closes the match",
 			"func f(t Tuple[int, string]) string = t match {\n    case (n, s) => s\"$n $s\"\n}\n"},
+		{"a default binding named like the match subject",
+			"func f(x int) int = x match {\n    case 0 => 0\n    case _subj => _subj + 1\n}\n"},
 		{"partial-function cases after a guarded binding",
 			"func f() Array[string] = ArrayOf(1, 2, 3).Collect({ case n if n > 2 => \"big\" case 1 => \"one\" case _ => \"other\" })\n"},
 	}

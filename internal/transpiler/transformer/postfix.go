@@ -557,7 +557,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// and valid Go code generation when inside a generic function where type parameters are in scope.
 
 	// A user name may still spell the subject's name: then it takes a number.
-	paramName = freshName(paramName, t.visibleName)
+	// So may a case that binds the whole subject (`case _subj =>`), whose
+	// default arm declares its name beside the subject's.
+	bindsWhole := func(name string) bool {
+		return slices.ContainsFunc(caseClauses, func(cc caseSrc) bool { return cc.pattern().text() == name })
+	}
+	paramName = freshName(paramName, func(name string) bool { return t.visibleName(name) || bindsWhole(name) })
 	t.pushScope()
 	defer t.popScope()
 	t.currentScope.matchSubject = paramName
@@ -711,7 +716,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			// more about (a subject type guessed from the cases): a case after
 			// this arm can never run either.
 			if i+1 < len(caseClauses) {
-				return nil, unreachableCaseError(caseClauses[i+1], cc, isDefault[i+1])
+				next := caseClauses[i+1]
+				nextCatchesAll := isDefault[i+1] ||
+					(!next.hasGuard() && t.matchesEveryValue(patterns[i+1], subjectType, matchedType, true))
+				return nil, unreachableCaseError(next, cc, nextCatchesAll)
 			}
 		}
 		if arm.clause != nil {
