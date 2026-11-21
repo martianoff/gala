@@ -1,0 +1,48 @@
+package main
+
+// A lambda passed by name, or to a `Sendable[func(A) B]` parameter, to a
+// generic function whose type parameters only the lambda binds is typed by the
+// lambda, as one passed by position to a plain `func(A) B` parameter is.
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func label[A any, B any](tag string, f func(A) B) func(A) string = (a) => s"$tag: ${f(a)}"
+
+func boundary[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func thunk[T any](f func() T) T = f()
+
+func later[T any](f Sendable[func() T]) T = f()
+
+func main() {
+    val more = run(f = (k int) => k > 2)
+    Println(more(3))
+
+    val square = run(f = (k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(square(3))
+
+    val shout = label("loud", f = (s string) => {
+        val up = s + "!"
+        up + up
+    })
+    Println(shout("hi"))
+
+    val cube = boundary((k int) => {
+        val q = k * k
+        q * k
+    })
+    Println(cube(3))
+
+    val twice = boundary(f = (s string) => s + s)
+    Println(twice("ab"))
+
+    // A parameter whose result alone names a type parameter.
+    Println(thunk(f = () => 5))
+    Println(later(f = () => {
+        val n = 2
+        n * 3
+    }))
+}
