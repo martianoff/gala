@@ -1398,6 +1398,18 @@ gala_exec_test(
     ],
 )
 
+# A literal block keeps its final line breaks as its chomping indicator
+# ("|", "|-", "|+") says (#1349).
+gala_exec_test(
+    name = "yaml_codec_literal_chomping",
+    src = "yaml_codec_literal_chomping.gala",
+    expected = "yaml_codec_literal_chomping.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "yaml_codec_collections",
     src = "yaml_codec_collections.gala",

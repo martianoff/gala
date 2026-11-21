@@ -810,7 +810,9 @@ func parseYAML(input string) *yNode {
 }
 
 func splitSignificantLines(input string) []pLine {
-	rawLines := strings.Split(input, "\n")
+	// A final line break ends the last line; it does not start another one,
+	// which a literal block kept with "|+" would count as a blank line.
+	rawLines := strings.Split(strings.TrimSuffix(input, "\n"), "\n")
 	var out []pLine
 	for i := 0; i < len(rawLines); i++ {
 		raw := strings.TrimRight(rawLines[i], " \t\r")
@@ -819,8 +821,8 @@ func splitSignificantLines(input string) []pLine {
 		}
 		indent := countLeadingSpaces(raw)
 		content := raw[indent:]
-		if before, parent, ok := literalBlockHeader(content, indent); ok {
-			joined, consumed := takeLiteralBlock(rawLines, i+1, parent)
+		if before, parent, indicator, ok := literalBlockHeader(content, indent); ok {
+			joined, consumed := takeLiteralBlock(rawLines, i+1, parent, indicator)
 			out = append(out, pLine{indent: indent, raw: before + doubleQuoted(joined), lineNum: i + 1})
 			i += consumed
 			continue
@@ -854,38 +856,39 @@ func countLeadingSpaces(s string) int {
 // literalBlockHeader reports whether content, a line without its
 // indentation, opens a literal block scalar: a bare "|", a sequence item
 // "- |" (or "- - |"), or a pair "key: |" (also as an item, "- key: |"),
-// each optionally "|-" and followed by a comment. It returns the text that
-// stands before the block's body once the body is collapsed into a
-// double-quoted scalar, and the column the body must be indented past.
+// each optionally "|-" or "|+" and followed by a comment. It returns the
+// text that stands before the block's body once the body is collapsed into
+// a double-quoted scalar, the column the body must be indented past, and
+// the indicator, which says how the body's final line breaks are chomped.
 //
 // The pair is split by tryParseKeyValue, so a "#" or ": |" inside a quoted
 // or flow value, or inside a quoted key, is never taken for a comment or a
 // block indicator. Only a line holding a '|' can open a block, so only such
 // a line pays for the split.
-func literalBlockHeader(content string, indent int) (string, int, bool) {
+func literalBlockHeader(content string, indent int) (string, int, string, bool) {
 	if strings.IndexByte(content, '|') < 0 {
-		return "", 0, false
+		return "", 0, "", false
 	}
 	n, lastDash := itemPrefix(content)
 	rest := content[n:]
-	if isBlockIndicator(withoutComment(rest)) {
+	if indicator := withoutComment(rest); isBlockIndicator(indicator) {
 		// A bare "|" leaves no text before the body, so the collapsed line
 		// starts with the quote and reads as a quoted scalar, never a key.
 		if n == 0 {
-			return "", indent, true
+			return "", indent, indicator, true
 		}
-		return content[:n], indent + lastDash, true
+		return content[:n], indent + lastDash, indicator, true
 	}
 	key, value, isPair := tryParseKeyValue(rest)
 	if !isPair || !isBlockIndicator(value) || !spaceAfterQuotedKey(rest) {
-		return "", 0, false
+		return "", 0, "", false
 	}
 	// The key is written back double-quoted, which reads back as the same
 	// key whatever it holds.
-	return content[:n] + doubleQuoted(key) + ": ", indent + n, true
+	return content[:n] + doubleQuoted(key) + ": ", indent + n, value, true
 }
 
-func isBlockIndicator(s string) bool { return s == "|" || s == "|-" }
+func isBlockIndicator(s string) bool { return s == "|" || s == "|-" || s == "|+" }
 
 // spaceAfterQuotedKey reports whether, in a pair whose key is quoted, white
 // space separates the colon from the value, as a block indicator needs: in
@@ -916,16 +919,22 @@ func itemPrefix(s string) (n, lastDash int) {
 	return n, lastDash
 }
 
-func takeLiteralBlock(raw []string, start, parentIndent int) (string, int) {
+// takeLiteralBlock reads the body of a literal block scalar from raw[start:]
+// and returns its text with the chomping that indicator ("|", "|-" or "|+")
+// asks for, and the number of lines it consumed. The body is the lines
+// indented past parentIndent, at the indentation of its first line, with
+// blank lines among them. YAML 1.2 (section 8.1.1.2) chomps the line breaks
+// at the end: "|" (clip) keeps one, "|-" (strip) keeps none and "|+" (keep)
+// keeps them all. Blank lines before the first text line are kept.
+func takeLiteralBlock(raw []string, start, parentIndent int, indicator string) (string, int) {
 	var body []string
 	consumed := 0
 	bodyIndent := -1
+	blanks := 0 // blank lines since the last text line
 	for i := start; i < len(raw); i++ {
 		line := strings.TrimRight(raw[i], "\r")
 		if line == "" {
-			if bodyIndent >= 0 {
-				body = append(body, "")
-			}
+			blanks++
 			consumed++
 			continue
 		}
@@ -939,10 +948,27 @@ func takeLiteralBlock(raw []string, start, parentIndent int) (string, int) {
 		if indent < bodyIndent {
 			break
 		}
+		for ; blanks > 0; blanks-- {
+			body = append(body, "")
+		}
 		body = append(body, line[bodyIndent:])
 		consumed++
 	}
-	return strings.Join(body, "\n"), consumed
+	text := strings.Join(body, "\n")
+	switch {
+	case indicator == "|-":
+		return text, consumed
+	case indicator == "|+":
+		// The last text line's break, then one per trailing blank line.
+		if len(body) == 0 {
+			return strings.Repeat("\n", blanks), consumed
+		}
+		return text + "\n" + strings.Repeat("\n", blanks), consumed
+	case len(body) == 0:
+		return "", consumed
+	default:
+		return text + "\n", consumed
+	}
 }
 
 func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
