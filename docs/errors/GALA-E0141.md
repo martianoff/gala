@@ -12,8 +12,7 @@ match every value:
   type that is not an interface (a typed pattern over `any`, an interface or a
   type parameter does not match `nil`);
 - a tuple pattern of the subject's arity whose elements are each `_`, a
-  binding or such a tuple, `case (a, _)` over a `Tuple[int, string]`;
-- any of these in parentheses, `case (x)`.
+  binding or such a tuple, `case (a, _)` over a `Tuple[int, string]`.
 
 Other patterns are not counted, even one that happens to match every value,
 such as an extractor whose fields are all bindings.

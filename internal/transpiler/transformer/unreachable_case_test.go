@@ -43,9 +43,6 @@ func TestUnreachableCase(t *testing.T) {
 		{"a tuple after a tuple of wildcards",
 			"func f(t Tuple[int, Tuple[int, int]]) string = t match {\n    case (_, (a, _)) => s\"$a\"\n    case (1, _) => \"one\"\n    case _ => \"other\"\n}\n",
 			"line 7:4 ", "`case (_, (a, _))` on line 6"},
-		{"a literal after a parenthesized binding",
-			"func f(n int) int = n match {\n    case (x) => x\n    case 2 => 0\n}\n",
-			"line 7:4 ", "`case (x)` on line 6"},
 		{"a case after `case _` in statement position",
 			"func f(n int) {\n    n match {\n        case _ => Println(\"any\")\n        case 1 => Println(\"one\")\n    }\n}\n",
 			"line 8:8 ", "`case _` on line 7"},
@@ -62,6 +59,24 @@ func TestUnreachableCase(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), string(galaerr.CodeUnreachableCase))
 			require.Contains(t, err.Error(), tc.at+"unreachable case: "+tc.catchAll+" matches every value")
+		})
+	}
+
+	// A later case that matches every value too is only to be deleted:
+	// moving it above the first would make the first unreachable.
+	hints := []struct{ name, src, hint string }{
+		{"a literal is to be moved or deleted",
+			"func f(n int) string = n match {\n    case _ => \"any\"\n    case 1 => \"one\"\n}\n",
+			"(hint: move this case above `case _`, or delete it)"},
+		{"a second catch-all is to be deleted",
+			"func f(x int) int = x match {\n    case y => y + 1\n    case _ => 0\n}\n",
+			"(hint: delete this case: `case y` already matches every value)"},
+	}
+	for _, tc := range hints {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.src+footer, "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.hint)
 		})
 	}
 

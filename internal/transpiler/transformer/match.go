@@ -247,26 +247,33 @@ type catchAllScan struct {
 // matches every value. catchesAll, asked only when cc has no guard, reports
 // whether cc's pattern matches every value.
 func (c *catchAllScan) next(cc caseSrc, catchesAll func() bool) error {
+	isCatchAll := !cc.hasGuard() && catchesAll()
 	if c.matched {
-		return unreachableCaseError(cc, c.first)
+		return unreachableCaseError(cc, c.first, isCatchAll)
 	}
-	if !cc.hasGuard() && catchesAll() {
+	if isCatchAll {
 		c.first, c.matched = cc, true
 	}
 	return nil
 }
 
 // unreachableCaseError reports cc, written after first, an unguarded case that
-// matches every value, as GALA-E0141.
-func unreachableCaseError(cc, first caseSrc) error {
+// matches every value, as GALA-E0141. A cc that matches every value too
+// would make first unreachable if moved above it, so it is only to be
+// deleted.
+func unreachableCaseError(cc, first caseSrc, ccCatchesAll bool) error {
 	line, col := cc.at().start()
 	firstLine, _ := first.at().start()
 	// The pattern as written, on one line.
 	firstText := strings.Join(strings.Fields(first.pattern().at().sourceText()), " ")
+	hint := fmt.Sprintf("move this case above `case %s`, or delete it", firstText)
+	if ccCatchesAll {
+		hint = fmt.Sprintf("delete this case: `case %s` already matches every value", firstText)
+	}
 	return galaerr.NewCodedSemanticError(galaerr.CodeUnreachableCase, line, col,
 		fmt.Sprintf("unreachable case: `case %s` on line %d matches every value, so no case after it can run",
 			firstText, firstLine),
-		fmt.Sprintf("move this case above `case %s`, or delete it", firstText))
+		hint)
 }
 
 // matchesEveryValue reports whether a case pattern, without its guard,
@@ -311,13 +318,11 @@ func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType
 	if !typeKnown {
 		return false
 	}
+	// `(x)` is not counted: a parenthesized name is lowered as a value to
+	// compare with, not as a binding.
 	elems, single, ok := e.parenthesized()
-	switch {
-	case !ok:
+	if !ok || single {
 		return false
-	case single:
-		// `(p)` is p.
-		return t.exprMatchesEveryValueBinding(elems[0], matchedType, typeKnown, bound)
 	}
 	tuple, ok := t.followAliasChain(matchedType).(transpiler.GenericType)
 	if !ok || tuple.Base == nil || !isTupleTypeName(stripStdPrefix(tuple.Base.BaseName())) || len(elems) != len(tuple.Params) {
