@@ -2319,8 +2319,10 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	// has no expected type (see resolveExpectedFuncArgType), but it still
 	// takes a function with one result.
 	if transpiler.IsUnusable(expected) && paramIdx >= 0 {
-		ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx])
-		s.returnsValue = ft != nil && len(ft.Results) == 1 && funcTypeParamsMentionTypeParams(ft.Params, callCtx.funcMeta.TypeParams)
+		typeParams := callCtx.funcMeta.TypeParams
+		if ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx]); ft != nil && len(ft.Results) == 1 && funcTypeParamsMentionTypeParams(ft.Params, typeParams) {
+			s.funcResult = maskTypeParamResults(ft.Results, typeParams)[0]
+		}
 	}
 	return t.lowerArg(v, s, strict)
 }
@@ -5008,9 +5010,13 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		defer func() { t.tryThunkLambda = prev }()
 	}
 	expectedRetType, expectedParamTypes, isFunc := t.lambdaExpectation(s.typ)
-	if !isFunc && s.returnsValue {
-		// A result is expected, its type is the body's.
-		expectedRetType = ast.NewIdent("any")
+	declaredResult := t.declaresAnyResult(s)
+	if !isFunc && s.funcResult != nil {
+		// A result is expected: the parameter's own type, which may spell
+		// `any`, or the body's type where it names a type parameter (NilType,
+		// spelled `any`).
+		expectedRetType = t.typeToExpr(s.funcResult)
+		declaredResult = !s.funcResult.IsNil()
 	}
 	if !isFunc && s.typ != nil && (s.typ.IsAny() || s.typ.String() == "interface{}") {
 		// A slot typed `any` (a Go `func Register(h any)`) takes the lambda as
@@ -5018,7 +5024,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
 	b := t.goResultsBodyFor(s.typ, "this lambda").withBody(l.expression())
-	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s), b)
+	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, declaredResult, b)
 	if err != nil {
 		return nil, err
 	}

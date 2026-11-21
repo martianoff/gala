@@ -15,6 +15,8 @@ func applyTo[A any, B any](f func(A) B) B {
 
 func twice[A any, B any](f func(A) B) func(A) Array[B] = (a) => ArrayOf(f(a), f(a))
 
+func widen[A any](f func(A) int64) func(A) int64 = f
+
 struct Pipe(Label string)
 
 func (p Pipe) Wrap[A any, B any](f func(A) B) func(A) B = f
@@ -58,4 +60,11 @@ func main() {
         q * 3
     })
     Println(wrapped(5))
+
+    // A result type the parameter spells is the lambda's.
+    val wide = widen((k int) => {
+        Println(s"widen $k")
+        1 << 40
+    })
+    Println(wide(1))
 }

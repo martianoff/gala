@@ -1003,6 +1003,28 @@ func main() {
     })
     Println(b(3))
 }`, []string{"func(k int) bool {", "return q > 2"}},
+		{"declared result type", `package main
+
+func run[A any](f func(A) int64) func(A) int64 = f
+
+func main() {
+    val b = run((k int) => {
+        Println(k)
+        5
+    })
+    Println(b(3))
+}`, []string{"func(k int) int64 {", "return 5"}},
+		{"declared any result", `package main
+
+func run[A any](f func(A) any) func(A) any = f
+
+func main() {
+    val b = run((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, []string{"func(k int) any {", "return q * q"}},
 		{"generic method", `package main
 
 struct Pipe(Label string)
