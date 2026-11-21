@@ -2,8 +2,9 @@ package main
 
 // A double-quoted YAML scalar may only use the escapes YAML defines (#1316).
 // An undefined escape, a code-point escape with too few or invalid hex
-// digits, or one that names a surrogate or a code point above U+10FFFF is a
-// decode Failure instead of text that keeps the backslash.
+// digits, or one that names an unpaired surrogate or a code point above U+10FFFF is a
+// decode Failure instead of text that keeps the backslash. A high and a low
+// surrogate written as two escapes, as JSON writes them, name one character.
 
 import (
     "martianoff/gala/yaml"
