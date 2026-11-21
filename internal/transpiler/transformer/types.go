@@ -805,7 +805,7 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 //   - a string: an int key and a rune
 //   - a channel: the element (one variable)
 //   - an integer type, predeclared or defined in Go (time.Duration) or GALA
-//     (`type Millis int64`): that type (one variable)
+//     (`opaque type Millis int64`): that type (one variable)
 //   - a `func(yield func(K, V) bool)`, such as iter.Seq[V] or
 //     iter.Seq2[K, V]: the yield function's parameters
 //
@@ -847,7 +847,7 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 			return key, value
 		}
 	}
-	// A GALA type over an integer type (`type Millis int64`, lowered to a Go
+	// An opaque type over an integer type (`opaque type Millis int64`, a Go
 	// defined type) binds i to itself too; one over string ranges as a string.
 	if _, _, via := t.resolveScalar(exprType); via != nil {
 		switch _, kind, _ := t.resolveScalar(t.underlyingType(via)); kind {
