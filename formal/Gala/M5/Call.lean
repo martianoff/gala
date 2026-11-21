@@ -1188,3 +1188,135 @@ theorem unary_sim3 (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (κ : 
       by unfold Spent at *; simp at hsp ⊢; omega⟩
 
 end Sim
+
+section Sim2
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem eval_binary_run (d k : Nat) (op : String) (l r : Spec.Expr) (s : Spec.St) (hs : s.steps = k + 1)
+    (h1 : op ≠ "&&") (h2 : op ≠ "||") :
+    (Spec.eval ds (d + 1) (.binary op l r)).run.run s =
+      (do let a ← Spec.eval ds d l; let b ← Spec.eval ds d r; Spec.binop op a b).run.run { s with steps := k } := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_succ s k hs]
+
+theorem eval_and_run (d k : Nat) (l r : Spec.Expr) (s : Spec.St) (hs : s.steps = k + 1) :
+    (Spec.eval ds (d + 1) (.binary "&&" l r)).run.run s =
+      (do if ← Spec.asBool (← Spec.eval ds d l) then pure (.bool (← Spec.asBool (← Spec.eval ds d r)))
+          else pure (.bool false) : Spec.M Spec.Val).run.run { s with steps := k } := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_succ s k hs]
+
+theorem eval_or_run (d k : Nat) (l r : Spec.Expr) (s : Spec.St) (hs : s.steps = k + 1) :
+    (Spec.eval ds (d + 1) (.binary "||" l r)).run.run s =
+      (do if ← Spec.asBool (← Spec.eval ds d l) then pure (.bool true)
+          else pure (.bool (← Spec.asBool (← Spec.eval ds d r))) : Spec.M Spec.Val).run.run { s with steps := k } := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_succ s k hs]
+
+end Sim2
+
+section Sim3
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem lowerC_binary {κ : String → Option Kind} {op : String} {l r : Spec.Expr} {k : Kind} {le : Expr}
+    (h : lowerC K sg κ (.binary op l r) = some (k, le)) (hc : (hasCall l || hasCall r) = true) :
+    ∃ kl ll kr lr, lowerC K sg κ l = some (kl, ll) ∧ lowerC K sg κ r = some (kr, lr) ∧
+      binaryKind op kl kr = some k ∧ (isShift op = true → isLitE l = false) ∧ le = .binary op ll lr := by
+  simp only [lowerC, hc, ite_true, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+  obtain ⟨⟨kl, ll⟩, hl, ⟨kr, lr⟩, hr, k', hk', h⟩ := h
+  split at h
+  · cases h
+  · rename_i hs
+    simp only [Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    refine ⟨kl, ll, kr, lr, hl, hr, hk', fun hsh => ?_, rfl⟩
+    simp only [hsh, Bool.true_and, Bool.or_eq_true, not_or] at hs
+    simpa using hs.1
+
+/-- An operand with a call gives a value that is no untyped constant. -/
+theorem nu_of_call {e : Spec.Expr} {u : Bool} (hu : u = isLitE e) {w : Val} (h : u = false → ¬ UInt w)
+    (hc : hasCall e = true) : ¬ UInt w := h (hu ▸ isLitE_of_hasCall _ hc)
+
+/-- **Binary operators over a call**, other than `&&` and `||`. -/
+theorem binary_sim3 (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 4 ≤ K) (κ : String → Option Kind)
+    (op : String) (l r : Spec.Expr) (k : Kind) (le : Expr) (hl : lowerC K sg κ (.binary op l r) = some (k, le))
+    (hc : (hasCall l || hasCall r) = true) (hand : op ≠ "&&") (hor : op ≠ "||") (s : Spec.St) (g : St) (env : Env)
+    (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ERes3 k (isLitE (.binary op l r)) s g ((Spec.eval ds (d + 1) (.binary op l r)).run.run s)
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨kl, ll, kr, lr, hll, hlr, hb, hsh, rfl⟩ := lowerC_binary K sg hl hc
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k' =>
+  have ht := ticked_of s k' hs
+  rw [eval_binary_run ds d k' op l r s hs hand hor, evalExpr_binary _ _ _ _ _ _ hand hor hi.inv.pre.1]
+  have hL := ih κ l kl ll hll { s with steps := k' } g env hi (by show k' ≤ g.steps; omega) (n + 3)
+    (by rw [Nat.mul_succ] at hN; omega)
+  rw [Spec.run_bind_eq, grun_bind]
+  rcases hrl : (Spec.eval ds d l).run.run { s with steps := k' } with ⟨rl, sl⟩
+  rw [hrl] at hL
+  cases rl with
+  | error e =>
+    cases e with
+    | panic pc m => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hL; rw [hg]; exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+    | ret => exact hL.elim
+    | _ => trivial
+  | ok vl =>
+  obtain ⟨wl, gl, hg, hvl, hkl, hul, hsfl, hgfl, hspl⟩ := hL
+  rw [hg]
+  simp only
+  have hR := ih κ r kr lr hlr sl gl env (inv3_frame hi hsfl hgfl)
+    (spent_le hspl (by show k' ≤ g.steps; omega)) (n + 3) (by rw [Nat.mul_succ] at hN; omega)
+  rw [Spec.run_bind_eq, grun_bind]
+  rcases hrr : (Spec.eval ds d r).run.run sl with ⟨rr, sr⟩
+  rw [hrr] at hR
+  cases rr with
+  | error e =>
+    cases e with
+    | panic pc m =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hR; rw [hg]
+      refine panOK_tick ht ⟨pv, g', rfl, hp, ?_, gframe_trans hgfl hgf⟩
+      rw [ho, (sframe_parts hsfl).2.2]
+    | ret => exact hR.elim
+    | _ => trivial
+  | ok vr =>
+  obtain ⟨wr, gr, hg, hvr, hkr, hur, hsfr, hgfr, hspr⟩ := hR
+  rw [hg]
+  simp only
+  have hnu : ¬ (UInt wl ∧ UInt wr) := by
+    rintro ⟨h1, h2⟩
+    simp only [Bool.or_eq_true] at hc
+    rcases hc with hc | hc
+    · exact nu_of_call rfl hul hc h1
+    · exact nu_of_call rfl hur hc h2
+  have hbs := binary_sim cx n op vl vr wl wr kl kr k gr sr.toCore hvl hvr hkl hkr hb hand hor hnu
+    (fun hsh' => hul (hsh hsh'))
+  rw [Spec.run_liftM]
+  have hro := readOnly_binop op vl vr sr.toCore
+  rcases hbr : (Spec.binop op vl vr).run.run sr.toCore with ⟨rb, cb⟩
+  rw [hbr] at hbs hro
+  simp only at hro
+  subst hro
+  cases rb with
+  | error e =>
+    cases e with
+    | panic pc m =>
+      obtain ⟨pv, hg, hp⟩ := hbs
+      rw [hg]
+      refine panOK_tick ht ⟨pv, gr, rfl, hp, ?_, gframe_trans hgfl hgfr⟩
+      show sr.out = _
+      rw [(sframe_parts hsfr).2.2, (sframe_parts hsfl).2.2]
+    | ret v => exact (noRet_binop op vl vr sr.toCore v (by rw [hbr])).elim
+    | _ => trivial
+  | ok v =>
+    obtain ⟨w, hg, hvw, hk, hnuw⟩ := hbs
+    rw [hg]
+    exact eRes3_tick ht ⟨w, gr, rfl, hvw, hk, fun _ => hnuw, sframe_trans hsfl hsfr,
+      gframe_trans hgfl hgfr, spent_trans hspl hspr⟩
+
+end Sim3
