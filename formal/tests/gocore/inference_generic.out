@@ -1,4 +1,5 @@
 N1 int 7 N2 int32 120 N3 float64 1.5 N4 string s
+float64 1 2.5 int32 97 1 int 1 2
 int 4
 []int true
 []int [1 2] [][2]string [[a a] [b b]]

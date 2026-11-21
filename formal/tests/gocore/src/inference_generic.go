@@ -32,8 +32,13 @@ func mapAll[T, U any](xs []T, f func(T) U) []U {
 
 func both[T, U, V any](x T, f func(T) U, g func(U) V) V { return g(f(x)) }
 
+func two[T any](a, b T) string { return fmt.Sprintf("%T %v %v", a, a, b) }
+
 func main() {
 	fmt.Println(tag(N(1), 7), tag(N(2), 'x'), tag(N(3), 1.5), tag(N(4), "s"))
+	// Several untyped constants for one parameter: the default of the kind latest in
+	// integer, rune, floating-point.
+	fmt.Println(two(1, 2.5), two('a', 1), two(1, 2))
 	r := apply("gala", func(s string) int { return len(s) })
 	fmt.Printf("%T %v\n", r, r)
 	fmt.Printf("%T %v\n", apply(3, func(n int) []int { return []int{n, n} }), apply(2, func(n int) bool { return n > 1 }))

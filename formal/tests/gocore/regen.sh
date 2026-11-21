@@ -12,7 +12,8 @@
 # (unsupported_map_range_*), at a map of a key type it does not run (unsupported_map_key),
 # at a capacity that depends on gc's escape analysis
 # (unsupported_escape), at constraint type inference (unsupported_inference) or a generic
-# function argument fixed only by an untyped constant (unsupported_inference_generic_ref),
+# function argument fixed only by an untyped constant (unsupported_inference_generic_ref)
+# or through a constraint's methods (unsupported_inference_method),
 # at panic(nil) (unsupported_panic_nil), at a generic type declared in a function body
 # (unsupported_local_generic_type), at a struct that embeds an interface
 # (unsupported_embedded) or a type with methods, directly, through another

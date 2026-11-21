@@ -449,6 +449,11 @@ column lists what each milestone's claim rests on beyond them.
       instantiation. A local type's name is in scope from its spec on and shadows outer
       names. GoCore prints it as Go does, without its site. A generic local type, which
       gc 1.25.5 accepts, is not modelled: the run stops `unsupported` at its declaration.
+    - Type inference is a subset of Go's: every equation GoCore uses is one Go has, so
+      when it binds every type parameter it reaches the type arguments Go does; where it
+      cannot, the run stops `unsupported` (Go's joint step over a generic function
+      argument and an untyped constant, constraint type inference through a core type
+      or through methods). Tested, not proved.
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
     every compiled program's Go runs through GoCore and is compared with `go run`. In the
     CI run that set the baselines, GoCore agrees with `go run` on 383 programs that

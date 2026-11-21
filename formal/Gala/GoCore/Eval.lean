@@ -318,6 +318,19 @@ def genericRef? (c : Ctx) (env : Env) : Expr → Option (String × String)
       | _ => none
   | _ => none
 
+/-- Whether a call of `fv` with `args` takes `genericArgs`: `fv` is a declared generic
+    function some of whose type arguments are not given, the call does not spread a
+    slice, and an argument names a generic function without its type arguments. A
+    call of a non-generic function never does. -/
+def genericArgsNeeded (c : Ctx) (env : Env) (fv : Val) (args : List Expr) (spread : Bool) : Bool :=
+  match fv with
+  | .func_ _ (some (.decl path f targs)) =>
+    match (c.pkgs.get? path).bind (·.objs.get? f) with
+    | some (.func _ tps _ _) =>
+      !spread && targs.length < (fieldListNames tps).length && args.any fun a => (genericRef? c env a).isSome
+    | _ => false
+  | _ => false
+
 /-- `unify`'s generic defined types where `env` is (`TypeDefs`). -/
 def typeDefs (c : Ctx) (env : Env) : TypeDefs := fun hd =>
   match typeDeclOf c env hd with
@@ -1801,7 +1814,10 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
     -- A declared function called by name: a generic one gets its type arguments by
     -- inference from the arguments (Go spec, "Type inference").
     if let some fv ← declaredFunc? c n env fn then
-      return ← callValue c n fv (← genericArgs c n env fv args spread) spread
+      -- A generic function passed by name to it (`genericArgs`); every other call as before.
+      if genericArgsNeeded c env fv args spread then
+        return ← callValue c n fv (← genericArgs c n env fv args spread) spread
+      return ← callValue c n fv (← evalArgs c n env args) spread
     let fv ← evalExpr c n env fn
     let vs ← evalArgs c n env args
     callValue c n fv vs spread
@@ -2225,10 +2241,13 @@ def inferTArgs (defs : TypeDefs) (coreFree : Expr → Bool) (tps : List Field) (
   let eqs := typed.flatMap fun (t, v) => unify names defs maxUnifyDepth t v.ty
   -- An untyped constant then binds a type parameter to its default type, an untyped
   -- rune's if one of them is a rune; untyped `nil` binds nothing. GoCore does so only
-  -- where Go would too: the parameter is in no typed argument's parameter type (which
-  -- unification above may have failed to read) and no constraint has a core type that
-  -- could fix it (`noCoreType`: `any`, `comparable`, or an interface of methods only).
-  let trivial := tps.all fun | .mk _ te => coreFree te
+  -- where Go would too, which applies defaults last, after constraint type inference
+  -- (through core types and, since Go 1.21, through methods): the parameter is in no
+  -- typed argument's parameter type (which unification above may have failed to
+  -- read), its own constraint has no core type (`noCoreType`), and no constraint of the
+  -- list mentions it, so neither a core type nor a method could fix it.
+  let constraints := tps.map fun | .mk _ te => te
+  let ownCoreFree := fun (x : String) => tps.any fun | .mk ns te => ns.contains x && coreFree te
   let untypedKinds := fun (x : String) => pairs.filterMap fun (t, v) => match t, v.ty with
     | .ident y, .untyped k => if y == x && k != .nil then some k else none
     | _, _ => none
@@ -2239,7 +2258,8 @@ def inferTArgs (defs : TypeDefs) (coreFree : Expr → Bool) (tps : List Field) (
     match (eqs.filter (·.1 == x)).map (·.2) with
     | t :: ts => if ts.all (· == t) then pure t else unsupported "type-inference"
     | [] =>
-      if !trivial || typed.any (mayMention x maxUnifyDepth ·.1) then unsupported "type-inference"
+      if !ownCoreFree x || constraints.any (mayMention x maxUnifyDepth ·) ||
+          typed.any (mayMention x maxUnifyDepth ·.1) then unsupported "type-inference"
       let ks := untypedKinds x
       -- The kind later in integer, rune, floating-point.
       let k := if ks.contains .float then some UKind.float else if ks.contains .rune then some UKind.rune else ks.head?
