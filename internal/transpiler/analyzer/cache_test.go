@@ -234,6 +234,46 @@ func TestPruneStaleCaches_SkippedByEnv(t *testing.T) {
 	}
 }
 
+// Storing a package evicts its own entries for earlier contents, and only
+// those. The eviction matched entry names by the package's path made a file
+// name, so storing example.com/ev/lib evicted example.com/ev/lib/util's
+// entry, and a/b_c and a_b/c, both a_b_c, evicted each other's (#1354).
+func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
+	c := &analysisCache{dir: t.TempDir(), enabled: true}
+	put := func(pkg, contentHash string) {
+		t.Helper()
+		c.Put(pkg, contentHash, "deps", &transpiler.RichAST{PackageName: pkg}, nil)
+	}
+	// cached says whether pkg's own entry for contentHash is there, not
+	// another package's under the same name.
+	cached := func(pkg, contentHash string) bool {
+		t.Helper()
+		got, _ := c.Get(pkg, contentHash, "deps")
+		return got != nil && got.PackageName == pkg
+	}
+	const oldHash, newHash = "111111111111aaaa", "222222222222bbbb"
+	pkgs := []string{"example.com/ev/lib/util", "example.com/ev/lib", "example.com/a/b_c", "example.com/a_b/c"}
+	for _, pkg := range pkgs {
+		put(pkg, oldHash)
+	}
+	for _, pkg := range pkgs {
+		if !cached(pkg, oldHash) {
+			t.Errorf("%s: its entry was evicted by another package's", pkg)
+		}
+	}
+
+	put("example.com/ev/lib", newHash)
+	if cached("example.com/ev/lib", oldHash) {
+		t.Errorf("example.com/ev/lib: its entry for earlier contents was kept")
+	}
+	if !cached("example.com/ev/lib", newHash) {
+		t.Errorf("example.com/ev/lib: its new entry is missing")
+	}
+	if !cached("example.com/ev/lib/util", oldHash) {
+		t.Errorf("example.com/ev/lib/util: storing example.com/ev/lib evicted its entry")
+	}
+}
+
 // itoa avoids importing strconv in the test file's narrow surface.
 func itoa(i int) string {
 	if i == 0 {

@@ -242,7 +242,13 @@ import (
 // v51: an instance of a generic Go function, slice, map or channel type keeps
 // its type arguments wherever they spell exactly (iter.Seq2[string, int]),
 // and a GoFuncSignature records its type parameters' core types (CoreTypes).
-const CacheVersion = "v51"
+//
+// v52: an entry's name holds a hash of its package's path (see
+// cachePrefix), so storing a package no longer evicts its subpackages'
+// entries, and two packages no longer share a name (#1354). A v51
+// directory's entries would never be evicted under the new names; the bump
+// leaves the directory to the stale-cache GC.
+const CacheVersion = "v52"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -871,10 +877,16 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 	}
 }
 
+// cachePrefix is the start of the name of every entry of the package at
+// pkgPath, which evictStale matches on: its path made a file name, for
+// reading, then a hash of the path. The hash keeps the prefix of each
+// package to its own entries: without it a package's prefix began the names
+// of its subpackages' entries (lib_ those of lib/util), and the path made a
+// file name is not unique (a/b_c and a_b/c are both a_b_c).
 func (c *analysisCache) cachePrefix(pkgPath string) string {
-	safe := strings.ReplaceAll(pkgPath, "/", "_")
-	safe = strings.ReplaceAll(safe, "\\", "_")
-	return safe + "_"
+	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
+	sum := sha256.Sum256([]byte(slashed))
+	return strings.ReplaceAll(slashed, "/", "_") + "_" + hex.EncodeToString(sum[:6]) + "_"
 }
 
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
