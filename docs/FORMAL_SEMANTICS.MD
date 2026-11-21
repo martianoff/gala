@@ -398,7 +398,10 @@ column lists what each milestone's claim rests on beyond them.
   - An exporter from the generated Go's `go/ast` to GoCore JSON. Nothing is dropped; a
     construct outside GoCore is reported by GoCore when a run reaches it.
 - **What it changes:** the link to the real transformer exists; until M6 it is tested.
-- **Status: in progress.**
+- **Status: done (tested, not proved).** On every example galaspec agrees with `go run`
+  on (29), GoCore run on the transformer's output agrees with `go run` too, and GoCore
+  disagrees with `go run` on no program. Widening GoCore beyond S1 is the GoCore track of
+  the [Plan](#plan).
   - **The exporter is built:** `internal/formal/gocoreexport`. It is a syntax dump in
     which every Go construct has its own kind. Which of them GoCore runs is decided on
     the Lean side alone.
@@ -447,8 +450,6 @@ column lists what each milestone's claim rests on beyond them.
     disagrees. Tested, not proved. Both counts are ratchets (`gocore_fidelity_agreeing`,
     `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
     [COVERAGE.md](../formal/COVERAGE.md#differential-testing).
-  - **What remains:** widening GoCore where the corpus stops it (`math`,
-    maps, generic functions used as values), each a construct the run names.
   - **Two GoCore semantics until M5:** `formal/Gala/GoCore.lean`, the fragment M3's
     `match` lowering targets, with abstract sealed values and pattern primitives, and
     this one, with the flat layout. M5's reference lowering targets this one, and M3's
@@ -836,9 +837,8 @@ flowchart LR
   takes, Go writes inside that character; there the Lean run
   stops with the outcome `unsupported:replacer-empty-old`, which the harness counts as
   unsupported, never as a verdict.
-- **Phases:** S1 with provable output first; then lambdas and closures (a captured `var`
-  becomes a reference cell in the state), interpolation and `Option`/`Either`/`Try`;
-  then generics and the immutable collections, modelled in the prelude.
+- **Phases:** gala2lean is the third track of the [Plan](#plan), which lists its phases
+  and how its progress is measured.
 
 ### 7. Lowering models and the reference lowering
 
@@ -1051,30 +1051,179 @@ To keep our obligations at zero:
 
 ## Plan
 
-Done so far: M1 (T1, fuel adequacy), M2 (T2, T3 and T4), the metamorphic generators, the Core JSON exporter,
-galaspec for S1 and part of S2, the differential harness over `examples/`, gala2lean, and
-M3 (the `match` lowering proved against galaspec).
-The estimates are in weeks of one maintainer working with AI agents, and the chart runs
-the proof milestones one after another (M3 needed only M1, so it finished just ahead of M2).
-The spec-coverage lane, the rest of S2 and S3 in galaspec and
-switching `FuzzPrograms` to galaspec as its oracle, is separate work run by other agents
-and is drawn alongside. The dates are placeholders that show order and length, not
+This is the one plan for the formal work. It has three tracks:
+
+1. **The proof chain** (M1–M7): the critical path to a per-program proof that the Go the
+   transpiler emits means what the GALA program means.
+2. **GoCore fidelity and coverage:** the Lean model of the emitted Go, tested against
+   `go run`. The proof chain stands on it.
+3. **gala2lean:** a third oracle, and a route to proofs about users' own programs.
+
+Done so far: M1 (T1, fuel adequacy), M2 (T2, T3 and T4), M3 (the `match` lowering proved
+against galaspec), M4 (GoCore and the Go AST exporter, tested), the metamorphic
+generators, the Core JSON exporter, galaspec for S1 and part of S2, the differential
+harness over `examples/`, and gala2lean's phase 1.
+
+**Priority.** A `DISAGREE` in any lane comes first: it is fixed, or the construct is
+reported as unsupported, before other work goes on. After that, when work competes:
+
+1. the proof chain's next step;
+2. the GoCore work that step, or M6, needs;
+3. gala2lean's current phase;
+4. the GoCore long tail.
+
+```mermaid
+flowchart LR
+    SRC[GALA program] --> CJ[Core JSON]
+    SRC --> TR[transpiler<br/>not trusted] --> GO[generated Go]
+    subgraph P1[track 1: proof chain]
+        GS[galaspec<br/>meaning of GALA] --> RL[reference lowering<br/>proved, M5]
+        VAL[validator<br/>M6]
+    end
+    subgraph P2[track 2: GoCore]
+        GX[Go AST exporter] --> GC[GoCore<br/>meaning of the emitted Go]
+    end
+    subgraph P3[track 3: gala2lean]
+        G2L[gala2lean] --> LR[Lean definitions<br/>lean --run]
+    end
+    CJ --> GS
+    CJ --> G2L
+    RL --> GC
+    GO --> GX
+    GO --> GR[go run]
+    RL --> VAL
+    GX --> VAL
+    GS --> D{differential<br/>same output and outcome}
+    GC --> D
+    LR --> D
+    GR --> D
+```
+
+The differential run compares galaspec, GoCore and gala2lean with `go run` on every
+program; that is testing. The proofs run along the top track: the reference lowering
+from galaspec into GoCore is proved to preserve meaning (M5), and the validator proves,
+program by program, that the transpiler's Go is that lowering up to proved
+normalizations (M6). Both claims are about GoCore, so GoCore's fidelity to Go (track 2)
+is what connects them to real Go.
+
+### Track 1: the proof chain (critical path)
+
+The milestones are described in [The milestones](#the-milestones) and sized in the table
+below; this is their order and where they stand.
+
+- **M1–M4: done.** M4's claim is tested, not proved.
+- **M5: in progress.** Its [steps](#steps):
+  - Step 1: the uncapped run (`runProgramAt`) and the order parameter are in place, with
+    GoCore running gc's order of evaluation (#1264). Fuel adequacy for GoCore's mutual
+    block is not proved yet.
+  - Step 2a, call-free expressions (`expr_correct`, #1249): proved, for every operator in
+    the subset, the bitwise operators and shifts (#1278) and the string orderings (#1282)
+    included.
+  - Step 2b, `val`/`var`, `if` statements and blocks (`stmts_correct`, #1276): proved.
+  - Step 3, calls and recursion, the function-literal and self-tail-call shapes, and the
+    divergence theorem: next. It also carries the order obligations steps 2a and 2b left
+    open (gc's `&&`/`||` temporaries, `untriggered_orders_agree`).
+  - Step 4: structs and sealed values on the flat layout; `match` re-proved against
+    GoCore for whole programs; M3's fragment retired.
+  - Step 5: package-level initialization and printing, then the theorems for whole
+    programs.
+- **M6:** per-program translation validation, with the six normalization lemmas M3 left.
+- **M7:** widening, S2 first, each construct family in galaspec, GoCore, the reference
+  lowering and the validator together.
+
+galaspec's own coverage (the rest of S2, then S3, and switching `FuzzPrograms` to
+galaspec as its oracle) runs alongside; M7 needs it for each family it widens to.
+
+### Track 2: GoCore fidelity and coverage
+
+GoCore is tested, not proved: the differential run compares it with `go run` on the
+transformer's output for every program that compiles. In the CI run that set the current
+baseline it agrees on 371 programs, disagrees on none, and stops `unsupported` on 80,
+naming the construct; 29 examples agree three ways (GoCore and galaspec each with
+`go run`). [COVERAGE.md](../formal/COVERAGE.md#differential-testing) has the current
+numbers.
+
+**Rules:**
+- A GoCore `DISAGREE` is never parked: it fails the run until GoCore or the exporter is
+  fixed, or the construct is reported as unsupported.
+- The ratchets (`gocore_fidelity_agreeing`, `gocore_agreeing_examples`) only go up.
+- Go's standard library is never committed to the repository. Where GoCore runs a
+  package's own code, it reads the files from the pinned toolchain; otherwise it uses a
+  model that cites the source it follows.
+
+**Order:**
+1. What M5 and M6 need for S1, then for S2: every shape the transformer emits for them,
+   so that a program in the subset never stops in GoCore.
+2. Then the long tail, by how many programs stop at each construct (the "GoCore stopped
+   at" table in COVERAGE.md): more of the standard library, `math`, generic functions
+   used as values, and the rest.
+
+**Target:** every deterministic program in the subset the transpiler emits for typical
+GALA programs runs in GoCore. Some Go is excluded by design. Each exclusion is rarely
+used in GALA code, and a run that reaches one ends `unsupported`, so it is reported,
+never guessed:
+- the order of a `range` over a map of two or more entries, which Go randomizes;
+- goroutines, channels and `select`, whose output depends on scheduling;
+- a slice capacity that depends on gc's escape analysis;
+- reflection and `unsafe`;
+- Go code GoCore does not load: third-party Go modules, and parts of the standard
+  library GoCore neither runs from source nor models.
+
+So agreement on 100% of the corpus is not a goal: the corpus includes programs that use
+these. Progress is the agreeing count, and an unsupported program that stops at an
+excluded construct is the expected result for it.
+
+### Track 3: gala2lean
+
+gala2lean ([gala2lean: a third oracle](#6-gala2lean-a-third-oracle)) translates a
+program into ordinary Lean definitions. It is a third account of each program in the
+differential run, and its definitions have equations, so it is also a route to proofs
+about users' own programs. So far there is one: `eval_total`, about gala2lean's
+translation of a single test program ([COVERAGE.md](../formal/COVERAGE.md#what-is-proved)).
+Such a proof is about the translation under gala2lean's prelude, not about the Go the
+transpiler emits.
+
+| Phase | Covers | Status |
+|---|---|---|
+| 1 | S1 with provable output | done |
+| 2 | lambdas and closures (a captured `var` becomes a reference cell in the state), interpolation, `Option`/`Either`/`Try`, and trusted models of the Go library functions programs call | in progress (placeholder lambdas, #1323) |
+| 3 | generics and the immutable collections, modelled in the prelude | planned |
+
+**Metrics:**
+- **Primary:** the examples gala2lean translates whose Lean run agrees with Go: 75 in the
+  current baseline. It is a ratchet, and only goes up.
+- **Secondary:** how much of a real GALA code base it translates, measured on the
+  galop parser generator's sources: 259 of 604 functions and methods translate at the
+  last measurement. This measures reach only: a function that translates is not thereby
+  compared with Go.
+
+### Schedule
+
+The proof-chain estimates are in weeks of one maintainer working with AI agents, and the
+chart runs the proof milestones one after another (M3 needed only M1, so it finished just
+ahead of M2). The GoCore and gala2lean bars show order only and carry no estimate; they
+run alongside the proof chain. The dates are placeholders that show order and length, not
 commitments.
 
 ```mermaid
 gantt
     dateFormat  YYYY-MM-DD
     axisFormat  %b %Y
-    section Trust the oracle
+    section Proof chain
     M1 fuel adequacy                         :done, m1, 2026-11-15, 1d
     M2 alpha-invariance, T3, T4              :done, m2, 2026-11-16, 1d
-    section Link to the transformer
     M3 match lowering against galaspec       :done, m3, 2026-11-15, 1d
-    M4 GoCore and the Go AST exporter        :m4, after m2, 49d
-    M5 reference lowering for S1             :m5, after m4, 56d
+    M4 GoCore and the Go AST exporter        :done, m4, 2026-11-16, 4d
+    M5 reference lowering for S1             :active, m5, after m4, 56d
     M6 per-program translation validation    :m6, after m5, 70d
-    section Widen
     M7 S2, methods, Option/Either/Try, generics :m7, after m6, 84d
+    section GoCore
+    what M5 and M6 need, S1 then S2          :active, g1, after m4, 126d
+    long tail by stop count                  :g2, after g1, 84d
+    section gala2lean
+    phase 1, S1                              :done, l1, 2026-11-15, 1d
+    phase 2, S2 and Go library models        :active, l2, after l1, 90d
+    phase 3, generics and collections        :l3, after l2, 90d
     section Spec coverage
     S2 rest, S3, FuzzPrograms oracle switch  :c1, 2026-11-23, 120d
 ```
@@ -1084,7 +1233,7 @@ gantt
 | M1 | 2–3 weeks | Done: T1 is proved, pinned in `Statements.lean` and listed in COVERAGE.md. |
 | M2 | 6–8 weeks | Done: T2, T3 and T4 are proved for the subset galaspec models, and the metamorphic renaming generator's local renamings are checked against T2 by a checker proved sound. |
 | M3 | 3–4 weeks | Done: the toy source semantics is gone; the `match` lowering is proved against galaspec for every S1 pattern form (`lowerMatch_correct`). |
-| M4 | 5–8 weeks | GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |
+| M4 | 5–8 weeks | Done: GoCore runs the transformer's actual output for the S1 corpus and agrees with galaspec and with `go run` on it (tested). |
 | M5 | 6–9 weeks | The reference lowering covers everything the transformer emits for S1, and its correctness theorem is proved for every program it lowers. |
 | M6 | 8–12 weeks | The validator's soundness theorem is proved, and CI validates every S1 program in the corpus, listing the ones it rejects and why. |
 | M7 | 2–4 weeks per construct family | Each family is in galaspec, GoCore, the reference lowering and the validator. |
