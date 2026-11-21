@@ -31,6 +31,11 @@ func mk64() func(int64, int) int64 = (acc, x) => acc + int64(x)
 
 func nums() List[int] = ListOf(1, 2)
 
+func bumpAt(p *Box[int], n int) int {
+    *p = Box(n)
+    n
+}
+
 `
 	tests := []struct {
 		name     string
@@ -56,6 +61,11 @@ func nums() List[int] = ListOf(1, 2)
 			name:     "std collection method",
 			main:     `Println(nums().FoldLeft(f = mk(), initial = t("i", 0)))`,
 			contains: "_tmp_2 := mk()\n\t\t_tmp_3 := t(\"i\", 0)",
+		},
+		{
+			name:     "receiver read through a pointer goes first",
+			main:     "var bx = Box(0)\n    val p = &bx\n    Println(p.Gen(w = bumpAt(p, 7), u = t(\"u\", 1)))",
+			contains: "_tmp_1 := *p\n\t\t_tmp_2 := bumpAt(p, 7)",
 		},
 		{
 			name:     "untyped shift keeps its place and the parameter's type",

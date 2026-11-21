@@ -40,6 +40,12 @@ func mk64() func(int64, int) int64 {
 
 var shared = Box(0)
 
+func bumpAt(p *Box[int], n int) int {
+    Print("w")
+    *p = Box(n)
+    n
+}
+
 func replace(n int) int {
     Print("w")
     shared = Box(n)
@@ -61,4 +67,8 @@ func main() {
     Println(" ", wide)
     // The receiver is read before the arguments run.
     Println(" ", shared.Show(w = replace(7), u = shared.V))
+    // So is one read through a pointer an argument writes through.
+    var bx = Box(0)
+    val p = &bx
+    Println(" ", p.Show(w = bumpAt(p, 7), u = t("u", 1)))
 }

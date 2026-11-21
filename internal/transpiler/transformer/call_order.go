@@ -128,7 +128,12 @@ func (t *galaASTTransformer) sequenceCall(expr, fun ast.Expr, frame *callFrame, 
 		return expr, nil
 	}
 	var ops []callOperand
-	if sel, ok := fun.(*ast.SelectorExpr); ok {
+	if call, ok := expr.(*ast.CallExpr); ok && t.genericMethodCalls[call] != nil && len(call.Args) > 0 {
+		// A method with type parameters of its own is a function whose
+		// first argument is the receiver as the method takes it (`*p` for
+		// a value receiver through a pointer): read first, as a value.
+		ops = append(ops, callOperand{expr: call.Args[0]})
+	} else if sel, ok := fun.(*ast.SelectorExpr); ok {
 		// A receiver is copied ahead of the arguments only where the method
 		// does not need the variable itself (a pointer receiver).
 		ops = append(ops, callOperand{expr: sel.X, pinned: !t.copyableReceiver(t.getExprTypeName(sel.X), sel.Sel.Name)})
