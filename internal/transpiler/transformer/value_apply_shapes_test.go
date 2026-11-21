@@ -42,6 +42,16 @@ struct Keeper(m Empty)
 
 func makeAdd(n int) Add = Add(n)
 
+struct Tick(n int)
+
+func (k Tick) Apply() int = k.n
+
+func makeTick() Tick = Tick(5)
+
+struct Inc(n int)
+
+func (i Inc) Apply(x int = 1) int = i.n + x
+
 func makeShow() Show = Show()
 
 func main() {
@@ -69,6 +79,9 @@ func main() {
     Println(h.s[int64](3))`, []string{`Show_Apply[int64](h.s.Get(), 3)`}},
 		{"type arguments for a field's no-parameter generic Apply", `val k = Keeper(Empty(1))
     Println(k.m[int]())`, []string{`Empty_Apply[int](k.m.Get())`}},
+		{"a call's result with no arguments", `Println(makeTick()())`, []string{`makeTick().Apply()`}},
+		{"a val with no arguments for an Apply whose parameters all have defaults", `val i = Inc(1)
+    Println(i())`, []string{`i.Apply(1)`}},
 		{"a no-parameter generic Apply of a companion called with no arguments", `val n Option[int] = Missing()
     Println(n)`, []string{`Missing_Apply[int](Missing{})`}},
 	} {
@@ -200,7 +213,7 @@ struct Plain(n int)
 
 func (p Plain) Apply(f func(int) int) int = f(p.n)
 
-struct Holder(var P Plain)
+struct Holder(var P Plain, Q Plain)
 `,
 		"main.gala": `package main
 
@@ -211,12 +224,13 @@ struct Plain(s string)
 func (p Plain) Apply(x string) string = p.s + x
 
 func main() {
-    val h = lib.Holder(lib.Plain(1))
-    Println(h.P((x) => x + 1), Plain("a")("b"))
+    val h = lib.Holder(lib.Plain(1), lib.Plain(2))
+    Println(h.P((x) => x + 1), h.Q((x) => x * 2), Plain("a")("b"))
 }
 `,
 	}
 	out, err = transpileInModule(t, files, "main.gala")
 	require.NoError(t, err)
 	require.Contains(t, out, "h.P.Apply(func(x int) int")
+	require.Contains(t, out, "h.Q.Get().Apply(func(x int) int")
 }

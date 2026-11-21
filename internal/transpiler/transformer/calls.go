@@ -332,13 +332,13 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			// registry key — rather than repeating it inline.
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 			// A struct field whose type has an Apply is called through it.
-			if callee, ok := t.fieldApplyCallee(base, zeroArgLookupBase, sel.Sel.Name); ok && !t.isImportIdent(sel.X) {
+			if callee, ok := t.fieldApplyCallee(base, zeroArgLookupBase, sel.Sel.Name); ok && !t.isImportIdent(sel.X) && !takesArgs(t.fieldApplyType(zeroArgLookupBase, sel.Sel.Name)) {
 				base = callee
 				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel, "Apply")
 			}
 		} else if inner, typeArgs := splitCallFunTypeArgs(base); len(typeArgs) > 0 {
 			// So is one given type arguments for its generic Apply.
-			if sel, ok := inner.(*ast.SelectorExpr); ok {
+			if sel, ok := inner.(*ast.SelectorExpr); ok && !t.isImportIdent(sel.X) {
 				_, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 				if callee, ok := t.fieldApplyCallee(base, lookupBaseName, sel.Sel.Name); ok {
 					base = callee
@@ -2979,14 +2979,15 @@ func (t *galaASTTransformer) isImportIdent(e ast.Expr) bool {
 	return ok && t.importManager.IsPackage(id.Name) && t.shadowingScope(id.Name) == nil
 }
 
-// takesArgs reports whether meta's Apply is not generic and takes
-// parameters, so a call of it with none is not a call of that Apply.
+// takesArgs reports whether meta's Apply is not generic and has a parameter
+// with no default, so a call of it with no arguments is not a call of that
+// Apply.
 func takesArgs(meta *transpiler.TypeMetadata) bool {
 	if meta == nil || genericApply(meta) {
 		return false
 	}
 	apply := meta.Methods["Apply"]
-	return apply != nil && len(apply.ParamTypes) > 0
+	return apply != nil && len(apply.ParamTypes) > len(apply.DefaultExprs)
 }
 
 // callsGenericApply reports whether a call of recv's Apply is a generic method
@@ -3048,11 +3049,13 @@ func (t *galaASTTransformer) fieldApplyType(lookupBaseName, field string) *trans
 	// a bare name is its own type, never a same-named one of this package.
 	if !t.isLocalPackage(meta.Package) && fieldType.GetPackage() == "" &&
 		!strings.Contains(fieldType.BaseName(), ".") && !transpiler.IsPrimitiveType(fieldType.BaseName()) {
-		if own := t.applyTypeByName(meta.Package + "." + fieldType.BaseName()); own != nil {
-			return own
+		own := meta.Package + "." + fieldType.BaseName()
+		if t.getTypeMeta(own) == nil {
+			// Not its package's own: a std type, written bare in every
+			// package.
+			own = registry.StdPackageName + "." + fieldType.BaseName()
 		}
-		// A std type is written bare in every package.
-		return t.applyTypeByName(registry.StdPackageName + "." + fieldType.BaseName())
+		return t.applyTypeByName(own)
 	}
 	return t.applyTypeOf(fieldType)
 }
