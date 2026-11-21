@@ -456,8 +456,8 @@ column lists what each milestone's claim rests on beyond them.
       or through methods). Tested, not proved.
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
     every compiled program's Go runs through GoCore and is compared with `go run`. In the
-    CI run that set the baselines, GoCore agrees with `go run` on 383 programs that
-    compile (349 examples, 34 generated), and on 29 examples galaspec agrees with
+    CI run that set the baselines, GoCore agrees with `go run` on 388 programs that
+    compile (354 examples, 34 generated), and on 29 examples galaspec agrees with
     `go run` too. It stops `unsupported` on the rest, naming the construct, and none
     disagrees. Tested, not proved. Both counts are ratchets (`gocore_fidelity_agreeing`,
     `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
