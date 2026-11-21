@@ -804,3 +804,47 @@ func TestDecoder_QuotesInsideScalarsElsewhere(t *testing.T) {
 	d.ReadInt()
 	d.EndObject()
 }
+
+// A "- key: value" item splits the pair before it drops a comment, so a
+// quoted value holding " #" stays whole, as in a mapping line.
+func TestDecoder_CompactItemQuotedValueWithHash(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`- k: "a # b"`, "[{k: a # b}]"},
+		{`- k: "a # b" # note`, "[{k: a # b}]"},
+		{`- "k": 'a # b' # note`, "[{k: a # b}]"},
+		{`- k: it's # note`, "[{k: it's}]"},
+		{"- k: v\n  j: \"c # d\" # note", "[{k: v, j: c # d}]"},
+		{"- # note: x", "[<null>]"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+
+	// An item whose first value the encoder quotes for its " #" reads back.
+	e := NewYamlEncoder()
+	e.WriteStartArray()
+	e.WriteStartObject()
+	e.WriteKey("S")
+	e.WriteString("a # b")
+	e.WriteEndObject()
+	e.WriteEndArray()
+	if got, want := parseDump(e.String()), "[{S: a # b}]"; got != want {
+		t.Errorf("encoded %q => %s, want %s", e.String(), got, want)
+	}
+}
+
+// A ": " inside a comment is not a key's colon.
+func TestDecoder_ColonInCommentIsNotAKey(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"hello # note: x", "hello"},
+		{"k: v # note: x", "{k: v}"},
+		{"k: v\ntitle # the user's: x", "error: yaml: expected 'key:' at line 2, got \"title # the user's: x\""},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}

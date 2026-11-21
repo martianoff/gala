@@ -991,7 +991,18 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		if !isSequenceLine(line.raw) {
 			break
 		}
-		itemPart := withoutComment(trimYamlSpace(line.raw[1:]))
+		itemPart := trimYamlSpace(line.raw[1:])
+		// A "- key: value" item drops its comment while the pair is split,
+		// where a quoted value is known; any other item drops it here.
+		if key, value, ok := tryParseKeyValue(itemPart); ok {
+			// The key starts after the dash and the spaces that follow it.
+			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
+			l.seq = append(l.seq, child)
+			i = np
+			continue
+		}
+		itemPart = withoutComment(itemPart)
 		if itemPart == "" {
 			// Bare "-" — value lives on subsequent indented lines.
 			if i+1 >= len(lines) || lines[i+1].indent <= indent {
@@ -1000,14 +1011,6 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 				continue
 			}
 			child, np := parseBlock(lines, i+1, lines[i+1].indent)
-			l.seq = append(l.seq, child)
-			i = np
-			continue
-		}
-		if key, value, ok := tryParseKeyValue(itemPart); ok {
-			// The key starts after the dash and the spaces that follow it.
-			keyIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
-			child, np := parseCompactMapping(lines, i, keyIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
 			continue
@@ -1069,11 +1072,14 @@ func withoutComment(s string) string {
 
 // findKeyColon returns the index of the first ':' followed by white space
 // (or the end of the line) in a line whose key is a plain scalar; -1 if
-// there is none. A plain scalar has no quoted regions: a quote inside it,
-// as in it's, is text.
+// there is none before a comment. A plain scalar has no quoted regions: a
+// quote inside it, as in it's, is text.
 func findKeyColon(s string) int {
 	for i := 0; i < len(s); i++ {
-		if s[i] == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
+		switch {
+		case s[i] == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
+			return -1 // the rest is a comment
+		case s[i] == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'):
 			return i
 		}
 	}
