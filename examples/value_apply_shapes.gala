@@ -6,7 +6,7 @@ package main
 // whose no-parameter Apply is generic are called as `v.Apply(...)` written
 // out is.
 
-// Plain adds its n to what it is called with, or hands it to a function.
+// Plain hands its n to the function it is called with.
 struct Plain(n int)
 
 // Apply gives f the value n.
@@ -24,7 +24,8 @@ struct Missing()
 // Apply is an empty Option[A].
 func (m Missing) Apply[A any]() Option[A] = None[A]()
 
-// Holder keeps both kinds of value in fields, one of them a var.
+// Holder keeps both kinds of value in fields; s is a var field, which is
+// read as a plain selector rather than unwrapped.
 struct Holder(p Plain, var s Show)
 
 func makePlain(n int) Plain = Plain(n)
@@ -33,11 +34,11 @@ func makeShow() Show = Show()
 
 func main() {
     val p = Plain(10)
-    Println(p((x) => x + 1))
-    Println(p(f = (x) => x * 3))
+    Println(p(_ + 1))
+    Println(p(f = _ * 3))
 
     val h = Holder(Plain(2), Show())
-    Println(h.p((x) => x - 1))
+    Println(h.p(_ - 1))
     Println(h.s(4))
     Println(makePlain(5)((x) => x * x))
     Println(makeShow()("call"))
