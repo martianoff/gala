@@ -308,7 +308,8 @@ gala_exec_test(
 )
 
 # A `_` clause in a Zip-lowered `also` group, first or later, builds and runs
-# (a read of its `_` is pinned as GALA-E0139 by TestAlsoUnderscoreClause).
+# (a read of its `_` is pinned as GALA-E0139 by TestAlsoUnderscoreClause in
+# internal/transpiler/transformer/discard_after_bind_test.go).
 gala_exec_test(
     name = "also_underscore_clause",
     src = "also_underscore_clause.gala",
