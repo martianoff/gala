@@ -1,8 +1,9 @@
 # GALA-E0006 — Multiple default cases
 
 **When it fires.** A `match` expression has more than one default branch —
-either multiple `case _ =>` clauses, or a mix of `case _ =>` and a plain
-binding pattern (`case n =>`) that also catches everything.
+either multiple `case _ =>` clauses, or, in a match without `case _`, more
+than one unguarded binding pattern (`case n =>`). A binding written before
+or after `case _` is [GALA-E0141](GALA-E0141.md).
 
 **Minimal repro.** (`main.gala`)
 

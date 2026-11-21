@@ -311,8 +311,12 @@ func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType
 		return false
 	}
 	elems, single, ok := e.parenthesized()
-	if !ok || single {
+	switch {
+	case !ok:
 		return false
+	case single:
+		// `(p)` is p.
+		return t.exprMatchesEveryValueBinding(elems[0], matchedType, typeKnown, bound)
 	}
 	tuple, ok := t.followAliasChain(matchedType).(transpiler.GenericType)
 	if !ok || tuple.Base == nil || !isTupleTypeName(stripStdPrefix(tuple.Base.BaseName())) || len(elems) != len(tuple.Params) {
