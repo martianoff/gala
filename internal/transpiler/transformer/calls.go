@@ -971,7 +971,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		// value does not see through the function literal sequencing
 		// wraps it in, as for any method (#1365).
 		if expr, ok := preTransformed[i]; ok {
-			if !t.isUntypedConstArg(expr) && methodMeta.GoResults == nil {
+			if methodMeta.GoResults == nil && !t.isUntypedConstArg(expr) {
 				t.recordCallArg(v, expr)
 			}
 			mArgs = append(mArgs, expr)
