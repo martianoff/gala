@@ -114,17 +114,25 @@ func main() {
     }
 }
 `, []string{`"i=%v"`, "func() time.Duration", "i.Nanoseconds()"}},
-		{"a Go defined integer type from a constant expression (time.Nanosecond * 2)", `package main
+		{"a GALA type over an integer type", `package main
 
 import "time"
 
+type Millis int64
+
+type Wait time.Duration
+
 func main() {
-    for i := range time.Nanosecond * 2 {
+    for i := range Millis(3) {
         val f = () => i
         Println(f())
     }
+    for w := range Wait(2) {
+        val g = () => w
+        Println(g())
+    }
 }
-`, []string{"func() time.Duration"}},
+`, []string{"func() Millis", "func() Wait"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
