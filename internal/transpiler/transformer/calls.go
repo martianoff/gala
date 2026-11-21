@@ -1569,17 +1569,40 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 	if ft == nil {
 		return transpiler.NilType{}
 	}
+	// Which type parameters stay open is read from the signature as
+	// declared: once substituted, a caller's own type parameter of the same
+	// name (an `E` passed for slices' `E`) would look open.
+	subst := t.inferGoSignatureTypeArgs(sig, prior, t.callSiteTypeArgs(&ast.CallExpr{Fun: fun}), false)
+	open := openTypeParams(sig.TypeParams, subst)
+	if funcTypeParamsMentionTypeParams(ft.Params, open) {
+		return transpiler.NilType{}
+	}
 	inst := *ft
-	if subst := t.inferGoSignatureTypeArgs(sig, prior, t.callSiteTypeArgs(&ast.CallExpr{Fun: fun}), false); len(subst) > 0 {
+	if len(subst) > 0 {
 		if sub, ok := t.substituteGoTypeParams(*ft, subst).(transpiler.FuncType); ok {
 			inst = sub
 		}
 	}
-	if funcTypeParamsMentionTypeParams(inst.Params, sig.TypeParams) {
-		return transpiler.NilType{}
-	}
-	inst.Results = maskTypeParamResults(inst.Results, sig.TypeParams)
+	inst.Results = maskOpenResults(ft.Results, inst.Results, open)
 	return inst
+}
+
+// maskOpenResults is results, the substituted form of declared, with each
+// result whose declared type names one of open, a type parameter no
+// argument binds, masked as NilType (see maskTypeParamResults).
+func maskOpenResults(declared, results []transpiler.Type, open []string) []transpiler.Type {
+	if !funcTypeParamsMentionTypeParams(declared, open) {
+		return results
+	}
+	out := make([]transpiler.Type, len(results))
+	for i, r := range results {
+		if i < len(declared) && typeMentionsTypeParam(declared[i], open) {
+			out[i] = transpiler.NilType{}
+		} else {
+			out[i] = r
+		}
+	}
+	return out
 }
 
 // readsGenericGoSlot reports whether v, an argument of a generic Go function
@@ -4465,7 +4488,7 @@ func (t *galaASTTransformer) structFieldSlot(fieldType transpiler.Type, subst ty
 	// A generic Go function-type instance (`iter.Seq[T]`) whose parameters
 	// still name an unbound type parameter of the struct gives a lambda no
 	// type: never the struct's T, which a caller's own T would capture.
-	if params, ok := t.goInstanceFuncParams(slotType); ok && funcTypeParamsMentionTypeParams(params, unbound) {
+	if params, ok := t.goInstanceFuncParams(fieldType); ok && funcTypeParamsMentionTypeParams(params, unbound) {
 		return nil
 	}
 	if inferred && t.isFuncOrTupleType(slotType) {
@@ -4492,9 +4515,9 @@ func (t *galaASTTransformer) goInstanceSlot(param transpiler.Type, subst typeSub
 	if !isFunc || len(u.Results) > 1 {
 		return nil, false
 	}
-	if sub, isSubFunc := t.substituteTranspilerTypeParams(u, subst).(transpiler.FuncType); isSubFunc && len(subst) > 0 {
-		u = sub
-	}
+	// Which type parameters stay open is read from the declaration, before
+	// substituting: a caller's own type parameter of the same name, passed
+	// for one, would look open afterwards (see genericGoLambdaSlot).
 	open := openTypeParams(typeParams, subst)
 	switch {
 	case funcTypeParamsMentionTypeParams(u.Params, open):
@@ -4504,7 +4527,11 @@ func (t *galaASTTransformer) goInstanceSlot(param transpiler.Type, subst typeSub
 	case len(u.Params) == 0:
 		return transpiler.NilType{}, true
 	}
-	return transpiler.FuncType{Params: u.Params, Results: maskTypeParamResults(u.Results, open)}, true
+	inst := u
+	if sub, isSubFunc := t.substituteTranspilerTypeParams(u, subst).(transpiler.FuncType); isSubFunc && len(subst) > 0 {
+		inst = sub
+	}
+	return transpiler.FuncType{Params: inst.Params, Results: maskOpenResults(u.Results, inst.Results, open)}, true
 }
 
 // goInstanceFuncParams is the parameter types of typ's underlying function

@@ -163,6 +163,18 @@ func main() {
     Println(slices.IndexFunc(go_interop.SliceOf(1, 2, 3), _ > 1))
 }
 `, []string{"int) bool"}},
+		{"a placeholder lambda inside a generic caller with its own E", `package main
+
+import "cmp"
+import "slices"
+import "martianoff/gala/go_interop"
+
+func firstAbove[E cmp.Ordered](xs []E, x E) int = slices.IndexFunc(xs, _ > x)
+
+func main() {
+    Println(firstAbove(go_interop.SliceOf(1, 2, 3), 1))
+}
+`, []string{"E) bool"}},
 		{"a GALA function to a GALA alias of iter.Seq[T]", `package main
 
 import "iter"
