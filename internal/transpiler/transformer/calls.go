@@ -2721,6 +2721,13 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, args, fromSlot)
 						t.inferFromConstraints(typeParams, structMeta.TypeParamConstraints, ctx.structTypeSubst)
 						for i, ft := range ctx.structFieldExpectedTypes {
+							// A generic Go function-type field is typed from
+							// its declaration (goInstanceSlot): which type
+							// parameters stay open is read before substituting.
+							if slot, ok := t.goInstanceSlot(ft, ctx.structTypeSubst, typeParams); ok {
+								ctx.structFieldExpectedTypes[i] = slot
+								continue
+							}
 							ctx.structFieldExpectedTypes[i] = t.substituteTranspilerTypeParams(ft, ctx.structTypeSubst)
 						}
 					}
@@ -4542,17 +4549,6 @@ func (t *galaASTTransformer) goInstanceSlot(param transpiler.Type, subst typeSub
 		inst = sub
 	}
 	return transpiler.FuncType{Params: inst.Params, Results: maskOpenResults(u.Results, inst.Results, open)}, true
-}
-
-// isGoFuncInstance reports whether typ, through GALA aliases, is an instance
-// of a generic Go defined function type (`iter.Seq[int]`, `Mapper[T, U]`).
-func (t *galaASTTransformer) isGoFuncInstance(typ transpiler.Type) bool {
-	instance, ok := t.followAliasChain(typ).(transpiler.GenericType)
-	if !ok {
-		return false
-	}
-	_, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
-	return isFunc
 }
 
 // goStructFuncField is the function type of td's field name, directly or

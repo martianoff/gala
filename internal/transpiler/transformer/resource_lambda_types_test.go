@@ -458,6 +458,25 @@ func run() int = run2((x) => x * 2)
 	}
 }
 
+// TestGenericGoNamedFuncTypeFieldInGenericCaller pins a generic struct's Go
+// func-type field filled positionally inside a caller whose own type
+// parameter is named like the struct's: the caller's U passed for the
+// struct's T is bound, not mistaken for the struct's open U.
+func TestGenericGoNamedFuncTypeFieldInGenericCaller(t *testing.T) {
+	files, galaFile := samePackageModule(".", `package main
+
+type Mapper2[T any, U any] func(T) U
+`, `package main
+
+struct Box2[T any, U any](x T, m Mapper2[T, U])
+
+func wrap[U any](v U) Box2[U, int] = Box2(v, (y) => 1)
+`)
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "func(y U) int")
+}
+
 // TestGenericGoNamedFuncTypeSlotKeepsQualifiedNames pins that substituting
 // a callee's type parameter T into a generic Go function type leaves a
 // package-qualified type of the same bare name (`*testing.T`) alone.

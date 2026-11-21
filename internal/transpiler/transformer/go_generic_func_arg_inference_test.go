@@ -6,6 +6,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGoGenericInstanceSlotOfAnotherPackage pins a GALA generic of another
+// package whose parameter is a generic Go function type: its type
+// parameters are bound and masked as for one of this package, never written
+// into the lambda qualified (`lib.T`).
+func TestGoGenericInstanceSlotOfAnotherPackage(t *testing.T) {
+	const lib = `package lib
+
+import "iter"
+
+func Each[T any](s iter.Seq[T], p func(T) bool) int {
+    var n = 0
+    for x := range s {
+        if p(x) {
+            n = n + 1
+        }
+    }
+    n
+}
+
+func Collect[T any](s iter.Seq[T]) int = 0
+`
+	cases := []struct {
+		name, call, want string
+		wantE0033        bool
+	}{
+		{"bound by another argument", "lib.Each(slices.Values(go_interop.SliceOf(1, 2)), (x) => x > 1)", "func(x int) bool", false},
+		{"left open", "lib.Collect((yield) => {\n        yield(1)\n    })", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string]string{
+				"go.mod":       "module example.com/xpkg\n\ngo 1.25\n",
+				"gala.mod":     "module example.com/xpkg\n",
+				"lib/lib.gala": lib,
+				"main.gala": `package main
+
+import "slices"
+import "example.com/xpkg/lib"
+import "martianoff/gala/go_interop"
+
+func main() {
+    Println(` + tc.call + `)
+    Println(slices.Collect(slices.Values(go_interop.SliceOf(1))))
+}
+`,
+			}
+			out, err := transpileInModule(t, files, "main.gala")
+			if tc.wantE0033 {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "GALA-E0033")
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, out, tc.want)
+			}
+			require.NotContains(t, out, "lib.T")
+		})
+	}
+}
+
 // TestGoGenericInstanceSlotLeftOpenIsDiagnosed pins that a lambda in a GALA
 // callee's iter.Seq[T] slot is never typed with the callee's own unbound
 // type parameter (which go build rejects as undefined, or a caller's own T
