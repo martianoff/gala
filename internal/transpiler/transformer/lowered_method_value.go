@@ -77,8 +77,16 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		return nil, false, nil
 	}
 
+	// A by-name slot (`func() F`) the value is no thunk of is the thunk's
+	// value: the slot the value fills is its result.
+	if want := t.slotFuncType(slot); want != nil && len(want.Params) == 0 && len(ft.Params) > 0 {
+		slot = nil
+		if len(want.Results) == 1 {
+			slot = want.Results[0]
+		}
+	}
 	if slot != nil {
-		if want := t.resolveTranspilerTypeAsFuncType(t.followAliasChain(slot)); want != nil && len(want.Params) != len(ft.Params) {
+		if want := t.slotFuncType(slot); want != nil && len(want.Params) != len(ft.Params) {
 			return nil, false, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"the method value %s.%s takes %d argument(s), but the function type it is used as takes %d",
 				stripPackagePrefix(meta.Name), method, len(ft.Params), len(want.Params)))
@@ -166,7 +174,7 @@ func (t *galaASTTransformer) bindMethodValueTypeArgs(ft transpiler.FuncType, slo
 	if slot == nil || len(bound) == len(typeParams) {
 		return
 	}
-	want := t.resolveTranspilerTypeAsFuncType(t.followAliasChain(slot))
+	want := t.slotFuncType(slot)
 	if want == nil || len(want.Params) != len(ft.Params) {
 		return
 	}
@@ -189,6 +197,17 @@ func (t *galaASTTransformer) bindMethodValueTypeArgs(ft transpiler.FuncType, slo
 			bind(r, want.Results[i])
 		}
 	}
+}
+
+// slotFuncType is the function type slot, the type of the slot a method value
+// fills, names through any alias (a Sendable one too); nil for no slot or one
+// of no function type.
+func (t *galaASTTransformer) slotFuncType(slot transpiler.Type) *transpiler.FuncType {
+	if slot == nil {
+		return nil
+	}
+	slot, _ = transpiler.UnwrapSendable(t.followAliasChain(slot))
+	return t.resolveTranspilerTypeAsFuncType(slot)
 }
 
 // methodValueTypeParamPrefix starts the name a method value's own type

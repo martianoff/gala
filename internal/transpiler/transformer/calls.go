@@ -772,7 +772,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			var renamedSlot transpiler.Type
 			var renamedParams []string
 			byNameType, sendable := transpiler.UnwrapSendable(substitutedParamType)
-			if t.isGenericMethodValue(v.expr) {
+			if !v.spread && t.isGenericMethodValue(v.expr) {
 				// A method value of a method with type parameters of its
 				// own takes them from the parameter it fills (`b.Pair` in
 				// `xs.Map(b.Pair)`), as transformArgument gives it; this
@@ -800,14 +800,17 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					return t.transformArgument(v.expr, slot{typ: param, open: true}, false)
 				})
 				// A member named like such a method that is none (a field
-				// `Map`) is lowered as any other argument, never adapted
-				// to a slot naming the renamed placeholders.
-				if txErr == nil && t.mentionsUnboundTypeParam(t.getExprTypeName(expr)) {
-					expr, txErr = t.lowerExpr(v.expr)
-				} else {
+				// `Map`), or one that fails to lower here, is lowered as
+				// any other argument below, never adapted to a slot
+				// naming the renamed placeholders.
+				if txErr == nil && !t.mentionsUnboundTypeParam(t.getExprTypeName(expr)) {
 					renamedSlot, renamedParams = param, unbound
 				}
-			} else if ft := t.resolveTranspilerTypeAsFuncType(byNameType); !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesNullaryGenericFunc(v.expr) {
+			}
+			switch ft := t.resolveTranspilerTypeAsFuncType(byNameType); {
+			case renamedSlot != nil:
+				// Lowered as a method value above.
+			case !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesNullaryGenericFunc(v.expr):
 				// Lift a by-name argument (`func() U`) to its thunk, as
 				// transformArgument does for a generic function; the
 				// thunk's result type (the expression's own type while U
@@ -829,7 +832,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				if txErr != nil {
 					expr, txErr = t.lowerExpr(v.expr)
 				}
-			} else {
+			default:
 				expr, txErr = t.lowerExpr(v.expr)
 			}
 			if txErr != nil {
