@@ -1657,3 +1657,134 @@ theorem frameRel_params : ∀ (xks : List (String × Kind)) (ps : List Spec.Para
     simp [KRel] at hk
 
 end Frame
+
+/-! ## Helpers for a call -/
+
+section CallHelpers
+open Gala.GoCore.Full
+
+/-- galaspec's `runIn`: the body run in the frame; a `return` is its value; the caller's
+    locals back when it ends normally. -/
+theorem runIn_res (ds : Spec.Decls) (d : Nat) (fr : Spec.Env) (body : Spec.Expr) (s : Spec.St) :
+    (Spec.runIn ds d fr body).run.run s = match (Spec.eval ds d body).run.run { s with locals := fr } with
+      | (.ok v, t) => (.ok v, { t with locals := s.locals })
+      | (.error (.ret v), t) => (.ok v, { t with locals := s.locals })
+      | (.error e, t) => (.error e, t) := by
+  rw [Spec.runIn_run, Spec.run_tryCatch_eq]
+  rcases (Spec.eval ds d body).run.run { s with locals := fr } with ⟨r, t⟩
+  cases r with
+  | ok => rfl
+  | error e => cases e <;> rfl
+
+theorem mapM_params : ∀ (ps : List Spec.Param) (xks : List (String × Kind)),
+    ps.mapM (fun p => do pure (p.name, ← tyKindS (← p.type))) = some xks →
+      ps.map (·.name) = xks.map (·.1) ∧ ps.map (·.type) = xks.map (fun xk => some (.name (kindName xk.2)))
+  | [], xks, h => by simp at h; subst h; simp
+  | p :: ps, xks, h => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨⟨x, k⟩, ⟨t, ht, k', hk', hxk⟩, xs, hxs, rfl⟩ := h
+    simp only [Prod.mk.injEq] at hxk
+    obtain ⟨rfl, rfl⟩ := hxk
+    obtain ⟨h1, h2⟩ := mapM_params ps xs hxs
+    simp [h1, h2, ht, tyKindS_some hk']
+
+/-- What a function's lowered signature says of its galaspec declaration. -/
+theorem sigOf_facts {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind} (h : sigOf F = some (xks, ρ)) :
+    F.params.map (·.name) = xks.map (·.1) ∧
+    F.params.map (·.type) = xks.map (fun xk => some (.name (kindName xk.2))) ∧
+    F.result = some (.name (kindName ρ)) := by
+  simp only [sigOf, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at h
+  obtain ⟨xs, hxs, t, ht, ρ', hρ, hpair⟩ := h
+  simp only [Prod.mk.injEq] at hpair
+  obtain ⟨rfl, rfl⟩ := hpair
+  obtain ⟨h1, h2⟩ := mapM_params F.params xs hxs
+  exact ⟨h1, h2, by rw [ht, tyKindS_some hρ]⟩
+
+theorem params_typed {F : Spec.Func} {xks : List (String × Kind)}
+    (h : F.params.map (·.type) = xks.map (fun xk => some (.name (kindName xk.2)))) :
+    ∀ p ∈ F.params, ∃ k, p.type = some (.name (kindName k)) := by
+  intro p hp
+  have : p.type ∈ xks.map (fun xk => some (Spec.Ty.name (kindName xk.2))) := h ▸ List.mem_map_of_mem hp
+  simp only [List.mem_map] at this
+  obtain ⟨xk, -, he⟩ := this
+  exact ⟨xk.2, he.symm⟩
+
+theorem paramStep_env (a : (String × Expr) × Val) (s : Env × St) :
+    (paramStep a s).1.pkg = s.1.pkg ∧ (paramStep a s).1.tenv = s.1.tenv ∧ (paramStep a s).1.iota = s.1.iota := by
+  rcases a with ⟨⟨x, te⟩, v⟩
+  rcases s with ⟨env, g⟩
+  simp only [paramStep, Env.bind]
+  split
+  · exact ⟨rfl, rfl, rfl⟩
+  · split <;> exact ⟨rfl, rfl, rfl⟩
+
+/-- Binding the parameters keeps the package, the type parameters and `iota`, and `true`
+    and `false` unshadowed. -/
+theorem params_env : ∀ (l : List ((String × Expr) × Val)) (s : Env × St) (cx : Ctx),
+    (∀ a ∈ l, a.1.1 ≠ "_" ∧ a.1.1 ≠ "true" ∧ a.1.1 ≠ "false") → Predeclared cx s.1 →
+    (l.foldl (fun s a => paramStep a s) s).1.pkg = s.1.pkg ∧ (l.foldl (fun s a => paramStep a s) s).1.tenv = s.1.tenv ∧
+      Predeclared cx (l.foldl (fun s a => paramStep a s) s).1
+  | [], _, _, _, hp => ⟨rfl, rfl, hp⟩
+  | a :: l, s, cx, hn, hp => by
+    rw [List.foldl_cons]
+    obtain ⟨h1, h2, h3⟩ := hn a (by simp)
+    have hp' : Predeclared cx (paramStep a s).1 := by
+      rcases a with ⟨⟨x, te⟩, v⟩
+      exact predeclared_bind hp x _ h1 h2 h3
+    obtain ⟨e1, e2, -⟩ := paramStep_env a s
+    obtain ⟨f1, f2, f3⟩ := params_env l (paramStep a s) cx (fun b hb => hn b (by simp [hb])) hp'
+    exact ⟨f1.trans e1, f2.trans e2, f3⟩
+
+/-- Binding the parameters only adds cells. -/
+theorem params_st : ∀ (l : List ((String × Expr) × Val)) (s : Env × St),
+    GFrame s.2 (l.foldl (fun s a => paramStep a s) s).2 ∧ (l.foldl (fun s a => paramStep a s) s).2.steps = s.2.steps
+  | [], s => ⟨gframe_refl _, rfl⟩
+  | a :: l, s => by
+    rw [List.foldl_cons]
+    have hstep : GFrame s.2 (paramStep a s).2 ∧ (paramStep a s).2.steps = s.2.steps := by
+      rcases a with ⟨⟨x, te⟩, v⟩
+      rcases s with ⟨env, g⟩
+      exact ⟨⟨pre_push _ _, by cases g; rfl⟩, rfl⟩
+    obtain ⟨h1, h2⟩ := params_st l (paramStep a s)
+    exact ⟨gframe_trans hstep.1 h1, h2.trans hstep.2⟩
+
+/-- The frame of a call: parameters bound, a list of deferred calls pushed, the body run, the
+    list popped: only cells added. -/
+theorem call_frame {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hpb : GFrame g₀ pb)
+    (hb : GFrame { pb with defers := D :: g₀.defers } g₁) : GFrame g₀ { g₁ with defers := g₀.defers } := by
+  refine ⟨pre_trans hpb.1 hb.1, ?_⟩
+  have e₁ := hpb.2; have e₂ := hb.2
+  cases g₀; cases pb; cases g₁
+  simp only [St.mk.injEq] at e₁ e₂ ⊢
+  obtain ⟨-, -, a1, a2, -, a3, a4, a5, a6, a7⟩ := e₁
+  obtain ⟨-, -, b1, b2, -, b3, b4, -, b6, b7⟩ := e₂
+  subst_vars
+  simp
+
+/-- A name the package does not declare, and not exported, is no package's. -/
+theorem nameOwner_none (cx : Ctx) (env : Env) (x : String) (p : PkgCtx) (hpk : cx.pkgs.get? env.pkg = some p)
+    (ho : p.objs.get? x = none) (hx : exported x = false) : nameOwner cx env x = none := by
+  unfold nameOwner
+  rw [hpk]
+  have hc : p.objs.contains x = false := by
+    simp only [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, ho, Option.isSome_none]
+  simp only [hc, Bool.false_eq_true, ite_false, hx, Bool.not_false, ite_true]
+
+/-- The environment a lowered function is called in, before its parameters, has `true`
+    and `false` unshadowed. -/
+theorem predeclared_callee (cx : Ctx) (P : String) (fi : Nat) (p : PkgCtx) (hpk : cx.pkgs.get? P = some p)
+    (hobj : ∀ x ∈ ["true", "false", "int", "bool", "string"], p.objs.get? x = none) :
+    Predeclared cx (calleeEnv P fi).push := by
+  refine ⟨rfl, fun x hx => ?_⟩
+  have ho : p.objs.get? x = none := hobj x (by simp at hx ⊢; rcases hx with rfl | rfl <;> simp)
+  have hexp : exported x = false := by simp at hx; rcases hx with rfl | rfl <;> decide
+  exact ⟨by simp [calleeEnv, Env.push, Env.lookup, List.findSome?], p, hpk, ho,
+    nameOwner_none cx _ x p hpk ho hexp⟩
+
+theorem nameOwner_kinds (cx : Ctx) (P : String) (fi : Nat) (p : PkgCtx) (hpk : cx.pkgs.get? P = some p)
+    (hobj : ∀ x ∈ ["true", "false", "int", "bool", "string"], p.objs.get? x = none) (k : Kind) :
+    nameOwner cx (calleeEnv P fi) (kindName k) = none :=
+  nameOwner_none cx _ _ p hpk (hobj _ (by cases k <;> simp [kindName])) (by cases k <;> decide)
+
+end CallHelpers
