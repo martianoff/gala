@@ -2204,52 +2204,6 @@ end CallSim
 
 /-! ## Expressions, assembled -/
 
-section ExprAll
-open Gala.GoCore.Full
-
-variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
-
-theorem exprSim_zero : ExprSim ds cx P K sg 0 := by
-  intro κ e k le _ s g env _ _ N _
-  rw [eval_zero]; trivial
-
-/-- **Expressions with calls, at depth `d + 1`**, from the parts at depth `d`. -/
-theorem exprSim_succ (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : ExprSim ds cx P K sg d)
-    (ihB : BodySim ds cx P K sg d) : ExprSim ds cx P K sg (d + 1) := by
-  intro κ e k le hl s g env hi hsg N hN
-  have hKN : K ≤ N := by rw [Nat.mul_succ] at hN; omega
-  match e, hl with
-  | .lit l, hl => exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC] using hl) s g env hi _ N hKN
-  | .name x, hl => exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC] using hl) s g env hi _ N hKN
-  | .paren x, hl =>
-    cases hc : hasCall x
-    · exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC, hc] using hl) s g env hi _ N hKN
-    · exact paren_sim ds cx P K sg d ihE (by omega) κ x k le hl hc s g env hi hsg N hN
-  | .unary op x, hl =>
-    cases hc : hasCall x
-    · exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC, hc] using hl) s g env hi _ N hKN
-    · exact unary_sim3 ds cx P K sg d ihE (by omega) κ op x k le hl hc s g env hi hsg N hN
-  | .binary op l r, hl =>
-    cases hc : (hasCall l || hasCall r)
-    · have hl' : lowerLeaf K κ (.binary op l r) = some (k, le) := by
-        simp only [lowerC] at hl; rw [hc] at hl; simpa using hl
-      exact leaf_sim ds cx P sg K κ _ k le hl' s g env hi _ N hKN
-    · by_cases hab : op = "&&" ∨ op = "||"
-      · exact andor_sim3 ds cx P K sg d ihE (by omega) κ op hab l r k le hl hc s g env hi hsg N hN
-      · simp only [not_or] at hab
-        exact binary_sim3 ds cx P K sg d ihE (by omega) κ op l r k le hl hc hab.1 hab.2 s g env hi hsg N hN
-  | .call (.name f) args, hl => exact call_sim3 ds cx P K sg d hF hK ihE ihB κ f args k le hl s g env hi hsg N hN
-  | .call (.lit _) _, hl | .call (.paren _) _, hl | .call (.unary ..) _, hl | .call (.binary ..) _, hl
-  | .call (.call ..) _, hl | .call (.select ..) _, hl | .call (.tuple _) _, hl | .call (.ifExpr ..) _, hl
-  | .call (.mtch ..) _, hl | .call (.block _) _, hl | .call (.ifStmt ..) _, hl | .call (.ret _) _, hl
-  | .call (.assign ..) _, hl | .call (.incdec ..) _, hl | .call (.decl ..) _, hl | .call (.interp _) _, hl
-  | .call (.lambda ..) _, hl | .call (.named ..) _, hl | .call (.unsupported _) _, hl
-  | .select .., hl | .tuple _, hl | .ifExpr .., hl | .mtch .., hl | .block _, hl | .ifStmt .., hl
-  | .ret _, hl | .assign .., hl | .incdec .., hl | .decl .., hl | .interp _, hl | .lambda .., hl
-  | .named .., hl | .unsupported _, hl => simp [lowerC] at hl
-
-end ExprAll
-
 /-! ## Statements with calls -/
 
 section Stmts
@@ -2274,12 +2228,6 @@ def BlockSim3 (d : Nat) : Prop :=
   ∀ ρ κ ss κ' ls, lowerSs3 K sg ρ κ ss = some (κ', ls) → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d + 2 ≤ N + K →
       ResU3 ρ (fun _ => True) s g ((Spec.eval ds d (.block ss)).run.run s) ((execBlock cx N env ls).run.run g)
-
-/-- A function's block body, from `K * d + 3` on. -/
-def TailSim (d : Nat) : Prop :=
-  ∀ ρ κ ss ls, lowerTail K sg ρ κ ss = some ls → ∀ (s : Spec.St) (g : St) (env : Env),
-    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d + 3 ≤ N →
-      ResB ρ s g ((Spec.evalBlock ds d ss).run.run s) ((execStmts cx N env ls).run.run g)
 
 theorem inv3_push {κ : String → Option Kind} {c : Spec.Core} {g : St} {env : Env}
     (h : Inv3 cx P sg κ c g env) : Inv3 cx P sg κ c g env.push :=
@@ -2743,6 +2691,433 @@ theorem stmtSim_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihB : BlockSim3 d
     simp [lowerS3] at hl
 
 end Stmts3
+
+/-! ## Tails: a function's last value and an IIFE's arms -/
+
+section Tails
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+/-- **A tail's results agree**: a value of kind `k` galaspec's code ends with is the value
+    GoCore's `return`s, with galaspec's locals after it as `L` says; a `return` of galaspec,
+    where returning is allowed (`r`), Go's `return`; or the same panic. -/
+def ResT (L : Spec.Env → Spec.Env → Prop) (r : Option Kind) (k : Kind) (s : Spec.St) (g : St) :
+    Except Spec.Stop Spec.Val × Spec.St → Except Stop α × St → Prop
+  | (.ok v, s'), res => RetOK (some k) s g v s' res ∧ L s'.locals s.locals
+  | (.error (.ret v), s'), res => RetOK r s g v s' res
+  | (.error (.panic pc m), s'), res => PanOK s g pc m s' res
+  | _, _ => True
+
+/-- galaspec's locals extended. -/
+def Ext (l l₀ : Spec.Env) : Prop := ∃ pre, l = pre ++ l₀
+
+/-- A `return` where none is allowed never matches: a related value has a kind. -/
+theorem retOK_none {s : Spec.St} {g : St} {v : Spec.Val} {s' : Spec.St} {r : Except Stop α × St}
+    (h : RetOK none s g v s' r) : False := by
+  obtain ⟨w, g', -, hv, hk, -⟩ := h
+  cases hv <;> simp [valKind] at hk
+
+/-- The results of code whose GoCore run is passed on when it stops (`Y` is an error where
+    `X` is). -/
+theorem resT_err {L : Spec.Env → Spec.Env → Prop} {r : Option Kind} {k : Kind} {s : Spec.St} {g : St}
+    {sr : Except Spec.Stop Spec.Val × Spec.St} {X : Except Stop α × St} {Y : Except Stop β × St}
+    (hY : ∀ e g', X = (.error e, g') → Y = (.error e, g')) (h : ResT L r k s g sr X) : ResT L r k s g sr Y := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => obtain ⟨pv, g', hr, rest⟩ := h; exact ⟨pv, g', hY _ _ hr, rest⟩
+    | ret => obtain ⟨w, g', hr, rest⟩ := h; exact ⟨w, g', hY _ _ hr, rest⟩
+    | _ => trivial
+  · obtain ⟨⟨w, g', hr, rest⟩, hl⟩ := h
+    exact ⟨⟨w, g', hY _ _ hr, rest⟩, hl⟩
+
+theorem resT_mono {L L' : Spec.Env → Spec.Env → Prop} (hL : ∀ a b, L a b → L' a b) {r : Option Kind} {k : Kind}
+    {s : Spec.St} {g : St} {sr : Except Spec.Stop Spec.Val × Spec.St} {X : Except Stop α × St}
+    (h : ResT L r k s g sr X) : ResT L' r k s g sr X := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e; cases e <;> exact h
+  · exact ⟨h.1, hL _ _ h.2⟩
+
+theorem resT_tick {s₁ s : Spec.St} (ht : Ticked s₁ s) {L : Spec.Env → Spec.Env → Prop} {r : Option Kind} {k : Kind}
+    {g : St} {sr : Except Spec.Stop Spec.Val × Spec.St} {X : Except Stop α × St}
+    (h : ResT L r k s₁ g sr X) : ResT L r k s g sr X := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => exact panOK_tick ht h
+    | ret => exact retOK_tick ht h
+    | _ => trivial
+  · exact ⟨retOK_tick ht h.1, by rw [← show s₁.locals = s.locals from congrArg Spec.Core.locals ht.core]; exact h.2⟩
+
+/-- From the state after a statement (locals extended, only cells added) to the one before. -/
+theorem resT_after {r : Option Kind} {k : Kind} {s t : Spec.St} {g g₁ : St}
+    (hh : Pre s.heap t.heap) (hgl : t.globals = s.globals) (ho : t.out = s.out) (hg : GFrame g g₁)
+    (hsp : Spent s t g g₁) (hl : Ext t.locals s.locals) {sr : Except Spec.Stop Spec.Val × Spec.St}
+    {X : Except Stop α × St} (h : ResT Ext r k t g₁ sr X) : ResT Ext r k s g sr X := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => exact panOK_trans ho hg h
+    | ret => exact retOK_trans hh hgl ho hg hsp h
+    | _ => trivial
+  · obtain ⟨pre, hpre⟩ := hl
+    obtain ⟨pre', hpre'⟩ := h.2
+    exact ⟨retOK_trans hh hgl ho hg hsp h.1, ⟨pre' ++ pre, by rw [hpre', hpre]; simp⟩⟩
+
+/-- A function body's tail, its `return`s of the result's kind: `body_correct`'s relation. -/
+theorem resB_of_resT {L : Spec.Env → Spec.Env → Prop} {ρ : Kind} {s : Spec.St} {g : St}
+    {sr : Except Spec.Stop Spec.Val × Spec.St} {X : Except Stop Env × St}
+    (h : ResT L (some ρ) ρ s g sr X) : ResB ρ s g sr X := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e <;> first | trivial | exact h
+  · exact h.1
+
+/-- A tail, at galaspec depth `d` and GoCore depth from `K * d + 3` on: galaspec's locals
+    as they were after it. -/
+def TailSim (d : Nat) : Prop :=
+  ∀ r κ e k ls, tailOf K sg r κ e = some (k, ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d + 3 ≤ N →
+      ResT (· = ·) r k s g ((Spec.eval ds d e).run.run s) ((execStmts cx N env ls).run.run g)
+
+/-- A block's elements as a tail, from `K * d + 3` on: galaspec's locals extended. -/
+def TsSim (d : Nat) : Prop :=
+  ∀ r κ ss k ls, lowerTs K sg r κ ss = some (k, ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d + 3 ≤ N →
+      ResT Ext r k s g ((Spec.evalBlock ds d ss).run.run s) ((execStmts cx N env ls).run.run g)
+
+/-- The `if` of a tail or an IIFE (`if (c) a else b`, or `if (c) { .. } else b`), at
+    galaspec depth `d + 1` and GoCore depth from `K * d + 6` on; galaspec's step for the `if`
+    already taken (`kk` steps left after it), which pays for an IIFE's call. -/
+def IfTSim (d : Nat) : Prop :=
+  ∀ r κ c a b k st, ifOf (lowerC K sg κ c) (tailOf K sg r κ a) (tailOf K sg r κ b) = some (k, st) →
+    ∀ e, (e = .ifExpr c a b ∨ ∃ as, a = .block as ∧ e = .ifStmt c a (some b)) →
+    ∀ (s : Spec.St) (kk : Nat) (g : St) (env : Env), s.steps = kk + 1 →
+      Inv3 cx P sg κ s.toCore g env → kk ≤ g.steps → ∀ N, K * d + 6 ≤ N →
+        ResT (· = ·) r k { s with steps := kk } g ((Spec.eval ds (d + 1) e).run.run s)
+          ((execStmt cx N env st).run.run g)
+
+theorem ifOf_some {rc : Option (Kind × Expr)} {ra rb : Option (Kind × List Stmt)} {k : Kind} {st : Stmt}
+    (h : ifOf rc ra rb = some (k, st)) :
+    ∃ lc ta tb, rc = some (.bool, lc) ∧ ra = some (k, ta) ∧ rb = some (k, tb) ∧ st = ifT lc ta tb := by
+  unfold ifOf at h
+  split at h
+  · rename_i lc ka ta kb tb
+    split at h
+    · rename_i hk; subst hk
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨lc, ta, tb, rfl, rfl, rfl, rfl⟩
+    · cases h
+  · cases h
+
+theorem eval_ifE_err (d kk : Nat) (c a b e : Spec.Expr) (he : e = .ifExpr c a b ∨ ∃ as, a = .block as ∧ e = .ifStmt c a (some b))
+    (s t : Spec.St) (er : Spec.Stop) (hs : s.steps = kk + 1)
+    (hc : (Spec.eval ds d c).run.run { s with steps := kk } = (.error er, t)) :
+    (Spec.eval ds (d + 1) e).run.run s = (.error er, t) := by
+  rcases he with rfl | ⟨as, rfl, rfl⟩
+  · rw [Spec.eval.eq_def ds (d + 1) _]
+    simp only [Spec.run_bind_eq, tick_succ s kk hs, hc]
+  · exact eval_ifStmt_err ds d kk c _ _ s t er hs hc
+
+theorem eval_ifE_ok (d kk : Nat) (c a b e : Spec.Expr) (he : e = .ifExpr c a b ∨ ∃ as, a = .block as ∧ e = .ifStmt c a (some b))
+    (bv : Bool) (s t : Spec.St) (hs : s.steps = kk + 1)
+    (hc : (Spec.eval ds d c).run.run { s with steps := kk } = (.ok (.bool bv), t)) :
+    (Spec.eval ds (d + 1) e).run.run s = (Spec.eval ds d (if bv then a else b)).run.run t := by
+  rcases he with rfl | ⟨as, rfl, rfl⟩
+  · rw [Spec.eval.eq_def ds (d + 1) _]
+    simp only [Spec.run_bind_eq, tick_succ s kk hs, hc]
+    cases bv <;> rfl
+  · exact eval_ifStmt_some ds d kk c _ _ bv s t hs hc
+
+/-- A tail's arm, from after the condition to before the `if`. -/
+theorem resT_arm {r : Option Kind} {k : Kind} {s t : Spec.St} {g g₁ : St} (hsf : SFrame s.toCore t.toCore)
+    (hg : GFrame g g₁) (hsp : Spent s t g g₁) {sr : Except Spec.Stop Spec.Val × Spec.St}
+    {X : Except Stop α × St} (h : ResT (· = ·) r k t g₁ sr X) : ResT (· = ·) r k s g sr X := by
+  obtain ⟨hl, hgl, ho⟩ := sframe_parts hsf
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => exact panOK_trans ho hg h
+    | ret => exact retOK_trans hsf.1 hgl ho hg hsp h
+    | _ => trivial
+  · exact ⟨retOK_trans hsf.1 hgl ho hg hsp h.1, h.2.trans hl⟩
+
+theorem ifTSim_of (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihT : TailSim ds cx P K sg d) :
+    IfTSim ds cx P K sg d := by
+  intro r κ c a b k st hif e he s kk g env hs hi hsg N hN
+  obtain ⟨lc, ta, tb, hlc, hta, htb, rfl⟩ := ifOf_some hif
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by omega⟩
+  have hip := inv3_push cx P sg hi
+  have hE := ihE κ c .bool lc hlc { s with steps := kk } g env.push hip hsg (n + 3) (by omega)
+  rcases hr : (Spec.eval ds d c).run.run { s with steps := kk } with ⟨rc, t⟩
+  rw [hr] at hE
+  cases rc with
+  | error er =>
+    rw [eval_ifE_err ds d kk c a b e he s t er hs hr]
+    cases er with
+    | panic pc msg =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE
+      rw [ifT, execStmt_if_err cx (n + 2) env lc ta _ g g' _ hg]
+      exact ⟨pv, g', rfl, hp, ho, hgf⟩
+    | ret => exact hE.elim
+    | _ => trivial
+  | ok v =>
+  obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+  obtain ⟨bv, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+  rw [eval_ifE_ok ds d kk c a b e he bv s t hs hr]
+  have hit : Inv3 cx P sg κ t.toCore g' env.push.push := inv3_push cx P sg (inv3_frame hip hsf hgf)
+  have hstg : t.steps ≤ g'.steps := spent_le hsp hsg
+  refine resT_arm hsf hgf hsp ?_
+  cases bv with
+  | true =>
+    rw [ifT, execStmt_if_true cx (n + 2) env lc ta _ g g' ty hg, execBlock_run]
+    exact resT_err (fun e g'' h => by simp [h, withEnv])
+      (ihT r κ a k ta hta t g' env.push.push hit hstg (n + 2) (by omega))
+  | false =>
+    rw [ifT, execStmt_if_false cx (n + 2) env lc ta _ g g' ty hg]
+    simp only
+    rw [execStmt_block, execBlock_run]
+    exact resT_err (fun e g'' h => by simp [h, withEnv])
+      (ihT r κ b k tb htb t g' env.push.push hit hstg (n + 1) (by omega))
+
+end Tails
+
+section Tails2
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem execStmts_ret1 (n : Nat) (env : Env) (le : Expr) (g : St) :
+    (execStmts cx (n + 4) env [.ret [le]]).run.run g = match (evalExpr cx (n + 1) env le).run.run g with
+      | (.ok w, g') => (.error (.ret w.results), g')
+      | (.error e, g') => (.error e, g') := by
+  rw [execStmts_cons, execStmt_ret]
+  rcases (evalExpr cx (n + 1) env le).run.run g with ⟨r, g'⟩
+  cases r <;> rfl
+
+theorem lowerT_cases {r : Option Kind} {κ : String → Option Kind} {e : Spec.Expr} {k : Kind} {ls : List Stmt}
+    (h : lowerT K sg r κ e = some (k, ls)) :
+    (∃ c a b st, e = .ifExpr c a b ∧ ifOf (lowerC K sg κ c) (tailOf K sg r κ a) (tailOf K sg r κ b) = some (k, st) ∧
+      ls = [.block [st]]) ∨
+    (∃ c as b st, e = .ifStmt c (.block as) (some b) ∧
+      ifOf (lowerC K sg κ c) (tailOf K sg r κ (.block as)) (tailOf K sg r κ b) = some (k, st) ∧ ls = [.block [st]]) ∨
+    (∃ ss, e = .block ss ∧ lowerTs K sg r κ ss = some (k, ls)) ∨
+    (∃ x le, e = .ret (some x) ∧ lowerC K sg κ x = some (k, le) ∧ r = some k ∧ ls = [.ret [le]]) := by
+  match e, h with
+  | .ifExpr c a b, h =>
+    simp only [lowerT, Option.map_eq_some_iff, Prod.mk.injEq] at h
+    obtain ⟨⟨k', st⟩, hst, rfl, rfl⟩ := h
+    exact Or.inl ⟨c, a, b, st, rfl, hst, rfl⟩
+  | .ifStmt c (.block as) (some b), h =>
+    simp only [lowerT, Option.map_eq_some_iff, Prod.mk.injEq] at h
+    obtain ⟨⟨k', st⟩, hst, rfl, rfl⟩ := h
+    exact Or.inr (Or.inl ⟨c, as, b, st, rfl, hst, rfl⟩)
+  | .block ss, h => exact Or.inr (Or.inr (Or.inl ⟨ss, rfl, h⟩))
+  | .ret (some x), h =>
+    simp only [lowerT] at h
+    split at h
+    · rename_i k' le hle
+      split at h
+      · rename_i hk
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact Or.inr (Or.inr (Or.inr ⟨x, le, rfl, hle, hk.symm, rfl⟩))
+      · cases h
+    · cases h
+  | .ifStmt _ (.block _) none, h | .ret none, h => simp [lowerT] at h
+  | .lit _, h | .name _, h | .unary .., h | .binary .., h | .call .., h | .select .., h
+  | .paren _, h | .tuple _, h | .mtch .., h | .assign .., h | .incdec .., h | .decl .., h
+  | .interp _, h | .lambda .., h | .named .., h | .unsupported _, h => simp [lowerT] at h
+  | .ifStmt _ (.lit _) _, h | .ifStmt _ (.name _) _, h | .ifStmt _ (.unary ..) _, h
+  | .ifStmt _ (.binary ..) _, h | .ifStmt _ (.call ..) _, h | .ifStmt _ (.select ..) _, h
+  | .ifStmt _ (.paren _) _, h | .ifStmt _ (.tuple _) _, h | .ifStmt _ (.ifExpr ..) _, h
+  | .ifStmt _ (.mtch ..) _, h | .ifStmt _ (.ifStmt ..) _, h | .ifStmt _ (.ret _) _, h
+  | .ifStmt _ (.assign ..) _, h | .ifStmt _ (.incdec ..) _, h | .ifStmt _ (.decl ..) _, h
+  | .ifStmt _ (.interp _) _, h | .ifStmt _ (.lambda ..) _, h | .ifStmt _ (.named ..) _, h
+  | .ifStmt _ (.unsupported _) _, h => simp [lowerT] at h
+
+/-- **A tail**, from its parts one level down. -/
+theorem tailSim_of (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihE' : ∀ d', d = d' + 1 → ExprSim ds cx P K sg d')
+    (ihTs : ∀ d', d = d' + 1 → TsSim ds cx P K sg d') (ihI : ∀ d', d = d' + 1 → IfTSim ds cx P K sg d')
+    (hK : 7 ≤ K) : TailSim ds cx P K sg d := by
+  intro r κ e k ls hl s g env hi hsg N hN
+  cases d with
+  | zero => rw [eval_zero]; trivial
+  | succ d' =>
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by rw [Nat.mul_succ] at hN; omega⟩
+  unfold tailOf armOf at hl
+  split at hl
+  · -- a compound tail
+    rcases lowerT_cases K sg hl with ⟨c, a, b, st, rfl, hst, rfl⟩ | ⟨c, as, b, st, rfl, hst, rfl⟩ |
+      ⟨ss, rfl, hss⟩ | ⟨x, le, rfl, hle, rfl, rfl⟩
+    · cases hs : s.steps with
+      | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+      | succ kk =>
+      have h := ihI d' rfl r κ c a b k st hst _ (Or.inl rfl) s kk g env.push hs (inv3_push cx P sg hi)
+        (by omega) n (by rw [Nat.mul_succ] at hN; omega)
+      refine resT_tick (ticked_of s kk hs) (resT_err ?_ h)
+      intro e g' he
+      rw [execStmts_cons, execStmt_block, execBlock_run, execStmts_cons, he]; rfl
+    · cases hs : s.steps with
+      | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+      | succ kk =>
+      have h := ihI d' rfl r κ c (.block as) b k st hst _ (Or.inr ⟨as, rfl, rfl⟩) s kk g env.push hs
+        (inv3_push cx P sg hi) (by omega) n (by rw [Nat.mul_succ] at hN; omega)
+      refine resT_tick (ticked_of s kk hs) (resT_err ?_ h)
+      intro e g' he
+      rw [execStmts_cons, execStmt_block, execBlock_run, execStmts_cons, he]; rfl
+    · cases hs : s.steps with
+      | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+      | succ kk =>
+      have ht := ticked_of s kk hs
+      rw [eval_block_run, tick_succ s kk hs]
+      simp only
+      have h := ihTs d' rfl r κ ss k ls hss { s with steps := kk } g env hi (by show kk ≤ g.steps; omega) (n + 4)
+        (by rw [Nat.mul_succ] at hN; omega)
+      rcases hr : (Spec.evalBlock ds d' ss).run.run { s with steps := kk } with ⟨rb, t⟩
+      rw [hr] at h
+      cases rb with
+      | error er =>
+        cases er with
+        | panic => exact panOK_tick ht h
+        | ret => exact retOK_tick ht h
+        | _ => trivial
+      | ok v =>
+        obtain ⟨⟨w, g', hg, hvw, hkv, hh, hgl, ho, hgf, hsp⟩, pre, hpre⟩ := h
+        refine ⟨retOK_tick ht ⟨w, g', hg, hvw, hkv, hh, hgl, ho, hgf, hsp⟩, ?_⟩
+        show Spec.exitScope t.locals s.locals.length = s.locals
+        rw [hpre]; simp [Spec.exitScope]
+    · cases hs : s.steps with
+      | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+      | succ kk =>
+      have ht := ticked_of s kk hs
+      rw [eval_ret_run ds d' kk x s hs, execStmts_ret1]
+      have hE := ihE' d' rfl κ x k le hle { s with steps := kk } g env hi (by show kk ≤ g.steps; omega) (n + 1)
+        (by rw [Nat.mul_succ] at hN; omega)
+      rcases hr : (Spec.eval ds d' x).run.run { s with steps := kk } with ⟨rx, t⟩
+      rw [hr] at hE
+      cases rx with
+      | error er =>
+        cases er with
+        | panic => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE; rw [hg]; exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+        | ret => exact hE.elim
+        | _ => trivial
+      | ok v =>
+        obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+        rw [hg]; simp only; rw [results_of_vrel hvw]
+        obtain ⟨-, hg1, ho1⟩ := sframe_parts hsf
+        exact retOK_tick ht ⟨w, g', rfl, hvw, hkv, hsf.1, hg1, ho1, hgf, hsp⟩
+  · -- an expression, returned
+    simp only [Option.map_eq_some_iff] at hl
+    obtain ⟨⟨k', le⟩, hle, hkl⟩ := hl
+    simp only [retTail, Prod.mk.injEq] at hkl
+    obtain ⟨rfl, rfl⟩ := hkl
+    rw [execStmts_ret1]
+    have hE := ihE κ e _ le hle s g env hi hsg (n + 1) (by omega)
+    rcases hr : (Spec.eval ds (d' + 1) e).run.run s with ⟨rx, t⟩
+    rw [hr] at hE
+    cases rx with
+    | error er =>
+      cases er with
+      | panic => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE; rw [hg]; exact ⟨pv, g', rfl, hp, ho, hgf⟩
+      | ret => exact hE.elim
+      | _ => trivial
+    | ok v =>
+      obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+      rw [hg]; simp only; rw [results_of_vrel hvw]
+      obtain ⟨hl1, hg1, ho1⟩ := sframe_parts hsf
+      exact ⟨⟨w, g', rfl, hvw, hkv, hsf.1, hg1, ho1, hgf, hsp⟩, hl1⟩
+
+/-- **A block's elements as a tail**: its statements, then its last element's tail. -/
+theorem tsSim_of (d : Nat) (ihS : StmtSim ds cx P K sg d) (ihT : TailSim ds cx P K sg d) : TsSim ds cx P K sg d := by
+  intro r κ ss
+  induction ss generalizing κ with
+  | nil => intro k ls hl; simp [lowerTs] at hl
+  | cons st rest ihl =>
+    intro k ls hl s g env hi hsg N hN
+    cases rest with
+    | nil =>
+      rw [evalBlock_one]
+      exact resT_mono (fun a b h => ⟨[], by simp [h]⟩) (ihT r κ st k ls hl s g env hi hsg N hN)
+    | cons st' rest' =>
+      simp only [lowerTs, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+        Option.some.injEq] at hl
+      obtain ⟨⟨κ₁, l⟩, hst, ⟨k', ls'⟩, hrest, hkl⟩ := hl
+      simp only [Prod.mk.injEq] at hkl
+      obtain ⟨rfl, rfl⟩ := hkl
+      obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by omega⟩
+      have hs := ihS r κ st κ₁ l hst s g env hi hsg n (by omega)
+      rw [evalBlock_cons, execStmts_cons]
+      rcases hrs : (Spec.eval ds d st).run.run s with ⟨rs, t⟩
+      rw [hrs] at hs
+      rcases hrg : (execStmt cx n env l).run.run g with ⟨rg, g'⟩
+      rw [hrg] at hs
+      cases rs with
+      | error e =>
+        cases e with
+        | panic => obtain ⟨pv, g'', hg, hp, ho, hgf⟩ := hs; rw [hg]; exact ⟨pv, g'', rfl, hp, ho, hgf⟩
+        | ret v => obtain ⟨w, g'', hg, rest⟩ := hs; rw [hg]; exact ⟨w, g'', rfl, rest⟩
+        | fuel => cases rg <;> trivial
+        | stuck => cases rg <;> trivial
+        | unsupported => cases rg <;> trivial
+      | ok v =>
+        obtain ⟨env', g'', hg, hinv, hh, hgl, hpre, hgf, hsp⟩ := hs
+        rw [hg]
+        simp only
+        have ho : t.out = s.out := by rw [hinv.inv.out, gframe_out hgf]; exact hi.inv.out.symm
+        exact resT_after hh hgl ho hgf hsp hpre
+          (ihl κ₁ _ ls' hrest t g'' env' hinv (spent_le hsp hsg) (n + 1) hN)
+
+end Tails2
+
+section ExprAll
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem exprSim_zero : ExprSim ds cx P K sg 0 := by
+  intro κ e k le _ s g env _ _ N _
+  rw [eval_zero]; trivial
+
+/-- **Expressions with calls, at depth `d + 1`**, from the parts at depth `d`. -/
+theorem exprSim_succ (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : ExprSim ds cx P K sg d)
+    (ihB : BodySim ds cx P K sg d) : ExprSim ds cx P K sg (d + 1) := by
+  intro κ e k le hl s g env hi hsg N hN
+  have hKN : K ≤ N := by rw [Nat.mul_succ] at hN; omega
+  match e, hl with
+  | .lit l, hl => exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC] using hl) s g env hi _ N hKN
+  | .name x, hl => exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC] using hl) s g env hi _ N hKN
+  | .paren x, hl =>
+    cases hc : hasCall x
+    · exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC, hc] using hl) s g env hi _ N hKN
+    · exact paren_sim ds cx P K sg d ihE (by omega) κ x k le hl hc s g env hi hsg N hN
+  | .unary op x, hl =>
+    cases hc : hasCall x
+    · exact leaf_sim ds cx P sg K κ _ k le (by simpa [lowerC, hc] using hl) s g env hi _ N hKN
+    · exact unary_sim3 ds cx P K sg d ihE (by omega) κ op x k le hl hc s g env hi hsg N hN
+  | .binary op l r, hl =>
+    cases hc : (hasCall l || hasCall r)
+    · have hl' : lowerLeaf K κ (.binary op l r) = some (k, le) := by
+        simp only [lowerC] at hl; rw [hc] at hl; simpa using hl
+      exact leaf_sim ds cx P sg K κ _ k le hl' s g env hi _ N hKN
+    · by_cases hab : op = "&&" ∨ op = "||"
+      · exact andor_sim3 ds cx P K sg d ihE (by omega) κ op hab l r k le hl hc s g env hi hsg N hN
+      · simp only [not_or] at hab
+        exact binary_sim3 ds cx P K sg d ihE (by omega) κ op l r k le hl hc hab.1 hab.2 s g env hi hsg N hN
+  | .call (.name f) args, hl => exact call_sim3 ds cx P K sg d hF hK ihE ihB κ f args k le hl s g env hi hsg N hN
+  | .call (.lit _) _, hl | .call (.paren _) _, hl | .call (.unary ..) _, hl | .call (.binary ..) _, hl
+  | .call (.call ..) _, hl | .call (.select ..) _, hl | .call (.tuple _) _, hl | .call (.ifExpr ..) _, hl
+  | .call (.mtch ..) _, hl | .call (.block _) _, hl | .call (.ifStmt ..) _, hl | .call (.ret _) _, hl
+  | .call (.assign ..) _, hl | .call (.incdec ..) _, hl | .call (.decl ..) _, hl | .call (.interp _) _, hl
+  | .call (.lambda ..) _, hl | .call (.named ..) _, hl | .call (.unsupported _) _, hl
+  | .select .., hl | .tuple _, hl | .ifExpr .., hl | .mtch .., hl | .block _, hl | .ifStmt .., hl
+  | .ret _, hl | .assign .., hl | .incdec .., hl | .decl .., hl | .interp _, hl | .lambda .., hl
+  | .named .., hl | .unsupported _, hl => simp [lowerC] at hl
+
+end ExprAll
+
 
 section Bodies
 open Gala.GoCore.Full
