@@ -60,6 +60,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"matchInStatementPos", t.matchInStatementPos},
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
 		{"tryThunkLambda", t.tryThunkLambda.ok()},
+		{"calleeTypeParams", len(t.calleeTypeParams) != 0},
 		{"hoistedPre", len(t.hoistedPre) != 0},
 		{"localDeclaration", t.localDeclaration},
 		{"signatureDots", t.signatureDots != nil},
@@ -107,6 +108,7 @@ var accumulatedStateFields = []string{
 	"localBindings",
 	"genericMethods",
 	"resultGenericMethods",
+	"typeParamMethods",
 	"functions",
 	"galaPkgPaths",
 	"dotImportedVals",
@@ -218,6 +220,7 @@ func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.typeParamConstraints = s.typeParamConstraints
 	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
 	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, lambdaSrc{}, nil
+	t.calleeTypeParams = nil
 	t.interpolationScope = nil
 	t.callFrames = nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil

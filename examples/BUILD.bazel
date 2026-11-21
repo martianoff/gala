@@ -1228,6 +1228,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "generic_method_value",
+    src = "generic_method_value.gala",
+    expected = "generic_method_value.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "use_lib_chained_generic",
     src = "use_lib_chained_generic.gala",
     expected = "use_lib_chained_generic.out",
