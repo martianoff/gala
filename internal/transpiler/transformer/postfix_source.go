@@ -232,8 +232,13 @@ func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes [
 			// them sees it, and only by a method's type arguments, not an
 			// index into a field named like one.
 			var slot transpiler.Type
-			if sel, isSel := base.(*ast.SelectorExpr); isSel && t.typeParamMethods[sel.Sel.Name] && t.namesGenericMethod(sel) {
-				slot = slotType(sel.Sel.Name)
+			if sel, isSel := base.(*ast.SelectorExpr); isSel && t.typeParamMethods[sel.Sel.Name] {
+				// Taken whatever the member is, so an index into a field
+				// named like such a method leaves no hint behind for its
+				// index expression.
+				if slot = slotType(sel.Sel.Name); !t.namesGenericMethod(sel) {
+					slot = nil
+				}
 			}
 			idx, err := t.resolveIndexAccess(base, indexSrc{s})
 			if err != nil || next == "(" {

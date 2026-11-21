@@ -77,11 +77,11 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		return nil, false, nil
 	}
 
-	// A by-name slot (`func() F`) the value is no thunk of is the thunk's
-	// value: the slot the value fills is its result.
-	if want := t.slotFuncType(slot); want != nil && len(want.Params) == 0 && len(ft.Params) > 0 {
-		slot = nil
-		if len(want.Results) == 1 {
+	// A by-name slot (`func() F`) the value is no thunk of, but whose F is
+	// a function type it fits, takes it as the thunk's value: the slot the
+	// value fills is F.
+	if want := t.slotFuncType(slot); want != nil && len(want.Params) == 0 && len(ft.Params) > 0 && len(want.Results) == 1 {
+		if inner := t.slotFuncType(want.Results[0]); inner != nil && len(inner.Params) == len(ft.Params) {
 			slot = want.Results[0]
 		}
 	}
