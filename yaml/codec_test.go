@@ -322,6 +322,8 @@ func TestDecoder_UndefinedEscapesFail(t *testing.T) {
 		{`"\uD800"`, `\uD800`},
 		{`"\U00110000"`, `\U00110000`},
 		{`"\U0000"`, `\U0000`},
+		{`"\U80000000"`, `\U80000000`},
+		{`"\UFFFFFFFF"`, `\UFFFFFFFF`},
 		{`"\é"`, `\é`},
 		{`"\x4é"`, `\x4é`},
 		{`"\uDE00"`, `\uDE00`},
