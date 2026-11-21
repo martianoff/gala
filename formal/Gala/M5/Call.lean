@@ -1,4 +1,35 @@
+/-
+  # M5, step 3a: direct calls and `return`
+
+  docs/FORMAL_SEMANTICS.MD, "M5". The reference lowering of calls of a program's functions,
+  `return`, and function bodies into GoCore, and its forward simulation (`calls_correct`,
+  `body_correct`, `stmts3_correct`).
+
+  * **The calls** are of top-level functions whose parameters and result are `int`, `bool`
+    or `string`, with positional arguments, one for each parameter (no named argument, no
+    default). GoCore's call goes `evalCall` → `declaredFunc?` → `callValue` → `callBody`;
+    galaspec's `eval` → `funcArgs` → `callFunc` → `runIn`. Both are unfolded here
+    (`evalCall_fn`, `callValue_fn`, `callBody_ret`; `eval_call_run`, `bindArgs_pos`,
+    `callFunc_run`, `runIn_res`). A name the lowering calls is no local (`Inv3`), so
+    GoCore resolves it to the package's object before any builtin.
+  * **The state relation** (`Inv3`) is step 2b's with every local known to the lowering;
+    the results (`ERes3`, `ResL3`, `ResU3`, `ResB`) frame GoCore's whole state
+    (`GFrame`: equal but for cells, their types and the steps) and galaspec's
+    (`SFrame`), and match `return`s.
+  * **Steps** (`Spent`): GoCore spends no more than galaspec. GoCore takes one step per
+    call, in `callBody` after the arguments; galaspec took one at the call node before
+    them, so a galaspec run that ends has paid for each of GoCore's.
+  * **Depth.** A recursive call's GoCore depth is not bounded by the program's text, so
+    the claim is for GoCore depths from `K * d` on, `d` galaspec's depth: each galaspec
+    level costs GoCore at most `K` levels when `K` is at least 7 (a call takes seven) and
+    at least the depth of each call-free part (the lowering at `K` checks it; a larger `K`
+    lowers the same, `lowerC_mono`, `lowerBody_mono`).
+  * **Order.** Stated for GoCore's evaluator as it is, left to right;
+    `Gala/M5/CallOrder.lean` says when GoCore's model of gc's order runs a body as
+    written.
+-/
 import Gala.M5.Stmt
+
 namespace Gala.M5
 open Gala.GoCore.Full
 
@@ -119,16 +150,6 @@ def calleeEnv (P : String) (fi : Nat) : Env := { pkg := P, file := fi, tenv := [
 def paramsBound (xks : List (String × Kind)) (vs : List Val) (env : Env) (g : St) : Env × St :=
   ((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip vs).foldl (fun s a => paramStep a s) (env, g)
 
-theorem flatMap_params (xks : List (String × Kind)) :
-    (xks.map fun xk => Field.mk [xk.1] (.ident (kindName xk.2))).flatMap
-      (fun | .mk ns t => if ns.isEmpty then [("_", t)] else ns.map (·, t)) =
-    xks.map fun xk => (xk.1, Expr.ident (kindName xk.2)) := by
-  induction xks with
-  | nil => rfl
-  | cons a l ih =>
-    rw [List.map_cons, List.flatMap_cons, ih]
-    simp
-
 /-- An argument of a parameter's kind. -/
 def ArgRel (xk : String × Kind) (w : Val) : Prop := ∃ v, VRel v w ∧ valKind v = some xk.2
 
@@ -181,8 +202,6 @@ theorem foldl_paramStep_defers : ∀ (l : List ((String × Expr) × Val)) (s : E
   | [], _ => rfl
   | a :: l, s => by rw [List.foldl_cons, foldl_paramStep_defers l, paramStep_defers]
 
-theorem paramsBound_defers (xks : List (String × Kind)) (vs : List Val) (env : Env) (g : St) :
-    (paramsBound xks vs env g).2.defers = g.defers := foldl_paramStep_defers _ _
 
 theorem gtick_succ (g : St) (k : Nat) (hk : g.steps = k + 1) :
     (tick : GM Unit).run.run g = (.ok (), { g with steps := k }) := by

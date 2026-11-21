@@ -604,7 +604,12 @@ theorem stmts3_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat)
 open Gala Gala.M5 GoCore.Full in
 theorem lowerBody_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (F : Spec.Func) (lb : List Stmt),
     lowerBody K sg F = some lb → lowerBody K' sg F = some lb :=
-  @Gala.M5.lowerBody_mono
+  Gala.M5.lowerBody_mono
+
+open Gala Gala.M5 GoCore.Full in
+theorem lowerC_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (κ : String → Option Kind) (e : Spec.Expr)
+    (r : Kind × Expr), lowerC K sg κ e = some r → lowerC K' sg κ e = some r :=
+  Gala.M5.lowerC_mono
 
 open Gala Gala.M5 GoCore.Full Hoist in
 theorem canon_eq : ∀ (s : Scope) (top : Bool) (e : Expr), CC e → FitsE s e → scanE s top e = canon top e :=

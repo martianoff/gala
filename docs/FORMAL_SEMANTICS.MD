@@ -527,7 +527,33 @@ column lists what each milestone's claim rests on beyond them.
   stated for GoCore's evaluator as it is. The order hypothesis step 3's theorem will take,
   `RunsStep2AsWritten`, is met by left to right and by GoCore's model of gc's order
   (`gc_runsStep2`, `leftToRight_runsStep2`; see [Evaluation order](#evaluation-order)).
-  Assignments, expression statements and calls are step 3.
+  Assignments and expression statements are later steps.
+  Step 3a is proved: direct calls and `return` (`calls_correct`, `body_correct` and
+  `stmts3_correct` in `formal/Gala/M5/Call.lean`). A call is of a top-level function whose
+  parameters and result are `int`, `bool` or `string`, with positional arguments, one for
+  each parameter: a call that names an argument or leaves a defaulted one out is not
+  lowered (later steps). A function `= e` lowers to `return e`, a block body to its
+  statements and `return` of its last element, and `return e` to Go's `return`. `FunRel`
+  says GoCore's package declares each function the lowering calls as the lowering of
+  galaspec's. From related states, with no more galaspec steps than GoCore steps,
+  wherever galaspec's run ends with a value, GoCore's run of the lowering ends with a
+  related value, both states only gaining cells and GoCore's otherwise unchanged, and
+  GoCore spends no more steps than galaspec: its one step per call is paid by galaspec's
+  step at the call node. A panic is the same panic with equal outputs, a `return` the
+  same value, and an expression never ends with a `return`. The claim is for every GoCore
+  depth from `K * d` on, `d` galaspec's depth and `K` a constant of the program. A
+  recursive call's GoCore depth is not bounded by the program's text, and each galaspec
+  level costs GoCore at most `K` levels when `K` is at least 7 and at least the depth of
+  each call-free part. The lowering at `K` checks the second; a larger `K` lowers the same
+  (`lowerC_mono`, `lowerBody_mono`), so `K` excludes no program. Nothing is claimed when
+  galaspec runs out of fuel or depth or stops `stuck` or `unsupported`; GoCore never runs
+  out at the depths claimed. `calls_correct_instance` meets every hypothesis on `inc(5)`,
+  and `inc_gocore_ok` shows GoCore's run of it ends with a related value, galaspec's
+  having been computed to end with `6`. Of the 188 functions of `examples/` with
+  signatures of the three kinds, 33 lower (`formal/COVERAGE.md` gives the reasons for the
+  rest). The order result (`gc_runs3`) holds for bodies that fit the scope gc's rewrite
+  gives them; that lowered programs' bodies fit is owed by step 3d (see [Evaluation
+  order](#evaluation-order)).
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
   order](#evaluation-order)); fuel adequacy is not proved yet.
@@ -699,6 +725,21 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   theorem takes the predicate as a hypothesis yet: tying a function body to a run of the
   program (`runProgramAt ord`) needs calls, and step 3's theorem will take it, widened
   to the whole program.
+  Step 3a's predicate, `Body3` (`formal/Gala/M5/CallOrder.lean`), admits bodies with
+  calls: no statement in which an operand that may panic (`/` or `%` by a non-literal, a
+  shift by a non-literal count) precedes a call in the same operand list, a call's
+  arguments being a list of their own. So `x / z + f(x)` and `g(x / z, f())` are out
+  (gc calls first; the fixture `eval_order_call` pins it against `go run`: `f` prints
+  before the division panics), and `f(x / z) + g()` is in. It is computed on `canon`,
+  the events GoCore's model of gc reads in a scope the body fits, and `canon_eq` proves
+  the two agree there: a scope fits when no name the body reads may be changed by a call
+  and every name it calls is a call of a single-result function. `gc_runs3` shows
+  `Order.gc` leaves in place every `Body3` body that fits the scope the rewrite gives it;
+  that lowered programs' bodies fit is owed by step 3d, from `FunRel` and the program's
+  tables (it excludes bodies that read a package-level name). `ordProg_gc` meets it on a
+  recursive `fact` and `fact(x) + 1`, in the scopes the rewrite really builds. Like step
+  2's, this is about GoCore's model of gc, not real gc, which copies every call into a
+  temporary; that full hoisting agrees with left to right is carried to step 3d.
   Then `EvalOperand` carries weight: without it, some allowed order breaks the theorem,
   which is how a #996-class bug shows. If the parameter proves too heavy, the theorems
   fall back to gc's order and say "for gc 1.25.5's operand order".
@@ -715,7 +756,11 @@ Each step is its own pull request with a theorem.
    theorem. The counting argument above is a backward fact, which the forward
    simulation (it starts from a run galaspec finished) cannot give: it is proved as a
    fuel-indexed lock-step lemma, galaspec given `K * (m + 1)` steps simulating GoCore's
-   first `m` steps with related states.
+   first `m` steps with related states. 3a (direct calls and `return`) is proved; 3b is
+   the IIFE, 3c the self-tail-call loop, 3d GoCore's M1 with the lock-step lemma and the
+   whole-program theorems. 3d also owes what 3a leaves open: that the GoCore context of
+   the lowered program (`buildCtx`) meets `FunRel` and that lowered bodies fit gc's scope
+   (`FitsSs`), fuel adequacy, and that full hoisting agrees with left to right.
 4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
    M3 fragment retired.
 5. Package-level initialization (galaspec's `mentions` order against GoCore's
