@@ -1,0 +1,27 @@
+package main
+
+import . "martianoff/gala/concurrent"
+
+// A `_` clause in an `also` group over Future joins the Zip for its effect
+// and binds nothing readable (reading it is GALA-E0139), in any position.
+
+func compute(n int) Future[int] = Future[int](n * n)
+
+func first() Future[int] {
+    bind _ = compute(2)
+    also b = compute(3)
+    _ = "ignored"
+    Future[int](b)
+}
+
+func later() Future[int] {
+    bind a = compute(2)
+    also _ = compute(3)
+    also c = compute(4)
+    Future[int](a + c)
+}
+
+func main() {
+    Println(first().Get())
+    Println(later().Get())
+}
