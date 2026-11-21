@@ -65,7 +65,7 @@ func name(n int) string = n match {
 
 ## Why the rule exists
 
-The second default is unreachable. GALA emits the default as the final `else` of the generated if-else chain, so anything after it is dead code. Making it a compile error means you notice the duplication instead of wondering why a branch never fires.
+The second default is unreachable: cases run in the order they are written, and the first default already matches every value. Making it a compile error means you notice the duplication instead of wondering why a branch never fires.
 
 ---
 

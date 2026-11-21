@@ -346,11 +346,12 @@ func (t *galaASTTransformer) typedPatternMatchesEveryValue(pat patSrc, subjectTy
 		t.typedPatternOfType(pat, subjectType)
 }
 
-// isKnownConcreteType reports whether typ is known not to be an interface or
-// a type parameter: a primitive other than `error`, a GALA type that is not an
-// interface, or a Go type its Go type information describes as one. A type
-// nothing describes, such as a Go type whose package was not loaded, may be
-// an interface, so it is not known.
+// isKnownConcreteType reports whether typ is known, from GALA source alone,
+// not to be an interface or a type parameter: a primitive other than `error`
+// and `any`, or a GALA type that is not an interface. A Go type is not counted
+// even when its Go type information says it is concrete: that information is
+// missing when the Go SDK is not found, and the same program must compile the
+// same way either way.
 func (t *galaASTTransformer) isKnownConcreteType(typ transpiler.Type) bool {
 	if transpiler.IsUnusable(typ) {
 		return false
@@ -362,10 +363,14 @@ func (t *galaASTTransformer) isKnownConcreteType(typ transpiler.Type) bool {
 	if b, ok := typ.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(b.Name) {
 		return b.Name != "error" && !typ.IsAny()
 	}
-	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
-		return td.Kind != "interface" && td.Kind != "alias"
+	base := typ
+	if g, ok := typ.(transpiler.GenericType); ok && g.Base != nil {
+		base = g.Base
 	}
-	if t.isGoTypeWithoutInfo(typ) {
+	if nt, ok := base.(transpiler.NamedType); ok && t.isGoTyped(nt) {
+		return false
+	}
+	if td, _ := t.goTypeDataThroughAliases(typ); td != nil || t.isGoTypeWithoutInfo(typ) {
 		return false
 	}
 	meta := t.getTypeMeta(typ.BaseName())

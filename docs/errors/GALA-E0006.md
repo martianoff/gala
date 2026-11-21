@@ -49,10 +49,10 @@ func name(n int) string = n match {
 }
 ```
 
-**Rationale.** The second default is unreachable — GALA's match emits the
-default as the final `else` of the generated if-else chain, so any branch
-after it would be dead code. Making it a compile error means authors notice
-the duplication instead of wondering why a branch never fires.
+**Rationale.** The second default is unreachable: cases run in the order they
+are written, and the first default already matches every value. Making it a
+compile error means authors notice the duplication instead of wondering why a
+branch never fires.
 
 **Related work.** The check fires on the second default encountered while
 walking the case clauses; both the expression-position and statement-position
