@@ -48,7 +48,6 @@ func sequenceElement(xs Array[Tuple[string, int]]) string = xs match {
 
 func tupleInTuple(t Tuple[Tuple[int, int], string]) string = t match {
     case ((a, b), s) => s"$s ${a * b}"
-    case _           => "never"
 }
 
 func main() {

@@ -233,6 +233,94 @@ func armMatchesEverything(clause ast.Stmt) bool {
 	return ok && isLiteralTrue(ifStmt.Cond)
 }
 
+// catchAllScan finds the first case after an unguarded case that matches every
+// value (see matchesEveryValue). Such a case can never run, since cases are
+// tried in the order they are written; it is GALA-E0141. A match and a
+// partial-function literal feed it their cases in order through next.
+type catchAllScan struct {
+	// first is the unguarded case that matches every value, once one is seen.
+	first   caseSrc
+	matched bool
+}
+
+// next reads cc, the next case, and returns GALA-E0141 when an earlier case
+// matches every value. catchesAll, asked only when cc has no guard, reports
+// whether cc's pattern matches every value.
+func (c *catchAllScan) next(cc caseSrc, catchesAll func() bool) error {
+	if c.matched {
+		return unreachableCaseError(cc, c.first)
+	}
+	if !cc.hasGuard() && catchesAll() {
+		c.first, c.matched = cc, true
+	}
+	return nil
+}
+
+// unreachableCaseError reports cc, written after first, an unguarded case that
+// matches every value, as GALA-E0141.
+func unreachableCaseError(cc, first caseSrc) error {
+	line, col := cc.at().start()
+	firstLine, _ := first.at().start()
+	firstText := first.pattern().at().sourceText()
+	return galaerr.NewCodedSemanticError(galaerr.CodeUnreachableCase, line, col,
+		fmt.Sprintf("unreachable case: `case %s` on line %d matches every value, so no case after it can run",
+			firstText, firstLine),
+		fmt.Sprintf("move this case above `case %s`, or delete it", firstText))
+}
+
+// matchesEveryValue reports whether a case pattern, without its guard,
+// provably matches every value of the subject: `_`, a name that binds the
+// whole value (see isBindingPatternOf), a typed pattern of the subject's own
+// type when that type cannot hold a value of another type, or a tuple pattern
+// of the subject's arity whose elements each match every value of theirs.
+// subjectType is the subject's type as written and matchedType the type its
+// patterns read (see buildMatchExpressionFromClauses); typeKnown is false when
+// the subject's type was guessed from the patterns, and then only `_` and a
+// binding count. Any other pattern may fail to match, so it is not counted.
+func (t *galaASTTransformer) matchesEveryValue(pat patSrc, subjectType, matchedType transpiler.Type, typeKnown bool) bool {
+	switch pat.kind() {
+	case patKindExpr:
+		return t.exprMatchesEveryValue(pat.expr(), matchedType, typeKnown)
+	case patKindTyped:
+		return typeKnown && t.typedPatternMatchesEveryValue(pat, subjectType, matchedType)
+	}
+	return false
+}
+
+// exprMatchesEveryValue is matchesEveryValue for an expression pattern.
+func (t *galaASTTransformer) exprMatchesEveryValue(e patExpr, matchedType transpiler.Type, typeKnown bool) bool {
+	text := e.text()
+	if isWildcard(text) || t.isBindingPatternOf(text, matchedType) {
+		return true
+	}
+	if !typeKnown {
+		return false
+	}
+	elems, single, ok := e.parenthesized()
+	if !ok || single {
+		return false
+	}
+	tuple, ok := t.followAliasChain(matchedType).(transpiler.GenericType)
+	if !ok || tuple.Base == nil || !isTupleTypeName(stripStdPrefix(tuple.Base.BaseName())) || len(elems) != len(tuple.Params) {
+		return false
+	}
+	for i, elem := range elems {
+		if !t.exprMatchesEveryValue(elem, tuple.Params[i], typeKnown) {
+			return false
+		}
+	}
+	return true
+}
+
+// typedPatternMatchesEveryValue reports whether a typed pattern `x: T` names
+// the subject's own type (see typedPatternOfType), and that type holds no
+// value of another type: it is not an interface or a type parameter. Its
+// std.As test is then always true.
+func (t *galaASTTransformer) typedPatternMatchesEveryValue(pat patSrc, subjectType, matchedType transpiler.Type) bool {
+	return !transpiler.IsUnusable(subjectType) && !t.holdsAnyType(subjectType) && !t.holdsAnyType(matchedType) &&
+		t.typedPatternOfType(pat, subjectType)
+}
+
 // isTuplePatternOfSubjectArity reports whether a case pattern is the
 // parenthesized tuple syntax `(p1, …, pn)` and the subject is a Tuple of the
 // same arity. A tuple pattern shorter than its subject also lowers to an

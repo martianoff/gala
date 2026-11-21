@@ -55,4 +55,5 @@ the duplication instead of wondering why a branch never fires.
 
 **Related work.** The check fires on the second default encountered while
 walking the case clauses; both the expression-position and statement-position
-match lowerings emit identical text for it.
+match lowerings emit identical text for it. Any other case written after a
+default is [GALA-E0141](GALA-E0141.md).

@@ -72,5 +72,6 @@ The second default is unreachable. GALA emits the default as the final `else` of
 ## Related
 
 - [GALA-E0003](/docs/errors/gala-e0003/) — no default case at all
+- [GALA-E0141](/docs/errors/gala-e0141/) — any other case written after a default
 - [Pattern Matching](/features/pattern-matching/) — guards and case ordering
 - [All GALA error codes](/docs/errors/)

@@ -405,7 +405,7 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 			fields[i] = patCell(pat.expr())
 		case patKindTyped:
 			// `x: T` of the field's own type matches every value of it.
-			if !c.typedPatternOfType(pat, ctor.fields[i]) {
+			if !c.t.typedPatternOfType(pat, ctor.fields[i]) {
 				fields[i] = covRefutable
 			}
 		default:
@@ -416,14 +416,14 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 }
 
 // typedPatternOfType reports whether the typed pattern names exactly typ.
-func (c *coverage) typedPatternOfType(pat patSrc, typ transpiler.Type) bool {
+func (t *galaASTTransformer) typedPatternOfType(pat patSrc, typ transpiler.Type) bool {
 	if transpiler.IsUnusable(typ) {
 		return false
 	}
-	written, err := c.t.lowerType(pat.typedType())
+	written, err := t.lowerType(pat.typedType())
 	if err != nil {
 		return false
 	}
-	field := c.t.knownTypeExpr(typ)
+	field := t.knownTypeExpr(typ)
 	return field != nil && types.ExprString(written) == types.ExprString(field)
 }

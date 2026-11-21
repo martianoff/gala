@@ -14,7 +14,6 @@ func testBasicMatch() {
         case 1 => "one"
         case 2 => "two"
         case n => "Value is " + fmt.Sprintf("%d", n)
-        case _ => "other"
     }
     fmt.Printf("Basic match: %s\n", result)
 }
@@ -34,7 +33,7 @@ func testTypeMatch() {
 type Wrap[T any] struct { Value T }
 
 func testGenericMatch() {
-    val w = Wrap[int](Value = 42)
+    val w any = Wrap[int](Value = 42)
     val res = w match {
         case _: Wrap[int]    => "Wrapped int"
         case _: Wrap[string] => "Wrapped string"
@@ -95,7 +94,6 @@ func testTupleMatch() {
     val t = (1, "hello")
     val msg = t match {
         case (a, b) => s"Got $a and $b"
-        case _      => "Unknown"
     }
     fmt.Printf("Tuple match: %s\n", msg)
 }

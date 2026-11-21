@@ -1213,9 +1213,17 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
-	// Transform each case clause, wrapping results in Some(...)
+	// Transform each case clause, wrapping results in Some(...). Cases are
+	// tried in order, so one after a case that matches every value is
+	// GALA-E0141. The parameter's type is known: from the slot, or from a
+	// pattern, which then names the type the function takes.
+	var catchAll catchAllScan
 	for _, cc := range caseClauses {
 		patternText := cc.pattern().text()
+		catchesAll := func() bool { return t.matchesEveryValue(cc.pattern(), casesType, casesType, true) }
+		if err := catchAll.next(cc, catchesAll); err != nil {
+			return nil, err
+		}
 
 		// Even wildcard case gets wrapped in Some for partial functions
 		clause, resultType, err := t.transformPartialCaseClause(cc, casesParam, casesType, resultElem)

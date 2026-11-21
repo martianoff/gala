@@ -37,14 +37,12 @@ func tupleTest() string {
     val t = (1, "hello")
     return t match {
         case (n, s) => fmt.Sprintf("n=%d s=%s", n, s)
-        case _ => "unknown"
     }
 }
 
 // Correct: use the bound variable
 func addOne(x int) int = x match {
     case y => y + 1
-    case _ => 0
 }
 
 func main() {

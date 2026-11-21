@@ -243,7 +243,7 @@ Match against specific instantiations of generic types:
 ```gala
 type Wrap[T any] struct { Value T }
 
-val w = Wrap(Value = 42)
+val w any = Wrap(Value = 42)
 val res = w match {
     case w: Wrap[int]    => s"Wrapped int: ${w.Value}"
     case w: Wrap[string] => s"Wrapped string: ${w.Value}"

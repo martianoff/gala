@@ -3,7 +3,7 @@ package main
 import "fmt"
 
 func main() {
-    val x = "hello"
+    val x any = "hello"
 
     val res1 = x match {
         case s: string => "string: " + s

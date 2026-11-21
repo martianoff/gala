@@ -636,13 +636,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	isBinding := make([]bool, len(caseClauses))
 	isDefault := make([]bool, len(caseClauses))
 	foundDefault := false
+	// A case after one that matches every value can never run: a second
+	// default is GALA-E0006, any other case GALA-E0141.
+	var catchAll catchAllScan
 	for i, cc := range caseClauses {
 		patternText := patternTexts[i]
 		isBinding[i] = t.isBindingPatternOf(patternText, matchedType)
-		if cc.hasGuard() || !(isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i])) {
-			continue
-		}
-		if foundDefault {
+		isDefault[i] = !cc.hasGuard() && (isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i]))
+		if isDefault[i] && foundDefault {
 			line, col := cc.at().start()
 			return nil, galaerr.NewCodedSemanticError(
 				galaerr.CodeMultipleDefaults,
@@ -650,8 +651,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				"multiple default cases in match expression",
 				"keep one default case; combine logic with guards or nested matches if you need sub-cases")
 		}
-		foundDefault = true
-		isDefault[i] = true
+		catchesAll := func() bool {
+			return isDefault[i] || t.matchesEveryValue(patterns[i], subjectType, matchedType, !typedFromCases)
+		}
+		if err := catchAll.next(cc, catchesAll); err != nil {
+			return nil, err
+		}
+		foundDefault = foundDefault || isDefault[i]
 	}
 
 	arms := make([]matchArm, len(caseClauses))

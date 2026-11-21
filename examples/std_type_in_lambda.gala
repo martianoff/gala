@@ -10,7 +10,6 @@ import (
 func processTuple(t Tuple[int, string]) string {
     val res = t match {
         case (a, b) => fmt.Sprintf("(%d, %s)", a, b)
-        case _ => "Unknown"
     }
     return res
 }
@@ -47,7 +46,6 @@ func main() {
     val result = tupleContainer.MapToString((tup Tuple[int, int]) => {
         val res = tup match {
             case (a, b) => fmt.Sprintf("sum=%d", a + b)
-            case _ => "Unknown"
         }
         return res
     })
