@@ -126,6 +126,8 @@ func TestSwitchedGoRoot(t *testing.T) {
 		{"a named toolchain is followed", current, "go1.26.0", switched, switched, true},
 		{"a new enough SDK is kept without asking", current, "auto", switched, current, false},
 		{"no answer keeps the SDK", old, "", "", old, true},
+		// A go before 1.21 never switches: it reports its own old root.
+		{"an answer older than the go line is no switch", old, "", old, old, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

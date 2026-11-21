@@ -53,7 +53,14 @@ var (
 // importer is built from the same value, so a caller keying a cache on it names
 // exactly the SDK the analysis used.
 func GoSDKRoot() string {
-	goSDKRootOnce.Do(func() { goSDKRoot = findGOROOT() })
+	goSDKRootOnce.Do(func() {
+		goSDKRoot = findGOROOT()
+		// A GOROOT that names no SDK, which findGOROOT skipped, is cleared so
+		// that the go commands gala runs find their own SDK, not fail on it.
+		if v := os.Getenv("GOROOT"); v != "" && !isGoRoot(v) {
+			os.Unsetenv("GOROOT")
+		}
+	})
 	return goSDKRoot
 }
 
@@ -70,7 +77,8 @@ func getGoImporter() types.Importer {
 		// reads go/build.Default.GOROOT, which is cached at init time. The
 		// process's GOROOT is left alone: goroot can be a toolchain the go
 		// command switched to, and a go on PATH that inherits it as GOROOT
-		// runs another release's tools (`gala transpile --run`).
+		// runs another release's tools (`gala transpile --run`); see GoSDKRoot
+		// for a GOROOT that names no SDK.
 		build.Default.GOROOT = goroot
 		// Read packages with the cgo setting the go command would build them
 		// with (see GoCgoEnabled).
@@ -445,20 +453,31 @@ func switchedGoRoot(goroot, gotoolchain string, goEnv func(dir string) string) s
 	if !toolchainMaySwitch(goRootVersion(goroot), gotoolchain) {
 		return goroot
 	}
-	dir, err := os.MkdirTemp("", "gala-goroot-")
-	if err != nil {
-		return goroot
-	}
-	defer os.RemoveAll(dir)
-	mod := "module gala_goroot_probe\n\ngo " + GeneratedGoVersion + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
-		return goroot
-	}
-	if switched := goEnv(dir); switched != "" {
+	if switched := probeGoRoot(goEnv); switched != "" {
 		return switched
 	}
 	fmt.Fprintf(os.Stderr, "Warning: could not tell which Go toolchain builds GALA code (go %s may switch away from %s); Go type inference reads %s.\n", GeneratedGoVersion, goroot, goroot)
 	return goroot
+}
+
+// probeGoRoot is the root goEnv reports in a temporary module whose go line is
+// GeneratedGoVersion, or "" when it cannot run there or reports an SDK older
+// than that line (a go before 1.21 never switches toolchain).
+func probeGoRoot(goEnv func(dir string) string) string {
+	dir, err := os.MkdirTemp("", "gala-goroot-")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(dir)
+	mod := "module gala_goroot_probe\n\ngo " + GeneratedGoVersion + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		return ""
+	}
+	switched := goEnv(dir)
+	if v := goRootVersion(switched); switched == "" || version.IsValid(v) && version.Compare(v, "go"+GeneratedGoVersion) < 0 {
+		return ""
+	}
+	return switched
 }
 
 // goEnvTimeout bounds a `go env GOROOT` run. Switching toolchain may first
