@@ -308,23 +308,15 @@ theorem callBody_panic (c : Ctx) (n : Nat) (P : String) (fi : Nat) (xks : List (
 section SpecCall
 open Spec (eval evalList funcArgs bindArgs bindDefaults callFunc runIn argSlots)
 
-theorem ebind_run {σ ε α β : Type} (x : ExceptT ε (StateM σ) α) (f : α → ExceptT ε (StateM σ) β) (s : σ) :
-    (x >>= f).run.run s = match x.run.run s with
-      | (.ok a, t) => (f a).run.run t
-      | (.error e, t) => (.error e, t) := by
-  simp only [ExceptT.run_bind, StateT.run_bind]
-  rcases hx : x.run.run s with ⟨r, t⟩
-  cases r <;> rfl
-
 /-- A `for` loop in a state-and-exception monad each of whose iterations changes no
     state and goes on: its result is the fold of `step`. -/
-theorem forIn_fold {σ ε A B : Type} (F : A → B → ExceptT ε (StateM σ) (ForInStep B)) (step : A → B → B)
+theorem forIn_fold {σ A B : Type} (F : A → B → ExceptT Spec.Stop (StateM σ) (ForInStep B)) (step : A → B → B)
     (P : A → Prop) (hF : ∀ a b s, P a → (F a b).run.run s = (.ok (.yield (step a b)), s)) :
     ∀ (l : List A) (b : B) (s : σ), (∀ a ∈ l, P a) →
       (forIn l b F).run.run s = (.ok (l.foldl (fun b a => step a b) b), s)
   | [], _, _, _ => rfl
   | a :: l, b, s, hP => by
-    rw [List.forIn_cons, ebind_run, hF a b s (hP a (by simp))]
+    rw [List.forIn_cons, Spec.run_bind_eq, hF a b s (hP a (by simp))]
     exact forIn_fold F step P hF l _ s (fun x hx => hP x (by simp [hx]))
 
 theorem eraseDups_nodup {α : Type} [BEq α] [LawfulBEq α] :
@@ -393,7 +385,7 @@ theorem bindDefaults_given (ds : Spec.Decls) (d : Nat) (names : List String) (ty
     (bindDefaults ds d names tys dflts fs ((List.range vs.length).zip vs)).run.run s = (.ok vs, s) := by
   rw [Spec.bindDefaults.eq_def]
   simp only
-  rw [ebind_run, forIn_fold _ (fun a acc => acc ++ [vs[a.2]!]) (fun a => a.2 < vs.length) ?step _ _ _
+  rw [Spec.run_bind_eq, forIn_fold _ (fun a acc => acc ++ [vs[a.2]!]) (fun a => a.2 < vs.length) ?step _ _ _
     (fun a ha => hl ▸ List.snd_lt_of_mem_zipIdx ha)]
   case step =>
     intro a acc s' ha

@@ -631,6 +631,11 @@ theorem calls_correct_instance : ∀ (steps d : Nat), steps ≤ 10 →
   Gala.M5.calls_correct_instance
 
 open Gala Gala.M5 GoCore.Full in
+theorem inc_spec_ok : (Spec.eval incDs 4 incCall).run.run { incCore with steps := 10 } =
+    (.ok (.int 6), { incCore with steps := 5 }) :=
+  Gala.M5.inc_spec_ok
+
+open Gala Gala.M5 GoCore.Full in
 theorem inc_gocore_ok : ∀ (N : Nat), N ≥ 32 →
     ∃ w g', (evalExpr incCtx N incEnv incCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 6) w :=
   Gala.M5.inc_gocore_ok

@@ -41,12 +41,14 @@ def K : Nat := 1000000
 
 /-- The functions the lowering calls: start from every function with a signature of the
     kinds, drop those whose body does not lower, until nothing changes. -/
-partial def fixSigs (ds : Decls) (sg : Sigs) (fuel : Nat) : Sigs :=
-  let sg' : Sigs := fun f => match sg f, ds.funcs.lookup f with
-    | some s, some F => if (lowerBody K sg F).isSome then some s else none
-    | _, _ => none
-  if fuel == 0 || ds.funcs.all (fun (f, _) => (sg f).isSome == (sg' f).isSome) then sg
-  else fixSigs ds sg' (fuel - 1)
+partial def fixSigs (ds : Decls) (sg0 : Sigs) (names : List String) : Sigs :=
+  -- Each round keeps the names whose bodies lower calling only the names kept so far; the
+  -- table is rebuilt from the names, so no earlier round's lowering is rerun.
+  let sg : Sigs := fun f => if names.contains f then sg0 f else none
+  let names' := names.filter fun f => match ds.funcs.lookup f with
+    | some F => (lowerBody K sg F).isSome
+    | none => false
+  if names'.length == names.length then sg else fixSigs ds sg0 names'
 
 def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String :=
   if F.result.isNone then "unit-result"
@@ -88,7 +90,7 @@ def main (args : List String) : IO UInt32 := do
       let (ds, gs) := collect p
       let globals := gs.flatMap (·.names)
       let sg0 : Sigs := fun f => (ds.funcs.lookup f).bind sigOf |>.map fun (xks, ρ) => (xks.map (·.2), ρ)
-      let sg := fixSigs ds sg0 (ds.funcs.length + 1)
+      let sg := fixSigs ds sg0 (ds.funcs.filterMap fun (f, _) => (sg0 f).map fun _ => f)
       for (_, F) in ds.funcs do
         let r := reason ds globals sg F
         counts := counts.insert r (counts.getD r 0 + 1)
