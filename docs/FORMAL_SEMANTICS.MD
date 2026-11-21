@@ -398,9 +398,10 @@ column lists what each milestone's claim rests on beyond them.
   - An exporter from the generated Go's `go/ast` to GoCore JSON. Nothing is dropped; a
     construct outside GoCore is reported by GoCore when a run reaches it.
 - **What it changes:** the link to the real transformer exists; until M6 it is tested.
-- **Status: done (tested, not proved).** On every example galaspec agrees with `go run`
-  on (29), GoCore run on the transformer's output agrees with `go run` too, and GoCore
-  disagrees with `go run` on no program. Widening GoCore beyond S1 is the GoCore track of
+- **Status: done (tested, not proved).** Here the S1 corpus is the examples galaspec runs
+  to the end. On all 29 examples where galaspec agrees with `go run`, GoCore run on the
+  transformer's output agrees with `go run` too, and GoCore disagrees with `go run` on no
+  program. Widening GoCore beyond S1 is the GoCore track of
   the [Plan](#plan).
   - **The exporter is built:** `internal/formal/gocoreexport`. It is a syntax dump in
     which every Go construct has its own kind. Which of them GoCore runs is decided on
@@ -1078,7 +1079,7 @@ flowchart LR
     SRC --> TR[transpiler<br/>not trusted] --> GO[generated Go]
     subgraph P1[track 1: proof chain]
         GS[galaspec<br/>meaning of GALA] --> RL[reference lowering<br/>M5, partly proved]
-        VAL[validator<br/>M6]
+        VAL[validator<br/>M6, not started]
     end
     subgraph P2[track 2: GoCore]
         GX[Go AST exporter] --> GC[GoCore<br/>meaning of the emitted Go]
@@ -1100,11 +1101,11 @@ flowchart LR
 ```
 
 The differential run compares galaspec, GoCore and gala2lean with `go run` on every
-program; that is testing. The proofs run along the top track: the reference lowering
-from galaspec into GoCore is proved to preserve meaning (M5), and the validator proves,
-program by program, that the transpiler's Go is that lowering up to proved
-normalizations (M6). Both claims are about GoCore, so GoCore's fidelity to Go (track 2)
-is what connects them to real Go.
+program; that is testing. The proofs run along track 1. M5 proves that the reference
+lowering from galaspec into GoCore preserves meaning; so far that is proved for call-free
+expressions and for `val`/`var`, `if` and blocks. M6 will prove, program by program, that
+the transpiler's Go is that lowering up to proved normalizations. Both claims are about
+GoCore, so GoCore's fidelity to Go (track 2) is what connects them to real Go.
 
 ### Track 1: the proof chain (critical path)
 
@@ -1121,7 +1122,7 @@ below; this is their order and where they stand.
     included.
   - Step 2b, `val`/`var`, `if` statements and blocks (`stmts_correct`, #1276): proved.
   - Step 3, calls and recursion, the function-literal and self-tail-call shapes, and the
-    divergence theorem: next. It also carries the order obligations steps 2a and 2b left
+    divergence theorem: in progress, starting with 3a, direct calls and `return`. It also carries the order obligations steps 2a and 2b left
     open (gc's `&&`/`||` temporaries, `untriggered_orders_agree`).
   - Step 4: structs and sealed values on the flat layout; `match` re-proved against
     GoCore for whole programs; M3's fragment retired.
@@ -1159,9 +1160,10 @@ numbers.
    used as values, and the rest.
 
 **Target:** every deterministic program in the subset the transpiler emits for typical
-GALA programs runs in GoCore. Some Go is excluded by design. Each exclusion is rarely
-used in GALA code, and a run that reaches one ends `unsupported`, so it is reported,
-never guessed:
+GALA programs runs in GoCore. Some Go is excluded by design; these exclusions are
+accepted, not open gaps. A run that reaches one ends `unsupported`, so it is reported,
+never guessed, and the "GoCore stopped at" table in COVERAGE.md counts the programs that
+stop at each (map range order: 2 in the current baseline):
 - the order of a `range` over a map of two or more entries, which Go randomizes;
 - goroutines, channels and `select`, whose output depends on scheduling;
 - a slice capacity that depends on gc's escape analysis;
@@ -1203,7 +1205,7 @@ The proof-chain estimates are in weeks of one maintainer working with AI agents,
 chart runs the proof milestones one after another (M3 needed only M1, so it finished just
 ahead of M2). The GoCore and gala2lean bars show order only and carry no estimate; they
 run alongside the proof chain. The dates are placeholders that show order and length, not
-commitments.
+commitments; a done bar's length shows nothing.
 
 ```mermaid
 gantt
@@ -1213,7 +1215,7 @@ gantt
     M1 fuel adequacy                         :done, m1, 2026-11-15, 1d
     M2 alpha-invariance, T3, T4              :done, m2, 2026-11-16, 1d
     M3 match lowering against galaspec       :done, m3, 2026-11-15, 1d
-    M4 GoCore and the Go AST exporter        :done, m4, 2026-11-16, 4d
+    M4 GoCore and the Go AST exporter        :done, m4, 2026-11-16, 1d
     M5 reference lowering for S1             :active, m5, after m4, 56d
     M6 per-program translation validation    :m6, after m5, 70d
     M7 S2, methods, Option/Either/Try, generics :m7, after m6, 84d
