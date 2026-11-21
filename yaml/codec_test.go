@@ -787,7 +787,9 @@ func TestDecoder_QuotesInsideScalarsElsewhere(t *testing.T) {
 	if k := d.ReadKey(); k != "it's" {
 		t.Errorf("item 1 key = %q, want %q", k, "it's")
 	}
-	d.ReadInt()
+	if n := d.ReadInt(); n != 1 {
+		t.Errorf("item 1 value = %d, want 1", n)
+	}
 	d.EndObject()
 	d.EndArray()
 
@@ -801,7 +803,9 @@ func TestDecoder_QuotesInsideScalarsElsewhere(t *testing.T) {
 	if k := d.ReadKey(); k != "it's" {
 		t.Errorf("encoded %q: key = %q, want %q", e.String(), k, "it's")
 	}
-	d.ReadInt()
+	if n := d.ReadInt(); n != 1 {
+		t.Errorf("encoded value = %d, want 1", n)
+	}
 	d.EndObject()
 }
 
@@ -841,6 +845,23 @@ func TestDecoder_ColonInCommentIsNotAKey(t *testing.T) {
 		{"hello # note: x", "hello"},
 		{"k: v # note: x", "{k: v}"},
 		{"k: v\ntitle # the user's: x", "error: yaml: expected 'key:' at line 2, got \"title # the user's: x\""},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// Quotes in the middle of a plain scalar hide nothing (YAML 1.2): a ": "
+// after them still makes a key, and a " #" after them still starts a
+// comment. A value with either has to be quoted as a whole.
+func TestDecoder_QuotedPartOfPlainScalar(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`- echo "Status: ok"`, `[{echo "Status: ok"}]`},
+		{`k: echo "a # b"`, `{k: echo "a}`},
+		{`- "echo Status: ok"`, `[echo Status: ok]`},
+		{`k: 'echo "a # b"'`, `{k: echo "a # b"}`},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
