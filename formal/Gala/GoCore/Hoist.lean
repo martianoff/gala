@@ -1094,13 +1094,10 @@ def structFields (c : Ctx) : Std.HashSet String :=
 def funcScope (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String (List Method))
     (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
     (body : List Stmt) : Scope :=
-  let recvNames := match recv with
-    | some (.mk ns _) => ns
-    | none => []
   let recvTParams := match recv with
     | some (.mk _ rty) => ((recvBase rty).map (·.2.1)).getD []
     | none => []
-  (Scope.enter { c, pkg, file := fi, locals := recvNames,
+  (Scope.enter { c, pkg, file := fi, locals := fieldListNames recv.toList,
                  tparams := fieldListNames tps ++ recvTParams,
                  changeable := Std.HashSet.ofList (chSs (takesAddress methods) false body),
                  pointers := pointerNames recv.toList, fields, methods } sig).withIfaces sig

@@ -576,7 +576,7 @@ end
 
 /-- The scope gc's rewrite gives function `body` of package `pkg`, file `fi` of `p`: `Hoist.funcScope`,
     as `Hoist.hDecl` builds it over the program's tables. -/
-def gcScope (p : Program) (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
+abbrev gcScope (p : Program) (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
     (body : List Stmt) : Scope :=
   let c := buildCtx p
   funcScope c (structFields c) (allMethods c) pkg fi recv tps sig body
@@ -618,7 +618,6 @@ theorem gc_runs3 : RunsAsWritten3 Order.gc := by
       intro h3
       simp only [hDecl, StateT.run_bind, StateT.run_pure]
       have hid := hSs_noTrig _ body (noTrigSs_of _ body hb hfit) h3
-      simp only [gcScope] at hid
       rw [hid]
       rfl)
   subst hP
