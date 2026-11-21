@@ -90,7 +90,21 @@ def requiredTheorems : List Name := [
   `Gala.M5.inst_gocore_ok,
   `Gala.M5.hSs_lowered,
   `Gala.M5.gc_runsStep2,
-  `Gala.M5.leftToRight_runsStep2
+  `Gala.M5.leftToRight_runsStep2,
+  `Gala.M5.calls_correct,
+  `Gala.M5.body_correct,
+  `Gala.M5.stmts3_correct,
+  `Gala.M5.lowerC_mono,
+  `Gala.M5.lowerBody_mono,
+  `Gala.M5.calls_correct_instance,
+  `Gala.M5.inc_gocore_ok,
+  `Gala.M5.canon_eq,
+  `Gala.M5.gc_runs3,
+  `Gala.M5.leftToRight_runs3,
+  `Gala.M5.ordProg_gc,
+  `Gala.M5.body3_div_call,
+  `Gala.M5.body3_div_arg_call,
+  `Gala.M5.body3_div_inside_call
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/
