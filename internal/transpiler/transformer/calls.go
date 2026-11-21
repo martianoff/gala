@@ -311,8 +311,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// A value whose type has an Apply is called as `v.Apply()` is (see
 		// Section 1.5 of transformCallWithArgsCtx), unless that Apply takes
 		// parameters and is no generic one: such a call is left as written,
-		// so a value of a Go function type with an Apply is still called as
-		// the function it is.
+		// as it was before Apply took every value call.
 		if callee, ok := t.valueApplyCallee(base); ok && !takesArgs(t.calleeApplyType(base)) {
 			base = callee
 		}
@@ -3033,7 +3032,13 @@ func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetad
 	if _, ok := fun.(*ast.CallExpr); !ok {
 		return nil
 	}
-	return t.applyTypeOf(t.getExprTypeName(fun))
+	meta := t.applyTypeOf(t.getExprTypeName(fun))
+	// Go calls no pointer method on a call's result (a val field's unwrap too),
+	// which it cannot address.
+	if meta != nil && meta.Methods["Apply"].PointerReceiver {
+		return nil
+	}
+	return meta
 }
 
 // fieldApplyType is the metadata of the type of field of recvType, the
@@ -3065,15 +3070,9 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 		if t.getTypeMeta(meta.Package+"."+name) != nil {
 			return t.applyTypeByName(meta.Package + "." + name)
 		}
-		// Else a type it imports: std's, or one it dot-imports, which is
-		// never this package's own.
-		if std := t.applyTypeByName(registry.StdPackageName + "." + name); std != nil {
-			return std
-		}
-		if other := t.applyTypeByName(name); other != nil && other.Package != "" && other.Package != t.packageName {
-			return other
-		}
-		return nil
+		// Else a std type; one it dot-imports is not known here, so the call
+		// is left as written.
+		return t.applyTypeByName(registry.StdPackageName + "." + name)
 	}
 	return t.applyTypeOf(fieldType)
 }
@@ -3100,7 +3099,7 @@ func (t *galaASTTransformer) applyTypeByName(name string) *transpiler.TypeMetada
 	if meta == nil || meta.Methods["Apply"] == nil {
 		return nil
 	}
-	if meta.Methods["Apply"].GoDeclared && len(meta.FieldNames) == 0 && !meta.IsShorthand && !meta.IsSealed {
+	if meta.Methods["Apply"].GoDeclared && len(meta.FieldNames) == 0 && !meta.IsShorthand && !meta.IsSealed && !meta.IsInterface {
 		return nil
 	}
 	return meta
