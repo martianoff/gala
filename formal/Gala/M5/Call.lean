@@ -312,6 +312,52 @@ theorem callBody_panic (c : Ctx) (n : Nat) (P : String) (fi : Nat) (xks : List (
   simp [gget_run, gmodify_run, hd, grun_bind]
   rfl
 
+theorem callBody0_ret (c : Ctx) (n : Nat) (env : Env) (k : Kind) (body : List Stmt) (g : St) (j : Nat)
+    (hj : g.steps = j + 1) (ht : env.tenv = []) (hl : env.lookup (kindName k) = none)
+    (ho : nameOwner c env (kindName k) = none)
+    (v : Spec.Val) (w : Val) (hw : VRel v w) (hwk : valKind v = some k) (g1 : St)
+    (hb : (execStmts c (n + 2) env.push body).run.run { g with steps := j, defers := [] :: g.defers } =
+      (.error (.ret [w]), g1))
+    (hd : g1.defers = [] :: g.defers) :
+    (callBody c (n + 3) env (lowerSigOf [] k) (some body) none [] false).run.run g =
+      (.ok [defaultVal w], { g1 with defers := g.defers }) := by
+  rw [show n + 3 = (n + 2).succ from rfl, lowerSigOf, callBody.eq_2]
+  simp only [grun_bind, gtick_succ g j hj, Bool.not_false, ite_true, Bool.false_and,
+    Bool.false_eq_true, ite_false, run_pureM]
+  have hty : ∀ g', (evalType c (n + 2) env (.ident (kindName k))).run.run g' = (.ok (kindTy k), g') :=
+    fun g' => evalType_kind c n env k g' hl ht ho
+  have hcv : ∀ g', (convert c (n + 2) (kindTy k) w).run.run g' = (.ok (defaultVal w), g') :=
+    fun g' => convert_kind c n v w k g' hw hwk
+  simp only [List.flatMap_cons, List.isEmpty_nil, ite_true, List.append_nil, List.map_nil, List.flatMap_nil, List.length_nil, bne_self_eq_false, Bool.false_eq_true, ite_false,
+    List.forIn_nil, run_pureM, grun_bind, hty, List.mapM_cons, List.mapM_nil, List.zip_cons_cons,
+    List.zip_nil_right, List.forIn_cons, emptyStr_isEmpty, Bool.not_true, gtryCatch, gget_run, gmodify_run]
+  rw [hb]
+  simp only [run_pureM]
+  simp [hcv, gget_run, gmodify_run, hd, grun_bind]
+  rfl
+
+theorem callBody0_panic (c : Ctx) (n : Nat) (env : Env) (k : Kind) (body : List Stmt) (g : St) (j : Nat)
+    (hj : g.steps = j + 1) (ht : env.tenv = []) (hl : env.lookup (kindName k) = none)
+    (ho : nameOwner c env (kindName k) = none) (pv : Val) (rt : Bool) (g1 : St)
+    (hb : (execStmts c (n + 2) env.push body).run.run { g with steps := j, defers := [] :: g.defers } =
+      (.error (.panic pv rt), g1))
+    (hd : g1.defers = [] :: g.defers) :
+    (callBody c (n + 3) env (lowerSigOf [] k) (some body) none [] false).run.run g =
+      (.error (.panic pv rt), { g1 with defers := g.defers }) := by
+  rw [show n + 3 = (n + 2).succ from rfl, lowerSigOf, callBody.eq_2]
+  simp only [grun_bind, gtick_succ g j hj, Bool.not_false, ite_true, Bool.false_and,
+    Bool.false_eq_true, ite_false, run_pureM]
+  have hty : ∀ g', (evalType c (n + 2) env (.ident (kindName k))).run.run g' = (.ok (kindTy k), g') :=
+    fun g' => evalType_kind c n env k g' hl ht ho
+  simp only [List.flatMap_cons, List.isEmpty_nil, ite_true, List.append_nil, List.map_nil, List.flatMap_nil,
+    List.length_nil, bne_self_eq_false, Bool.false_eq_true, ite_false, List.forIn_nil, run_pureM, grun_bind, hty,
+    List.mapM_cons, List.mapM_nil, List.zip_cons_cons, List.zip_nil_right, List.forIn_cons, emptyStr_isEmpty,
+    Bool.not_true, gtryCatch, gget_run, gmodify_run]
+  rw [hb]
+  simp only [run_pureM]
+  simp [gget_run, gmodify_run, hd, grun_bind]
+  rfl
+
 /-! ### galaspec's call, unfolded -/
 
 section SpecCall
@@ -562,9 +608,11 @@ def sigOf (F : Spec.Func) : Option (List (String × Kind) × Kind) := do
   let ρ ← tyKindS (← F.result)
   pure (xks, ρ)
 
-/-- A call somewhere in an operator tree. -/
+/-- A call somewhere in an operator tree, or an `if` used as a value (Go's function literal
+    called at once): an expression step 2a's lowering does not take. -/
 def hasCall : Spec.Expr → Bool
   | .call .. => true
+  | .ifExpr .. => true
   | .paren e => hasCall e
   | .unary _ e => hasCall e
   | .binary _ l r => hasCall l || hasCall r
@@ -574,12 +622,43 @@ def hasCall : Spec.Expr → Bool
 def lowerLeaf (K : Nat) (κ : String → Option Kind) (e : Spec.Expr) : Option (Kind × Expr) :=
   if gdepth e ≤ K then lowerX κ e else none
 
+/-- `return le`: the tail of a value. -/
+def retTail : Kind × Expr → Kind × List Stmt
+  | (k, le) => (k, [.ret [le]])
+
+/-- A tail the lowering builds from statements (`lowerT`) rather than from one expression:
+    an `if` with an `else`, a block, a `return`. -/
+def isCompound : Spec.Expr → Bool
+  | .ifExpr .. | .ifStmt _ (.block _) (some _) | .block _ | .ret (some _) => true
+  | _ => false
+
+/-- The tail of `x`: `lowerT`'s for a compound one, else `return` of the expression. Both
+    results are passed in, so the recursive calls stay on `x`. -/
+def armOf (x : Spec.Expr) (t : Unit → Option (Kind × List Stmt)) (e : Unit → Option (Kind × Expr)) :
+    Option (Kind × List Stmt) :=
+  if isCompound x then t () else (e ()).map retTail
+
+/-- `if lc { ta } else { tb }`. -/
+def ifT (lc : Expr) (ta tb : List Stmt) : Stmt := .if_ none lc ta (some (.block tb))
+
+/-- An `if` whose two arms end with values of one kind: its kind and the `if`. -/
+def ifOf (rc : Option (Kind × Expr)) (ra rb : Option (Kind × List Stmt)) : Option (Kind × Stmt) :=
+  match rc, ra, rb with
+  | some (.bool, lc), some (ka, ta), some (kb, tb) => if ka = kb then some (ka, ifT lc ta tb) else none
+  | _, _, _ => none
+
+/-- Go's function literal of no parameters and result kind `k`, called at once (an IIFE). -/
+def iife (k : Kind) (st : Stmt) : Expr := .call (.funcLit (lowerSigOf [] k) [st]) [] false
+
 mutual
 /-- **The lowering of an expression with calls**: a call-free part is step 2a's (at most `K`
     deep in GoCore); an operator over a call, the same operator; `f(args)` of a function the
     lowering calls (`sg`), not shadowed by a local, with its arguments by position, one for
     each parameter and of its kind, Go's call `f(args)`. No named argument and no default:
-    a call that leaves a parameter out or names one is not lowered. -/
+    a call that leaves a parameter out or names one is not lowered. `if (c) a else b`, its
+    arms of one kind `k`, is Go's `func() k { if c { T(a) } else { T(b) } }()`, each arm's
+    tail `T` (`lowerT`) with no `return` in it (Go's would leave the function literal,
+    GALA's the function), and `k`'s type name no local. -/
 def lowerC (K : Nat) (sg : Sigs) (κ : String → Option Kind) : Spec.Expr → Option (Kind × Expr)
   | .paren e => if hasCall e then (lowerC K sg κ e).map fun (k, l) => (k, .paren l) else lowerLeaf K κ (.paren e)
   | .unary op e =>
@@ -600,6 +679,11 @@ def lowerC (K : Nat) (sg : Sigs) (κ : String → Option Kind) : Spec.Expr → O
       let (ks, k) ← sg f
       let las ← lowerArgs K sg κ ks args
       pure (k, .call (.ident f) las false)
+  | .ifExpr c a b => do
+    let (k, st) ← ifOf (lowerC K sg κ c)
+      (armOf a (fun _ => lowerT K sg none κ a) (fun _ => lowerC K sg κ a))
+      (armOf b (fun _ => lowerT K sg none κ b) (fun _ => lowerC K sg κ b))
+    if (κ (kindName k)).isSome then none else pure (k, iife k st)
   | .lit l => lowerLeaf K κ (.lit l)
   | .name x => lowerLeaf K κ (.name x)
   | _ => none
@@ -612,11 +696,37 @@ def lowerArgs (K : Nat) (sg : Sigs) (κ : String → Option Kind) : List Kind �
     | some (k', l) => if k' = k then (lowerArgs K sg κ ks as).map (l :: ·) else none
     | none => none
   | _, _ => none
-end
-
-mutual
+/-- **A compound tail** (`isCompound`): what Go runs for a function's last value, or an
+    IIFE's arm, ending in `return`. `if (c) a else b` is `{ if c { T(a) } else { T(b) } }`; a
+    block is its statements and then its last element's tail, with no block of its own; a
+    `return e` is Go's, where returning is allowed (`r`, the result's kind, `none` in an
+    IIFE). The tail's kind is the kind of the values it returns. -/
+def lowerT (K : Nat) (sg : Sigs) (r : Option Kind) (κ : String → Option Kind) : Spec.Expr →
+    Option (Kind × List Stmt)
+  | .ifExpr c a b =>
+    (ifOf (lowerC K sg κ c)
+      (armOf a (fun _ => lowerT K sg r κ a) (fun _ => lowerC K sg κ a))
+      (armOf b (fun _ => lowerT K sg r κ b) (fun _ => lowerC K sg κ b))).map fun (k, st) => (k, [.block [st]])
+  | .ifStmt c (.block a) (some b) =>
+    (ifOf (lowerC K sg κ c) (lowerTs K sg r κ a)
+      (armOf b (fun _ => lowerT K sg r κ b) (fun _ => lowerC K sg κ b))).map fun (k, st) => (k, [.block [st]])
+  | .block ss => lowerTs K sg r κ ss
+  | .ret (some x) =>
+    match lowerC K sg κ x with
+    | some (k, le) => if some k = r then some (k, [.ret [le]]) else none
+    | none => none
+  | _ => none
+/-- A block's elements as a tail: its statements, then its last element's tail. -/
+def lowerTs (K : Nat) (sg : Sigs) (r : Option Kind) (κ : String → Option Kind) : List Spec.Expr →
+    Option (Kind × List Stmt)
+  | [] => none
+  | [e] => armOf e (fun _ => lowerT K sg r κ e) (fun _ => lowerC K sg κ e)
+  | s :: s' :: ss => do
+    let (κ₁, l) ← lowerS3 K sg r κ s
+    let (k, ls) ← lowerTs K sg r κ₁ (s' :: ss)
+    pure (k, l :: ls)
 /-- **The lowering of a statement**, step 2b's shapes with calls in their expressions, and
-    `return e` of the result's kind `ρ`. -/
+    `return e` of the result's kind `ρ` (`none`: no `return`, as in an IIFE's arm). -/
 def lowerS3 (K : Nat) (sg : Sigs) (ρ : Option Kind) (κ : String → Option Kind) : Spec.Expr →
     Option ((String → Option Kind) × Stmt)
   | .decl _ [x] false none [e] =>
@@ -647,25 +757,11 @@ def lowerSs3 (K : Nat) (sg : Sigs) (ρ : Option Kind) (κ : String → Option Ki
     pure (κ₂, l :: ls)
 end
 
-/-- The last element of a function's block body: an expression of the result's kind, or
-    `return` of one; Go's `return`. -/
-def lowerLast (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) (e : Spec.Expr) : Option Expr :=
-  match e with
-  | .ret (some x) => match lowerC K sg κ x with
-    | some (k, le) => if k = ρ then some le else none
-    | none => none
-  | x => match lowerC K sg κ x with
-    | some (k, le) => if k = ρ then some le else none
-    | none => none
-
-/-- A block body: statements, then the last element, returned. -/
-def lowerTail (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : List Spec.Expr → Option (List Stmt)
-  | [] => none
-  | [e] => (lowerLast K sg ρ κ e).map fun le => [.ret [le]]
-  | s :: s' :: ss => do
-    let (κ₁, l) ← lowerS3 K sg (some ρ) κ s
-    let ls ← lowerTail K sg ρ κ₁ (s' :: ss)
-    pure (l :: ls)
+/-- **The tail of `e`** (Go's code for a function's last value or an IIFE's arm):
+    `lowerT`'s for a compound one, else `return` of the expression. -/
+def tailOf (K : Nat) (sg : Sigs) (r : Option Kind) (κ : String → Option Kind) (e : Spec.Expr) :
+    Option (Kind × List Stmt) :=
+  armOf e (fun _ => lowerT K sg r κ e) (fun _ => lowerC K sg κ e)
 
 /-- The parameters' kinds, as the body sees them. -/
 def paramKinds (xks : List (String × Kind)) : String → Option Kind :=
@@ -677,16 +773,17 @@ def ParamsOK (names : List String) : Prop := names.Nodup ∧ ∀ x ∈ names, x 
 instance (names : List String) : Decidable (ParamsOK names) := by unfold ParamsOK; infer_instance
 
 /-- **The lowering of a function's body**: parameters of distinct names (none `_`, `true` or
-    `false`), each of a kind, and a result of one; the body `= e` is Go's `return e`, a
-    block body its statements and then `return` of its last element. -/
+    `false`), each of a kind, and a result of one; the body is its tail (`tailOf`): `= e` is
+    Go's `return e`, a block body its statements and then its last element's tail, an `if`
+    `{ if c { .. } else { .. } }` with a tail in each arm. -/
 def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) :=
   match sigOf F with
   | none => none
   | some (xks, ρ) =>
     if ParamsOK (xks.map (·.1)) then
-      match F.body with
-      | .block ss => lowerTail K sg ρ (paramKinds xks) ss
-      | e => (lowerLast K sg ρ (paramKinds xks) e).map fun le => [.ret [le]]
+      match tailOf K sg (some ρ) (paramKinds xks) F.body with
+      | some (k, lb) => if k = ρ then some lb else none
+      | none => none
     else none
 
 /-! ## The relations, with calls -/
@@ -1867,6 +1964,84 @@ theorem sframe_mk {c c' : Spec.Core} (hh : Pre c.heap c'.heap) (hl : c'.locals =
 theorem evalExpr_call (c : Ctx) (n : Nat) (env : Env) (fn : Expr) (args : List Expr) :
     evalExpr c (n + 1) env (.call fn args false) = (do Val.single (← evalCall c n env fn args false)) := by
   rw [evalExpr]
+
+/-! ### An IIFE, called -/
+
+theorem typeOf_funcLit (c : Ctx) (n : Nat) (env : Env) (sig : Sig) (b : List Stmt) (g : St) :
+    (typeOf? c (n + 1) env (.funcLit sig b)).run.run g = (.ok none, g) := by
+  unfold typeOf?; rfl
+
+theorem declaredFunc_funcLit (c : Ctx) (n : Nat) (env : Env) (sig : Sig) (b : List Stmt) (g : St) :
+    (declaredFunc? c (n + 1) env (.funcLit sig b)).run.run g = (.ok none, g) := by
+  unfold declaredFunc?; rfl
+
+theorem evalArgs_nil (c : Ctx) (n : Nat) (env : Env) (g : St) :
+    (evalArgs c (n + 1) env []).run.run g = (.ok [], g) := by
+  unfold evalArgs; rfl
+
+theorem evalType_func0 (c : Ctx) (n : Nat) (env : Env) (k : Kind) (g : St)
+    (hl : env.lookup (kindName k) = none) (ht : env.tenv = []) (ho : nameOwner c env (kindName k) = none) :
+    (evalType c (n + 3) env (.funcType (lowerSigOf [] k))).run.run g = (.ok (.func_ [] [kindTy k] false), g) := by
+  unfold evalType
+  simp only [lowerSigOf, List.map_nil, fieldTypes, List.flatMap_nil, List.flatMap_cons, List.isEmpty_nil,
+    ite_true, List.flatMap_nil, List.append_nil, List.mapM_nil, List.mapM_cons, grun_bind, run_pureM,
+    evalType_kind c n env k _ hl ht ho]
+  rfl
+
+/-- The closure an IIFE's function literal makes in environment `env`. -/
+def iifeClosure (env : Env) (k : Kind) (st : Stmt) : Closure :=
+  { pkg := env.pkg, file := env.file, scopes := env.scopes, tenv := env.tenv, targs := env.targs,
+    sig := lowerSigOf [] k, body := [st] }
+
+/-- The state an IIFE's body starts in: the closure added, one step taken, a list of
+    deferred calls of its own. -/
+def iifeSt (env : Env) (k : Kind) (st : Stmt) (g : St) (j : Nat) : St :=
+  { g with closures := g.closures.push (iifeClosure env k st), steps := j, defers := [] :: g.defers }
+
+theorem closure_env (env : Env) (hio : env.iota = none) :
+    ({ pkg := env.pkg, file := env.file, scopes := env.scopes, tenv := env.tenv, targs := env.targs } : Env) = env := by
+  cases env; simp only at hio; subst hio; rfl
+
+section
+variable (c : Ctx) (n : Nat) (env : Env) (k : Kind) (st : Stmt) (g : St)
+  (hio : env.iota = none) (ht : env.tenv = [])
+  (hl : env.lookup (kindName k) = none) (ho : nameOwner c env (kindName k) = none)
+include hio ht hl ho
+
+/-- **An IIFE, to its call**: the literal makes a closure of the environment (its type
+    evaluated), and the call runs it: `callBody` in that environment, from the state with
+    the closure added. -/
+theorem evalExpr_iife :
+    (evalExpr c (n + 6) env (iife k st)).run.run g =
+      (do Val.single (← callBody c (n + 3) env (lowerSigOf [] k) (some [st]) none [] false)).run.run
+        { g with closures := g.closures.push (iifeClosure env k st) } := by
+  rw [iife, evalExpr_call, show n + 5 = (n + 4) + 1 from rfl, evalCall.eq_2]
+  simp only [grun_bind, typeOf_funcLit, declaredFunc_funcLit]
+  simp only [show n + 4 = (n + 3) + 1 from rfl, evalExpr, grun_bind]
+  simp only [gget_run, gmodify_run, evalType_func0 c n env k _ hl ht ho, run_pureM, evalArgs_nil]
+  unfold callValue
+  simp only [grun_bind, gget_run, Array.getElem?_push_size, closure_env env hio]
+  rfl
+
+/-- **An IIFE's value**: its body's `return` of a value of the result's kind, converted to
+    the result's type, with the body's list of deferred calls still empty. -/
+theorem evalExpr_iife_ret (j : Nat) (hj : g.steps = j + 1) (v : Spec.Val) (w : Val) (hw : VRel v w)
+    (hwk : valKind v = some k) (g1 : St)
+    (hb : (execStmts c (n + 2) env.push [st]).run.run (iifeSt env k st g j) = (.error (.ret [w]), g1))
+    (hd : g1.defers = [] :: g.defers) :
+    (evalExpr c (n + 6) env (iife k st)).run.run g = (.ok (defaultVal w), { g1 with defers := g.defers }) := by
+  rw [evalExpr_iife c n env k st g hio ht hl ho, grun_bind,
+    callBody0_ret c n env k [st] { g with closures := g.closures.push (iifeClosure env k st) } j hj ht hl ho v w hw hwk g1 hb hd]
+  rfl
+
+/-- **An IIFE's panic**: its body's, with the body's list of deferred calls still empty. -/
+theorem evalExpr_iife_panic (j : Nat) (hj : g.steps = j + 1) (pv : Val) (rt : Bool) (g1 : St)
+    (hb : (execStmts c (n + 2) env.push [st]).run.run (iifeSt env k st g j) = (.error (.panic pv rt), g1))
+    (hd : g1.defers = [] :: g.defers) :
+    (evalExpr c (n + 6) env (iife k st)).run.run g = (.error (.panic pv rt), { g1 with defers := g.defers }) := by
+  rw [evalExpr_iife c n env k st g hio ht hl ho, grun_bind,
+    callBody0_panic c n env k [st] { g with closures := g.closures.push (iifeClosure env k st) } j hj ht hl ho pv rt g1 hb hd]
+end
 
 /-- **A call of a function the lowering calls**: galaspec's call against Go's. GoCore takes
     one step for it (in `callBody`, after the arguments); galaspec took one for the call
