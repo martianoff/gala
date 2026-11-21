@@ -2228,3 +2228,148 @@ theorem listSim_of (d : Nat) (ihS : StmtSim ds cx P K sg d) : ListSim3 ds cx P K
       exact hstep _ rfl _ rfl
 
 end Stmts
+
+section Stmts2
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem env_bind_parts (env : Env) (x : String) (c : Nat) :
+    (env.bind x c).pkg = env.pkg ∧ (env.bind x c).tenv = env.tenv := by
+  unfold Env.bind; split
+  · exact ⟨rfl, rfl⟩
+  · split <;> exact ⟨rfl, rfl⟩
+
+/-- After `val x = e` or `var x = e`: the state relation with `x` of kind `k`. -/
+theorem inv3_decl {κ : String → Option Kind} {t : Spec.St} {g : St} {env : Env}
+    (hi : Inv3 cx P sg κ t.toCore g env) (m : Spec.Mut) (x : String) (hx_ : x ≠ "_") (hxt : x ≠ "true")
+    (hxf : x ≠ "false") (v : Spec.Val) (w : Val) (k : Kind) (hvw : VRel v w) (hkv : valKind v = some k) :
+    Inv3 cx P sg (upd κ x k) (declSt m x v t).toCore (declG w g) (env.bind x g.cells.size) := by
+  obtain ⟨b, hloc, hbv, hout, hheap⟩ := declSt_facts m x v t hx_ (vrel_not_ref hvw)
+  obtain ⟨hvd, hnu, hnb, hns⟩ := vrel_default hvw
+  have hglob : (declSt m x v t).globals = t.globals := by cases m <;> rfl
+  refine ⟨⟨?_, ?_, predeclared_bind hi.inv.pre x _ hx_ hxt hxf⟩, (env_bind_parts env x _).1.trans hi.pkg,
+    (env_bind_parts env x _).2.trans hi.tenv, ?_, ?_⟩
+  · intro y k' hk'
+    unfold upd at hk'
+    by_cases hyx : y = x
+    · subst hyx
+      simp only [ite_true, Option.some.injEq] at hk'
+      subst hk'
+      refine ⟨b, g.cells.size, v, defaultVal w, ?_, hbv, ?_, ?_, hvd, hkv, hnu, hnb, hns⟩
+      · show Spec.lookup (declSt m y v t).locals y = some b
+        rw [hloc]; simp [Spec.lookup]
+      · rw [Env.lookup_bind _ _ _ _ hx_]; simp
+      · simp [declG]
+    · simp only [hyx, ite_false] at hk'
+      obtain ⟨b', cell, v', w', hb', hv', hcell, hw', rest⟩ := hi.inv.loc y k' hk'
+      refine ⟨b', cell, v', w', ?_, bval_mono hheap hv', ?_, pre_get (pre_push _ _) hw', rest⟩
+      · show Spec.lookup (declSt m x v t).locals y = some b'
+        rw [hloc]; simp only [Spec.lookup, Ne.symm hyx, ite_false]; exact hb'
+      · rw [Env.lookup_bind _ _ _ _ hx_]; simp only [hyx, ite_false]; exact hcell
+  · show (declSt m x v t).out = g.out
+    rw [hout]; exact hi.inv.out
+  · intro y hy
+    unfold upd at hy
+    by_cases hyx : y = x
+    · simp [hyx] at hy
+    · simp only [hyx, ite_false] at hy
+      obtain ⟨h1, h2⟩ := hi.closed y hy
+      refine ⟨?_, ?_⟩
+      · show Spec.lookup (declSt m x v t).locals y = none
+        rw [hloc]; simp only [Spec.lookup, Ne.symm hyx, ite_false]; exact h1
+      · rw [Env.lookup_bind _ _ _ _ hx_]; simp only [hyx, ite_false]; exact h2
+  · intro f hf
+    show Spec.lookup (declSt m x v t).globals f = none
+    rw [hglob]; exact hi.globals f hf
+
+/-- **A declaration**, its expression one level down. -/
+theorem decl_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : Kind) (κ κ' : String → Option Kind)
+    (m : Spec.Mut) (x : String) (e : Spec.Expr) (l : Stmt)
+    (hl : lowerS3 K sg ρ κ (.decl m [x] false none [e]) = some (κ', l)) (s : Spec.St) (g : St) (env : Env)
+    (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ResL3 cx P sg ρ κ' s g ((Spec.eval ds (d + 1) (.decl m [x] false none [e])).run.run s)
+      ((execStmt cx N env l).run.run g) := by
+  simp only [lowerS3] at hl
+  split at hl
+  · cases hl
+  rename_i hxs
+  simp only [not_or] at hxs
+  obtain ⟨hx_, hxt, hxf⟩ := hxs
+  simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hl
+  obtain ⟨⟨k, le⟩, hle, rfl, rfl⟩ := hl
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 3 := ⟨N - 3, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k' =>
+  have ht := ticked_of s k' hs
+  rw [eval_decl_run ds d k' m x e s hs]
+  have hE := ihE κ e k le hle { s with steps := k' } g env hi (by show k' ≤ g.steps; omega) (n + 1)
+    (by rw [Nat.mul_succ] at hN; omega)
+  rcases hr : (Spec.eval ds d e).run.run { s with steps := k' } with ⟨r, t⟩
+  rw [hr] at hE
+  cases r with
+  | error er =>
+    cases er with
+    | panic pc msg =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE
+      rw [execStmt_decl_err cx n env x le g g' _ hg]
+      exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+    | ret => exact hE.elim
+    | _ => trivial
+  | ok v =>
+    obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+    rw [execStmt_decl_ok cx n env x le g g' w hg (results_of_vrel hvw)]
+    have hit := inv3_frame hi hsf hgf
+    obtain ⟨b, hloc, -, hout, hheap⟩ := declSt_facts m x v t hx_ (vrel_not_ref hvw)
+    obtain ⟨hl1, hg1, -⟩ := sframe_parts hsf
+    refine ⟨_, _, rfl, inv3_decl cx P sg hit m x hx_ hxt hxf v w k hvw hkv, pre_trans hsf.1 hheap, ?_,
+      ⟨[(x, b)], by rw [hloc]; exact congrArg _ hl1⟩, gframe_trans hgf ⟨pre_push _ _, by cases g'; rfl⟩, ?_⟩
+    · show (declSt m x v t).globals = s.globals
+      cases m <;> exact hg1
+    · have : (declSt m x v t).steps = t.steps := by cases m <;> rfl
+      unfold Spent at hsp ⊢; simp only [declG] at *; rw [this]; simp at hsp ⊢; omega
+
+/-- **`return e`**, its expression one level down. -/
+theorem ret_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : Kind) (κ κ' : String → Option Kind)
+    (x : Spec.Expr) (l : Stmt) (hl : lowerS3 K sg ρ κ (.ret (some x)) = some (κ', l)) (s : Spec.St) (g : St)
+    (env : Env) (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ResL3 cx P sg ρ κ' s g ((Spec.eval ds (d + 1) (.ret (some x))).run.run s)
+      ((execStmt cx N env l).run.run g) := by
+  simp only [lowerS3] at hl
+  split at hl
+  · rename_i k le hle
+    split at hl
+    · rename_i hk
+      subst hk
+      simp only [Option.some.injEq, Prod.mk.injEq] at hl
+      obtain ⟨rfl, rfl⟩ := hl
+      obtain ⟨n, rfl⟩ : ∃ n, N = n + 3 := ⟨N - 3, by rw [Nat.mul_succ] at hN; omega⟩
+      cases hs : s.steps with
+      | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+      | succ k' =>
+      have ht := ticked_of s k' hs
+      rw [eval_ret_run ds d k' x s hs, execStmt_ret]
+      have hE := ihE κ x k le hle { s with steps := k' } g env hi (by show k' ≤ g.steps; omega) (n + 1)
+        (by rw [Nat.mul_succ] at hN; omega)
+      rcases hr : (Spec.eval ds d x).run.run { s with steps := k' } with ⟨r, t⟩
+      rw [hr] at hE
+      cases r with
+      | error er =>
+        cases er with
+        | panic pc msg =>
+          obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE
+          rw [hg]; exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+        | ret => exact hE.elim
+        | _ => trivial
+      | ok v =>
+        obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+        rw [hg]
+        simp only
+        rw [results_of_vrel hvw]
+        obtain ⟨hl1, hg1, ho1⟩ := sframe_parts hsf
+        exact retOK_tick ht ⟨w, g', rfl, hvw, hkv, hsf.1, hg1, ho1, hgf, hsp⟩
+    · cases hl
+  · cases hl
+
+end Stmts2
