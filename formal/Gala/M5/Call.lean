@@ -2553,3 +2553,175 @@ theorem stmtSim_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihB : BlockSim3 d
     simp [lowerS3] at hl
 
 end Stmts3
+
+section Bodies
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem lowerLast_cases {ρ : Kind} {κ : String → Option Kind} {e : Spec.Expr} {le : Expr}
+    (h : lowerLast K sg ρ κ e = some le) :
+    (∃ x, e = .ret (some x) ∧ lowerC K sg κ x = some (ρ, le)) ∨ lowerC K sg κ e = some (ρ, le) := by
+  unfold lowerLast at h
+  split at h
+  · rename_i x
+    left; refine ⟨x, rfl, ?_⟩
+    split at h
+    · rename_i k l hl
+      split at h
+      · rename_i hk; subst hk; simp only [Option.some.injEq] at h; subst h; exact hl
+      · cases h
+    · cases h
+  · right
+    split at h
+    · rename_i k l hl
+      split at h
+      · rename_i hk; subst hk; simp only [Option.some.injEq] at h; subst h; exact hl
+      · cases h
+    · cases h
+
+theorem resB_after {ρ : Kind} {s t : Spec.St} {g g₁ : St} (hh : Pre s.heap t.heap) (hgl : t.globals = s.globals)
+    (ho : t.out = s.out) (hg : GFrame g g₁) (hsp : Spent s t g g₁) {sr : Except Spec.Stop Spec.Val × Spec.St}
+    {r : Except Stop Env × St} (h : ResB ρ t g₁ sr r) : ResB ρ s g sr r := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => exact panOK_trans ho hg h
+    | ret => exact retOK_trans hh hgl ho hg hsp h
+    | _ => trivial
+  · exact retOK_trans hh hgl ho hg hsp h
+
+theorem execStmts_ret1 (n : Nat) (env : Env) (le : Expr) (g : St) :
+    (execStmts cx (n + 4) env [.ret [le]]).run.run g = match (evalExpr cx (n + 1) env le).run.run g with
+      | (.ok w, g') => (.error (.ret w.results), g')
+      | (.error e, g') => (.error e, g') := by
+  rw [execStmts_cons, execStmt_ret]
+  rcases (evalExpr cx (n + 1) env le).run.run g with ⟨r, g'⟩
+  cases r <;> rfl
+
+/-- **The last element of a body**, returned. -/
+theorem last_sim (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihE' : ∀ d', d = d' + 1 → ExprSim ds cx P K sg d')
+    (hK : 1 ≤ K) (ρ : Kind) (κ : String → Option Kind) (e : Spec.Expr) (le : Expr)
+    (hl : lowerLast K sg ρ κ e = some le) (s : Spec.St) (g : St) (env : Env) (hi : Inv3 cx P sg κ s.toCore g env)
+    (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * d + 3 ≤ N) :
+    ResB ρ s g ((Spec.eval ds d e).run.run s) ((execStmts cx N env [.ret [le]]).run.run g) := by
+  cases d with
+  | zero => rw [eval_zero]; trivial
+  | succ d' =>
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by rw [Nat.mul_succ] at hN; omega⟩
+  rw [execStmts_ret1]
+  rcases lowerLast_cases K sg hl with ⟨x, rfl, hx⟩ | hx
+  ·     cases hs : s.steps with
+    | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+    | succ k =>
+    have ht := ticked_of s k hs
+    rw [eval_ret_run ds d' k x s hs]
+    have hE := ihE' d' rfl κ x ρ le hx { s with steps := k } g env hi (by show k ≤ g.steps; omega) (n + 1)
+      (by rw [Nat.mul_succ] at hN; omega)
+    rcases hr : (Spec.eval ds d' x).run.run { s with steps := k } with ⟨r, t⟩
+    rw [hr] at hE
+    cases r with
+    | error er =>
+      cases er with
+      | panic => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE; rw [hg]; exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+      | ret => exact hE.elim
+      | _ => trivial
+    | ok v =>
+      obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+      rw [hg]; simp only; rw [results_of_vrel hvw]
+      obtain ⟨-, hg1, ho1⟩ := sframe_parts hsf
+      exact retOK_tick ht ⟨w, g', rfl, hvw, hkv, hsf.1, hg1, ho1, hgf, hsp⟩
+  · have hE := ihE κ e ρ le hx s g env hi hsg (n + 1) (by omega)
+    rcases hr : (Spec.eval ds (d' + 1) e).run.run s with ⟨r, t⟩
+    rw [hr] at hE
+    cases r with
+    | error er =>
+      cases er with
+      | panic => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE; rw [hg]; exact ⟨pv, g', rfl, hp, ho, hgf⟩
+      | ret => exact hE.elim
+      | _ => trivial
+    | ok v =>
+      obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+      rw [hg]; simp only; rw [results_of_vrel hvw]
+      obtain ⟨-, hg1, ho1⟩ := sframe_parts hsf
+      exact ⟨w, g', rfl, hvw, hkv, hsf.1, hg1, ho1, hgf, hsp⟩
+
+/-- **A block body**: its statements, then its last element returned. -/
+theorem tailSim_of (d : Nat) (ihS : StmtSim ds cx P K sg d) (ihE : ExprSim ds cx P K sg d)
+    (ihE' : ∀ d', d = d' + 1 → ExprSim ds cx P K sg d') (hK : 1 ≤ K) : TailSim ds cx P K sg d := by
+  intro ρ κ ss
+  induction ss generalizing κ with
+  | nil => intro ls hl; simp [lowerTail] at hl
+  | cons st rest ihl =>
+    intro ls hl s g env hi hsg N hN
+    cases rest with
+    | nil =>
+      simp only [lowerTail, Option.map_eq_some_iff] at hl
+      obtain ⟨le, hle, rfl⟩ := hl
+      rw [evalBlock_one]
+      exact last_sim ds cx P K sg d ihE ihE' hK ρ κ st le hle s g env hi hsg N hN
+    | cons st' rest' =>
+      simp only [lowerTail, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+        Option.some.injEq] at hl
+      obtain ⟨⟨κ₁, l⟩, hst, ls', hrest, rfl⟩ := hl
+      obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by omega⟩
+      have hs := ihS ρ κ st κ₁ l hst s g env hi hsg n (by omega)
+      rw [evalBlock_cons, execStmts_cons]
+      rcases hrs : (Spec.eval ds d st).run.run s with ⟨rs, t⟩
+      rw [hrs] at hs
+      rcases hrg : (execStmt cx n env l).run.run g with ⟨rg, g'⟩
+      rw [hrg] at hs
+      cases rs with
+      | error e =>
+        cases e with
+        | panic => obtain ⟨pv, g'', hg, hp, ho, hgf⟩ := hs; rw [hg]; exact ⟨pv, g'', rfl, hp, ho, hgf⟩
+        | ret v => obtain ⟨w, g'', hg, rest⟩ := hs; rw [hg]; exact ⟨w, g'', rfl, rest⟩
+        | fuel => cases rg <;> trivial
+        | stuck => cases rg <;> trivial
+        | unsupported => cases rg <;> trivial
+      | ok v =>
+        obtain ⟨env', g'', hg, hinv, hh, hgl, -, hgf, hsp⟩ := hs
+        rw [hg]
+        simp only
+        have ho : t.out = s.out := by rw [hinv.inv.out, gframe_out hgf]; exact hi.inv.out.symm
+        exact resB_after hh hgl ho hgf hsp
+          (ihl κ₁ ls' hrest t g'' env' hinv (spent_le hsp hsg) (n + 1) hN)
+
+/-- **A function's body**, from its tail one level down (a block) or its expression. -/
+theorem bodySim_of (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihE' : ∀ d', d = d' + 1 → ExprSim ds cx P K sg d')
+    (ihT : ∀ d', d = d' + 1 → TailSim ds cx P K sg d') (hK : 1 ≤ K) : BodySim ds cx P K sg d := by
+  intro F xks ρ lb hsig hlb s g env hi hsg N hN
+  simp only [lowerBody, hsig] at hlb
+  split at hlb
+  · split at hlb
+    · rename_i ss hbody
+      rw [hbody]
+      cases d with
+      | zero => rw [eval_zero]; trivial
+      | succ d' =>
+      cases hs : s.steps with
+      | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+      | succ k =>
+      have ht := ticked_of s k hs
+      rw [eval_block_run, tick_succ s k hs]
+      simp only
+      have h := ihT d' rfl ρ _ ss lb hlb { s with steps := k } g env hi (by show k ≤ g.steps; omega) N
+        (by rw [Nat.mul_succ] at hN; omega)
+      rcases hr : (Spec.evalBlock ds d' ss).run.run { s with steps := k } with ⟨r, t⟩
+      rw [hr] at h
+      cases r with
+      | error e =>
+        cases e with
+        | panic => exact panOK_tick ht h
+        | ret => exact retOK_tick ht h
+        | _ => trivial
+      | ok v =>
+        obtain ⟨w, g', hg, hvw, hkv, hh, hgl, ho, hgf, hsp⟩ := h
+        exact retOK_tick ht ⟨w, g', hg, hvw, hkv, hh, hgl, ho, hgf, hsp⟩
+    · rename_i e hne
+      simp only [Option.map_eq_some_iff] at hlb
+      obtain ⟨le, hle, rfl⟩ := hlb
+      exact last_sim ds cx P K sg d ihE ihE' hK ρ _ F.body le hle s g env hi hsg N hN
+  · cases hlb
+
+end Bodies
