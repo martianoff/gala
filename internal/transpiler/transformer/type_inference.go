@@ -1633,10 +1633,10 @@ func (t *galaASTTransformer) unifyGoParam(param, arg transpiler.Type, typeParams
 		// And the mirror: a value of a Go generic defined type
 		// (`Pred[int]`, `iter.Seq[int]`) filling a parameter of an unnamed
 		// type (`func(T) bool`) unifies through the value's underlying type.
-		switch t.followAliasChain(unwrapValueMarkers(param)).(type) {
+		switch unaliased := t.followAliasChain(unwrapValueMarkers(param)); unaliased.(type) {
 		case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType, transpiler.PointerType:
 			if u := t.goDefinedUnderlying(instance, nil); u != nil {
-				arg = u
+				param, arg = unaliased, u
 			}
 		}
 	}

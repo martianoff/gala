@@ -423,25 +423,47 @@ func TestConversionToNamedFuncTypeTypesTheLambda(t *testing.T) {
 // parameter names (`func(x A) B`). With them, it is instantiated and the
 // lambda takes their types (#1318).
 func TestConversionToGenericGoNamedFuncType(t *testing.T) {
-	const goSrc = "package main\n\ntype Conv[A any, B any] func(A) B\n"
-	program := func(call string) string {
-		return "package main\n\nfunc main() {\n    val c = " + call + "\n    Println(c != nil)\n}\n"
+	const goSrc = `package main
+
+type Conv[A any, B any] func(A) B
+`
+	cases := []struct {
+		name, gala string
+		wantErr    string   // a diagnostic code, or "" for none
+		want       []string // in the generated Go
+	}{
+		{"without type arguments", `package main
+
+func main() {
+    val c = Conv((x) => x)
+    Println(c != nil)
+}
+`, "GALA-E0033", nil},
+		// The lambda takes the instantiated types, and the converted value
+		// has the type it converts to.
+		{"with type arguments", `package main
+
+func main() {
+    val c = Conv[int, int]((x) => x)
+    val k = () => c
+    Println(k()(1))
+}
+`, "", []string{"func(x int) int", "func() Conv[int, int]"}},
 	}
-	t.Run("Conv((x) => x)", func(t *testing.T) {
-		files, galaFile := samePackageModule(".", goSrc, program("Conv((x) => x)"))
-		out, err := transpileInModule(t, files, galaFile)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "GALA-E0033")
-		assert.NotContains(t, out, "x A")
-	})
-	t.Run("Conv[int, int]((x) => x)", func(t *testing.T) {
-		files, galaFile := samePackageModule(".", goSrc,
-			"package main\n\nfunc main() {\n    val c = Conv[int, int]((x) => x)\n    val k = () => c\n    Println(k()(1))\n}\n")
-		out, err := transpileInModule(t, files, galaFile)
-		require.NoError(t, err)
-		assert.Contains(t, out, "func(x int) int")
-		// The converted value has the type it converts to.
-		assert.Contains(t, out, "func() Conv[int, int]")
-		assert.NotContains(t, out, "x A")
-	})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, tc.gala)
+			out, err := transpileInModule(t, files, galaFile)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			for _, w := range tc.want {
+				assert.Contains(t, out, w)
+			}
+			assert.NotContains(t, out, "x A")
+		})
+	}
 }
