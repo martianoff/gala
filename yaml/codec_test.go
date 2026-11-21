@@ -287,6 +287,7 @@ func TestDecoder_DoubleQuotedEscapes(t *testing.T) {
 		{"32-bit code point", `"smile \U0001F600"`, "smile 😀"},
 		{"ASCII control from the encoder", `"bell\x07"`, "bell\a"},
 		{"highest code point", `"\U0010FFFF"`, "\U0010FFFF"},
+		{"surrogate pair, as JSON writes it", `"😀 😀"`, "😀 😀"},
 		{"escaped backslash before a letter", `"\\q"`, `\q`},
 	}
 	for _, tt := range tests {
@@ -322,6 +323,11 @@ func TestDecoder_UndefinedEscapesFail(t *testing.T) {
 		{`"\U0000"`, `\U0000`},
 		{`"\é"`, `\é`},
 		{`"\x4é"`, `\x4é`},
+		{`"\uDE00"`, `\uDE00`},
+		{`"\uD83D x"`, `\uD83D`},
+		{`"\uD83D\uD83D"`, `\uD83D`},
+		{`"\uD83D�"`, `\uD83D`},
+		{"\"\\\x7f\"", `"\\\x7f"`},
 	}
 	for _, tt := range tests {
 		want := "yaml: invalid escape " + tt.escape + " in double-quoted scalar"
@@ -332,6 +338,17 @@ func TestDecoder_UndefinedEscapesFail(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A body that ends in a lone backslash, which the parser never passes on,
+// still fails cleanly rather than indexing past the end.
+func TestUnescapeDoubleQuoted_TrailingBackslash(t *testing.T) {
+	defer func() {
+		if r, want := fmt.Sprint(recover()), `yaml: invalid escape \ in double-quoted scalar`; r != want {
+			t.Errorf("panic = %q, want %q", r, want)
+		}
+	}()
+	unescapeDoubleQuoted(`a\`)
 }
 
 // Strings the encoder double-quotes decode back to the original.
