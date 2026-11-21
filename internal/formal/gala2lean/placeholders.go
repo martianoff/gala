@@ -21,16 +21,23 @@ import (
 //
 // lowerPlaceholders rewrites an argument A of a call C into an untyped
 // lambda of one parameter p, its `_` replaced by p, only where that choice
-// cannot differ from the transformer's whatever the slot types are:
+// cannot differ from the transformer's whatever the slot types are, and
+// where the transformer's rewrite finds the `_`:
 //
-//   - A has exactly one `_`, so the order of parameters never matters;
-//   - that `_` is not in the arguments of a call inside A, so no inner slot
-//     can take it (it may be a receiver or an operand: `_.Name == n`);
-//   - C is not inside a call argument, up to the nearest lambda, case or
-//     declaration, so no outer slot can take it.
+//   - A is built only of its one `_`, literals, names, parentheses, unary and
+//     binary operators, selects, interpolated strings of these, and calls
+//     whose callee holds the `_` (`_.Contains(1)`) and whose arguments are
+//     literals or names. So A has exactly one `_` token, and the order of
+//     parameters never matters; no inner slot can take the `_`; and nothing
+//     in A lowers to a function literal (an if or match expression, a
+//     block, an evaluation-order wrapper), whose `_` the transformer's
+//     renaming does not reach (renameWalk in tryRewriteAsPlaceholderLambda
+//     stops at a function literal; Go then rejects the program);
+//   - C is not inside a call argument, up to the nearest enclosing lambda,
+//     case clause or top-level declaration, so no outer slot can take it.
 //
 // The translation then accepts such a lambda only for a slot of a function
-// type of one parameter (exprExpect), as the transformer does; anywhere else
+// type of one parameter (g.lambda), as the transformer does; anywhere else
 // it is reported (placeholder-lambda). Every other `_` stays as exported,
 // and is reported where it is reached.
 
@@ -40,45 +47,56 @@ func isPlaceholder(n coreexport.Node) bool {
 	return ok && u.What == coreexport.UnsupportedPlaceholder
 }
 
-// soleMark is the one `_` of argument a, counted as the transformer counts
-// them (countPlaceholders, transformer/args_source.go:223): every `_` token
-// outside lambdas and case clauses. A `_` in an interpolated string is
-// inside a string token there, and is not counted (Go then rejects it); a
-// wildcard pattern or a `_` type counts, as its token does. It is nil
-// unless a has exactly one `_`, a mark that is not in the arguments of a
-// call inside a.
+// soleMark is the one `_` of argument a when a has the form the rules above
+// admit, else nil.
 func soleMark(a coreexport.Node) *coreexport.Unsupported {
 	var mark *coreexport.Unsupported
-	count, inArgs := 0, false
-	var visit func(n coreexport.Node, inArg bool)
-	visit = func(n coreexport.Node, inArg bool) {
+	ok := true
+	// visit checks n; onPath is whether n may hold the mark (a call's
+	// arguments may not).
+	var visit func(n coreexport.Node, onPath bool)
+	visit = func(n coreexport.Node, onPath bool) {
 		switch n := n.(type) {
-		case *coreexport.Lambda, *coreexport.Case, *coreexport.Interp:
-			return
-		case *coreexport.PatWild:
-			count++
-			return
-		case *coreexport.TypeName:
-			if n.Name == "_" {
-				count++
-			}
-		case *coreexport.Call:
-			visit(n.Callee, inArg)
-			for _, x := range n.Args {
-				visit(x, true)
-			}
-			return
 		case *coreexport.Unsupported:
-			if n.What == coreexport.UnsupportedPlaceholder {
-				count++
-				mark, inArgs = n, inArgs || inArg
+			if !isPlaceholder(n) || !onPath || mark != nil {
+				ok = false
+				return
 			}
-			return
+			mark = n
+		case *coreexport.Int, *coreexport.Bool, *coreexport.String, *coreexport.Name:
+		case *coreexport.Paren:
+			visit(n.Expr, onPath)
+		case *coreexport.Unary:
+			visit(n.Operand, onPath)
+		case *coreexport.Binary:
+			visit(n.Left, onPath)
+			visit(n.Right, onPath)
+		case *coreexport.Select:
+			visit(n.Target, onPath)
+		case *coreexport.Interp:
+			// A `_` in it is inside a string token for the transformer, which
+			// does not count it (Go then rejects it).
+			walkChildren(n, func(c coreexport.Node) { visit(c, false) })
+		case *coreexport.InterpText:
+		case *coreexport.Call:
+			if n.Bracket != nil {
+				ok = false
+				return
+			}
+			visit(n.Callee, onPath)
+			for _, x := range n.Args {
+				switch argNode(x).(type) {
+				case *coreexport.Int, *coreexport.Bool, *coreexport.String, *coreexport.Name:
+				default:
+					ok = false
+				}
+			}
+		default:
+			ok = false
 		}
-		walkChildren(n, func(c coreexport.Node) { visit(c, inArg) })
 	}
-	visit(a, false)
-	if count != 1 || inArgs {
+	visit(a, true)
+	if !ok {
 		return nil
 	}
 	return mark
@@ -87,44 +105,48 @@ func soleMark(a coreexport.Node) *coreexport.Unsupported {
 // lowerPlaceholders is p with each placeholder argument that the rules
 // above admit rewritten into a lambda; the lambdas are in the returned set.
 func lowerPlaceholders(p *coreexport.Program) (*coreexport.Program, map[*coreexport.Lambda]bool) {
-	l := &placeholderLowering{lambdas: map[*coreexport.Lambda]bool{}}
+	l := &placeholderLowering{lambdas: map[*coreexport.Lambda]bool{}, marked: map[coreexport.Node]bool{}}
 	out := *p
 	out.Files = make([]*coreexport.File, len(p.Files))
 	for i, f := range p.Files {
 		out.Files[i] = f
-		if hasPlaceholder(f) {
+		if l.mark(f) {
 			out.Files[i] = l.rewrite(f, false).(*coreexport.File)
 		}
 	}
 	return &out, l.lambdas
 }
 
-// hasPlaceholder reports whether n has a `_` mark.
-func hasPlaceholder(n coreexport.Node) bool {
-	found := false
-	var scan func(n coreexport.Node)
-	scan = func(n coreexport.Node) {
-		found = found || isPlaceholder(n)
-		if !found {
-			walkChildren(n, scan)
-		}
-	}
-	scan(n)
-	return found
-}
-
 type placeholderLowering struct {
 	lambdas map[*coreexport.Lambda]bool
-	fresh   int
+	// marked holds the nodes with a `_` mark at or below them: only those
+	// are rewritten (copied).
+	marked map[coreexport.Node]bool
+	fresh  int
+}
+
+// mark records in l.marked whether n holds a `_` mark, and reports it.
+func (l *placeholderLowering) mark(n coreexport.Node) bool {
+	has := isPlaceholder(n)
+	walkChildren(n, func(c coreexport.Node) {
+		if l.mark(c) {
+			has = true
+		}
+	})
+	if has {
+		l.marked[n] = true
+	}
+	return has
 }
 
 // rewrite is n with its admitted placeholder arguments rewritten; inArg is
-// whether n is inside a call argument within the current lambda, case or
-// declaration.
+// whether n is inside a call argument within the current lambda, case
+// clause or top-level declaration.
 func (l *placeholderLowering) rewrite(n coreexport.Node, inArg bool) coreexport.Node {
+	if !l.marked[n] {
+		return n
+	}
 	switch n := n.(type) {
-	case nil:
-		return nil
 	case *coreexport.Lambda, *coreexport.Case:
 		// A new context: its body's `_` are its own.
 		return mapChildren(n, func(c coreexport.Node) coreexport.Node { return l.rewrite(c, false) })
@@ -133,7 +155,7 @@ func (l *placeholderLowering) rewrite(n coreexport.Node, inArg bool) coreexport.
 		out.Callee = l.rewrite(n.Callee, inArg)
 		out.Args = make([]coreexport.Node, len(n.Args))
 		for i, a := range n.Args {
-			if !inArg {
+			if !inArg && l.marked[a] {
 				if lam := l.lambdaOf(a); lam != nil {
 					out.Args[i] = withArg(a, lam)
 					continue
@@ -147,12 +169,9 @@ func (l *placeholderLowering) rewrite(n coreexport.Node, inArg bool) coreexport.
 }
 
 // lambdaOf is argument a, of a call outside any call argument, as a lambda
-// when it has a sole `_` (soleMark), else nil.
+// when it has the admitted form (soleMark), else nil.
 func (l *placeholderLowering) lambdaOf(a coreexport.Node) *coreexport.Lambda {
 	v := argNode(a)
-	if _, spread := v.(*coreexport.Spread); spread {
-		return nil
-	}
 	mark := soleMark(v)
 	if mark == nil {
 		return nil
@@ -171,9 +190,7 @@ func (l *placeholderLowering) lambdaOf(a coreexport.Node) *coreexport.Lambda {
 	lam := &coreexport.Lambda{
 		Meta:   coreexport.Meta{Kind: "lambda", Pos: pos},
 		Params: []coreexport.Node{&coreexport.Param{Meta: coreexport.Meta{Kind: "param", Pos: pos}, Name: name}},
-		// Its lambdas and cases are contexts of their own; no call in it is
-		// outside an argument (its one `_` was the transformer's).
-		Body: l.rewrite(subst(v), true),
+		Body:   subst(v),
 	}
 	l.lambdas[lam] = true
 	return lam
