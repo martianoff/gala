@@ -1368,13 +1368,16 @@ func unescapeDoubleQuoted(body string) string {
 }
 
 // hexRune reads the code point written in hex as body[from:to]; false when
-// body is too short or the digits are not hex.
+// body is too short, the digits are not hex or the value is above U+10FFFF.
 func hexRune(body string, from, to int) (rune, bool) {
 	if to > len(body) {
 		return 0, false
 	}
 	v, err := strconv.ParseUint(body[from:to], 16, 32)
-	return rune(v), err == nil
+	if err != nil || v > utf8.MaxRune {
+		return 0, false
+	}
+	return rune(v), true
 }
 
 // invalidEscape fails the decode for the escape esc, shown as written when
