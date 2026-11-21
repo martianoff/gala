@@ -212,6 +212,11 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if t.opaqueConversionCallee(e.Fun) != nil {
 		return t.astTypeToTranspilerType(e.Fun)
 	}
+	// So has a conversion to a Go type, `sort.StringSlice(xs)` or
+	// `pkg.Bag[string](xs)`.
+	if len(e.Args) == 1 && t.namesGoType(e.Fun) {
+		return t.astTypeToTranspilerType(e.Fun)
+	}
 	// So has a conversion to a type parameter of the enclosing declaration,
 	// `T(v)`.
 	if id, ok := e.Fun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
