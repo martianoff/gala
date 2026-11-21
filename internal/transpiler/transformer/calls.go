@@ -1573,9 +1573,13 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 // readsGenericGoSlot reports whether v, an argument of a generic Go function
 // filling a parameter of type slot, is typed by the type arguments the other
 // arguments bind (genericGoLambdaSlot): a lambda, or a thunk for a parameter
-// taking nothing and giving several results.
+// taking nothing and giving several results, or any value filling a slot of
+// a generic Go defined type (`Pred[T]`, `iter.Seq[E]`), which names the
+// callee's type parameters until they are bound: a placeholder lambda
+// (`_ > 1`) or a partial application there is typed by it as a lambda is.
 func readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
-	return v.lambda.ok() || isGoResultsThunkSlot(slot)
+	_, instance := slot.(transpiler.GenericType)
+	return v.lambda.ok() || isGoResultsThunkSlot(slot) || instance
 }
 
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
@@ -2160,7 +2164,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		case transpiler.IsUnusable(expectedType) && !v.spread:
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
-		if genericGo && readsGenericGoSlot(v, expectedType) {
+		if genericGo && (readsGenericGoSlot(v, expectedType) || readsGenericGoSlot(v, goSigParamType(goSig, slotIdx))) {
 			// The arguments lowered so far, each at its parameter, bind the
 			// type parameters: those passed by name too.
 			prior := positional
@@ -5069,7 +5073,11 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 		if id, ok := base.(*ast.Ident); ok && t.shadowingScope(id.Name) != nil {
 			return nil
 		}
-		return t.goNamedFuncTypeOf(t.astTypeToTranspilerType(fun))
+		// Any number of results, as goNamedFuncType allows.
+		if ft, ok := t.goDefinedUnderlying(t.astTypeToTranspilerType(fun), nil).(transpiler.FuncType); ok {
+			return &ft
+		}
+		return nil
 	}
 	return t.goNamedFuncType(name)
 }

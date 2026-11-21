@@ -15,6 +15,7 @@ import (
 func main() {
     Println(CountP(go_interop.SliceOf(1, 2, 3), (x) => x > 1))
     Println(CountP(go_interop.SliceOf("a", "bb"), (s) => s.Size() > 1))
+    Println(CountP(go_interop.SliceOf(1, 2, 3), _ > 2))
     Println(Fold(go_interop.SliceOf(1.5, 2.5), 0, (a, b) => a + b))
     Println(Fold(go_interop.SliceOf("x", "y"), "", (a, b) => a + b))
     Println(Fold(go_interop.SliceOf(0.5), math.MaxInt8, (a, b) => a + b))
