@@ -104,6 +104,9 @@ end
 instance : Inhabited Expr := ⟨.unsupported ""⟩
 instance : Inhabited Stmt := ⟨.empty⟩
 
+-- Structural equality on GoCore syntax.
+deriving instance BEq for Expr, Field, Sig, Stmt, Clause, Decl, TypeSpec, Spec
+
 /-- An import: its name (`""` for none, `.` or `_`) and its path. -/
 structure Import where
   name : String

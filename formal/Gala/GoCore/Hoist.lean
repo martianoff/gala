@@ -13,7 +13,8 @@
 
   This is **gc 1.25.5's choice, not the spec's**, kept apart like `GcRuntime` and checked
   by the same version guard (`GcRuntime.goVersion`). It is pinned by the `go run`
-  fixtures `eval_order`, `eval_order2`, `eval_order3` and `eval_order4` (tests/gocore/src).
+  fixtures `eval_order`, `eval_order2`, `eval_order3`, `eval_order4` and `eval_order_call`
+  (tests/gocore/src).
 
   What order.go copies into a temporary at its lexical place (an *O-node*):
   * a call of a function, method or function value (`OCALLFUNC`, `OCALLINTER`);
@@ -1086,22 +1087,27 @@ def structFields (c : Ctx) : Std.HashSet String :=
         | .mk ns _ => ns.foldl (·.insert ·) a) acc
     | _ => acc) acc) {}
 
+/-- The scope a function or method body of package `pkg`, file `fi`, starts in: its
+    receiver and parameters as locals, its own and its receiver's type parameters, the
+    locals it may change, a pointer receiver as a pointer local, its interface-typed
+    parameters (`withIfaces`), and the program's struct fields and methods. -/
+def funcScope (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String (List Method))
+    (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
+    (body : List Stmt) : Scope :=
+  let recvTParams := match recv with
+    | some (.mk _ rty) => ((recvBase rty).map (·.2.1)).getD []
+    | none => []
+  (Scope.enter { c, pkg, file := fi, locals := fieldListNames recv.toList,
+                 tparams := fieldListNames tps ++ recvTParams,
+                 changeable := Std.HashSet.ofList (chSs (takesAddress methods) false body),
+                 pointers := pointerNames recv.toList, fields, methods } sig).withIfaces sig
+
 /-- A declaration in gc's order: function and method bodies, and package-level
     variables' initializers. -/
 def hDecl (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String (List Method))
     (pkg : String) (fi : Nat) : Decl → HM Decl
   | .func name recv tps sig (some body) => do
-    let recvNames := match recv with
-      | some (.mk ns _) => ns
-      | none => []
-    let recvTParams := match recv with
-      | some (.mk _ rty) => ((recvBase rty).map (·.2.1)).getD []
-      | none => []
-    let s := Scope.enter { c, pkg, file := fi, locals := recvNames,
-                           tparams := fieldListNames tps ++ recvTParams,
-                           changeable := Std.HashSet.ofList (chSs (takesAddress methods) false body),
-                           pointers := pointerNames recv.toList, fields, methods } sig
-    let s := s.withIfaces sig
+    let s := funcScope c fields methods pkg fi recv tps sig body
     pure (.func name recv tps sig (some (← hSs s body)))
   | .value false specs => do
     -- Its function literals' locals: those a nested literal assigns may change.
