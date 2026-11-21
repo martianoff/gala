@@ -96,6 +96,21 @@ func TestUnreachableCase(t *testing.T) {
 			at: "line 7:4 ", catchAll: "`case (n, s)` on line 6",
 		},
 		{
+			name: "`case _` after a tuple binding a capitalized name",
+			src: `func f(t Tuple[int, int]) int = t match {
+    case (A, b) => A + b
+    case _ => 0
+}
+`,
+			at: "line 7:4 ", catchAll: "`case (A, b)` on line 6",
+		},
+		{
+			name: "a partial-function `case _` after a tuple binding a capitalized name",
+			src: `func f() Array[int] = ArrayOf((1, 2)).Collect({ case (A, b) => A + b case _ => 0 })
+`,
+			at: "line 5:69 ", catchAll: "`case (A, b)` on line 5",
+		},
+		{
 			name: "a tuple after a tuple of wildcards",
 			src: `func f(t Tuple[int, Tuple[int, int]]) string = t match {
     case (_, (a, _)) => s"$a"

@@ -32,17 +32,10 @@ func label(t Tuple[int, string]) string = t match {
     case (n, s) => s"$n $s"
 }
 
-// A typed pattern over `any` does not match nil, so `case _` still runs.
-func kind(v any) string = v match {
-    case x: any => s"value $x"
-    case _ => "nil"
-}
-
 func main() {
     Println(name(0), name(1), name(7))
     Println(sign(3), sign(0), sign(-2))
     Println(sumOf(Point(2, 3)))
     Println(label((0, "a")), label((4, "b")))
-    Println(kind(5), kind(nil))
     Println(ArrayOf(1, 2, 3).Collect({ case 1 => "one" case 2 => "two" case n => s"n$n" }))
 }

@@ -15,8 +15,11 @@ match every value:
 - a tuple pattern of the subject's arity whose elements are each `_`, a
   binding or such a tuple, `case (a, _)` over a `Tuple[int, string]`.
 
-Other patterns are not counted, even one that happens to match every value,
-such as an extractor whose fields are all bindings.
+A typed pattern counts when it spells the subject's type as the subject's type
+is written. In a partial-function literal, a typed or tuple pattern counts
+only when the expected function type gives the parameter's type. Other
+patterns are not counted, even one that happens to match every value, such as
+an extractor whose fields are all bindings.
 
 A case with a guard, `case x if x > 0`, does not match every value, so the
 cases after it stay reachable. In a `match`, a second `case _` (or a second
