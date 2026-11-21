@@ -1014,6 +1014,14 @@ func main() {
     })
     Println(b(3))
 }`, []string{"func(k int) int64 {", "return 5"}},
+		{"declared result type, expression lambda", `package main
+
+func run[A any](f func(A) int64) func(A) int64 = f
+
+func main() {
+    val b = run((k int) => 1 << 40)
+    Println(b(3))
+}`, []string{"func(k int) int64 {", "return 1 << 40"}},
 		{"declared any result", `package main
 
 func run[A any](f func(A) any) func(A) any = f

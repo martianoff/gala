@@ -5016,7 +5016,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		// `any`, or the body's type where it names a type parameter (NilType,
 		// spelled `any`).
 		expectedRetType = t.typeToExpr(s.funcResult)
-		declaredResult = !s.funcResult.IsNil()
+		declaredResult = !s.open && !s.funcResult.IsNil()
 	}
 	if !isFunc && s.typ != nil && (s.typ.IsAny() || s.typ.String() == "interface{}") {
 		// A slot typed `any` (a Go `func Register(h any)`) takes the lambda as
