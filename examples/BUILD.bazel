@@ -2020,6 +2020,13 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# #1317: range over a Go defined integer type (time.Duration) binds that type.
+gala_exec_test(
+    name = "range_go_defined_int",
+    src = "range_go_defined_int.gala",
+    expected = "range_go_defined_int.out",
+)
+
 # #1311: a conversion to a Go named type has that type, and indexing a Go
 # type defined over a slice or map has its element type.
 gala_exec_test(

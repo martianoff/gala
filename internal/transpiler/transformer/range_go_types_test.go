@@ -100,6 +100,31 @@ func main() {
     }
 }
 `, []string{`"i=%d"`, "func() int32"}},
+		// Go binds i to the defined type itself (#1317), so `s"$i"` uses %v
+		// and the type's String method, and its methods are callable.
+		{"a Go defined integer type (time.Duration)", `package main
+
+import "time"
+
+func main() {
+    val d = time.Duration(3)
+    for i := range d {
+        val f = () => i
+        Println(s"i=$i", f(), i.Nanoseconds())
+    }
+}
+`, []string{`"i=%v"`, "func() time.Duration", "i.Nanoseconds()"}},
+		{"a Go defined integer type from a constant expression (time.Nanosecond * 2)", `package main
+
+import "time"
+
+func main() {
+    for i := range time.Nanosecond * 2 {
+        val f = () => i
+        Println(f())
+    }
+}
+`, []string{"func() time.Duration"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

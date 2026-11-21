@@ -1,0 +1,18 @@
+package main
+
+import "time"
+
+// Range over a Go defined integer type binds the loop variable to that type,
+// as Go does (#1317): interpolation prints it with the type's String method,
+// and its methods are callable.
+
+func main() {
+    val d = time.Duration(3)
+    for i := range d {
+        val same = () => i
+        Println(s"i=$i same=${same()} ns=${i.Nanoseconds()}")
+    }
+    for i := range time.Nanosecond * 2 {
+        Println(s"step=$i", i + time.Second)
+    }
+}

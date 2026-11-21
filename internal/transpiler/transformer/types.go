@@ -804,7 +804,8 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 //   - a map: its key and element
 //   - a string: an int key and a rune
 //   - a channel: the element (one variable)
-//   - a predeclared integer type: that type (one variable)
+//   - an integer type, predeclared or defined (time.Duration): that type
+//     (one variable)
 //   - a `func(yield func(K, V) bool)`, such as iter.Seq[V] or
 //     iter.Seq2[K, V]: the yield function's parameters
 //
@@ -828,10 +829,12 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 		if v.Name == "string" {
 			return transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "rune"}
 		}
-		if k := scalarKindOfPrimitive(v.Name); (k == scalarInt || k == scalarUint) && !defined {
-			// `for i := range n` binds i to n's type. A Go defined integer
-			// type (time.Duration) keeps the int key it has always had: its
-			// String method would change what `s"$i"` prints (#1317).
+		if k := scalarKindOfPrimitive(v.Name); k == scalarInt || k == scalarUint {
+			// `for i := range n` binds i to n's type, a Go defined integer
+			// type (time.Duration) included (#1317).
+			if defined {
+				return exprType, transpiler.NilType{}
+			}
 			if v.Name == "rune" {
 				// Go binds i to rune; int32 is the same type, and keeps
 				// `s"$i"` printing numbers (%d), not characters (%c).
