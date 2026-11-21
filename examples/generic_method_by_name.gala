@@ -49,4 +49,5 @@ func main() {
     Println(b.Get(None[int](), 7), b.Get(Some(side()), 0))
     Println(b.Run(side()))
     Println(b.OrElse(Some("set"), label("unused")), b.OrElse(None[string](), label("fallback")))
+    Println(b.OrElse(None[int64](), 5))
 }

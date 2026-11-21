@@ -769,10 +769,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// Sendable boundary is checked as a lambda there is (a
 				// lambda or partial function never reaches here, so a
 				// function literal is the lifted thunk).
-				expr, txErr = t.transformArgument(v.expr, slot{typ: t.substituteTranspilerTypeParams(byNameType, typeSubst), open: true}, false)
-				if _, lifted := expr.(*ast.FuncLit); lifted && sendable {
-					if err := t.enforceSendableCapturesInArg(v); err != nil {
-						return true, nil, err
+				byNameType = t.substituteTranspilerTypeParams(byNameType, typeSubst)
+				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: typeMentionsTypeParam(byNameType, methodMeta.TypeParams)}, false)
+				if txErr == nil {
+					_, lifted := expr.(*ast.FuncLit)
+					if !lifted && t.resolveTranspilerTypeAsFuncType(t.getExprTypeName(expr)) == nil {
+						// Not lifted for want of a result type: the
+						// main loop lowers it once more is bound.
+						continue
+					}
+					if lifted && sendable {
+						if err := t.enforceSendableCapturesInArg(v); err != nil {
+							return true, nil, err
+						}
 					}
 				}
 			} else {
