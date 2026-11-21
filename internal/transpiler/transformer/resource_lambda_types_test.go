@@ -422,6 +422,12 @@ func apply[T any, U any](x T, m Mapper2[T, U]) U = m(x)
 
 func run() int = apply(1, (x) => x + 1)
 `},
+		{"one type argument bound by another argument, by name", `package main
+
+func apply[T any, U any](x T, m Mapper2[T, U]) U = m(x)
+
+func run() int = apply(x = 1, m = (x) => x + 1)
+`},
 		{"only the result open", `package main
 
 func run2[U any](m Mapper2[int, U]) U = m(1)

@@ -20,6 +20,7 @@ func TestGoGenericInstanceSlotLeftOpenIsDiagnosed(t *testing.T) {
 		{"positional", "func main()", "collect((yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
 		{"by name", "func main()", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
 		{"by name, inside a generic caller with its own T", "func wrap[T any](x T)", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"a struct field, inside a generic caller with its own T", "func mk[T any](x T)", "Holder(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
 		{"partly bound", "func main()", "count2(1, (yield) => {\n        yield(1, 2)\n    })", "V) bool", false},
 	}
 	for _, tc := range cases {
@@ -32,6 +33,8 @@ import "slices"
 func collect[T any](s iter.Seq[T]) []T = slices.Collect(s)
 
 func count2[K comparable, V any](k K, s iter.Seq2[K, V]) int = 0
+
+struct Holder[T any](s iter.Seq[T])
 
 ` + tc.caller + ` {
     Println(` + tc.call + `)
