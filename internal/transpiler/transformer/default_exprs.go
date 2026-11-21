@@ -76,9 +76,10 @@ type defaultLowering struct {
 	// emitTypeParams is the type parameters in scope where the lowered
 	// default is emitted (see shadowedByUse).
 	emitTypeParams map[string]bool
-	// useLine and useCol are where the use site is, in the file being
-	// transformed: where a diagnostic about a default goes when its own
-	// file or position is unknown (see placeForeignDefaultError).
+	// useLine and useCol are where the use site is: in the file being
+	// transformed when outer is nil, else in the text of the enclosing
+	// default. A diagnostic about a default whose own file or position is
+	// unknown goes there (see placeForeignDefaultError, recordBlankRead).
 	useLine, useCol int
 }
 

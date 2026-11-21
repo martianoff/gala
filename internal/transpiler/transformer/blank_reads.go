@@ -23,15 +23,19 @@ type blankRead struct {
 }
 
 // recordBlankRead records ident, the lowering of an unbound `_` written at at.
-// A `_` in a default not local to this file (see transformDefaultExpr) is
-// placed in the default's file when its file and position are known, and
-// otherwise at the outermost use site, which is in the file being transformed.
+// A `_` in a default is placed where the default is written when that is
+// known: in this file (also when both have no path), or in the default's own
+// file. Otherwise it is placed at the outermost use site, which is in the
+// file being transformed.
 func (t *galaASTTransformer) recordBlankRead(ident *ast.Ident, at srcNode) {
 	read := blankRead{at: at.rng()}
 	if d := t.loweringDefault; d != nil && d.foreign {
-		if d.src.file != "" && d.src.Pos.Line > 0 {
-			read.file = filepath.Clean(d.src.file)
-		} else {
+		switch {
+		case d.src.Pos.Line > 0 && filepath.Clean(d.src.file) == filepath.Clean(t.filePath):
+			// Written in this file: at is where.
+		case d.src.Pos.Line > 0 && d.src.file != "":
+			read.file = d.src.file
+		default:
 			for d.outer != nil {
 				d = d.outer
 			}
@@ -47,8 +51,8 @@ func (t *galaASTTransformer) recordBlankRead(ident *ast.Ident, at srcNode) {
 // before reports whether r is reported before o: one in the file being
 // transformed first, then by file and source order.
 func (r blankRead) before(o blankRead) bool {
-	if r.file != o.file {
-		return r.file == "" || o.file != "" && r.file < o.file
+	if rf, of := filepath.Clean(r.file), filepath.Clean(o.file); rf != of {
+		return r.file == "" || o.file != "" && rf < of
 	}
 	return r.at.line < o.at.line || r.at.line == o.at.line && r.at.col < o.at.col
 }

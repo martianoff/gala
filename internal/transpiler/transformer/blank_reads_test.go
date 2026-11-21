@@ -60,8 +60,8 @@ func TestUnboundUnderscoreRead(t *testing.T) {
 		// yet (#1346); its read is reported rather than left to Go.
 		{"inside an if-expression argument",
 			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    Println(ArrayOf(1, -2).Map(if (_ > 0) 1 else 2))\n}\n", "line 6:35 "},
-		{"a default of the same file, read with no file path, at the use site",
-			"package main\n\nfunc inc(n int) int = n + 1\n\nfunc f(n int = inc(_)) int = n\n\nfunc main() {\n    Println(f())\n}\n", "line 8:13 "},
+		{"a default of the same file, read with no file path",
+			"package main\n\nfunc inc(n int) int = n + 1\n\nfunc f(n int = inc(_)) int = n\n\nfunc main() {\n    Println(f())\n}\n", "line 5:19 "},
 		{"the first of two reads",
 			"package main\n\nfunc add(a int, b int) int = a + b\n\nfunc main() {\n    Println(add(_, 1))\n    Println(add(2, _))\n}\n", "line 6:16 "},
 	}
