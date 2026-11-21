@@ -1990,6 +1990,31 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# #1321, #1318: a GALA function passed where a generic Go function expects
+# an iter.Seq binds its type parameters, and a lambda in an iter.Seq slot is
+# typed from it.
+gala_exec_test(
+    name = "go_iter_seq_arg_inference",
+    src = "go_iter_seq_arg_inference.gala",
+    expected = "go_iter_seq_arg_inference.out",
+    deps = ["//go_interop"],
+)
+
+# #1318, #1321 through a Go bridge package: a lambda in a generic Go defined
+# function type slot (Pred[T]), and an untyped constant argument that must not
+# bind a type parameter first. In a directory of its own: the single-file
+# example corpus that the transformer guards transpile cannot resolve its Go
+# bridge package.
+gala_exec_test(
+    name = "go_generic_inference",
+    src = "go_generic_inference/main.gala",
+    expected = "go_generic_inference/main.out",
+    deps = [
+        "//examples/go_generic_inference_bridge",
+        "//go_interop",
+    ],
+)
+
 # #1298 and #1299 through a Go bridge package: Go types defined over a slice
 # or map, generic Go iterators, a generic Go struct's fields and a generic Go
 # slice type's methods. In a directory of its own: the single-file example

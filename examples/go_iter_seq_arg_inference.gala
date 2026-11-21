@@ -1,0 +1,38 @@
+package main
+
+import (
+    "maps"
+    "slices"
+    "martianoff/gala/go_interop"
+)
+
+// A GALA function or lambda passed where a generic Go function expects an
+// iter.Seq[E] or iter.Seq2[K, V] binds E, K and V through the iterator's
+// underlying function type, and a lambda in such a slot takes its parameter
+// types from it (#1321, #1318).
+
+func gen(yield func(int) bool) {
+    for i := range 3 {
+        if !yield(i * 10) {
+            return
+        }
+    }
+}
+
+func pairs(yield func(string, int) bool) {
+    yield("a", 1)
+}
+
+func main() {
+    val xs = slices.Collect(gen)
+    val again = () => xs
+    Println(again(), xs.Size())
+    Println(slices.Collect[string]((yield) => {
+        yield("p")
+        yield("q")
+    }))
+    val m = maps.Collect(pairs)
+    val keys = () => slices.Collect(maps.Keys(m))
+    Println(keys(), m["a"] + 1)
+    Println(slices.Sorted(slices.Values(go_interop.SliceOf(3, 1, 2))))
+}

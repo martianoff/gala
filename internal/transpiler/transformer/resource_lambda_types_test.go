@@ -388,8 +388,8 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 		})
 	}
 
-	// A generic Go named function type is not instantiated here, so a lambda
-	// in its slot still has no type to take.
+	// An instance of a generic Go named function type is instantiated with
+	// its type arguments, so a lambda in its slot takes their types (#1318).
 	for name, gala := range map[string]string{
 		"a generic Go named function type":                   "func apply(m Mapper[int]) int = m(1)\n\nfunc run() int = apply((x) => x)\n",
 		"a generic Go named function type in a val":          "func run() int {\n    val m Mapper[int] = (x) => x\n    m(1)\n}\n",
@@ -397,9 +397,9 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+gala)
-			_, err := transpileInModule(t, files, galaFile)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "GALA-E0033")
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, "func(x int) int")
 		})
 	}
 }

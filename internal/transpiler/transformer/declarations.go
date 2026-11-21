@@ -1311,16 +1311,23 @@ func (t *galaASTTransformer) aliasedFuncType(tp transpiler.Type) *transpiler.Fun
 }
 
 // goNamedFuncTypeOf returns the underlying function type of typ when typ names
-// a non-generic Go named function type with at most one result
-// (`fs.WalkDirFunc`, or a type of the package's own .go files) that no GALA
-// type of that name hides — a lambda in a slot of that type is a value of that
-// signature, and a call of a value of it has its result — or nil.
+// a Go named function type with at most one result (`fs.WalkDirFunc`, a type
+// of the package's own .go files, or an instance of a generic one such as
+// `iter.Seq[string]` or `Pred[T]`, its type arguments substituted) that no
+// GALA type of that name hides — a lambda in a slot of that type is a value of
+// that signature, and a call of a value of it has its result — or nil.
 func (t *galaASTTransformer) goNamedFuncTypeOf(typ transpiler.Type) *transpiler.FuncType {
 	if t.goTypeInfo == nil {
 		return nil
 	}
-	switch typ.(type) {
+	switch v := typ.(type) {
 	case transpiler.NamedType, transpiler.BasicType:
+	case transpiler.GenericType:
+		// goDefinedUnderlying finds no Go type a GALA type hides.
+		if ft, ok := t.goDefinedUnderlying(v, nil).(transpiler.FuncType); ok && len(ft.Results) <= 1 {
+			return &ft
+		}
+		return nil
 	default:
 		return nil
 	}
