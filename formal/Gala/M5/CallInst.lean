@@ -155,14 +155,14 @@ theorem g_body3 : Body3 gBody := by simp [Body3, body3Ss, body3S, noTrigE, ccB, 
 
 theorem fact_fits : FitsSs (gcScope ordProg "main" 0 none [] factSig factBody) factBody := by
   simp [FitsSs, FitsS, FitsOS, FitsE, FitsEs, fieldListNames, factBody, afterS, gcScope, changeableName, callKind,
-    isType, Scope.isLocal, Scope.obj?, Scope.env, nameOwner, singleResult, resultCount, Scope.enter,
+    isType, Scope.isLocal, Scope.isLType, Scope.ltype?, Scope.obj?, Scope.env, nameOwner, singleResult, resultCount, Scope.enter,
     Scope.withIfaces, Scope.bind, sigNames, factSig, lowerSigOf, kindName, chSs, chS, chE, chEs, chOS, isTypeObj,
     isVarObj, buildCtx, buildPkg, ordProg, ordPkg, Id.run, List.forIn_cons, List.forIn_nil, List.foldl_cons,
     List.foldl_nil, id_pure, idb, Std.HashMap.getElem_insert, Std.HashMap.getElem?_insert]
 
 theorem g_fits : FitsSs (gcScope ordProg "main" 0 none [] gSig gBody) gBody := by
   simp [FitsSs, FitsS, FitsE, FitsEs, fieldListNames, gBody, gcScope, changeableName, callKind,
-    isType, Scope.isLocal, Scope.obj?, Scope.env, nameOwner, singleResult, resultCount, Scope.enter,
+    isType, Scope.isLocal, Scope.isLType, Scope.ltype?, Scope.obj?, Scope.env, nameOwner, singleResult, resultCount, Scope.enter,
     Scope.withIfaces, Scope.bind, sigNames, gSig, factSig, lowerSigOf, kindName, chSs, chS, chE, chEs,
     isTypeObj, isVarObj, buildCtx, buildPkg, ordProg, ordPkg, Id.run, List.forIn_cons, List.forIn_nil,
     List.foldl_cons, List.foldl_nil, id_pure, idb, Std.HashMap.getElem_insert, Std.HashMap.getElem?_insert]

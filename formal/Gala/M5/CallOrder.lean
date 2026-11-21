@@ -249,7 +249,7 @@ def NoTrigS (s : Scope) : Stmt → Prop
   | .block ss => NoTrigSs s ss
   | .if_ init c b els => init = none ∧ CC c ∧ triggers (scanE s false c) = false ∧ NoTrigSs s b ∧ NoTrigOS s els
   | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
-  | .defer_ _ | .empty | .unsupported _ => False
+  | .defer_ _ | .empty | .unsupported _ | .localType _ => False
 def NoTrigSs (s : Scope) : List Stmt → Prop
   | [] => True
   | st :: ss => NoTrigS s st ∧ NoTrigSs (afterS s st) ss
@@ -288,7 +288,7 @@ theorem hS_noTrig (s : Scope) : ∀ (st : Stmt), NoTrigS s st → ∀ h, (hS s s
     cases els <;> rfl
   | .expr _, h', _ | .incDec .., h', _ | .assign .., h', _ | .branch _, h', _ | .switch .., h', _
   | .typeSwitch .., h', _ | .for_ .., h', _ | .range .., h', _ | .defer_ _, h', _
-  | .empty, h', _ | .unsupported _, h', _ => by simp only [NoTrigS] at h'
+  | .empty, h', _ | .unsupported _, h', _ | .localType _, h', _ => by simp only [NoTrigS] at h'
 theorem hSs_noTrig (s : Scope) : ∀ (ss : List Stmt), NoTrigSs s ss → ∀ h, (hSs s ss).run h = (ss, h)
   | [], _, h => rfl
   | st :: ss, ⟨h1, h2⟩, h => by
@@ -499,7 +499,7 @@ def body3S : Stmt → Bool
   | .block ss => body3Ss ss
   | .if_ init c b els => init.isNone && noTrigE false c && body3Ss b && body3OS els
   | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
-  | .defer_ _ | .empty | .unsupported _ => false
+  | .defer_ _ | .empty | .unsupported _ | .localType _ => false
 def body3Ss : List Stmt → Bool
   | [] => true
   | st :: ss => body3S st && body3Ss ss
@@ -522,7 +522,7 @@ def FitsS (s : Scope) : Stmt → Prop
   | .block ss => FitsSs s ss
   | .if_ _ c b els => FitsE s c ∧ FitsSs s b ∧ FitsOS s els
   | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
-  | .defer_ _ | .empty | .unsupported _ => True
+  | .defer_ _ | .empty | .unsupported _ | .localType _ => True
 def FitsSs (s : Scope) : List Stmt → Prop
   | [] => True
   | st :: ss => FitsS s st ∧ FitsSs (afterS s st) ss
@@ -563,7 +563,7 @@ theorem noTrigS_of (s : Scope) : ∀ (st : Stmt), body3S st = true → FitsS s s
     exact ⟨hi, hc, ht, noTrigSs_of s b hbb hfb, noTrigOS_of s els heb hfe⟩
   | .expr _, hb, _ | .incDec .., hb, _ | .assign .., hb, _ | .branch _, hb, _ | .switch .., hb, _
   | .typeSwitch .., hb, _ | .for_ .., hb, _ | .range .., hb, _ | .defer_ _, hb, _
-  | .empty, hb, _ | .unsupported _, hb, _ => by simp [body3S] at hb
+  | .empty, hb, _ | .unsupported _, hb, _ | .localType _, hb, _ => by simp [body3S] at hb
 theorem noTrigSs_of (s : Scope) : ∀ (ss : List Stmt), body3Ss ss = true → FitsSs s ss → NoTrigSs s ss
   | [], _, _ => trivial
   | st :: ss, hb, ⟨h1, h2⟩ => by

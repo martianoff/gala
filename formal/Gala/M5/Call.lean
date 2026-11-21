@@ -957,10 +957,7 @@ theorem gframe_trans {g₁ g₂ g₃ : St} (h₁ : GFrame g₁ g₂) (h₂ : GFr
   have e₁ := h₁.2; have e₂ := h₂.2
   cases g₁; cases g₂; cases g₃
   simp only [St.mk.injEq] at e₁ e₂ ⊢
-  obtain ⟨-, -, a1, a2, -, a3, a4, a5, a6, a7⟩ := e₁
-  obtain ⟨-, -, b1, b2, -, b3, b4, b5, b6, b7⟩ := e₂
-  subst_vars
-  simp
+  simp_all
 
 theorem gframe_out {g g' : St} (h : GFrame g g') : g'.out = g.out := by
   have e := h.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
@@ -1775,10 +1772,7 @@ theorem call_frame {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hpb
   have e₁ := hpb.2; have e₂ := hb.2
   cases g₀; cases pb; cases g₁
   simp only [St.mk.injEq] at e₁ e₂ ⊢
-  obtain ⟨-, -, a1, a2, -, a3, a4, a5, a6, a7⟩ := e₁
-  obtain ⟨-, -, b1, b2, -, b3, b4, -, b6, b7⟩ := e₂
-  subst_vars
-  simp
+  simp_all
 
 /-- A name the package does not declare, and not exported, is no package's. -/
 theorem nameOwner_none (cx : Ctx) (env : Env) (x : String) (p : PkgCtx) (hpk : cx.pkgs.get? env.pkg = some p)
