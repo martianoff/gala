@@ -428,6 +428,12 @@ func apply[T any, U any](x T, m Mapper2[T, U]) U = m(x)
 
 func run() int = apply(x = 1, m = (x) => x + 1)
 `},
+		{"a generic struct field with only the result open", `package main
+
+struct Box[U any](m Mapper2[int, U])
+
+func run() int = Box(m = (x) => x * 2).m(1)
+`},
 		{"only the result open", `package main
 
 func run2[U any](m Mapper2[int, U]) U = m(1)
@@ -444,6 +450,29 @@ func run() int = run2((x) => x * 2)
 			assert.NotContains(t, out, "func(x int) U")
 		})
 	}
+}
+
+// TestGenericGoNamedFuncTypeSlotKeepsQualifiedNames pins that substituting
+// a callee's type parameter T into a generic Go function type leaves a
+// package-qualified type of the same bare name (`*testing.T`) alone.
+func TestGenericGoNamedFuncTypeSlotKeepsQualifiedNames(t *testing.T) {
+	files, galaFile := samePackageModule(".", `package main
+
+import "testing"
+
+type Check[T any, U any] func(*testing.T, T) U
+`, `package main
+
+func run[T any, U any](x T, c Check[T, U]) U = c(nil, x)
+
+func main() {
+    Println(run(1, (tt, v) => v + 1))
+}
+`)
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "tt *testing.T")
+	assert.NotContains(t, out, "tt *int")
 }
 
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for

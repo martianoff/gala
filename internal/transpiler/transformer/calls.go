@@ -4485,11 +4485,15 @@ func (t *galaASTTransformer) structFieldSlot(fieldType transpiler.Type, subst ty
 	if !typeMentionsTypeParam(slotType, unbound) {
 		return slotType
 	}
-	// A generic Go function-type instance (`iter.Seq[T]`) whose parameters
-	// still name an unbound type parameter of the struct gives a lambda no
-	// type: never the struct's T, which a caller's own T would capture.
-	if params, ok := t.goInstanceFuncParams(fieldType); ok && funcTypeParamsMentionTypeParams(params, unbound) {
-		return nil
+	// A generic Go function-type instance (`iter.Seq[T]`, `Mapper[int, U]`)
+	// is typed as for a function's parameter (goInstanceSlot), the struct's
+	// unbound type parameters the open ones: never the struct's T, which a
+	// caller's own T would capture.
+	if slot, ok := t.goInstanceSlot(fieldType, subst, unbound); ok {
+		if slot.IsNil() {
+			return nil
+		}
+		return slot
 	}
 	if inferred && t.isFuncOrTupleType(slotType) {
 		return slotType
@@ -4523,27 +4527,15 @@ func (t *galaASTTransformer) goInstanceSlot(param transpiler.Type, subst typeSub
 	case funcTypeParamsMentionTypeParams(u.Params, open):
 		return transpiler.NilType{}, true
 	case !funcTypeParamsMentionTypeParams(u.Results, open):
-		return t.substituteTranspilerTypeParams(instance, subst), true
+		return t.substituteGoTypeParams(instance, subst), true
 	case len(u.Params) == 0:
 		return transpiler.NilType{}, true
 	}
 	inst := u
-	if sub, isSubFunc := t.substituteTranspilerTypeParams(u, subst).(transpiler.FuncType); isSubFunc && len(subst) > 0 {
+	if sub, isSubFunc := t.substituteGoTypeParams(u, subst).(transpiler.FuncType); isSubFunc && len(subst) > 0 {
 		inst = sub
 	}
 	return transpiler.FuncType{Params: inst.Params, Results: maskOpenResults(u.Results, inst.Results, open)}, true
-}
-
-// goInstanceFuncParams is the parameter types of typ's underlying function
-// type when typ (through GALA aliases) is an instance of a generic Go defined
-// function type, its type arguments substituted as written.
-func (t *galaASTTransformer) goInstanceFuncParams(typ transpiler.Type) ([]transpiler.Type, bool) {
-	instance, ok := t.followAliasChain(typ).(transpiler.GenericType)
-	if !ok {
-		return nil, false
-	}
-	ft, ok := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
-	return ft.Params, ok
 }
 
 // goStructFuncField is the function type of td's field name, directly or
