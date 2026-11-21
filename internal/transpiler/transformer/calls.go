@@ -761,7 +761,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			var expr ast.Expr
 			var txErr error
 			byNameType, sendable := transpiler.UnwrapSendable(substitutedParamType)
-			if ft := t.resolveTranspilerTypeAsFuncType(byNameType); !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesGenericFunc(v.expr) {
+			if ft := t.resolveTranspilerTypeAsFuncType(byNameType); !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesNullaryGenericFunc(v.expr) {
 				// Lift a by-name argument (`func() U`) to its thunk, as
 				// transformArgument does for a generic function; the
 				// thunk's result type (the expression's own type while U
@@ -769,13 +769,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// Sendable boundary is checked as a lambda there is (a
 				// lambda or partial function never reaches here, so a
 				// function literal is the lifted thunk). A generic
-				// function named alone is passed as it is (below).
+				// function of no parameters is a thunk already, passed
+				// as it is (below). One that fails to lower against the
+				// slot is lowered as it was before by-name lifting here.
 				byNameType = t.substituteTranspilerTypeParams(byNameType, typeSubst)
-				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: typeMentionsTypeParam(byNameType, methodMeta.TypeParams)}, false)
+				open := typeMentionsTypeParam(byNameType, methodMeta.TypeParams) || typeMentionsTypeParam(byNameType, typeMeta.TypeParams)
+				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: open}, false)
 				if _, lifted := expr.(*ast.FuncLit); txErr == nil && lifted && sendable {
 					if err := t.enforceSendableCapturesInArg(v); err != nil {
 						return true, nil, err
 					}
+				}
+				if txErr != nil {
+					expr, txErr = t.lowerExpr(v.expr)
 				}
 			} else {
 				expr, txErr = t.lowerExpr(v.expr)

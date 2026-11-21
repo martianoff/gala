@@ -44,7 +44,7 @@ func main() {
     Println(b.LazyT(side(), false), b.LazyT(side(), true))
     Println(b.Lazy(side(), false), b.Lazy(side(), true))
     Println(b.Lazy(on = false, d = label("x")), b.Lazy(on = true, d = label("y")))
-    Println(b.Lazy[int](side(), true))
+    Println(b.Lazy[int](side(), false), b.Lazy[int](side(), true))
     Println(b.Pair[string](label("k"), side()))
     Println(b.Get(None[int](), 7), b.Get(Some(side()), 0))
     Println(b.Run(side()))
