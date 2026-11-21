@@ -2301,7 +2301,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 // depends on its slot type (a lambda, a placeholder lambda, or an if/match of
 // lambdas) first has the constructor's still-unbound type parameters masked out
 // of that type (see genericCtorLambdaExpectation). paramIdx is the parameter
-// of the GALA callee the argument fills, -1 when there is none.
+// of the GALA callee the argument fills, -1 when it is not known (no GALA
+// callee, or a named argument).
 func (t *galaASTTransformer) lowerFunctionArg(
 	v argValue,
 	expected transpiler.Type,
