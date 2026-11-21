@@ -32,6 +32,11 @@ func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr,
 	}
 	ident := ast.NewIdent(name)
 	s := t.bindingScope(name)
+	if name == "_" && s != nil && s.placeholder != nil && !s.placeholder.take(ident, at) {
+		// A `_` the placeholder lambda around it does not take, one in a
+		// nested lambda or a case clause, is bound by nothing.
+		s = nil
+	}
 	if name == "_" && s == nil {
 		t.recordBlankRead(ident, at)
 	}
@@ -134,7 +139,7 @@ func (t *galaASTTransformer) underscoreBindingRead(name string, at srcNode) erro
 	if name != "_" {
 		return nil
 	}
-	if s := t.bindingScope(name); s == nil || s.placeholder {
+	if s := t.bindingScope(name); s == nil || s.placeholder != nil {
 		return nil
 	}
 	r := at.rng()

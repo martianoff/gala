@@ -1529,6 +1529,76 @@ func blockEndsWithReturn(block *ast.BlockStmt) bool {
 // type. Outside that context, `_` is still only legal in pattern positions
 // and yields a scope-lookup error at Go compile time.
 
+// placeholderTakes is what a placeholder lambda takes: the `_` written in its
+// argument that are its parameters (visitPlaceholders), each by its position
+// among them, and the Go identifiers lowering them gave.
+type placeholderTakes struct {
+	// index is the position of each taken `_`, by its node.
+	index map[native.GalaNodeRef]int
+	// reads is the position of the `_` each lowered identifier reads. The
+	// argument may be lowered more than once on the way to its final form,
+	// so only the identifiers left in the lambda's body count.
+	reads map[*ast.Ident]int
+}
+
+// newPlaceholderTakes is the placeholderTakes of e, a placeholder lambda's
+// argument, before any `_` of it is lowered.
+func newPlaceholderTakes(e exprSrc) *placeholderTakes {
+	p := &placeholderTakes{}
+	visitPlaceholders(e, func(n native.GalaNodeRef) {
+		if p.index == nil {
+			p.index, p.reads = map[native.GalaNodeRef]int{}, map[*ast.Ident]int{}
+		}
+		p.index[n] = len(p.index)
+	})
+	return p
+}
+
+// take records ident, the lowering of the `_` primary at, when at is a `_`
+// the lambda takes, and reports whether it is.
+func (p *placeholderTakes) take(ident *ast.Ident, at srcNode) bool {
+	id, ok := firstKidNode(at.node)
+	if !ok {
+		return false
+	}
+	if i, ok := p.index[id]; ok {
+		p.reads[ident] = i
+		return true
+	}
+	return false
+}
+
+// rename renames each taken `_` in body, function literals included, to its
+// parameter, and returns the parameters in source order: one per `_` written
+// that is read in body, named by fresh. A `_` lowered into body more than
+// once reads the one parameter.
+func (p *placeholderTakes) rename(body ast.Node, fresh func() string) []string {
+	if len(p.reads) == 0 {
+		return nil
+	}
+	found := make([][]*ast.Ident, len(p.index))
+	ast.Inspect(body, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok {
+			if i, taken := p.reads[id]; taken {
+				found[i] = append(found[i], id)
+			}
+		}
+		return true
+	})
+	var names []string
+	for _, ids := range found {
+		if len(ids) == 0 {
+			continue
+		}
+		name := fresh()
+		for _, id := range ids {
+			id.Name = name
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
 // tryRewriteAsPlaceholderLambda is the L4 entry point called by
 // transformArgument. It returns (expr, handled, error):
 //
@@ -1556,7 +1626,8 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	if !ok {
 		return nil, false, nil
 	}
-	placeholderCount := countPlaceholders(e)
+	takes := newPlaceholderTakes(e)
+	placeholderCount := len(takes.index)
 	if placeholderCount == 0 {
 		return nil, false, nil
 	}
@@ -1590,9 +1661,15 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// parameter type we use it; otherwise we fall back to `any` rather than risk
 	// mistyping a heterogeneous placeholder. The renamed params still carry
 	// their correct per-position types via paramTypes below.
-	scopeType := placeholderScopeType(paramTypes)
+	//
+	// The count is of the `_` written, some of which may not be this lambda's
+	// parameters: one a nested call whose own slot takes a function takes
+	// (`if (_.Lo > 1) xs.Map(_ * 2).Size() else 0`), or a discard. A count
+	// past the expected function's parameters is such a `_` (or is rejected
+	// below), so it does not widen the type.
+	scopeType := placeholderScopeType(paramTypes[:min(placeholderCount, len(ft.Params))])
 	t.pushScope()
-	t.currentScope.lambda, t.currentScope.placeholder = true, true
+	t.currentScope.lambda, t.currentScope.placeholder = true, takes
 	t.addVar("_", scopeType)
 	body, err := t.lowerExpr(e)
 	// Resolve the body's concrete result type while `_` is still bound in scope
@@ -1611,52 +1688,13 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		return nil, false, err
 	}
 
-	// Walk the produced AST and rename each `_` ident to a fresh parameter
-	// name, left-to-right. We also record the param types at each position.
-	paramNames := make([]string, 0, placeholderCount)
+	// Rename each `_` the lambda took to its parameter, one parameter per
+	// `_` written, left to right. The lowered body may hold function
+	// literals of its own (an if, a match or a block lowers to one), so a
+	// taken `_` is found wherever it ended up; a Go blank the lowering wrote
+	// itself (`_ = subject`) is not one taken, and stays.
 	paramCounter := -1
-	var renameWalk func(parent ast.Node)
-	renameWalk = func(n ast.Node) {
-		if n == nil {
-			return
-		}
-		// Manual walk so we can mutate *ast.Ident in place.
-		switch node := n.(type) {
-		case *ast.Ident:
-			if node.Name == "_" {
-				fresh := t.freshTempName("__p", &paramCounter)
-				node.Name = fresh
-				paramNames = append(paramNames, fresh)
-			}
-		case *ast.ParenExpr:
-			renameWalk(node.X)
-		case *ast.UnaryExpr:
-			renameWalk(node.X)
-		case *ast.BinaryExpr:
-			renameWalk(node.X)
-			renameWalk(node.Y)
-		case *ast.SelectorExpr:
-			renameWalk(node.X)
-		case *ast.IndexExpr:
-			renameWalk(node.X)
-			renameWalk(node.Index)
-		case *ast.CallExpr:
-			renameWalk(node.Fun)
-			for _, a := range node.Args {
-				renameWalk(a)
-			}
-		case *ast.StarExpr:
-			renameWalk(node.X)
-		case *ast.CompositeLit:
-			for _, e := range node.Elts {
-				renameWalk(e)
-			}
-		case *ast.KeyValueExpr:
-			renameWalk(node.Key)
-			renameWalk(node.Value)
-		}
-	}
-	renameWalk(body)
+	paramNames := takes.rename(body, func() string { return t.freshTempName("__p", &paramCounter) })
 
 	if len(paramNames) == 0 {
 		// Lexical scan found `_` tokens but none survived transformation
@@ -1672,7 +1710,10 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// could not be resolved, is GALA-E0033, never `any`.
 	line, col := e.at().start()
 	for i := range paramNames {
-		if i >= len(ft.Params) {
+		if len(paramNames) != len(ft.Params) {
+			// Too few is an error as too many is: a Go function literal takes
+			// exactly the parameters of the type it is passed as. A `_` a
+			// nested call takes is that call's (`_ + ys.Map(_ * 2).Size()`).
 			return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
 				fmt.Sprintf("placeholder lambda has %d parameters where a function of %d is expected", len(paramNames), len(ft.Params)),
 				fmt.Sprintf("use %d placeholders, or a lambda", len(ft.Params)))

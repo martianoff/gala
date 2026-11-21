@@ -65,10 +65,6 @@ func TestUnboundUnderscoreRead(t *testing.T) {
 			"package main\n\nfunc main() {\n    val y = 1\n    Println(y + _)\n}\n", "line 5:16 "},
 		{"an `also` clause's receiver",
 			"package main\n\nimport . \"martianoff/gala/concurrent\"\n\nfunc compute(n int) Future[int] = Future[int](n * n)\n\nfunc g(n int) Future[int] = Future[int](n + 1)\n\nfunc total() Future[int] {\n    bind a = compute(2)\n    also b = g(_)\n    Future[int](a + b)\n}\n\nfunc main() {\n    Println(total().Get())\n}\n", "line 11:15 "},
-		// No placeholder lambda takes a `_` inside an if-expression argument
-		// yet (#1346); its read is reported rather than left to Go.
-		{"inside an if-expression argument",
-			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    Println(ArrayOf(1, -2).Map(if (_ > 0) 1 else 2))\n}\n", "line 6:35 "},
 		// With no file path a default's own file is unknown, so its `_` goes to
 		// the use site, where the default's other diagnostics go.
 		{"a default when the file has no path",

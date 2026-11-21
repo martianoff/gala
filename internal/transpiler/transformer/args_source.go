@@ -221,31 +221,38 @@ func (p postfixSrc) parenFirst() (first exprSrc, n int) {
 // countPlaceholders is the number of `_` placeholders written in e outside any
 // lambda and case clause.
 func countPlaceholders(e exprSrc) int {
-	if !e.node.Ok() {
-		return 0
-	}
-	return countPlaceholdersNative(e.node)
+	n := 0
+	visitPlaceholders(e, func(native.GalaNodeRef) { n++ })
+	return n
 }
 
-// countPlaceholdersNative is countPlaceholders of the node n.
-func countPlaceholdersNative(n native.GalaNodeRef) int {
+// visitPlaceholders calls visit, in source order, with the node holding each
+// `_` written in e outside any lambda and case clause: the `_` a placeholder
+// lambda of e takes. It reaches into the if expressions, matches (their
+// subjects) and blocks written in e, so a `_` in one is taken as any other is.
+func visitPlaceholders(e exprSrc, visit func(native.GalaNodeRef)) {
+	if e.node.Ok() {
+		visitPlaceholdersNative(e.node, visit)
+	}
+}
+
+// visitPlaceholdersNative is visitPlaceholders of the node n.
+func visitPlaceholdersNative(n native.GalaNodeRef, visit func(native.GalaNodeRef)) {
 	switch n.Kind() {
 	case native.GalaKIND_lambdaExpression, native.GalaKIND_caseClause:
 		// A nested lambda's `_` belong to its own body, and a case clause's
 		// are wildcards.
-		return 0
+		return
 	}
-	total := 0
 	for i := range n.ChildCount() {
 		c := n.Child(i)
 		switch {
 		case !c.IsToken():
-			total += countPlaceholdersNative(c.Node())
+			visitPlaceholdersNative(c.Node(), visit)
 		case c.Terminal().GetText() == "_":
-			total++
+			visit(n)
 		}
 	}
-	return total
 }
 
 // escapesNative is escapes of the native node n.

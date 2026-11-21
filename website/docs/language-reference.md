@@ -1286,6 +1286,24 @@ val doubled = nums.Map(_ * 2)              // ≡ (x) => x * 2
 val sum     = nums.FoldLeft(0, _ + _)      // ≡ (a, b) => a + b
 ```
 
+The expression may be, or hold, an `if` expression, a `match` or a block: the
+whole argument is the lambda's body. A `case` clause's `_` is a wildcard
+pattern, never a placeholder, and a `_` inside a nested lambda belongs to that
+lambda. A `_` in a nested call's argument is that call's placeholder when the
+call's own slot takes a function, and the outer lambda's otherwise:
+
+<!-- doc-check: fragment -->
+```gala
+val labels = rs.Map(if (_.Lo > 1) "a" else "b")      // ≡ (r) => if (r.Lo > 1) "a" else "b"
+val words  = nums.Map(_ match {                       // ≡ (x) => x match { ... }
+    case 0 => "zero"
+    case _ => "other"
+})
+val flags  = nums.Map(if (isBig(_)) 1 else 0)        // ≡ (x) => if (isBig(x)) 1 else 0
+val sizes  = rs.Map(if (_.Lo > 1) nums.Map(_ * 2).Size() else 0)
+                                                      // ≡ (r) => if (r.Lo > 1) nums.Map((x) => x * 2).Size() else 0
+```
+
 A placeholder lambda around a string does not take a `_` inside the string.
 Inside the `${...}` of an `s"..."` or `f"..."` string, a `_` may be read only
 as a placeholder of a lambda written inside that `${...}`; reading a `_` that

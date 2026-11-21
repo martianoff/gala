@@ -2650,6 +2650,36 @@ val product = nums.FoldLeft(1, _ * _)      // ≡ (a, b) => a * b
 val plus1Doubled = nums.Map((_ + 1) * 2)   // ≡ (x) => (x + 1) * 2
 ```
 
+The expression may be, or hold, an `if` expression, a `match` or a block: the
+whole argument is the lambda's body, under the same rules.
+
+<!-- doc-check: fragment -->
+```gala
+val labels = people.Map(if (_.Age > 17) "adult" else "minor")
+                                           // ≡ (p) => if (p.Age > 17) "adult" else "minor"
+val words  = nums.Map(_ match {            // ≡ (x) => x match { ... }
+    case 1 => "one"
+    case _ => "other"                      // a pattern: the wildcard, not a placeholder
+})
+val bumped = nums.Map(if (limit > 2) {    // ≡ (x) => if (limit > 2) { val d = x * 10 ... } else 0
+    val d = _ * 10
+    d + 1
+} else 0)
+val score  = nums.FoldLeft(0, _ + (if (_ % 2 == 0) 10 else 1))
+                                           // ≡ (a, b) => a + (if (b % 2 == 0) 10 else 1)
+```
+
+Which `_` the lambda takes:
+
+- A `_` in a `case` clause — its pattern, guard or body — is not a
+  placeholder: in a pattern it is the wildcard.
+- A `_` inside a nested lambda belongs to that lambda, never to the outer
+  placeholder lambda.
+- A `_` in the argument of a nested call is that call's own placeholder when
+  the call's slot takes a function (`nums.Map(_ * 2)` inside the expression),
+  and the outer lambda's otherwise: `nums.Map(if (isBig(_)) 1 else 0)` is
+  `(x) => if (isBig(x)) 1 else 0`.
+
 The rewrite is gated on the argument's expected type being a function type
 — GALA only rewrites when it can see that a lambda is wanted at the call
 site. Outside that context, `_` retains its existing meanings: the wildcard
