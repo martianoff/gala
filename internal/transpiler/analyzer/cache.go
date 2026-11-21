@@ -821,6 +821,9 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	if !c.enabled || richAST == nil {
 		return
 	}
+	// Clean up stale entries for this package before writing new one
+	c.evictStale(pkgPath, contentHash)
+
 	path := c.cachePath(pkgPath, contentHash)
 	os.MkdirAll(filepath.Dir(path), 0755)
 
@@ -849,38 +852,23 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	// Atomic rename — readers see either the old file or the new complete file
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
-		return
 	}
-	// The package's entries for earlier contents go once the new one is in
-	// place: a store that fails leaves them be.
-	c.evictStale(pkgPath, contentHash)
 }
 
-// evictStale removes the package's entries for other contents than keepHash's
-// that are older than keepHash's entry. One no older is another process's
-// store of the package, made while this one was storing; it stays, for that
-// process's next build to find.
+// evictStale removes old cache entries for the same package with different content hashes.
 func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 	if !c.enabled {
 		return
 	}
 	prefix := cachePrefix(pkgPath)
 	keepName := cacheName(prefix, keepHash)
-	kept, err := os.Stat(filepath.Join(c.dir, keepName))
-	if err != nil {
-		return
-	}
 
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return
 	}
 	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasPrefix(name, prefix) || name == keepName {
-			continue
-		}
-		if info, err := entry.Info(); err == nil && info.ModTime().Before(kept.ModTime()) {
+		if name := entry.Name(); !entry.IsDir() && strings.HasPrefix(name, prefix) && name != keepName {
 			os.Remove(filepath.Join(c.dir, name))
 		}
 	}
