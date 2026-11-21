@@ -707,6 +707,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if !irrefutableTupleArm && !cc.hasGuard() && armMatchesEverything(arm.clause) &&
 			t.isTuplePatternOfSubjectArity(patterns[i], matchedType) {
 			irrefutableTupleArm = true
+			// The scan above reads the source, which the lowering can know
+			// more about (a subject type guessed from the cases): a case after
+			// this arm can never run either.
+			if i+1 < len(caseClauses) {
+				return nil, unreachableCaseError(caseClauses[i+1], cc, isDefault[i+1])
+			}
 		}
 		if arm.clause != nil {
 			clauses = append(clauses, arm.clause)

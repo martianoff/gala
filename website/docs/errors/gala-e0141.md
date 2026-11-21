@@ -19,9 +19,10 @@ match every value:
 - `case _`;
 - a plain binding, `case x`;
 - a typed pattern of the subject's own type, `case n: int` over an `int`, when
-  that type is a predeclared type other than `error` or `any`, or a named GALA or Go
-  type that is not an interface (a typed pattern over `any`, an interface or a
-  type parameter does not match `nil`);
+  that type is a predeclared type other than `error` or `any`, or a named GALA
+  type, or Go type whose type information is loaded, that is not an interface
+  (a typed pattern over `any`, an interface or a type parameter does not match
+  `nil`, and a Go type nothing describes may be an interface);
 - a tuple pattern of the subject's arity whose elements are each `_`, a
   binding or such a tuple, `case (a, _)` over a `Tuple[int, string]`.
 

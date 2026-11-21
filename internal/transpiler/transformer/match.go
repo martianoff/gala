@@ -341,7 +341,8 @@ func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType
 // hold no value of another type (see isKnownConcreteType). Its std.As test is
 // then always true.
 func (t *galaASTTransformer) typedPatternMatchesEveryValue(pat patSrc, subjectType, matchedType transpiler.Type) bool {
-	return t.isKnownConcreteType(subjectType) && t.isKnownConcreteType(matchedType) &&
+	// A typed pattern of a Ptr is an error of its own (see transformTypedPattern).
+	return t.isKnownConcreteType(subjectType) && t.isKnownConcreteType(matchedType) && !hasPtr(subjectType) &&
 		t.typedPatternOfType(pat, subjectType)
 }
 

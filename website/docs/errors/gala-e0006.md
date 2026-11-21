@@ -4,7 +4,7 @@ title: "GALA-E0006 — Multiple Default Cases in a Match Expression"
 description: "GALA-E0006 fires when a match has more than one catch-all branch. See the triggering code, the compiler message, and how to restructure so a single default handles every remaining case."
 keywords: "gala-e0006, multiple default cases, gala match default, unreachable match branch, gala pattern matching error"
 permalink: /docs/errors/gala-e0006/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-11-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0006</p>

@@ -4,7 +4,7 @@ title: "Golang Pattern Matching — Exhaustive Match Expressions for Go"
 description: "GALA brings real pattern matching to Go — struct destructuring, sealed type exhaustive matching, guard clauses, nested patterns, custom extractors, and sequence patterns. Beyond what Go's switch can do."
 keywords: "golang pattern matching, go pattern matching, golang match expression, go switch alternative, go exhaustive match, go destructuring, golang guard clauses, go struct pattern matching, golang case expression"
 permalink: /features/pattern-matching/
-last_modified_at: 2026-10-20
+last_modified_at: 2026-11-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Pattern Matching</p>
@@ -17,7 +17,7 @@ Go's `switch` is limited to value comparison. Runtime pattern matching libraries
 
 ## Overview
 
-The `match` expression takes a subject and tests it against a series of `case` branches. The first matching branch wins, and its body becomes the result. A `case _` default is required unless the match is provably exhaustive (sealed types with all variants covered, or booleans with both `true` and `false`).
+The `match` expression takes a subject and tests it against a series of `case` branches. The first matching branch wins, and its body becomes the result. A `case _` default is required unless the match is provably exhaustive (sealed types with all variants covered, or booleans with both `true` and `false`). An unguarded `case n` binding, a tuple pattern of bindings and wildcards, or a typed pattern of the subject's own concrete type also serves as the default. Because the first match wins, the default goes last: a case written after one that matches every value can never run, and is rejected ([GALA-E0141](/docs/errors/gala-e0141/)).
 
 <!-- doc-check: fragment -->
 ```gala
