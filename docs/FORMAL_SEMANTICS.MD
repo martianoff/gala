@@ -1077,7 +1077,7 @@ flowchart LR
     SRC[GALA program] --> CJ[Core JSON]
     SRC --> TR[transpiler<br/>not trusted] --> GO[generated Go]
     subgraph P1[track 1: proof chain]
-        GS[galaspec<br/>meaning of GALA] --> RL[reference lowering<br/>proved, M5]
+        GS[galaspec<br/>meaning of GALA] --> RL[reference lowering<br/>M5, partly proved]
         VAL[validator<br/>M6]
     end
     subgraph P2[track 2: GoCore]
