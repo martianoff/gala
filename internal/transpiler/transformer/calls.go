@@ -1573,13 +1573,14 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 // readsGenericGoSlot reports whether v, an argument of a generic Go function
 // filling a parameter of type slot, is typed by the type arguments the other
 // arguments bind (genericGoLambdaSlot): a lambda, or a thunk for a parameter
-// taking nothing and giving several results, or any value filling a slot of
-// a generic Go defined type (`Pred[T]`, `iter.Seq[E]`), which names the
-// callee's type parameters until they are bound: a placeholder lambda
-// (`_ > 1`) or a partial application there is typed by it as a lambda is.
+// taking nothing and giving several results, or a placeholder lambda
+// (`_ > 1`) filling a slot of a generic Go defined type (`Pred[T]`), which
+// names the callee's type parameters until they are bound. Any other value
+// there (a val, a spread slice) has a type of its own and is lowered as is.
 func readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
 	_, instance := slot.(transpiler.GenericType)
-	return v.lambda.ok() || isGoResultsThunkSlot(slot) || instance
+	return v.lambda.ok() || isGoResultsThunkSlot(slot) ||
+		instance && !v.spread && v.expr.ok() && countPlaceholders(v.expr) > 0
 }
 
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
