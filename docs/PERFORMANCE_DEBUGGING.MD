@@ -126,7 +126,10 @@ standard error, for the report.
 
 Each analyzed package is serialised under
 `<project>/.gala/cache/v<N>[-<version-commit>][-<binary-hash>]-<go-sdk>/<path-hash>_<pkg>_<content-hash>.bin`,
-where `<pkg>` is the package's path with `/` made `_`.
+where `<path-hash>` is the first 12 hex digits of the SHA-256 of the
+package's path, `<pkg>` is that path with `/` made `_`, cut to its last 96
+bytes, and `<content-hash>` is the first 12 hex digits of the package's
+source hash.
 
 ```bash
 du -sh <project>/.gala/cache

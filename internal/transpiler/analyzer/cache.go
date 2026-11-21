@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
@@ -887,14 +888,20 @@ func (c *analysisCache) cachePrefix(pkgPath string) string {
 	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
 	sum := sha256.Sum256([]byte(slashed))
 	readable := strings.ReplaceAll(slashed, "/", "_")
-	if len(readable) > maxReadableCacheName {
-		readable = readable[len(readable)-maxReadableCacheName:]
+	if cut := len(readable) - maxReadableCacheName; cut > 0 {
+		// The cut moves on to a rune's start: a file name of invalid
+		// UTF-8 is rejected (APFS) or rewritten (Windows), and then no
+		// listing matches the prefix.
+		for cut < len(readable) && !utf8.RuneStart(readable[cut]) {
+			cut++
+		}
+		readable = readable[cut:]
 	}
 	return hex.EncodeToString(sum[:6]) + "_" + readable + "_"
 }
 
-// maxReadableCacheName bounds the readable part of an entry's name (see
-// cachePrefix); its end, the most specific part of a path, is kept.
+// maxReadableCacheName bounds, in bytes, the readable part of an entry's
+// name (see cachePrefix); its end, the most specific part of a path, is kept.
 const maxReadableCacheName = 96
 
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {

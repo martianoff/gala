@@ -6,6 +6,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/transpiler"
 )
@@ -259,9 +263,7 @@ func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
 		put(pkg, oldHash)
 	}
 	for _, pkg := range pkgs {
-		if !cached(pkg, oldHash) {
-			t.Errorf("%s: its entry was evicted by another package's", pkg)
-		}
+		assert.True(t, cached(pkg, oldHash), "%s: its entry was evicted by another package's", pkg)
 	}
 
 	for _, restore := range []struct{ pkg, other string }{
@@ -269,30 +271,29 @@ func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
 		{"example.com/a/b_c", "example.com/a_b/c"},
 	} {
 		put(restore.pkg, newHash)
-		if cached(restore.pkg, oldHash) {
-			t.Errorf("%s: its entry for earlier contents was kept", restore.pkg)
-		}
-		if !cached(restore.pkg, newHash) {
-			t.Errorf("%s: its new entry is missing", restore.pkg)
-		}
-		if !cached(restore.other, oldHash) {
-			t.Errorf("%s: storing %s evicted its entry", restore.other, restore.pkg)
-		}
+		assert.False(t, cached(restore.pkg, oldHash), "%s: its entry for earlier contents was kept", restore.pkg)
+		assert.True(t, cached(restore.pkg, newHash), "%s: its new entry is missing", restore.pkg)
+		assert.True(t, cached(restore.other, oldHash), "%s: storing %s evicted its entry", restore.other, restore.pkg)
 	}
 }
 
 // An entry's name stays within file-name limits however long its package's
-// path: the readable part of the name is cut, the hash keeps it unique.
+// path, and holds whole runes: the readable part of the name is cut at a
+// rune's start, and the hash keeps the name unique.
 func TestAnalysisCacheEntryNameOfLongPath(t *testing.T) {
-	c := &analysisCache{dir: t.TempDir(), enabled: true}
-	long := "example.com/" + strings.Repeat("segment/", 40) + "pkg"
-	name := filepath.Base(c.cachePath(long, "333333333333cccc"))
-	if len(name) > 200 {
-		t.Errorf("entry name is %d bytes: %s", len(name), name)
-	}
-	c.Put(long, "333333333333cccc", "deps", &transpiler.RichAST{PackageName: "pkg"}, nil)
-	if got, _ := c.Get(long, "333333333333cccc", "deps"); got == nil {
-		t.Errorf("the entry of %s was not stored", long)
+	for _, long := range []string{
+		"example.com/" + strings.Repeat("segment/", 40) + "pkg",
+		// Two-byte runes after an odd prefix: a cut 96 bytes from the end
+		// would otherwise fall inside one.
+		"example.com/x/" + strings.Repeat("проект/", 20) + "пакет",
+	} {
+		c := &analysisCache{dir: t.TempDir(), enabled: true}
+		name := filepath.Base(c.cachePath(long, "333333333333cccc"))
+		assert.LessOrEqual(t, len(name), 200, "entry name %s", name)
+		assert.True(t, utf8.ValidString(name), "entry name %q is not valid UTF-8", name)
+		c.Put(long, "333333333333cccc", "deps", &transpiler.RichAST{PackageName: "pkg"}, nil)
+		got, _ := c.Get(long, "333333333333cccc", "deps")
+		require.NotNil(t, got, "the entry of %s was not stored", long)
 	}
 }
 
