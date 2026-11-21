@@ -1,0 +1,61 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A block lambda passed to a generic function whose type parameters only the
+// lambda's annotated parameters bind returns its trailing value, as the
+// expression lambda does.
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func applyTo[A any, B any](f func(A) B) B {
+    var zero A
+    f(zero)
+}
+
+func twice[A any, B any](f func(A) B) func(A) Array[B] = (a) => ArrayOf(f(a), f(a))
+
+struct Pipe(Label string)
+
+func (p Pipe) Wrap[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val square = run((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(square(3))
+
+    val label = run((n int) => {
+        val big = n > 10
+        if (big) "big" else "small"
+    })
+    Println(label(5), label(50))
+
+    val sign = run((n int) => {
+        val m = n * 2
+        m match {
+            case 0 => "zero"
+            case _ if m < 0 => "negative"
+            case _ => "positive"
+        }
+    })
+    Println(sign(-1), sign(0), sign(4))
+
+    Println(applyTo((s string) => {
+        val n = s.Size()
+        s"size $n"
+    }))
+
+    val pairs = twice((k int) => {
+        val q = k * 10
+        q + 1
+    })
+    Println(pairs(2))
+
+    val wrapped = Pipe("p").Wrap((k int) => {
+        val q = k - 1
+        q * 3
+    })
+    Println(wrapped(5))
+}

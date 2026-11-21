@@ -954,3 +954,114 @@ func main() {
 		})
 	}
 }
+
+// TestBlockLambdaBindsCalleeTypeParams pins #1297: a block lambda passed to a
+// generic function whose type parameters only the lambda's annotated
+// parameters bind returns its trailing value, as the expression lambda does.
+// The parameter `f func(A) B` has no expected type before the lambda is
+// lowered, but it still takes a function with a result.
+func TestBlockLambdaBindsCalleeTypeParams(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	cases := []struct {
+		name, input string
+		contains    []string
+	}{
+		{"result is the slot's function", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val b = run((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, []string{"func(k int) int {", "return q * q"}},
+		{"result is the type parameter", `package main
+
+func lift[A any, B any](f func(A) B) B {
+    var z A
+    f(z)
+}
+
+func main() {
+    Println(lift((s string) => {
+        val n = s.Size()
+        s"$n"
+    }))
+}`, []string{"func(s string) string {"}},
+		{"after a positional argument", `package main
+
+func pair[A any, B any](n int, f func(A) B) func(A) B = f
+
+func main() {
+    val b = pair(1, (k int) => {
+        val q = k + 1
+        q > 2
+    })
+    Println(b(3))
+}`, []string{"func(k int) bool {", "return q > 2"}},
+		{"trailing if-expression", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val b = run((k int) => {
+        val q = k + 1
+        if (q > 2) "big" else "small"
+    })
+    Println(b(3))
+}`, []string{"func(k int) string {"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "block_lambda_test.gala")
+			require.NoError(t, err)
+			for _, want := range tc.contains {
+				assert.Contains(t, out, want)
+			}
+		})
+	}
+}
+
+// TestBlockLambdaToUnboundFuncParamKeepsErrors pins what #1297 leaves as it
+// was: a void parameter keeps the block's trailing value a statement, and an
+// unannotated lambda parameter still has no type to take.
+func TestBlockLambdaToUnboundFuncParamKeepsErrors(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	cases := []struct {
+		name, input, want string
+	}{
+		{"void parameter", `package main
+
+func each[A any](f func(A)) {
+    var z A
+    f(z)
+}
+
+func main() {
+    each((k int) => {
+        val q = k + 1
+        q * q
+    })
+}`, "is evaluated but not used"},
+		{"unannotated lambda parameter", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val b = run((k) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, "has no type and none can be inferred"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(tc.input, "block_lambda_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}

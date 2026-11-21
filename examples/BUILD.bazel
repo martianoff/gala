@@ -281,6 +281,15 @@ gala_exec_test(
     expected = "bind_in_branches.out",
 )
 
+# A block lambda passed to a generic function whose type parameters only the
+# lambda's annotated parameters bind returns its trailing value (#1297)
+gala_exec_test(
+    name = "block_lambda_generic_result",
+    src = "block_lambda_generic_result.gala",
+    expected = "block_lambda_generic_result.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_exec_test(
     name = "bind_notation_user_monad",
     src = "bind_notation_user_monad.gala",
