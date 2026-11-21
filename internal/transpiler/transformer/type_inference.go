@@ -1571,6 +1571,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 					t.unifyForInference(goSigParamType(sig, i), r, sig.TypeParams, inferred)
 				}
 			}
+			t.inferFromGoCoreTypes(sig, inferred)
 			if len(inferred) == 0 {
 				return nil
 			}
@@ -1597,11 +1598,38 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		}
 		t.unifyForInference(paramType, argType, sig.TypeParams, inferred)
 	}
+	t.inferFromGoCoreTypes(sig, inferred)
 
 	if len(inferred) == 0 {
 		return nil
 	}
 	return inferred
+}
+
+// inferFromGoCoreTypes adds to inferred the type parameters of sig that the
+// core types of its bound ones determine, until no more are found, as Go's
+// constraint type inference does: for `func IndexFunc[S ~[]E, E any](s S,
+// f func(E) bool)` with S bound to []int (or a Go type defined over it),
+// unifying []E with []int binds E to int.
+func (t *galaASTTransformer) inferFromGoCoreTypes(sig *transpiler.GoFuncSignature, inferred map[string]transpiler.Type) {
+	if len(sig.CoreTypes) == 0 || len(inferred) == len(sig.TypeParams) {
+		return
+	}
+	done := make(map[string]bool, len(sig.CoreTypes))
+	for grew := true; grew; {
+		grew = false
+		for _, tp := range sig.TypeParams {
+			core, arg := sig.CoreTypes[tp], inferred[tp]
+			if core == nil || arg == nil || done[tp] {
+				continue
+			}
+			done[tp] = true
+			under, _ := t.goUnderlying(unwrapValueMarkers(arg))
+			before := len(inferred)
+			t.unifyForInference(core, under, sig.TypeParams, inferred)
+			grew = grew || len(inferred) > before
+		}
+	}
 }
 
 // goFuncValueType is the type of name as a value when it is a Go function the
@@ -1637,12 +1665,86 @@ func (t *galaASTTransformer) instantiateGoSignatureReturn(
 	typeArgs []transpiler.Type,
 	hasEllipsis bool,
 ) transpiler.Type {
-	ret := sig.Returns[0]
-	subst := t.inferGoSignatureTypeArgs(sig, args, typeArgs, hasEllipsis)
-	if len(subst) == 0 {
-		return ret
+	return t.instantiateGoSignatureReturns(sig, args, typeArgs, hasEllipsis)[0]
+}
+
+// openTypeParams is the type parameters of typeParams that subst does not
+// bind: those a call left open.
+func openTypeParams(typeParams []string, subst map[string]transpiler.Type) []string {
+	var open []string
+	for _, tp := range typeParams {
+		if _, bound := subst[tp]; !bound {
+			open = append(open, tp)
+		}
 	}
-	return t.substituteGoTypeParams(ret, subst)
+	return open
+}
+
+// bareOpenInstances is types with each instance of a generic Go type whose
+// type arguments still name one of open, a type parameter of the callee
+// left unbound (iter.Seq2[K, V]), written as its bare type name
+// (iter.Seq2), as Go signatures typed every instance before they kept their
+// type arguments: a type argument naming the callee's own type parameter
+// must not reach a binding or the generated Go. An instance of a GALA type
+// (the Go results of a GALA function) keeps its type arguments.
+func (t *galaASTTransformer) bareOpenInstances(types []transpiler.Type, open []string) []transpiler.Type {
+	if !funcTypeParamsMentionTypeParams(types, open) {
+		return types
+	}
+	out := make([]transpiler.Type, len(types))
+	for i, typ := range types {
+		out[i] = t.bareOpenInstance(typ, open)
+	}
+	return out
+}
+
+// bareOpenInstance is bareOpenInstances for one type.
+func (t *galaASTTransformer) bareOpenInstance(typ transpiler.Type, open []string) transpiler.Type {
+	if typ == nil || !typeMentionsTypeParam(typ, open) {
+		return typ
+	}
+	switch v := typ.(type) {
+	case transpiler.GenericType:
+		if t.getTypeMeta(v.Base.BaseName()) == nil {
+			return v.Base
+		}
+		v.Params = t.bareOpenInstances(v.Params, open)
+		return v
+	case transpiler.ArrayType:
+		v.Elem = t.bareOpenInstance(v.Elem, open)
+		return v
+	case transpiler.MapType:
+		v.Key, v.Elem = t.bareOpenInstance(v.Key, open), t.bareOpenInstance(v.Elem, open)
+		return v
+	case transpiler.PointerType:
+		v.Elem = t.bareOpenInstance(v.Elem, open)
+		return v
+	case transpiler.ChanType:
+		v.Elem = t.bareOpenInstance(v.Elem, open)
+		return v
+	case transpiler.FuncType:
+		v.Params, v.Results = t.bareOpenInstances(v.Params, open), t.bareOpenInstances(v.Results, open)
+		return v
+	case transpiler.StructType:
+		fields := make([]transpiler.StructField, len(v.Fields))
+		for i, f := range v.Fields {
+			f.Type = t.bareOpenInstance(f.Type, open)
+			fields[i] = f
+		}
+		v.Fields = fields
+		return v
+	case transpiler.InterfaceType:
+		methods := make([]transpiler.InterfaceMethod, len(v.Methods))
+		for i, m := range v.Methods {
+			if ft, ok := t.bareOpenInstance(m.Type, open).(transpiler.FuncType); ok {
+				m.Type = ft
+			}
+			methods[i] = m
+		}
+		v.Methods = methods
+		return v
+	}
+	return typ
 }
 
 // instantiateGoSignatureReturns is the multi-value counterpart of
@@ -1659,10 +1761,11 @@ func (t *galaASTTransformer) instantiateGoSignatureReturns(
 	hasEllipsis bool,
 ) []transpiler.Type {
 	subst := t.inferGoSignatureTypeArgs(sig, args, typeArgs, hasEllipsis)
-	if len(subst) == 0 {
-		return sig.Returns
+	results := sig.Returns
+	if len(subst) > 0 {
+		results = t.substituteGoTypeParamsIn(results, subst)
 	}
-	return t.substituteGoTypeParamsIn(sig.Returns, subst)
+	return t.bareOpenInstances(results, openTypeParams(sig.TypeParams, subst))
 }
 
 // substituteGoTypeParamsIn is substituteGoTypeParams over each of types, into
@@ -1877,6 +1980,18 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		}
 		key := t.goTypeLookupName(recv)
 		if sig := t.goTypeInfo.GetMethodSignature(key, method); sig != nil {
+			// A generic type's method reached without type arguments: its
+			// results name the receiver's type parameters, none bound.
+			if len(sig.TypeParams) > 0 {
+				open := *sig
+				open.Returns = t.bareOpenInstances(sig.Returns, sig.TypeParams)
+				open.Params = make([]transpiler.GoParam, len(sig.Params))
+				for i, p := range sig.Params {
+					p.Type = t.bareOpenInstance(p.Type, sig.TypeParams)
+					open.Params[i] = p
+				}
+				return &open
+			}
 			return sig
 		}
 		// An alias may name an instantiation (`= atomic.Pointer[int]`).
@@ -1964,9 +2079,32 @@ func universeMethodSignature(recv transpiler.Type, method string) *transpiler.Go
 // Go type alias has its target's fields, through every alias of a chain (see
 // goTypeDataThroughAliases).
 func (t *galaASTTransformer) getGoFieldType(typ transpiler.Type, fieldName string) transpiler.Type {
+	// An instance of a generic struct (one pointer level stripped, as the
+	// lookup strips it) is looked up by its base name, and its field
+	// instantiated with its type arguments.
+	recv := typ
+	if ptr, isPtr := recv.(transpiler.PointerType); isPtr {
+		recv = ptr.Elem
+	}
+	gen, isGeneric := recv.(transpiler.GenericType)
+	if isGeneric {
+		typ = gen.Base
+		// A generic alias's type arguments are not its target's: they are
+		// not matched up here.
+		if _, direct := t.goTypeDataFor(typ); direct != nil && direct.Kind == "alias" {
+			return transpiler.NilType{}
+		}
+	}
 	if td, _ := t.goTypeDataThroughAliases(typ); td != nil {
 		if fType := td.Fields[fieldName]; fType != nil {
-			return fType
+			if isGeneric && len(td.TypeParams) > 0 {
+				if inst := t.instantiateGoType(fType, td.TypeParams, gen.Params); inst != nil {
+					return inst
+				}
+			}
+			// Reached through the bare name: the struct's type parameters
+			// are open in the field's type.
+			return t.bareOpenInstance(fType, td.TypeParams)
 		}
 	}
 	return transpiler.NilType{}

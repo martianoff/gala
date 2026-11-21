@@ -1303,7 +1303,7 @@ func (t *galaASTTransformer) lowerForStatement(f forSrc) (ast.Stmt, error) {
 		}
 
 		// Infer key/value types from range expression
-		keyType, valueType := inferRangeTypes(rangeType)
+		keyType, valueType := t.inferRangeTypes(rangeType)
 
 		// Determine if using := or =
 		tok := token.DEFINE

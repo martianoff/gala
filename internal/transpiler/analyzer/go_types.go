@@ -1597,6 +1597,16 @@ func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignatu
 	for i, r := range result.Returns {
 		result.Returns[i] = transpiler.SubstituteTypeParams(r, renames)
 	}
+	if len(result.CoreTypes) > 0 {
+		cores := make(map[string]transpiler.Type, len(result.CoreTypes))
+		for tp, core := range result.CoreTypes {
+			if to, ok := renames[tp]; ok {
+				tp = to.String()
+			}
+			cores[tp] = transpiler.SubstituteTypeParams(core, renames)
+		}
+		result.CoreTypes = cores
+	}
 	return result
 }
 
@@ -1611,9 +1621,10 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 	return false
 }
 
-// inexactGoType reports whether goTypeToTranspilerType loses part of t: a
+// inexactGoType reports whether goTypeToTranspilerType may lose part of t: a
 // channel, an anonymous struct, a non-empty interface literal, or an instance
-// of a generic type, anywhere inside t.
+// of a generic type, anywhere inside t. It is conservative for the instances
+// whose type arguments convertGoType keeps (keepsTypeArgs).
 func inexactGoType(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic, *types.TypeParam:
@@ -1657,7 +1668,14 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 	// receiver's are in scope inside the signature, so both are collected.
 	for _, tps := range []*types.TypeParamList{sig.TypeParams(), sig.RecvTypeParams()} {
 		for i := 0; tps != nil && i < tps.Len(); i++ {
-			result.TypeParams = append(result.TypeParams, tps.At(i).Obj().Name())
+			tp := tps.At(i)
+			result.TypeParams = append(result.TypeParams, tp.Obj().Name())
+			if core := constraintCoreType(tp); core != nil {
+				if result.CoreTypes == nil {
+					result.CoreTypes = make(map[string]transpiler.Type)
+				}
+				result.CoreTypes[tp.Obj().Name()] = goTypeToTranspilerType(core)
+			}
 		}
 	}
 
@@ -1687,6 +1705,90 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 	return result
 }
 
+// keepsTypeArgs reports whether convertGoType keeps the type arguments of
+// t, an instance of a generic type, outside exact mode: an instance of a
+// function, slice, map or channel type whose type arguments that mode
+// converts without loss (no array, generic instance, channel, anonymous
+// struct or non-empty interface in them), so each is typed as it is
+// anywhere else. A struct's or an interface's stays the bare type name its
+// fields and methods are looked up by.
+func keepsTypeArgs(t *types.Named) bool {
+	switch t.Underlying().(type) {
+	case *types.Signature, *types.Slice, *types.Map, *types.Chan:
+	default:
+		return false
+	}
+	for i := 0; i < t.TypeArgs().Len(); i++ {
+		if arg := t.TypeArgs().At(i); inexactGoType(arg) || hasArrayType(arg) {
+			return false
+		}
+	}
+	return true
+}
+
+// hasArrayType reports whether t has a fixed-length array anywhere inside,
+// which convertGoType outside exact mode types as a slice.
+func hasArrayType(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Array:
+		return true
+	case *types.Alias:
+		return hasArrayType(types.Unalias(t))
+	case *types.Pointer:
+		return hasArrayType(t.Elem())
+	case *types.Slice:
+		return hasArrayType(t.Elem())
+	case *types.Map:
+		return hasArrayType(t.Key()) || hasArrayType(t.Elem())
+	case *types.Signature:
+		return hasArrayType(t.Params()) || hasArrayType(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if hasArrayType(t.At(i).Type()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// constraintCoreType is the underlying type of the one type term tp's
+// constraint lists (`~[]E` and `[]E` give []E), or nil when it lists none or
+// several. Only a composite core type is kept: it is the one that names other
+// type parameters and so can bind them.
+func constraintCoreType(tp *types.TypeParam) types.Type {
+	iface, ok := tp.Constraint().Underlying().(*types.Interface)
+	if !ok {
+		return nil
+	}
+	var term types.Type
+	for i := 0; i < iface.NumEmbeddeds(); i++ {
+		e := iface.EmbeddedType(i)
+		if u, isUnion := e.(*types.Union); isUnion {
+			if u.Len() != 1 {
+				return nil
+			}
+			e = u.Term(0).Type()
+		} else if _, isIface := e.Underlying().(*types.Interface); isIface {
+			// An embedded interface (comparable, one required for its
+			// methods) is not read for type terms.
+			continue
+		}
+		if term != nil {
+			return nil
+		}
+		term = e
+	}
+	if term == nil {
+		return nil
+	}
+	switch core := term.Underlying().(type) {
+	case *types.Slice, *types.Map, *types.Pointer, *types.Chan, *types.Signature, *types.Array:
+		return core
+	}
+	return nil
+}
+
 // goTypeToTranspilerType converts a go/types.Type to a transpiler.Type.
 // This is the core bridge between Go's type system and GALA's.
 // It handles type aliases by resolving them to their underlying type.
@@ -1695,8 +1797,9 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type { return convertGoType
 // convertGoType is goTypeToTranspilerType. When exact, as for an anonymous
 // struct's field, t is typed as Go has it: a fixed-length array keeps its
 // length, a generic type instance its type arguments and an inline interface
-// its methods. Elsewhere those stay as they have been: a slice, the bare type
-// name and `any`.
+// its methods. Elsewhere those stay as they have been, a slice and `any`, and
+// a generic type instance keeps its type arguments only when spellsExactly
+// and keepsTypeArgs hold for it (the bare type name otherwise).
 func convertGoType(t types.Type, exact bool) transpiler.Type {
 	if t == nil {
 		return transpiler.NilType{}
@@ -1750,7 +1853,16 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 			Name:       obj.Name(),
 			ImportPath: pkg.Path(),
 		}
-		if !exact || t.TypeArgs().Len() == 0 {
+		if t.TypeArgs().Len() == 0 {
+			return named
+		}
+		// An instance of a generic function, slice, map or channel type
+		// keeps its type arguments wherever they spell exactly
+		// (iter.Seq2[string, int]), so ranging over it or unifying with it
+		// binds them. Any other instance (a struct or an interface, whose
+		// fields and methods are looked up by its bare name) is the bare
+		// type name.
+		if !exact && (!spellsExactly(t) || !keepsTypeArgs(t)) {
 			return named
 		}
 		args := make([]transpiler.Type, t.TypeArgs().Len())

@@ -146,6 +146,31 @@ func TestAnalyzeGoPackage_FmtPackage(t *testing.T) {
 	assert.Equal(t, "error", retType.String())
 }
 
+// A generic Go function records the core type of each type parameter whose
+// constraint has one type term (`S ~[]E` gives []E), and a generic type
+// instance in its signature keeps its type arguments (iter.Seq2[K, V]), so a
+// call site can bind E, K and V (#1298, #1299).
+func TestAnalyzeGoPackage_CoreTypesAndInstanceTypeArgs(t *testing.T) {
+	skipIfNoGoSDK(t)
+
+	slicesInfo := analyzer.AnalyzeGoPackage("slices")
+	require.NotNil(t, slicesInfo)
+	sig := slicesInfo.GetFuncSignature("slices.IndexFunc")
+	require.NotNil(t, sig)
+	require.Equal(t, []string{"S", "E"}, sig.TypeParams)
+	require.Contains(t, sig.CoreTypes, "S")
+	assert.Equal(t, "[]E", sig.CoreTypes["S"].String())
+	assert.NotContains(t, sig.CoreTypes, "E", "E any has no core type")
+
+	mapsInfo := analyzer.AnalyzeGoPackage("maps")
+	require.NotNil(t, mapsInfo)
+	sig = mapsInfo.GetFuncSignature("maps.All")
+	require.NotNil(t, sig)
+	assert.Equal(t, "map[K]V", sig.CoreTypes["Map"].String())
+	require.Len(t, sig.Returns, 1)
+	assert.Equal(t, "iter.Seq2[K, V]", sig.Returns[0].String())
+}
+
 func TestAnalyzeGoPackage_StringsPackage(t *testing.T) {
 	skipIfNoGoSDK(t)
 

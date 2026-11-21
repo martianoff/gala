@@ -118,6 +118,12 @@ func buildSyntheticCache() *CachedRichAST {
 		Params:  []transpiler.GoParam{{Name: "x", Type: transpiler.BasicType{Name: "int"}}},
 		Returns: []transpiler.Type{transpiler.BasicType{Name: "string"}},
 	}
+	r.GoTypeInfo.Functions["pkg.IndexFunc"] = &transpiler.GoFuncSignature{
+		Params:     []transpiler.GoParam{{Name: "s", Type: transpiler.BasicType{Name: "S"}}},
+		Returns:    []transpiler.Type{transpiler.BasicType{Name: "int"}},
+		TypeParams: []string{"S", "E"},
+		CoreTypes:  map[string]transpiler.Type{"S": transpiler.ArrayType{Elem: transpiler.BasicType{Name: "E"}}},
+	}
 	r.GoTypeInfo.Types["pkg.S"] = &transpiler.GoTypeData{
 		Kind:           "struct",
 		Fields:         map[string]transpiler.Type{"a": transpiler.BasicType{Name: "int"}},
