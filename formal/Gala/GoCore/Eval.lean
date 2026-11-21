@@ -397,14 +397,17 @@ def FmtSpec.float (spec : FmtSpec) (neg special : Bool) (body : String) : String
 
 mutual
 /-- A type as `%T` prints it, `reflect.Type`'s `String` (`fmt/print.go`, `printArg`):
-    a defined type as `pkgname.Name[args]`, the arguments joined by `,` alone, and the
-    literal types as Go writes them, a function's `...T` and its results in parentheses
-    when there are several. An untyped constant has its default type (Go spec,
-    "Constants"). `error` and a literal interface with the same methods are one type to
-    GoCore but print differently, so an interface type with methods is not run; nor is
-    a struct type with fields (embedded fields and tags are not kept), nor a defined type
-    of a package whose name is not the last element of its path. -/
-def typeText (c : Ctx) : Ty → Except String String
+    a defined type as `pkgname.Name[args]`, the arguments joined by `,` alone and naming
+    the packages of the defined types in them, at any depth, by import path (`full`:
+    `main.Box[net/url.URL]`, gc's names for instantiated types), and the literal types
+    as Go writes them, a function's `...T` and its results in parentheses when there
+    are several. An untyped constant has its default type (Go spec, "Constants").
+    `error` and a literal interface with the same methods are one type to GoCore but
+    print differently, so an interface type with methods is not run; nor is a struct
+    type with fields (embedded fields and tags are not kept), nor, outside type
+    arguments, a defined type of a package whose name is not the last element of its
+    path. -/
+def typeText (c : Ctx) (full : Bool) : Ty → Except String String
   | .int k => pure k.name
   | .bool => pure "bool"
   | .string => pure "string"
@@ -417,33 +420,35 @@ def typeText (c : Ctx) : Ty → Except String String
   | .untyped .nil => throw "untyped-nil"
   | .named p n args => do
     let q := (p.splitOn "/").getLast!
-    if let some pk := c.pkgs.get? p then
-      if pk.name != q then throw "package-name"
+    if !full then
+      if let some pk := c.pkgs.get? p then
+        if pk.name != q then throw "package-name"
     let n := (n.splitOn localTypeSep.toString).head!
-    let base := if p.isEmpty then n else s!"{q}.{n}"
-    if args.isEmpty then pure base else pure (base ++ "[" ++ ",".intercalate (← typeTexts c args) ++ "]")
-  | .ptr t => return "*" ++ (← typeText c t)
-  | .slice t => return "[]" ++ (← typeText c t)
-  | .array k t => return s!"[{k}]" ++ (← typeText c t)
-  | .map k v => return "map[" ++ (← typeText c k) ++ "]" ++ (← typeText c v)
+    let base := if p.isEmpty then n else s!"{if full then p else q}.{n}"
+    -- Type arguments, at any depth, name their packages by import path.
+    if args.isEmpty then pure base else pure (base ++ "[" ++ ",".intercalate (← typeTexts c true args) ++ "]")
+  | .ptr t => return "*" ++ (← typeText c full t)
+  | .slice t => return "[]" ++ (← typeText c full t)
+  | .array k t => return s!"[{k}]" ++ (← typeText c full t)
+  | .map k v => return "map[" ++ (← typeText c full k) ++ "]" ++ (← typeText c full v)
   | .iface [] => pure "interface {}"
   | .iface _ => throw "interface"
   | .struct_ [] => pure "struct {}"
   | .struct_ _ => throw "struct"
   | .func_ ps rs variadic => do
-    let ps ← typeTexts c ps
+    let ps ← typeTexts c full ps
     -- A final `...T` parameter has type `[]T` (Go spec, "Function types").
     let ps := if variadic then ps.dropLast ++ (ps.getLast?.map fun p => "..." ++ String.ofList (p.toList.drop 2)).toList else ps
-    let rs ← typeTexts c rs
+    let rs ← typeTexts c full rs
     let res := match rs with
       | [] => ""
       | [r] => " " ++ r
       | rs => " (" ++ ", ".intercalate rs ++ ")"
     pure ("func(" ++ ", ".intercalate ps ++ ")" ++ res)
   | .tuple _ => throw "tuple"
-def typeTexts (c : Ctx) : List Ty → Except String (List String)
+def typeTexts (c : Ctx) (full : Bool) : List Ty → Except String (List String)
   | [] => pure []
-  | t :: ts => return (← typeText c t) :: (← typeTexts c ts)
+  | t :: ts => return (← typeText c full t) :: (← typeTexts c full ts)
 end
 
 /-- `%c` of an integer (`fmt.fmtC`): the rune, or U+FFFD for a value past
@@ -2688,7 +2693,7 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
     -- prints a string (`printArg`).
     if verb == 'T' then
       if let .nilIface _ := v then return spec.pad "<nil>"
-      match typeText c v.dyn.ty with
+      match typeText c false v.dyn.ty with
       | .ok s => return spec.string s
       | .error why => unsupported s!"fmt-verb-T-{why}"
     if verb == 'v' && (spec.sharp || spec.plus) then unsupported "fmt-flag-v"

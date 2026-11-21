@@ -956,6 +956,19 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "try_panic_non_string_value",
+    src = "try_panic_non_string_value.gala",
+    expected = "try_panic_non_string_value.out",
+    deps = ["//go_builtins"],
+)
+
+gala_exec_test(
+    name = "printf_type_generic_args",
+    src = "printf_type_generic_args.gala",
+    expected = "printf_type_generic_args.out",
+)
+
+gala_exec_test(
     name = "nested_type_match",
     src = "nested_type_match.gala",
     expected = "nested_type_match.out",

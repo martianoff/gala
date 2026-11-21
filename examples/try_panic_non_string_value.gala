@@ -1,0 +1,15 @@
+package main
+
+import "martianoff/gala/go_builtins"
+
+// A Try that recovers a panic whose value is neither an error nor a string holds
+// the error `panic: <the value as %v prints it>`.
+func failInt(v int) int = go_builtins.Panic(v)
+
+func failOption(v Option[int]) int = go_builtins.Panic(v)
+
+func main() {
+    Println(Try(failInt(7)))
+    Println(Try(failOption(Some(1))))
+    Println(Try(failInt(-3)).Recover((err) => 0))
+}

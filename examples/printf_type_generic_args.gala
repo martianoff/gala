@@ -1,0 +1,11 @@
+package main
+
+// `%T` names a generic type's arguments by their package's import path, at any
+// depth, and the type itself by its package's name.
+func main() {
+    val nested = Some(Some(1))
+    val deeper = Some(Some(Some("a")))
+    Println(f"$nested%T")
+    Println(f"$deeper%T")
+    Println(f"${Some(2)}%T|${3}%5T|${"s"}%-4T|")
+}
