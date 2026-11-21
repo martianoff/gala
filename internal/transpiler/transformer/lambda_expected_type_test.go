@@ -1248,6 +1248,16 @@ func main() {
     })
     Println(g(3))
 }`, []string{"func(k int) int {", "return q * q"}},
+		{"expression lambda to a generic method's Sendable parameter", `package main
+
+struct Box(N int)
+
+func (b Box) Go[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val g = Box(1).Go((k int) => k > 2)
+    Println(g(3))
+}`, []string{"func(k int) bool {"}},
 		{"expression lambda to Sendable by name", `package main
 
 func run[A any, B any](f Sendable[func(A) B]) func(A) B = f
