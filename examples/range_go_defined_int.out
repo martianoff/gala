@@ -3,5 +3,7 @@ i=1ns same=1ns ns=1
 i=2ns same=2ns ns=2
 step=0s 1s
 step=1ns 1.000000001s
+mode=---------- dir=false
+mode=---------x dir=false
 m=0 next=1
 m=1 next=2

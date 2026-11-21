@@ -114,6 +114,18 @@ func main() {
     }
 }
 `, []string{`"i=%v"`, "func() time.Duration", "i.Nanoseconds()"}},
+		// A Go alias of a defined integer type binds the type it names.
+		{"a Go alias of a defined integer type (os.FileMode)", `package main
+
+import "os"
+
+func main() {
+    for m := range os.FileMode(2) {
+        val f = () => m
+        Println(f(), m.IsDir())
+    }
+}
+`, []string{"func() fs.FileMode", "m.IsDir()"}},
 		// An opaque type is a Go defined type: i is bound to it. A `type`
 		// declaration is an alias: i is bound to the aliased type.
 		{"an opaque type over an integer type", `package main

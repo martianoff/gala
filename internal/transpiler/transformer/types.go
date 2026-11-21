@@ -810,7 +810,8 @@ func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 //     iter.Seq2[K, V]: the yield function's parameters
 //
 // A Go alias or defined type (url.Values, http.Header, iter.Seq2[K, V]) is
-// ranged over as its underlying type.
+// ranged over as its underlying type, except that a defined integer type
+// binds the loop variable to itself.
 func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType transpiler.Type, valueType transpiler.Type) {
 	if exprType.IsNil() {
 		return transpiler.NilType{}, transpiler.NilType{}
@@ -833,7 +834,8 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 			// `for i := range n` binds i to n's type, a Go defined integer
 			// type (time.Duration) included (#1317).
 			if defined {
-				return exprType, transpiler.NilType{}
+				named, _ := t.unaliasedType(exprType, nil) // os.FileMode is fs.FileMode
+				return named, transpiler.NilType{}
 			}
 			if v.Name == "rune" {
 				// Go binds i to rune; int32 is the same type, and keeps
