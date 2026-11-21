@@ -865,14 +865,16 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 		return
 	}
 	hashPrefix := pathHash(pkgPath) + "_"
-	keepName := cacheName(cachePrefix(pkgPath), keepHash)
+	// The kept entry is told by its end, which no rewriting touches either.
+	keepSuffix := cacheName("_", keepHash)
 
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return
 	}
 	for _, entry := range entries {
-		if name := entry.Name(); !entry.IsDir() && strings.HasPrefix(name, hashPrefix) && name != keepName {
+		name := entry.Name()
+		if !entry.IsDir() && strings.HasPrefix(name, hashPrefix) && !strings.HasSuffix(name, keepSuffix) {
 			os.Remove(filepath.Join(c.dir, name))
 		}
 	}

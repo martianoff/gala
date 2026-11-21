@@ -277,6 +277,23 @@ func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
 	}
 }
 
+// A package's entries are found by the path hash that leads their names, so
+// an entry whose readable part a file system rewrote (normalizing a
+// non-ASCII name, say) is evicted, and one for the contents stored is kept.
+func TestAnalysisCacheEvictsEntryWithRewrittenName(t *testing.T) {
+	c := &analysisCache{dir: t.TempDir(), enabled: true}
+	const pkg, oldHash, newHash = "example.com/проект", "111111111111aaaa", "222222222222bbbb"
+	rewritten := func(contentHash string) string {
+		return filepath.Join(c.dir, pathHash(pkg)+"_rewritten_"+contentHash[:12]+".bin")
+	}
+	for _, h := range []string{oldHash, newHash} {
+		require.NoError(t, os.WriteFile(rewritten(h), []byte("x"), 0644))
+	}
+	c.Put(pkg, newHash, "deps", &transpiler.RichAST{PackageName: pkg}, nil)
+	assert.NoFileExists(t, rewritten(oldHash), "the entry for earlier contents was kept")
+	assert.FileExists(t, rewritten(newHash), "the entry for the contents stored was evicted")
+}
+
 // An entry's name stays within file-name limits however long its package's
 // path, and holds whole runes: the readable part of the name is cut at a
 // rune's start, and the hash keeps the name unique.
