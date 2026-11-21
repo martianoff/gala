@@ -94,7 +94,8 @@ func getGoImporter() types.Importer {
 
 		// Set go/build.Default BEFORE creating importers: the source importer
 		// reads go/build.Default.GOROOT, which is cached at init time.
-		// GoSDKRoot has set the process's GOROOT.
+		// GoSDKRoot exports it as the process's GOROOT too, unless it is a
+		// switched toolchain, which only build.Default.GOROOT names.
 		build.Default.GOROOT = goroot
 		// Read packages with the cgo setting the go command would build them
 		// with (see GoCgoEnabled).
