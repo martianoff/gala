@@ -2373,3 +2373,183 @@ theorem ret_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : K
   · cases hl
 
 end Stmts2
+
+section Stmts3
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+/-- An `if`, at galaspec depth `d` and GoCore depth from `K * d` on: galaspec's locals are
+    as they were after it. -/
+def IfSim3 (d : Nat) : Prop :=
+  ∀ ρ κ c a els κ' l, lowerS3 K sg ρ κ (.ifStmt c a els) = some (κ', l) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d ≤ N →
+      ResU3 ρ (· = env) s g ((Spec.eval ds d (.ifStmt c a els)).run.run s) ((execStmt cx N env l).run.run g)
+
+theorem resU3_withEnv {ρ : Kind} {Q : α → Prop} {s : Spec.St} {g : St} {sr : Except Spec.Stop Spec.Val × Spec.St}
+    {r : Except Stop α × St} (env : Env) (h : ResU3 ρ Q s g sr r) : ResU3 ρ (· = env) s g sr (withEnv env r) := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => obtain ⟨pv, g', rfl, rest⟩ := h; exact ⟨pv, g', rfl, rest⟩
+    | ret => obtain ⟨w, g', rfl, rest⟩ := h; exact ⟨w, g', rfl, rest⟩
+    | _ => trivial
+  · obtain ⟨a, g', rfl, -, rest⟩ := h
+    exact ⟨env, g', rfl, rfl, rest⟩
+
+theorem resU3_after {ρ : Kind} {Q : α → Prop} {s t : Spec.St} {g g₁ : St} (hsf : SFrame s.toCore t.toCore)
+    (hg : GFrame g g₁) (hsp : Spent s t g g₁) {sr : Except Spec.Stop Spec.Val × Spec.St} {r : Except Stop α × St}
+    (h : ResU3 ρ Q t g₁ sr r) : ResU3 ρ Q s g sr r := by
+  obtain ⟨-, hgl, ho⟩ := sframe_parts hsf
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic => exact panOK_trans ho hg h
+    | ret => exact retOK_trans hsf.1 hgl ho hg hsp h
+    | _ => trivial
+  · obtain ⟨a, g', hr, hq, hsf', hg', hsp'⟩ := h
+    exact ⟨a, g', hr, hq, sframe_trans hsf hsf', gframe_trans hg hg', spent_trans hsp hsp'⟩
+
+theorem resL3_of_resU3 {ρ : Kind} {κ : String → Option Kind} {s : Spec.St} {g : St} {env : Env}
+    (hi : Inv3 cx P sg κ s.toCore g env) {sr : Except Spec.Stop Spec.Val × Spec.St} {r : Except Stop Env × St}
+    (h : ResU3 ρ (· = env) s g sr r) : ResL3 cx P sg ρ κ s g sr r := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e <;> first | trivial | exact h
+  · obtain ⟨a, g', hr, rfl, hsf, hg, hsp⟩ := h
+    obtain ⟨hl, hgl, -⟩ := sframe_parts hsf
+    exact ⟨a, g', hr, inv3_frame hi hsf hg, hsf.1, hgl, ⟨[], by simp [hl]⟩, hg, hsp⟩
+
+theorem lowerS3_if {ρ : Kind} {κ κ' : String → Option Kind} {c a : Spec.Expr} {els : Option Spec.Expr} {l : Stmt}
+    (h : lowerS3 K sg ρ κ (.ifStmt c a els) = some (κ', l)) :
+    κ' = κ ∧ ∃ as lc κ₁ la le, a = .block as ∧ lowerC K sg κ c = some (.bool, lc) ∧
+      lowerSs3 K sg ρ κ as = some (κ₁, la) ∧ lowerElse3 K sg ρ κ els = some le ∧ l = .if_ none lc la le := by
+  cases a with
+  | block as =>
+    simp only [lowerS3] at h
+    split at h
+    · rename_i lc κ₁ la le hc ha he
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rfl, as, lc, κ₁, la, le, rfl, hc, ha, he, rfl⟩
+    · cases h
+  | _ => simp [lowerS3] at h
+
+theorem ifSim_zero : IfSim3 ds cx P K sg 0 := by
+  intro ρ κ c a els κ' l _ s g env _ _ N _
+  rw [eval_zero]; trivial
+
+/-- **An `if`**, its condition and branches one level down. -/
+theorem ifSim_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihB : BlockSim3 ds cx P K sg d)
+    (ihI : IfSim3 ds cx P K sg d) (hK : 3 ≤ K) : IfSim3 ds cx P K sg (d + 1) := by
+  intro ρ κ c a els κ' l hl s g env hi hsg N hN
+  obtain ⟨rfl, as, lc, κ₁, la, le, rfl, hlc, hla, hle, rfl⟩ := lowerS3_if K sg hl
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 2 := ⟨N - 2, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k =>
+  have ht := ticked_of s k hs
+  have hip := inv3_push cx P sg hi
+  have hE := ihE κ' c .bool lc hlc { s with steps := k } g env.push hip (by show k ≤ g.steps; omega) (n + 1)
+    (by rw [Nat.mul_succ] at hN; omega)
+  rcases hr : (Spec.eval ds d c).run.run { s with steps := k } with ⟨r, t⟩
+  rw [hr] at hE
+  cases r with
+  | error er =>
+    rw [eval_ifStmt_err ds d k c _ els s t er hs hr]
+    cases er with
+    | panic pc msg =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE
+      rw [execStmt_if_err cx n env lc la le g g' _ hg]
+      exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+    | ret => exact hE.elim
+    | _ => trivial
+  | ok v =>
+  obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+  obtain ⟨b, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+  have hsf' : SFrame s.toCore t.toCore := hsf
+  have hsp' : Spent s t g g' := by unfold Spent at hsp ⊢; simp at hsp; omega
+  have hit : Inv3 cx P sg κ' t.toCore g' env.push := inv3_frame hip hsf hgf
+  have hstg : t.steps ≤ g'.steps := spent_le hsp (by show k ≤ g.steps; omega)
+  cases els with
+  | none =>
+    simp only [lowerElse3, Option.some.injEq] at hle
+    subst hle
+    rw [eval_ifStmt_none ds d k c (.block as) b s t hs hr]
+    cases b with
+    | true =>
+      rw [execStmt_if_true cx n env lc la none g g' ty hg]
+      simp only [ite_true]
+      have hb := ihB ρ κ' as κ₁ la hla t g' env.push hit hstg (n + 1) (by rw [Nat.mul_succ] at hN; omega)
+      refine resU3_after hsf' hgf hsp' ?_
+      rcases hrb : (Spec.eval ds d (.block as)).run.run t with ⟨rb, tb⟩
+      rw [hrb] at hb
+      have := resU3_withEnv env hb
+      cases rb with
+      | ok => exact this
+      | error e => exact this
+    | false =>
+      rw [execStmt_if_false cx n env lc la none g g' ty hg]
+      simp only [Bool.false_eq_true, ite_false]
+      exact ⟨env, g', rfl, rfl, hsf', hgf, hsp'⟩
+  | some e =>
+    rw [eval_ifStmt_some ds d k c (.block as) e b s t hs hr]
+    refine resU3_after hsf' hgf hsp' ?_
+    cases b with
+    | true =>
+      rw [execStmt_if_true cx n env lc la _ g g' ty hg]
+      exact resU3_withEnv env (ihB ρ κ' as κ₁ la hla t g' env.push hit hstg (n + 1)
+        (by rw [Nat.mul_succ] at hN; omega))
+    | false =>
+      rw [execStmt_if_false cx n env lc la _ g g' ty hg]
+      simp only [Bool.false_eq_true, ite_false]
+      match e, hle with
+      | .block bs, hle =>
+        simp only [lowerElse3, Option.map_eq_some_iff] at hle
+        obtain ⟨⟨κ₂, lb⟩, hlb, rfl⟩ := hle
+        simp only
+        rw [execStmt_block, withEnv_withEnv]
+        exact resU3_withEnv env (ihB ρ κ' bs κ₂ lb hlb t g' env.push hit hstg n
+          (by rw [Nat.mul_succ] at hN; omega))
+      | .ifStmt c₂ a₂ els₂, hle =>
+        simp only [lowerElse3, Option.map_eq_some_iff] at hle
+        obtain ⟨⟨κ₂, l₂⟩, hl₂, rfl⟩ := hle
+        simp only
+        exact resU3_withEnv env (ihI ρ κ' c₂ a₂ els₂ κ₂ l₂ hl₂ t g' env.push hit hstg (n + 1)
+          (by rw [Nat.mul_succ] at hN; omega))
+      | .lit _, hle | .name _, hle | .unary .., hle | .binary .., hle | .call .., hle
+      | .select .., hle | .paren _, hle | .tuple _, hle | .ifExpr .., hle | .mtch .., hle
+      | .ret _, hle | .assign .., hle | .incdec .., hle | .decl .., hle | .interp _, hle
+      | .lambda .., hle | .named .., hle | .unsupported _, hle => simp [lowerElse3] at hle
+
+theorem stmtSim_zero : StmtSim ds cx P K sg 0 := by
+  intro ρ κ st κ' l _ s g env _ _ N _
+  rw [eval_zero]; trivial
+
+/-- **A statement** at depth `d + 1`. -/
+theorem stmtSim_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihB : BlockSim3 ds cx P K sg (d + 1))
+    (ihI : IfSim3 ds cx P K sg (d + 1)) (hK : 3 ≤ K) : StmtSim ds cx P K sg (d + 1) := by
+  intro ρ κ st κ' l hl s g env hi hsg N hN
+  match st, hl with
+  | .decl m [x] false none [e], hl => exact decl_sim3 ds cx P K sg d ihE hK ρ κ κ' m x e l hl s g env hi hsg N hN
+  | .ret (some x), hl => exact ret_sim3 ds cx P K sg d ihE hK ρ κ κ' x l hl s g env hi hsg N hN
+  | .block ss, hl =>
+    simp only [lowerS3, Option.map_eq_some_iff, Prod.mk.injEq] at hl
+    obtain ⟨⟨κ₁, lb⟩, hlb, rfl, rfl⟩ := hl
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by rw [Nat.mul_succ] at hN; omega⟩
+    rw [execStmt_block]
+    exact resL3_of_resU3 cx P sg hi (resU3_withEnv env
+      (ihB ρ κ ss κ₁ lb hlb s g env hi hsg n (by rw [Nat.mul_succ] at hN ⊢; omega)))
+  | .ifStmt c a els, hl =>
+    have hκ : κ' = κ := (lowerS3_if K sg hl).1
+    subst hκ
+    exact resL3_of_resU3 cx P sg hi (ihI ρ κ' c a els _ l hl s g env hi hsg N hN)
+  | .decl _ [] _ _ _, hl | .decl _ (_ :: _ :: _) _ _ _, hl | .decl _ [_] true _ _, hl
+  | .decl _ [_] false (some _) _, hl | .decl _ [_] false none [], hl
+  | .decl _ [_] false none (_ :: _ :: _), hl | .ret none, hl
+  | .lit _, hl | .name _, hl | .unary .., hl | .binary .., hl | .call .., hl | .select .., hl
+  | .paren _, hl | .tuple _, hl | .ifExpr .., hl | .mtch .., hl | .assign .., hl
+  | .incdec .., hl | .interp _, hl | .lambda .., hl | .named .., hl | .unsupported _, hl =>
+    simp [lowerS3] at hl
+
+end Stmts3
