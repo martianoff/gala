@@ -624,8 +624,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	}
 
 	// Pre-scan: check if there's an explicit, UNGUARDED wildcard `_` case.
-	// If there is, binding patterns are regular clauses. If not, the last
-	// binding pattern acts as the default (catch-all) case. A guarded wildcard
+	// If there is, binding patterns are regular clauses. If not, an unguarded
+	// binding pattern is the default; there is at most one, and it is the
+	// last case (GALA-E0006, GALA-E0141). A guarded wildcard
 	// (`case _ if g`) is conditional, not a catch-all, so it does not count.
 	hasExplicitWildcard := false
 	for i, cc := range caseClauses {

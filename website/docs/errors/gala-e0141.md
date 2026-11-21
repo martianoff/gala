@@ -17,7 +17,8 @@ in the order they are written, so the later case can never run. These cases
 match every value:
 
 - `case _`;
-- a plain binding, `case x`;
+- a plain binding, `case x`, or a capitalized name that names nothing in
+  scope and so binds too (`case Rectangle` over an `int`);
 - a typed pattern of the subject's own type, `case n: int` over an `int`, when
   that type is a predeclared type other than `error` or `any`, or a GALA type
   that is not an interface (a typed pattern over `any`, an interface or a type

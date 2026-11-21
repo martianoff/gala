@@ -504,6 +504,18 @@ val res = x match {
 			wantErr: true,
 		},
 		{
+			name: "Unused binding of the whole subject in a guarded case is a compiler error",
+			input: `package main
+
+val flag = true
+val x = 42
+val res = x match {
+	case y if flag => 0
+	case _ => 1
+}`,
+			wantErr: true,
+		},
+		{
 			name: "Unused match variable with guard referencing it is allowed",
 			input: `package main
 
