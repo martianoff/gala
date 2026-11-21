@@ -1803,6 +1803,20 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(cc caseSrc, paramName string, 
 			arm.noValue = stmt.at
 		}
 	}
+	// A binding the body never reads is an error, as in any other arm (see
+	// transformCaseClauseWithType); Go would reject the unused variable.
+	if binds && len(bindingStmts) > 0 {
+		name := cc.pattern().text()
+		nodes := make([]ast.Node, 0, len(arm.defaultBody))
+		for _, s := range arm.defaultBody[len(bindingStmts):] {
+			nodes = append(nodes, s)
+		}
+		if !t.collectReferencedIdents(nodes)[name] {
+			line, col := cc.at().start()
+			return matchArm{}, galaerr.NewSemanticErrorAt(line, col,
+				fmt.Sprintf("unused variable '%s' in match branch — use '_' to discard this value", name))
+		}
+	}
 	return arm, nil
 }
 

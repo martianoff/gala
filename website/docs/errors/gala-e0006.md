@@ -11,7 +11,7 @@ last_modified_at: 2026-11-20
 
 # GALA-E0006 — Multiple default cases in a match expression
 
-**What it means.** A `match` expression has more than one default branch — either two `case _ =>` clauses, or, in a match without `case _`, more than one unguarded binding pattern (`case n =>`). A binding written before or after `case _` is [GALA-E0141](/docs/errors/gala-e0141/).
+**What it means.** A `match` expression has more than one default branch — either two `case _ =>` clauses, or, in a match without `case _`, more than one unguarded lowercase binding pattern (`case n =>`). A binding written before or after `case _` is [GALA-E0141](/docs/errors/gala-e0141/).
 
 ---
 

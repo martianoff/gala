@@ -267,7 +267,7 @@ func TestUnreachableCase(t *testing.T) {
 
 func f(fr Frame) string = fr match {
     case endFrame => "end"
-    case other => "other"
+    case other => s"other $other"
 }
 `,
 		},
