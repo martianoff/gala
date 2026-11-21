@@ -8,17 +8,19 @@ import (
 
 // TestGoGenericInstanceSlotLeftOpenIsDiagnosed pins that a lambda in a GALA
 // callee's iter.Seq[T] slot is never typed with the callee's own unbound
-// type parameter (which go build rejects as undefined): with nothing bound
-// it is GALA-E0033; partly bound, the open one is left to the lambda as for
-// a plain function-type slot.
+// type parameter (which go build rejects as undefined, or a caller's own T
+// of that name captures): with nothing bound it is GALA-E0033. Partly bound
+// (`iter.Seq2[K, V]`, K bound), it lowers as the same call with a plain
+// `func(func(K, V) bool)` parameter does.
 func TestGoGenericInstanceSlotLeftOpenIsDiagnosed(t *testing.T) {
 	cases := []struct {
-		name, call, leak string
-		wantE0033        bool
+		name, caller, call, leak string
+		wantE0033                bool
 	}{
-		{"positional", "collect((yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
-		{"by name", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
-		{"partly bound", "count2(1, (yield) => {\n        yield(1, 2)\n    })", "V) bool", false},
+		{"positional", "func main()", "collect((yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"by name", "func main()", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"by name, inside a generic caller with its own T", "func wrap[T any](x T)", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"partly bound", "func main()", "count2(1, (yield) => {\n        yield(1, 2)\n    })", "V) bool", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,7 +33,7 @@ func collect[T any](s iter.Seq[T]) []T = slices.Collect(s)
 
 func count2[K comparable, V any](k K, s iter.Seq2[K, V]) int = 0
 
-func main() {
+` + tc.caller + ` {
     Println(` + tc.call + `)
 }
 `
@@ -39,6 +41,8 @@ func main() {
 			if tc.wantE0033 {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "GALA-E0033")
+			} else {
+				require.NoError(t, err)
 			}
 			require.NotContains(t, out, tc.leak)
 		})

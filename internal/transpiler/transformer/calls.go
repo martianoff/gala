@@ -1599,8 +1599,8 @@ func (t *galaASTTransformer) readsGenericGoSlot(v argValue, slot transpiler.Type
 	}
 	if instance, ok := slot.(transpiler.GenericType); ok {
 		// Read as written, its type arguments the callee's (genericGoLambdaSlot).
-		_, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
-		return isFunc && v.expr.ok() && countPlaceholders(v.expr) > 0
+		u, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
+		return isFunc && len(u.Results) <= 1 && v.expr.ok() && countPlaceholders(v.expr) > 0
 	}
 	return t.isPlaceholderLambdaArg(v.expr, slot)
 }
@@ -2410,7 +2410,19 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
-				return t.substituteTranspilerTypeParams(callCtx.funcMeta.ParamTypes[i], callCtx.inferredTypeSubst), nil
+				param := callCtx.funcMeta.ParamTypes[i]
+				// A generic Go instance (`s iter.Seq[T]`) whose type
+				// arguments still name a callee type parameter no argument
+				// binds gives a lambda no type, as positionally
+				// (resolveExpectedFuncArgType): never the callee's T, which a
+				// caller's own T of that name would capture.
+				if instance, isInstance := t.followAliasChain(param).(transpiler.GenericType); isInstance &&
+					typeMentionsTypeParam(param, openTypeParams(callCtx.funcMeta.TypeParams, callCtx.inferredTypeSubst)) {
+					if _, goFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType); goFunc {
+						return transpiler.NilType{}, nil
+					}
+				}
+				return t.substituteTranspilerTypeParams(param, callCtx.inferredTypeSubst), nil
 			}
 		}
 	}
