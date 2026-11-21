@@ -1568,7 +1568,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		if results := t.goCallResults(args[0]); len(results) == len(sig.Params) {
 			for i, r := range results {
 				if !transpiler.IsUnusable(r) {
-					t.unifyForInference(goSigParamType(sig, i), r, sig.TypeParams, inferred)
+					t.unifyGoParam(goSigParamType(sig, i), r, sig.TypeParams, inferred)
 				}
 			}
 			t.inferFromGoCoreTypes(sig, inferred)
@@ -1582,12 +1582,20 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 	// As in Go, an untyped constant argument binds a type parameter only
 	// after the typed arguments and the core types have had their say:
 	// `Fold(floats, 0, f)` with `init E` takes E from floats, not from 0.
-	var untyped []int
-	unifyArg := func(i int, arg ast.Expr) {
+	coreTypesRead := false
+	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+		arg := args[i]
 		paramType := goSigParamType(sig, i)
+		if paramType.IsNil() || arg == nil { // nil: a parameter not yet given (genericGoLambdaSlot)
+			continue
+		}
+		if !coreTypesRead && t.isUntypedConstArg(arg) {
+			t.inferFromGoCoreTypes(sig, inferred)
+			coreTypesRead = true
+		}
 		argType := t.getExprTypeNameManual(arg)
 		if transpiler.IsUnusable(argType) {
-			return
+			continue
 		}
 		// A spread call (`SliceOf(xs...)`) passes []T where the variadic
 		// parameter type is the element T, so peel one level to match.
@@ -1596,41 +1604,30 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 				argType = arrType.Elem
 			}
 		}
-		// A Go generic defined type (`iter.Seq[E]`, `Pred[T]`) filled by a
-		// value of an unnamed type (a GALA function, a slice) unifies
-		// through its underlying type.
-		if _, paramIsInstance := paramType.(transpiler.GenericType); paramIsInstance {
-			switch argType.(type) {
-			case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType:
-				if u := t.goDefinedUnderlying(paramType, nil); u != nil {
-					paramType = u
-				}
-			}
-		}
-		t.unifyForInference(paramType, argType, sig.TypeParams, inferred)
-	}
-	for i, arg := range args {
-		if goSigParamType(sig, i).IsNil() || arg == nil { // nil: a parameter not yet given (genericGoLambdaSlot)
-			continue
-		}
-		if isUntypedConstExpr(arg) {
-			untyped = append(untyped, i)
-			continue
-		}
-		unifyArg(i, arg)
+		t.unifyGoParam(paramType, argType, sig.TypeParams, inferred)
 	}
 	t.inferFromGoCoreTypes(sig, inferred)
-	if len(untyped) > 0 {
-		for _, i := range untyped {
-			unifyArg(i, args[i])
-		}
-		t.inferFromGoCoreTypes(sig, inferred)
-	}
 
 	if len(inferred) == 0 {
 		return nil
 	}
 	return inferred
+}
+
+// unifyGoParam unifies a Go callee's parameter type param with the type arg
+// of the value filling it. A Go generic defined type (`iter.Seq[E]`,
+// `Pred[T]`) filled by a value of an unnamed type (a GALA function, a slice,
+// directly or through a GALA alias) unifies through its underlying type.
+func (t *galaASTTransformer) unifyGoParam(param, arg transpiler.Type, typeParams []string, inferred map[string]transpiler.Type) {
+	if _, paramIsInstance := param.(transpiler.GenericType); paramIsInstance {
+		switch unaliased := t.followAliasChain(arg); unaliased.(type) {
+		case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType:
+			if u := t.goDefinedUnderlying(param, nil); u != nil {
+				param, arg = u, unaliased
+			}
+		}
+	}
+	t.unifyForInference(param, arg, typeParams, inferred)
 }
 
 // inferFromGoCoreTypes adds to inferred the type parameters of sig that the
