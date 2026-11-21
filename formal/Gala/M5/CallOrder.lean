@@ -510,7 +510,7 @@ end
 /-- **A body step 3a's order result speaks of**: no statement in which an operand that may
     panic (`/` or `%` by a non-literal, a shift by a non-literal count) precedes a call in
     the same operand list, a call's arguments being a list of their own. -/
-def Body3 (body : List Stmt) : Prop := body3Ss body = true
+abbrev Body3 (body : List Stmt) : Prop := body3Ss body = true
 
 mutual
 /-- **A body fits a scope**: its statements' expressions do (`FitsE`), each in the scope gc's

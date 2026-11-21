@@ -128,4 +128,79 @@ theorem inc_gocore_ok (N : Nat) (hN : N ≥ 32) :
   obtain ⟨w, g', hg, hv, -⟩ := h
   exact ⟨w, g', hg, hv⟩
 
+
+/-! ## The order result on a program: a recursive `fact` and `g(x) = fact(x) + 1`
+
+`func fact(n int) int { if n <= 1 { return 1 }; return n * fact(n - 1) }` and
+`func g(x int) int { return fact(x) + 1 }`: both bodies are `Body3`, both fit the scope gc's
+rewrite really builds for them (`gcScope`, computed from the program), so `gc_runs3` says
+`Order.gc` leaves them in place. -/
+
+section OrderInstance
+open Hoist
+
+def factBody : List Stmt :=
+  [.if_ none (.binary "<=" (.ident "n") (.intLit 1)) [.ret [.intLit 1]] none,
+   .ret [.binary "*" (.ident "n") (.call (.ident "fact") [.binary "-" (.ident "n") (.intLit 1)] false)]]
+def gBody : List Stmt := [.ret [.binary "+" (.call (.ident "fact") [.ident "x"] false) (.intLit 1)]]
+def factSig : Sig := lowerSigOf [("n", .int)] .int
+def gSig : Sig := lowerSigOf [("x", .int)] .int
+def ordPkg : Package :=
+  ⟨"main", "main", false, [⟨"m.go", [], [Decl.func "fact" none [] factSig (some factBody),
+    Decl.func "g" none [] gSig (some gBody)]⟩]⟩
+def ordProg : Program := ⟨[ordPkg]⟩
+
+theorem fact_body3 : Body3 factBody := by simp [Body3, body3Ss, body3S, body3OS, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, factBody]
+theorem g_body3 : Body3 gBody := by simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, gBody]
+
+theorem fact_fits : FitsSs (gcScope ordProg "main" 0 none [] factSig factBody) factBody := by
+  simp [FitsSs, FitsS, FitsOS, FitsE, FitsEs, fieldListNames, factBody, afterS, gcScope, changeableName, callKind,
+    isType, Scope.isLocal, Scope.obj?, Scope.env, nameOwner, singleResult, resultCount, Scope.enter,
+    Scope.withIfaces, Scope.bind, sigNames, factSig, lowerSigOf, kindName, chSs, chS, chE, chEs, chOS, isTypeObj,
+    isVarObj, buildCtx, buildPkg, ordProg, ordPkg, Id.run, List.forIn_cons, List.forIn_nil, List.foldl_cons,
+    List.foldl_nil, id_pure, idb, Std.HashMap.getElem_insert, Std.HashMap.getElem?_insert]
+
+theorem g_fits : FitsSs (gcScope ordProg "main" 0 none [] gSig gBody) gBody := by
+  simp [FitsSs, FitsS, FitsE, FitsEs, fieldListNames, gBody, gcScope, changeableName, callKind,
+    isType, Scope.isLocal, Scope.obj?, Scope.env, nameOwner, singleResult, resultCount, Scope.enter,
+    Scope.withIfaces, Scope.bind, sigNames, gSig, factSig, lowerSigOf, kindName, chSs, chS, chE, chEs,
+    isTypeObj, isVarObj, buildCtx, buildPkg, ordProg, ordPkg, Id.run, List.forIn_cons, List.forIn_nil,
+    List.foldl_cons, List.foldl_nil, id_pure, idb, Std.HashMap.getElem_insert, Std.HashMap.getElem?_insert]
+
+/-- **`gc_runs3` on the program**: GoCore's model of gc's order leaves `fact` and `g` as written. -/
+theorem ordProg_gc :
+    declAt (Order.gc ordProg) 0 0 0 = some (.func "fact" none [] factSig (some factBody)) ∧
+    declAt (Order.gc ordProg) 0 0 1 = some (.func "g" none [] gSig (some gBody)) :=
+  ⟨gc_runs3 ordProg 0 0 0 ordPkg "fact" none [] factSig factBody rfl fact_body3 fact_fits rfl,
+   gc_runs3 ordProg 0 0 1 ordPkg "g" none [] gSig gBody rfl g_body3 g_fits rfl⟩
+
+/-! A cross-check computed directly: `Order.gc` on the program, compared with it. The
+kernel cannot evaluate `Order.gc` here (its tables are hash maps of strings, and
+`String.hash` is opaque to it), so the comparison is run by Lean's evaluator (`#guard`),
+not proved; `ordProg_gc` is the proof. -/
+
+deriving instance BEq for Expr, Field, Sig, Stmt, Clause, Decl, TypeSpec, Spec
+
+#guard declAt (Order.gc ordProg) 0 0 0 == declAt ordProg 0 0 0
+#guard declAt (Order.gc ordProg) 0 0 1 == declAt ordProg 0 0 1
+
+/-! The predicate on the shapes of the plain-words description: a division before a call at
+the same level excludes a body (`x / z + f(x)`, and `g(x / z, f())`, whose arguments are one
+level); inside a call's arguments it does not (`f(x / z) + g()`). -/
+
+theorem body3_div_call :
+    ¬ Body3 [.ret [.binary "+" (.binary "/" (.ident "x") (.ident "z")) (.call (.ident "f") [.ident "x"] false)]] := by
+  simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, PK.differs]
+
+theorem body3_div_arg_call :
+    ¬ Body3 [.ret [.call (.ident "g") [.binary "/" (.ident "x") (.ident "z"), .call (.ident "f") [] false] false]] := by
+  simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, PK.differs]
+
+theorem body3_div_inside_call :
+    Body3 [.ret [.binary "+" (.call (.ident "f") [.binary "/" (.ident "x") (.ident "z")] false)
+      (.call (.ident "g") [] false)]] := by
+  simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, PK.differs]
+
+end OrderInstance
+
 end Gala.M5
