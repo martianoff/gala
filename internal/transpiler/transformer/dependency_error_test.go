@@ -92,8 +92,10 @@ func TestImportedPackageErrorReportedBeforeImporterCascade(t *testing.T) {
 					galaFile = v.galaFile(pkg)
 				}
 				root := t.TempDir()
-				_, err := transpileInModuleAt(t, root, v.files(pkg), galaFile)
-				requireTypeRedefinedIn(t, err, filepath.Join(root, pkg))
+				for range 2 { // the second analysis loads what the first cached
+					_, err := transpileInModuleAt(t, root, v.files(pkg), galaFile)
+					requireTypeRedefinedIn(t, err, filepath.Join(root, pkg))
+				}
 			})
 		}
 	}

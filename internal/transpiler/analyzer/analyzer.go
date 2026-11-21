@@ -2873,16 +2873,12 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// persisted — the direct import list is recorded separately so the
 	// transitive type closure can be reconstructed at load time without
 	// inflating each on-disk entry to N×M of the dependency graph. A package
-	// whose metadata is partial — a file of its own left out, or of a
-	// package it imports, as its files' merged DependencyErrors say — is not
-	// stored: the entry would hold that metadata without the errors. Its
-	// entries for earlier contents go all the same, as a Put would drop them.
-	if contentHash != "" && a.cache != nil {
-		if len(pkgAST.DependencyErrors) == 0 {
-			a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
-		} else {
-			a.cache.evictStale(relPath, contentHash)
-		}
+	// with a file of its own left out is not stored: the entry would hold its
+	// partial metadata without the error. One that is whole is, even when a
+	// package it imports is partial: loading it reloads that package, which
+	// brings its errors back (see rehydrateImports).
+	if contentHash != "" && a.cache != nil && !dropped {
+		a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
 	}
 
 	// Memoize for in-process reuse so the closure walker doesn't re-do the
@@ -2921,7 +2917,8 @@ func mergeOwnPackageVals(pkgAST, res *transpiler.RichAST, isThisFile func(string
 // already has its file, a dependency's error an importer's file failed with,
 // keeps it.
 func attributeTo(err error, filePath string) error {
-	if multi, ok := err.(*galaerr.MultiError); ok {
+	var multi *galaerr.MultiError
+	if errors.As(err, &multi) {
 		errs := make([]error, len(multi.Errors))
 		for i, e := range multi.Errors {
 			errs[i] = attributeTo(e, filePath)
@@ -2941,6 +2938,8 @@ func attributeTo(err error, filePath string) error {
 
 // fileError is an error of the file at file that has no place of its own
 // for the file to be recorded in.
+var _ error = (*fileError)(nil)
+
 type fileError struct {
 	file string
 	err  error

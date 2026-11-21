@@ -252,7 +252,8 @@ func isTransformerPanic(err error) bool {
 // appended to in place, as another RichAST may share it.
 func (r *RichAST) AddDependencyErrors(errs ...error) {
 	for _, err := range errs {
-		if multi, ok := err.(*galaerr.MultiError); ok {
+		var multi *galaerr.MultiError
+		if errors.As(err, &multi) {
 			r.AddDependencyErrors(multi.Errors...)
 			continue
 		}
