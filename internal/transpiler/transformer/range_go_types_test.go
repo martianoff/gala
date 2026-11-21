@@ -100,6 +100,71 @@ func main() {
     }
 }
 `, []string{`"i=%d"`, "func() int32"}},
+		// Go binds i to the defined type itself (#1317), so `s"$i"` uses %v
+		// and the type's String method, and its methods are callable.
+		{"a Go defined integer type (time.Duration)", `package main
+
+import "time"
+
+func main() {
+    val d = time.Duration(3)
+    for i := range d {
+        val f = () => i
+        Println(s"i=$i", f(), i.Nanoseconds())
+    }
+}
+`, []string{`"i=%v"`, "func() time.Duration", "i.Nanoseconds()"}},
+		// A Go alias of a defined integer type binds the type it names.
+		{"a Go alias of a defined integer type (os.FileMode)", `package main
+
+import "os"
+
+func main() {
+    for m := range os.FileMode(2) {
+        val f = () => m
+        Println(f(), m.IsDir())
+    }
+}
+`, []string{"func() fs.FileMode", "m.IsDir()"}},
+		// An opaque type is a Go defined type: i is bound to it. A `type`
+		// declaration is an alias: i is bound to the aliased type.
+		{"an opaque type over an integer type", `package main
+
+import "time"
+
+opaque type Millis int64
+
+opaque type Wait time.Duration
+
+type Count int64
+
+func main() {
+    for i := range Millis(3) {
+        val f = () => i
+        Println(f())
+    }
+    for w := range Wait(2) {
+        val g = () => w
+        Println(g())
+    }
+    for c := range Count(2) {
+        val h = () => c
+        Println(h())
+    }
+}
+`, []string{"func() Millis", "func() Wait", "func() int64"}},
+		// An opaque type over string ranges as a string: an int key and a rune.
+		{"an opaque type over string", `package main
+
+opaque type Name string
+
+func main() {
+    for i, c := range Name("ab") {
+        val f = () => c
+        Println(i, f())
+    }
+}
+`, []string{"func() rune"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

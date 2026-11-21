@@ -1,0 +1,32 @@
+package main
+
+import (
+    "os"
+    "time"
+)
+
+// Range over a defined integer type binds the loop variable to that type, as
+// Go does (#1317): interpolation prints it with the type's String method, and
+// its methods are callable. An opaque type over an integer type binds too.
+
+opaque type Millis int64
+
+func main() {
+    val d = time.Duration(3)
+    for i := range d {
+        val same = () => i
+        Println(s"i=$i same=${same()} ns=${i.Nanoseconds()}")
+    }
+    for i := range time.Nanosecond * 2 {
+        Println(s"step=$i", i + time.Second)
+    }
+    // os.FileMode is an alias of fs.FileMode.
+    for f := range os.FileMode(2) {
+        val mode = () => f
+        Println(s"mode=$f dir=${mode().IsDir()}")
+    }
+    for m := range Millis(2) {
+        val next = () => m + Millis(1)
+        Println(s"m=$m next=${next()}")
+    }
+}
