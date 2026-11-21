@@ -34,9 +34,11 @@ func TestDiscardAfterBindUnderscore(t *testing.T) {
 	})
 }
 
-// TestAlsoUnderscoreClause pins that the `_` of any `_` clause of a
-// Zip-lowered `also` group is bound as on the sequential path: a read is
-// GALA-E0139, `_ = x` is a discard, and the group still transpiles.
+// TestAlsoUnderscoreClause pins that the `_` of a `_` clause of a Zip-lowered
+// `also` group is bound as on the sequential path. With the `_` clause first:
+// a read and `_++` are GALA-E0139, `_ = x` is a discard, and the group
+// transpiles. With it later: a read is GALA-E0139. The example
+// //examples:also_underscore_clause builds and runs both shapes.
 func TestAlsoUnderscoreClause(t *testing.T) {
 	const header = "package main\n\nimport . \"martianoff/gala/concurrent\"\n\nfunc compute(n int) Future[int] = Future[int](n * n)\n\nfunc total() Future[int] {\n    bind _ = compute(2)\n    also b = compute(3)\n"
 	const footer = "    Future[int](b)\n}\n\nfunc main() {\n    Println(total().Get())\n}\n"
