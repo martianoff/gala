@@ -6,6 +6,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGoGenericInstanceSlotLeftOpenIsDiagnosed pins that a lambda in a GALA
+// callee's iter.Seq[T] slot with T bound by nothing is GALA-E0033, never
+// typed with the callee's own T (which go build rejects as undefined).
+func TestGoGenericInstanceSlotLeftOpenIsDiagnosed(t *testing.T) {
+	src := `package main
+
+import "iter"
+import "slices"
+
+func collect[T any](s iter.Seq[T]) []T = slices.Collect(s)
+
+func main() {
+    Println(collect((yield) => {
+        yield(1)
+    }))
+}
+`
+	out, err := newForbiddenBuiltinTranspiler().Transpile(src, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "GALA-E0033")
+	require.NotContains(t, out, "func(yield func(T) bool)")
+}
+
 // TestGoGenericInferenceThroughDefinedFuncTypes pins #1318 and #1321: a
 // generic Go parameter of a defined function type (`iter.Seq[E]`) is typed
 // through its underlying function type. A GALA function passed there binds
