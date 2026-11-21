@@ -746,3 +746,61 @@ func TestDecoder_SequenceAtKeyIndentErrors(t *testing.T) {
 		}
 	}
 }
+
+// ----- Quotes inside keys and plain scalars ----------------------------------
+
+// A quote starts a quoted scalar only as its first character (#1314): inside
+// a plain key or value it is text, so it hides neither the key's colon nor a
+// comment. A single-quoted key may hold a quote written twice (#1315).
+func TestDecoder_QuotesInsideScalars(t *testing.T) {
+	tests := []struct{ src, key, value string }{
+		{"it's: 1", "it's", "1"},
+		{`say "hi: there`, `say "hi`, "there"},
+		{`a"b: c # note`, `a"b`, "c"},
+		{"S: it's # note", "S", "it's"},
+		{`S: a"b # note`, "S", `a"b`},
+		{"S: it's", "S", "it's"},
+		{"'it''s': 1", "it's", "1"},
+		{"'a''b''': v", "a'b'", "v"},
+		{"'': v", "", "v"},
+		{`"k\"q": v`, `k"q`, "v"},
+		{"S: 'it''s' # note", "S", "it's"},
+		{"'k': 'v # w' # note", "k", "v # w"},
+		{`"k": "a # b" # note`, "k", "a # b"},
+	}
+	for _, tt := range tests {
+		if k, s, err := readKeyValue(tt.src); k != tt.key || s != tt.value || err != "" {
+			t.Errorf("%s => (%q, %q, error %q), want (%q, %q)", tt.src, k, s, err, tt.key, tt.value)
+		}
+	}
+}
+
+// The same holds for a sequence item, and for a key the encoder writes
+// plain: a map with the key it's reads back.
+func TestDecoder_QuotesInsideScalarsElsewhere(t *testing.T) {
+	d := NewYamlDecoder("- it's # note\n- it's: 1")
+	d.StartArray()
+	if s := d.ReadString(); s != "it's" {
+		t.Errorf("item 0 = %q, want %q", s, "it's")
+	}
+	d.StartObject()
+	if k := d.ReadKey(); k != "it's" {
+		t.Errorf("item 1 key = %q, want %q", k, "it's")
+	}
+	d.ReadInt()
+	d.EndObject()
+	d.EndArray()
+
+	e := NewYamlEncoder()
+	e.WriteStartObject()
+	e.WriteKey("it's")
+	e.WriteInt(1)
+	e.WriteEndObject()
+	d = NewYamlDecoder(e.String())
+	d.StartObject()
+	if k := d.ReadKey(); k != "it's" {
+		t.Errorf("encoded %q: key = %q, want %q", e.String(), k, "it's")
+	}
+	d.ReadInt()
+	d.EndObject()
+}

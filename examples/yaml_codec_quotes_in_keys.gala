@@ -1,0 +1,29 @@
+package main
+
+// A quote starts a quoted YAML scalar only as its first character (#1314):
+// inside a plain key or value, as in it's, it is text. A single-quoted key
+// may hold a quote written twice (#1315). So a map whose key holds an
+// apostrophe reads back, and a comment after such a value is dropped.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct R(S string, N Array[string])
+
+val records = yaml.Codec[R](yaml.AsIs())
+val counts = yaml.Value[HashMap[string, int]]()
+
+func main() {
+    val m = HashMapOf(("it's", 1))
+    val written = counts.Encode(m).GetOrElse("<failure>")
+    Println(written)
+    Println(counts.Decode(written))
+    Println(counts.Decode("'it''s': 2"))
+
+    Println(records.Decode(`S: it's # a note
+N:
+- don't # another
+- "say \"hi\"" # quoted`))
+}
