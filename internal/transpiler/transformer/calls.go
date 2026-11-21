@@ -229,13 +229,20 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 								}
 							}
 							receiver := &ast.CompositeLit{Type: receiverType}
-							return &ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   receiver,
-									Sel: ast.NewIdent("Apply"),
-								},
-								Args: nil,
-							}, nil
+							if !genericApply(typeMeta) {
+								return &ast.CallExpr{
+									Fun: &ast.SelectorExpr{
+										X:   receiver,
+										Sel: ast.NewIdent("Apply"),
+									},
+									Args: nil,
+								}, nil
+							}
+							// A generic Apply has no Go method: it is called
+							// as `T{}.Apply()` written out is, by the
+							// zero-argument generic method call below, which
+							// binds its type parameters from the slot.
+							base = applySelector(receiver, nil)
 						}
 					} else if len(methodMeta.DefaultExprs) > 0 || t.sealedVariantOf(typeName).parent != nil {
 						// A sealed case with fields, or an Apply with
@@ -282,10 +289,10 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			}
 		}
 
-		// A value whose Apply is generic is called as `v.Apply()` is (see
+		// A value whose type has an Apply is called as `v.Apply()` is (see
 		// Section 1.5 of transformCallWithArgsCtx).
-		if t.callsGenericValueApply(base) {
-			base = &ast.SelectorExpr{X: base, Sel: ast.NewIdent("Apply")}
+		if callee, ok := t.valueApplyCallee(base); ok {
+			base = callee
 		}
 
 		// Check for zero-argument generic method call (e.g., p.Swap())
@@ -302,6 +309,11 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			// receiver to its canonical form and derive the pointer-stripped
 			// registry key — rather than repeating it inline.
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
+			// A struct field whose type has an Apply is called through it.
+			if t.fieldApplyType(zeroArgLookupBase, sel.Sel.Name) != nil {
+				base = applySelector(base, nil)
+				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(base.(*ast.SelectorExpr).X, "Apply")
+			}
 		}
 		// A generic method takes the same rewrite to a standalone function,
 		// TypeName_Method[...](receiver), as a call with arguments: its
@@ -479,12 +491,6 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		bl, bc, exact := c.calleePos()
 		if err := t.checkForbiddenGoBuiltinCall(base, bl, bc, exact); err != nil {
 			return nil, err
-		}
-		// A val whose type has a zero-argument Apply method is called through
-		// it, as section 12 of the dispatcher does for a call with arguments;
-		// any other value that is not a function is an error.
-		if expr, handled := t.tryTransformValWithApply(base, nil, false); handled {
-			return expr, nil
 		}
 		if err := t.checkValueCalledAsFunction(base, c); err != nil {
 			return nil, err
@@ -2152,11 +2158,6 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		case v.spread && goSig != nil:
 			// A Go callee's spread fills its variadic parameter only.
 			expectedType = spreadArgType(goVariadicElem(goSig, slotIdx))
-		case v.spread && callCtx.funcMeta == nil && callCtx.applyMethodMeta == nil:
-			// The Apply a value is called through (Sections 11 and 12).
-			if meta := t.valueApplyType(fun); meta != nil {
-				expectedType = spreadArgType(t.applyVariadicElem(meta, t.valueApplyTypeArgs(fun), slotIdx))
-			}
 		case transpiler.IsUnusable(expectedType) && !v.spread:
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
@@ -2862,31 +2863,6 @@ func (t *galaASTTransformer) applyTypeMeta(name string) *transpiler.TypeMetadata
 	return typeMeta
 }
 
-// tryTransformValWithApply handles Section 12: when `fun` reads a val/var —
-// `name`, or an imported `pkg.Name` — whose type has an Apply method, rewrite
-// `fun(args)` as `fun.Apply(args)`. This enables `val add5 = Adder(5); add5(10)`.
-// The spread of the last argument is kept when spread is set. Returns
-// handled=false for all other shapes of `fun`.
-// Extracted from transformCallWithArgsCtx as part of A1 cont.
-func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.Expr, spread bool) (ast.Expr, bool) {
-	typeMeta := t.bindingApplyType(fun)
-	if typeMeta == nil {
-		return nil, false
-	}
-	// An empty call, `v()`, goes through Apply only when Apply takes no
-	// parameters; otherwise it is left as written, for Go to report. A
-	// generic Apply never reaches here: lowerCallSuffix calls it as
-	// `v.Apply()`, whose missing arguments GALA reports.
-	if apply := typeMeta.Methods["Apply"]; len(args) == 0 && apply != nil && len(apply.ParamTypes) > 0 {
-		return nil, false
-	}
-	return &ast.CallExpr{
-		Fun:      &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")},
-		Args:     args,
-		Ellipsis: ellipsisPos(spread),
-	}, true
-}
-
 // bindingApplyType is the metadata of the type of fun, a val or var whose
 // type has an Apply method; nil for any other fun.
 func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMetadata {
@@ -2898,7 +2874,7 @@ func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMeta
 }
 
 // valueApplyType is the metadata of the type whose Apply a call of fun calls
-// through a value (Sections 11 and 12), nil when it calls none.
+// through a value (Section 1.5), nil when it calls none.
 func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetadata {
 	if cl, ok := fun.(*ast.CompositeLit); ok {
 		return t.litApplyType(cl)
@@ -2924,13 +2900,32 @@ func (t *galaASTTransformer) litApplyTarget(fun ast.Expr) *transpiler.TypeMetada
 	return nil
 }
 
-// callsGenericValueApply reports whether a call of fun calls a value through
-// its type's Apply (valueApplyType) and that Apply is generic. A literal goes
-// by the type it names, its package included, never by the bare-name
-// fallback Section 11 also takes: that could name a type of this package
-// whose generic Apply a call of another package's literal would be routed to.
-func (t *galaASTTransformer) callsGenericValueApply(fun ast.Expr) bool {
-	return genericApply(t.valueApplyType(fun))
+// valueApplyCallee is `fun.Apply`, the method a call of fun calls when fun is
+// a value whose type has an Apply: a val, var or literal (valueApplyType), a
+// call's result (resultApplyType), and one with type arguments, `v[int](...)`
+// for `v.Apply[int](...)` of a generic Apply. A struct field is found once
+// its receiver's type is known (fieldApplyType). The call is lowered as
+// `fun.Apply(...)` written out is: Section 3 lowers a generic Apply to its
+// free function, Section 4 calls any other with its parameters' types for
+// the arguments. A literal goes by the type it names, its package included;
+// one found only by its bare name is left to Section 11, as that name could
+// be another package's type.
+func (t *galaASTTransformer) valueApplyCallee(fun ast.Expr) (ast.Expr, bool) {
+	if t.valueApplyType(fun) != nil || t.resultApplyType(fun) != nil {
+		return applySelector(fun, nil), true
+	}
+	// No value of a struct type can be indexed, so an index of one is the
+	// type arguments of its generic Apply.
+	if base, typeArgs := splitCallFunTypeArgs(fun); len(typeArgs) > 0 {
+		meta := t.valueApplyType(base)
+		if meta == nil {
+			meta = t.resultApplyType(base)
+		}
+		if genericApply(meta) && isStructMeta(meta) {
+			return applySelector(base, typeArgs), true
+		}
+	}
+	return nil, false
 }
 
 // genericApply reports whether meta, a type's metadata, has an Apply that
@@ -2942,6 +2937,55 @@ func genericApply(meta *transpiler.TypeMetadata) bool {
 	}
 	apply := meta.Methods["Apply"]
 	return apply != nil && (apply.IsGeneric || len(apply.TypeParams) > 0)
+}
+
+// applySelector is `recv.Apply`, instantiated with typeArgs.
+func applySelector(recv ast.Expr, typeArgs []ast.Expr) ast.Expr {
+	return withTypeArgs(&ast.SelectorExpr{X: recv, Sel: ast.NewIdent("Apply")}, typeArgs)
+}
+
+// isStructMeta reports whether meta is a struct or sealed type's, whose
+// values Go cannot index.
+func isStructMeta(meta *transpiler.TypeMetadata) bool {
+	return !meta.IsOpaque && (meta.IsShorthand || meta.IsSealed || len(meta.FieldNames) > 0)
+}
+
+// resultApplyType is the metadata of the type of fun when fun is a call, a
+// call's result being called (`mk()(x)`, or a val field's unwrap
+// `x.f.Get()(x)`), and that type has an Apply method; nil otherwise.
+func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetadata {
+	if _, ok := fun.(*ast.CallExpr); !ok {
+		return nil
+	}
+	return t.applyTypeOf(t.getExprTypeName(fun))
+}
+
+// fieldApplyType is the metadata of the type of field of the type named
+// lookupBaseName (resolveReceiverTypeAndLookupKey) when that type has an
+// Apply method; nil when field is no field of it (a method, say).
+func (t *galaASTTransformer) fieldApplyType(lookupBaseName, field string) *transpiler.TypeMetadata {
+	meta := t.getTypeMeta(lookupBaseName)
+	if meta == nil {
+		return nil
+	}
+	fieldType, isField := meta.Fields[field]
+	if !isField || slices.Contains(meta.TypeParams, fieldType.BaseName()) {
+		return nil
+	}
+	return t.applyTypeOf(fieldType)
+}
+
+// applyTypeOf is the metadata of typ, a value's type, when it has an Apply
+// method; nil for a pointer or a type not known.
+func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMetadata {
+	typ = unwrapValueMarkers(typ)
+	if transpiler.IsUnusable(typ) {
+		return nil
+	}
+	if _, isPtr := typ.(transpiler.PointerType); isPtr {
+		return nil
+	}
+	return t.applyTypeMeta(typ.BaseName())
 }
 
 // litApplyType is the metadata of the type of the composite literal cl when
@@ -2997,7 +3041,7 @@ func qualifiedLitType(cl *ast.CompositeLit) (name string, qualified bool) {
 // The dispatcher is navigated in strict order:
 //
 //	Section 1  Copy method short-circuit                — inline
-//	Section 1.5 Value called through a generic Apply    — callsGenericValueApply
+//	Section 1.5 Value called through its Apply          — valueApplyCallee
 //	Section 2  Dispatch prelude                         — splitCallTarget, resolveReceiverTypeAndLookupKey
 //	Section 3  Generic method → standalone function     — tryTransformGenericMethodAsFunction
 //	Section 4  Regular method call                      — transformRegularMethodCall
@@ -3010,7 +3054,6 @@ func qualifiedLitType(cl *ast.CompositeLit) (name string, qualified bool) {
 //	Section 9  StructMeta[T]() intrinsic                — transformStructMetaConstruction
 //	Section 10 Companion Apply / struct construction    — tryTransformCompanionApplyOrStructCtor
 //	Section 11 CompositeLit with Apply                  — tryTransformCompositeLitApply
-//	Section 12 Variable with Apply method               — tryTransformValWithApply
 //	Section 12.9 Type name called as a constructor      — checkTypeUsedAsConstructor
 //	Section 13 Fallback: emit call verbatim             — inline
 //
@@ -3073,14 +3116,22 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 		}
 	}
 
-	// --- Section 1.5: a value called through a generic Apply ---
-	// A generic method has no Go method to call: it lowers to a free function
-	// (Section 3). A value whose Apply is generic is called as `v.Apply(...)`
-	// written out is, rather than through Sections 11 and 12, which call the
-	// Go method `v.Apply(...)`. The zero-argument call does the same in
+	// --- Section 1.5: a value called through its Apply ---
+	// A value whose type has an Apply (a val, var, literal, struct field or
+	// call result) is called as `v.Apply(...)` written out is
+	// (valueApplyCallee): a generic Apply lowers to its free function (Section
+	// 3), any other is a method call whose arguments take its parameters'
+	// types (Section 4). The zero-argument call does the same in
 	// lowerCallSuffix.
-	if t.callsGenericValueApply(fun) {
-		fun = &ast.SelectorExpr{X: fun, Sel: ast.NewIdent("Apply")}
+	if callee, ok := t.valueApplyCallee(fun); ok {
+		// A spread is told where it may go against the value's type, as
+		// `Joiner.Apply`, not the bare method the call is lowered as.
+		if slices.ContainsFunc(c.args.list, argSrc.spread) {
+			if err := t.checkValueApplySpread(fun, c); err != nil {
+				return nil, err
+			}
+		}
+		fun = callee
 	}
 
 	// --- Section 2: Method/function dispatch prelude ---
@@ -3092,6 +3143,13 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// A1: resolve the receiver type to a canonical form and compute the
 	// package-agnostic lookup key used by the generic-method registry.
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
+	// A struct field, `x.f(...)`, whose type has an Apply is called through
+	// it (Section 1.5), now that the receiver's type is known.
+	if receiver != nil && len(typeArgs) == 0 && t.fieldApplyType(lookupBaseName, method) != nil {
+		fun = applySelector(fun, nil)
+		receiver, method, typeArgs = t.splitCallTarget(fun)
+		recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
+	}
 	// Before the generic rewrite and the regular dispatch, so both are covered.
 	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, c); err != nil {
 		return nil, err
@@ -3133,8 +3191,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// --- Section 5.5: a value whose type is not a function, called anyway ---
 	// Checked before the arguments are transformed, so named arguments or an
 	// argument that fails to transform cannot preempt it with an error about
-	// the arguments. A type with an Apply method is left to section 12. See
-	// value_called_as_function.go.
+	// the arguments. A type with an Apply method was called through it (Section
+	// 1.5). See value_called_as_function.go.
 	if err := t.checkValueCalledAsFunction(fun, c); err != nil {
 		return nil, err
 	}
@@ -3254,12 +3312,6 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// Handles `Append("cherry")("apple")` where the left side is already a
 	// struct literal produced by an earlier partial-application step.
 	if expr, handled := t.tryTransformCompositeLitApply(fun, args, hasSpread); handled {
-		return expr, nil
-	}
-
-	// --- Section 12: Variable whose type has an Apply method ---
-	// Handles `val add5 = Adder(5); add5(10)` → `add5.Apply(10)`.
-	if expr, handled := t.tryTransformValWithApply(fun, args, hasSpread); handled {
 		return expr, nil
 	}
 

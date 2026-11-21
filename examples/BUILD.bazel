@@ -783,6 +783,16 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# Any value whose type has an Apply is called through it: a lambda argument
+# takes Apply's parameter type, and a struct field, a call's result, type
+# arguments and a no-parameter generic companion Apply are all called as
+# `v.Apply(...)` written out is (#1279, #1280, #1286, #1306).
+gala_exec_test(
+    name = "value_apply_shapes",
+    src = "value_apply_shapes.gala",
+    expected = "value_apply_shapes.out",
+)
+
 # A Go method returning (T, error) on a type from a package the file does not
 # import (reached through a field, a val binding or a chain of calls) lowers to
 # Try like any other Go call.

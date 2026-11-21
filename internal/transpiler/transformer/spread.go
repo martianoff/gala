@@ -119,7 +119,8 @@ func (t *galaASTTransformer) checkSpreadPlacement(fun ast.Expr, c callSrc, callC
 		}
 		return goParamList(callee, callCtx.goSig).checkSpreads(c.args)
 	}
-	return t.checkValueApplySpread(fun, c)
+	// A value called through its Apply is checked by Section 1.5.
+	return nil
 }
 
 // checkMethodSpreads is checkSpreads for the call c of the method methodMeta
@@ -152,48 +153,6 @@ func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) erro
 		name = t.diagQualifier(meta.Package) + name
 	}
 	return methodParamList(name+".Apply", meta.Methods["Apply"]).checkSpreads(c.args)
-}
-
-// applyVariadicElem is the element type of the variadic parameter of the
-// Apply of meta's type that argument i fills, with typeArgs, the value's
-// type arguments, substituted for the type's parameters; unknown for any
-// other argument, and when it still names a type parameter of the type (its
-// arguments not known) or of Apply.
-func (t *galaASTTransformer) applyVariadicElem(meta *transpiler.TypeMetadata, typeArgs []transpiler.Type, i int) transpiler.Type {
-	apply := meta.Methods["Apply"]
-	if apply == nil {
-		return transpiler.NilType{}
-	}
-	n := len(apply.ParamTypes)
-	if !isVariadicParam(n, apply.Variadic, i) {
-		return transpiler.NilType{}
-	}
-	elem := apply.ParamTypes[n-1]
-	// The value's type arguments, when it names all of them, stand for the
-	// type's parameters.
-	if len(typeArgs) == len(meta.TypeParams) && !slices.ContainsFunc(typeArgs, transpiler.ContainsUnusable) {
-		elem = t.substituteConcreteTypes(elem, meta.TypeParams, typeArgs)
-	}
-	if typeMentionsTypeParam(elem, slices.Concat(meta.TypeParams, apply.TypeParams)) {
-		return transpiler.NilType{}
-	}
-	return elem
-}
-
-// valueApplyTypeArgs are the type arguments of the value a call of fun calls
-// the Apply of (valueApplyType): of a val's or var's type, or those a
-// construction writes (`Bag[string]{}`); nil when there are none.
-func (t *galaASTTransformer) valueApplyTypeArgs(fun ast.Expr) []transpiler.Type {
-	var typ transpiler.Type
-	if cl, ok := fun.(*ast.CompositeLit); ok {
-		typ = t.astTypeToTranspilerType(cl.Type)
-	} else if b, ok := t.bindingRef(fun); ok {
-		typ = b.typ
-	}
-	if gen, ok := unwrapValueMarkers(typ).(transpiler.GenericType); ok {
-		return gen.Params
-	}
-	return nil
 }
 
 // spreadSlotElem is the element type of the variadic parameter a spread
