@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -241,6 +242,12 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
+	// keepOwnErrors, set for the LSP, reports the analyzed file's own
+	// analysis error even when an imported package's metadata is partial:
+	// the editor shows the file's diagnostics, at their places in it, and a
+	// dependency's error is the build's to report (see
+	// RichAST.ReportDependencyErrors).
+	keepOwnErrors bool
 	// onInferInit, when set, is told of each package-level initializer
 	// inferPackageValInitTypeNative types, and the type it got. It observes
 	// and changes nothing; TestValInitTypeShapes sets it.
@@ -456,6 +463,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipUndefinedCheck:  true,
+		keepOwnErrors:       true,
 	}
 }
 
@@ -679,6 +687,15 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 			result.SiblingSyntaxErrors = sibErr
 		}
 	}()
+	// An imported package with a file left out of its metadata is likewise
+	// what a failure reports, in place of the cascade the missing
+	// declarations cause here (see RichAST.ReportDependencyErrors).
+	var richAST *transpiler.RichAST
+	defer func() {
+		if asInternal(err) == nil && !(isTopLevel && a.keepOwnErrors) {
+			err = richAST.ReportDependencyErrors(err)
+		}
+	}()
 	// An internal error met loading an imported package, however the load's
 	// caller took the failure, fails the analysis of the file.
 	if isTopLevel {
@@ -867,7 +884,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 
 	logPhase("sibling-discovery ("+fmt.Sprintf("%d files", len(siblings))+")", phaseStart)
 
-	richAST := &transpiler.RichAST{
+	richAST = &transpiler.RichAST{
 		PackageName:      pkgName,
 		PackageDoc:       clause.doc,
 		Types:            make(map[string]*transpiler.TypeMetadata),
@@ -2701,10 +2718,24 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// What the package's defaults mean where they were written, for a use
 	// site in an importing package (see defaultScopeRecorder).
 	scopes := newDefaultScopeRecorder(importPath)
+	// The error of the first file left out of the package's metadata — it
+	// did not parse, or its analysis failed — is why the metadata is
+	// partial (see RichAST.DependencyErrors). The first only: two files
+	// declaring a type each fail on the other. It is reported for an
+	// importer, so it carries the file (see attributeTo).
+	dropped := false
+	drop := func(err error, filePath string) {
+		if err == nil || dropped {
+			return
+		}
+		dropped = true
+		pkgAST.AddDependencyErrors(attributeTo(err, filePath))
+	}
 
 	for i, entry := range entries {
 		filePath := candidatePaths[i]
 		if entry == nil {
+			drop(parseErrs[i], filePath)
 			continue
 		}
 		// Mimic the original per-file loop body — Analyze does the heavy
@@ -2715,6 +2746,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			if ie := asInternal(err); ie != nil {
 				return nil, ie
 			}
+			drop(err, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -2840,8 +2872,12 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// metadata (types, functions, methods declared in this package) is
 	// persisted — the direct import list is recorded separately so the
 	// transitive type closure can be reconstructed at load time without
-	// inflating each on-disk entry to N×M of the dependency graph.
-	if contentHash != "" && a.cache != nil {
+	// inflating each on-disk entry to N×M of the dependency graph. A package
+	// with a file of its own left out is not stored: the entry would hold its
+	// partial metadata without the error. One that is whole is, even when a
+	// package it imports is partial: loading it reloads that package, which
+	// brings its errors back (see rehydrateImports).
+	if contentHash != "" && a.cache != nil && !dropped {
 		a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
 	}
 
@@ -2874,6 +2910,43 @@ func mergeOwnPackageVals(pkgAST, res *transpiler.RichAST, isThisFile func(string
 		}
 	}
 }
+
+// attributeTo returns err, the error of the file at filePath, with the file
+// on each error it holds: stamped on a GALA error that has none, and named
+// in the text of any other error, which has no place for it. An error that
+// already has its file, a dependency's error an importer's file failed with,
+// keeps it.
+func attributeTo(err error, filePath string) error {
+	var multi *galaerr.MultiError
+	if errors.As(err, &multi) {
+		errs := make([]error, len(multi.Errors))
+		for i, e := range multi.Errors {
+			errs[i] = attributeTo(e, filePath)
+		}
+		return &galaerr.MultiError{Errors: errs}
+	}
+	var ge galaerr.GalaError
+	var fe *fileError
+	switch {
+	case errors.As(err, &fe):
+		return err
+	case !errors.As(err, &ge):
+		return &fileError{file: filePath, err: err}
+	}
+	return galaerr.WithFilePath(err, filePath)
+}
+
+// fileError is an error of the file at file that has no place of its own
+// for the file to be recorded in.
+var _ error = (*fileError)(nil)
+
+type fileError struct {
+	file string
+	err  error
+}
+
+func (e *fileError) Error() string { return e.file + ": " + e.err.Error() }
+func (e *fileError) Unwrap() error { return e.err }
 
 // storeAnalyzedPkg projects `importedAST` to its own-only form and records
 // it in analyzedPkgs along with the direct imports needed to recover the
@@ -3616,11 +3689,12 @@ func funcRedeclaredError(funcName, pkgName string, line, column int, otherFile, 
 }
 
 // siblingTypeRedefinedError builds the E0011 diagnostic for a type that a
-// sibling file declares a second time. The diagnostic is rendered against the
-// file being analyzed, so when the earlier declaration lives there the caret
-// is put on it and the message names the sibling; otherwise the caret falls
-// back to the sibling declaration and the message names the earlier file.
-// Either way the message points somewhere other than the caret.
+// sibling file declares a second time. When the earlier declaration lives in
+// the file being analyzed, the diagnostic is rendered against that file, with
+// the caret on it, and the message names the sibling. Otherwise neither
+// declaration is in that file: the diagnostic is rendered against the
+// sibling, with the caret on its declaration, and the message names the
+// earlier file. Either way the message points somewhere other than the caret.
 //
 // sibPath is the sibling's path as the caller spelled it, so the message
 // quotes it the same way the build driver named the file rather than as an
@@ -3629,7 +3703,9 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 	if isSameFile(existing.DefinedIn, mainFile) {
 		return typeRedefinedError(typeName, pkgName, existing.Pos.Line, existing.Pos.Column, sibPath, mainFile, sibPos)
 	}
-	return typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, mainFile, existing.Pos)
+	err := typeRedefinedError(typeName, pkgName, sibPos.Line, sibPos.Column, existing.DefinedIn, sibPath, existing.Pos)
+	err.FilePath = sibPath
+	return err
 }
 
 // siblingDeclSeen checks the entry richAST.Types[key] before the type

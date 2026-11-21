@@ -1,6 +1,7 @@
 package transpiler
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -164,6 +165,15 @@ type RichAST struct {
 	// them instead.
 	SiblingSyntaxErrors error
 
+	// DependencyErrors holds, for each GALA package of the metadata (an
+	// imported one, at any depth) a file of which the analysis had to leave
+	// out, the error that file failed with, stamped with its own file. Such a
+	// package's metadata is partial, so an error a later phase finds in this
+	// file is likely their cascade; ReportDependencyErrors reports them
+	// instead. Merge carries them, with the metadata they qualify; the
+	// analysis cache never holds a package that has any.
+	DependencyErrors []error
+
 	// OwnGoTypes holds the bare names of the types (and type aliases) the
 	// package's own hand-written .go files declare. GoTypeInfo cannot answer
 	// this: it is keyed by package NAME and also holds every imported Go
@@ -214,6 +224,45 @@ func (r *RichAST) ReportSiblingSyntaxErrors(err error) error {
 	return err
 }
 
+// ReportDependencyErrors returns what to report for err, a failure of a
+// phase after analysis: the errors of the imported packages whose metadata
+// is partial when there are any, err otherwise. Like the Go compiler, a
+// package whose dependency does not compile reports the dependency's error,
+// not what its missing declarations lead to in the importer.
+func (r *RichAST) ReportDependencyErrors(err error) error {
+	if err == nil || r == nil || len(r.DependencyErrors) == 0 || isTransformerPanic(err) {
+		return err
+	}
+	if len(r.DependencyErrors) == 1 {
+		return r.DependencyErrors[0]
+	}
+	return &galaerr.MultiError{Errors: slices.Clone(r.DependencyErrors)}
+}
+
+// isTransformerPanic reports whether err is a transpiler bug (GALA-E0017),
+// which no dependency's error explains.
+func isTransformerPanic(err error) bool {
+	var se *galaerr.SemanticError
+	return errors.As(err, &se) && se.Code == galaerr.CodeInternalTransformerPanic
+}
+
+// AddDependencyErrors adds to r.DependencyErrors each of errs, and each error
+// of a galaerr.MultiError among them, that it does not hold yet: a package
+// reached through two importers brings its errors twice. The slice is never
+// appended to in place, as another RichAST may share it.
+func (r *RichAST) AddDependencyErrors(errs ...error) {
+	for _, err := range errs {
+		var multi *galaerr.MultiError
+		if errors.As(err, &multi) {
+			r.AddDependencyErrors(multi.Errors...)
+			continue
+		}
+		if !slices.ContainsFunc(r.DependencyErrors, func(e error) bool { return errors.Is(e, err) }) {
+			r.DependencyErrors = append(slices.Clip(r.DependencyErrors), err)
+		}
+	}
+}
+
 // Merge combines metadata from another RichAST into this one.
 //
 // Pure read on `other`. When a key collides we copy `existing` before
@@ -229,6 +278,7 @@ func (r *RichAST) Merge(other *RichAST) {
 	if other == nil {
 		return
 	}
+	r.AddDependencyErrors(other.DependencyErrors...)
 	if r.Types == nil {
 		r.Types = make(map[string]*TypeMetadata)
 	}
@@ -1111,7 +1161,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	richAST.Native = nil
 	richAST.OwnBorrowSummaries = nil // it holds the package's native trees too
 	if err != nil {
-		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(err), filePath)
+		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(richAST.ReportDependencyErrors(err)), filePath)
 	}
 
 	done = prof.Phase("generate")
