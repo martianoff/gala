@@ -54,18 +54,34 @@ var (
 // exactly the SDK the analysis used.
 func GoSDKRoot() string {
 	goSDKRootOnce.Do(func() {
-		goSDKRoot = findGOROOT()
-		// A GOROOT that names no SDK, which findGOROOT skipped, is cleared so
-		// that the go commands gala runs find their own SDK, not fail on it.
-		if v := os.Getenv("GOROOT"); v != "" && !isGoRoot(v) {
-			if v != "GOROOT" { // rules_go's placeholder
-				fmt.Fprintf(os.Stderr, "Warning: GOROOT %s is not a Go SDK; ignoring it.\n", v)
-			}
+		var src sdkSource
+		goSDKRoot, src = findGOROOT()
+		if v := os.Getenv("GOROOT"); src != sdkFromBazel && v != "" && v != "GOROOT" && !isGoRoot(v) {
+			fmt.Fprintf(os.Stderr, "Warning: GOROOT %s is not a Go SDK; ignoring it.\n", v)
+		}
+		switch {
+		case goSDKRoot != "" && src != sdkSwitched:
+			// The go commands gala runs (cgo through the source importer,
+			// `go build`) use the SDK it reads.
+			os.Setenv("GOROOT", goSDKRoot)
+		case !isGoRoot(os.Getenv("GOROOT")):
+			// A switched toolchain is not the go on PATH's own, so it is not
+			// exported: that go would run another release's tools under it.
+			// A GOROOT naming no SDK is cleared so the go commands find theirs.
 			os.Unsetenv("GOROOT")
 		}
 	})
 	return goSDKRoot
 }
+
+// sdkSource is where findGOROOT found the SDK.
+type sdkSource int
+
+const (
+	sdkFromBazel sdkSource = iota // the hermetic rules_go SDK
+	sdkFromHost                   // GOROOT, or an SDK installed on the host
+	sdkSwitched                   // the toolchain the go command switches to
+)
 
 func getGoImporter() types.Importer {
 	goImporterOnce.Do(func() {
@@ -77,11 +93,8 @@ func getGoImporter() types.Importer {
 		}
 
 		// Set go/build.Default BEFORE creating importers: the source importer
-		// reads go/build.Default.GOROOT, which is cached at init time. The
-		// process's GOROOT is left alone: goroot can be a toolchain the go
-		// command switched to, and a go on PATH that inherits it as GOROOT
-		// runs another release's tools (`gala transpile --run`); see GoSDKRoot
-		// for a GOROOT that names no SDK.
+		// reads go/build.Default.GOROOT, which is cached at init time.
+		// GoSDKRoot has set the process's GOROOT.
 		build.Default.GOROOT = goroot
 		// Read packages with the cgo setting the go command would build them
 		// with (see GoCgoEnabled).
@@ -353,33 +366,36 @@ func defaultCC() string {
 // An SDK found by steps 2–4 goes through switchedGoRoot: a build may compile
 // with another toolchain than the one installed. A GOROOT set explicitly
 // (step 1, which --goroot also sets) is used as given.
-func findGOROOT() string {
+func findGOROOT() (string, sdkSource) {
 	// 0. Prefer the hermetic Go SDK that rules_go materializes inside the Bazel
 	// execution root. This must win over the GOROOT env / host PATH so that type
 	// inference uses the exact same Go version Bazel compiles the generated code
 	// with, instead of whatever `go` happens to be installed on the host. It only
 	// matches inside a Bazel action; standalone `gala build` falls through below.
 	if goroot := findBazelGoSDK(); goroot != "" {
-		return goroot
+		return goroot, sdkFromBazel
 	}
 
 	// 1. Check GOROOT env
 	if goroot := os.Getenv("GOROOT"); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
-		return goroot
+		return goroot, sdkFromHost
 	}
 
 	goroot := findHostGOROOT()
 	if goroot == "" {
-		return ""
+		return "", sdkFromHost
 	}
 	if abs, err := filepath.Abs(goroot); err == nil {
 		goroot = abs // the probe runs the go command from another directory
 	}
 	goPath, err := exec.LookPath(filepath.Join(goroot, "bin", "go"))
 	if err != nil {
-		return goroot // no go command to ask (a source tree, say)
+		return goroot, sdkFromHost // no go command to ask (a source tree, say)
 	}
-	return switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) })
+	if switched := switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) }); switched != goroot {
+		return switched, sdkSwitched
+	}
+	return goroot, sdkFromHost
 }
 
 // findHostGOROOT is the Go SDK installed on the host: steps 2–4 of findGOROOT.
