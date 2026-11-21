@@ -1473,12 +1473,15 @@ func (t *galaASTTransformer) immutablePostfixBinding(p postfixSrc) (name string,
 // immutableBinding is immutableBindingName for a name already split into its
 // package qualifier (or "") and identifier.
 func (t *galaASTTransformer) immutableBinding(pkg string, name string) (string, fixedBinding) {
+	// `_` is the blank identifier, never a binding: `_ = expr` is a discard even
+	// where a `_` parameter or a `bind _ = m` clause binds `_`.
+	if pkg == "" && name == "_" {
+		return "", notFixed
+	}
 	if b, ok := t.lookupBinding(pkg, name); ok && b.isVal {
 		return b.String(), notFixed
 	}
-	// `_` is the blank identifier, never a binding: `_ = expr` is a discard even
-	// where a `_` parameter is in scope.
-	if pkg != "" || name == "_" {
+	if pkg != "" {
 		return "", notFixed
 	}
 	if fixed := t.fixedBindingOf(name); fixed != notFixed {

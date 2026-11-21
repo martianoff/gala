@@ -218,6 +218,13 @@ gala_exec_test(
     expected = "bind_notation.out",
 )
 
+# After `bind _ = e`, a `_` target of `=` is still a discard.
+gala_exec_test(
+    name = "bind_underscore_discard",
+    src = "bind_underscore_discard.gala",
+    expected = "bind_underscore_discard.out",
+)
+
 # Array.Concat and List.Concat join two collections of one type.
 gala_exec_test(
     name = "concat_collections",
