@@ -27,6 +27,8 @@ func mk() func(int, int) int = (acc, x) => acc + x
 
 func mkBox() Box[int] = Box(0)
 
+func mk64() func(int64, int) int64 = (acc, x) => acc + int64(x)
+
 func nums() List[int] = ListOf(1, 2)
 
 `
@@ -54,6 +56,11 @@ func nums() List[int] = ListOf(1, 2)
 			name:     "std collection method",
 			main:     `Println(nums().FoldLeft(f = mk(), initial = t("i", 0)))`,
 			contains: "_tmp_2 := mk()\n\t\t_tmp_3 := t(\"i\", 0)",
+		},
+		{
+			name:     "untyped shift keeps its place and the parameter's type",
+			main:     "var n = 2\n    val w int64 = nums().FoldLeft(f = mk64(), initial = 1 << n)\n    Println(w)",
+			contains: "List_FoldLeft[int64, int](nums(), 1<<n, mk64())",
 		},
 	}
 	for _, tt := range tests {

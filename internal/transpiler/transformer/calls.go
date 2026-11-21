@@ -963,9 +963,14 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		// Reuse pre-transformed expression if available, recorded where
 		// it is written as lowerArg records the others, so the call
-		// evaluates its arguments in written order (call_order.go).
+		// evaluates its arguments in written order (call_order.go). An
+		// untyped constant expression stays in place: lowered with no
+		// slot, a temporary would give it its default type, not the
+		// parameter's (`1 << n` for an int64 U).
 		if expr, ok := preTransformed[i]; ok {
-			t.recordCallArg(v, expr)
+			if !t.isUntypedConstArg(expr) {
+				t.recordCallArg(v, expr)
+			}
 			mArgs = append(mArgs, expr)
 			continue
 		}

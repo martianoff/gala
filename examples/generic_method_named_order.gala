@@ -14,6 +14,8 @@ func (b Box[T]) Plain(u int, w int) string = s"$u $w"
 
 func (b Box[T]) Tri[U any, W any](u U, w W, sep string = "-") string = s"$u$sep$w"
 
+func (b Box[T]) Show[U any](u U, w int) string = s"${b.V}:$u:$w"
+
 func free[U any](u U, w int) string = s"$u $w"
 
 func t(name string, v int) int {
@@ -31,6 +33,19 @@ func mkBox(n int) Box[int] {
     Box(n)
 }
 
+func mk64() func(int64, int) int64 {
+    Print("f")
+    (acc, x) => acc + int64(x)
+}
+
+var shared = Box(0)
+
+func replace(n int) int {
+    Print("w")
+    shared = Box(n)
+    n
+}
+
 func main() {
     val b = Box(0)
     Println(" ", b.Gen(w = t("w", 2), u = t("u", 1)))
@@ -40,4 +55,10 @@ func main() {
     Println(" ", b.Tri(sep = "+", w = t("w", 2), u = t("u", 1)))
     Println(" ", mkBox(0).Gen(w = t("w", 2), u = t("u", 1)))
     Println(" ", ListOf(1, 2).FoldLeft(f = mk(), initial = t("i", 0)))
+    // A var, so `1 << n` is no constant and takes the parameter's type.
+    var n = 2
+    val wide int64 = ListOf(1, 2).FoldLeft(f = mk64(), initial = 1 << n)
+    Println(" ", wide)
+    // The receiver is read before the arguments run.
+    Println(" ", shared.Show(w = replace(7), u = shared.V))
 }
