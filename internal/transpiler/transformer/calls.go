@@ -773,7 +773,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: typeMentionsTypeParam(byNameType, methodMeta.TypeParams)}, false)
 				if txErr == nil {
 					_, lifted := expr.(*ast.FuncLit)
-					if !lifted && t.resolveTranspilerTypeAsFuncType(t.getExprTypeName(expr)) == nil {
+					if !lifted && !t.isGenericFuncRef(expr) && t.resolveTranspilerTypeAsFuncType(t.getExprTypeName(expr)) == nil {
 						// Not lifted for want of a result type: the
 						// main loop lowers it once more is bound.
 						continue
@@ -5289,6 +5289,11 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// of a named function type (`type Getter func() int`) is passed as itself
 	// or wrapped as the thunk's value (see passesNamedFunctionAsThunk).
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
+		return expr, false
+	}
+	// So is a reference to a generic function (`mk` for `func mk[X any]()
+	// X`), whose type arguments the slot gives once it is instantiated.
+	if t.isGenericFuncRef(expr) {
 		return expr, false
 	}
 	if fn := t.resolveTranspilerTypeAsFuncType(exprType); fn != nil && t.passesNamedFunctionAsThunk(*fn, ft) {

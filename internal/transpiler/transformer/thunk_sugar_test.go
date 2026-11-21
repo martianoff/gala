@@ -394,6 +394,37 @@ func main() {
 	assert.NotContains(t, body, "(b, side()", "the bare expression must not be passed:\n%s", body)
 }
 
+// A reference to a generic function in a `func() U` slot is a function value,
+// passed as it is, never lifted to a thunk returning the function.
+func TestThunkSugar_GenericFuncRefNotLifted(t *testing.T) {
+	trans := newThunkSugarTranspiler()
+
+	input := `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Seeded[U any](seed U, d func() U) U = d()
+
+func seeded[U any](d func() U, seed U) U = d()
+
+func zero[X any]() X {
+    var z X
+    z
+}
+
+func main() {
+    val b = Box(1)
+    Println(b.Seeded(1, zero), seeded(zero, 1))
+}`
+
+	out, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+	body := mainBodyOf(t, out)
+
+	assert.NotContains(t, body, "return zero", "a generic function reference must not be lifted:\n%s", body)
+	assert.Contains(t, body, "Box_Seeded(b, 1, zero", "the reference must be passed as it is:\n%s", body)
+}
+
 // A by-name argument for a Sendable[func() U] parameter of such a method is
 // lifted too, and its thunk is checked as a lambda crossing the boundary is:
 // capturing a reassignable var is GALA-E0037, as for a generic function.
