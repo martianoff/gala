@@ -991,7 +991,33 @@ func (t *galaASTTransformer) consumesSlotType(e exprSrc, hint transpiler.Type) b
 	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && (t.isResultGenericCall(name, noArgs) || t.isResultGenericValueApply(name))) {
 		return true
 	}
-	return t.isResultGenericMethodCall(e) || t.isResultGenericLitApply(e)
+	return t.isResultGenericMethodCall(e) || t.isResultGenericLitApply(e) || t.isGenericMethodValue(e) && t.resolveTranspilerTypeAsFuncType(hint) != nil
+}
+
+// isGenericMethodValue reports whether e is a method value, `recv.m` or
+// `recv.m[A]` not called, where some type declares a method m with type
+// parameters of its own: the function type of the slot it fills gives those
+// type parameters (see loweredMethodValue). As for isResultGenericMethodCall,
+// the receiver's type is not known yet, so any such m qualifies.
+func (t *galaASTTransformer) isGenericMethodValue(e exprSrc) bool {
+	if len(t.typeParamMethods) == 0 {
+		return false
+	}
+	p := e.solePostfix()
+	if !p.ok() || p.hasCases() {
+		return false
+	}
+	var buf [4]suffixSrc
+	suffixes := p.appendSuffixes(buf[:0])
+	n := len(suffixes)
+	if n > 1 && suffixes[n-1].opener() == "[" {
+		n--
+	}
+	if n < 1 {
+		return false
+	}
+	member, _, ok := suffixes[n-1].member()
+	return ok && t.typeParamMethods[member]
 }
 
 // isResultGenericValueApply reports whether name (see calleeOfCall) is a val

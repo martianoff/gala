@@ -1,0 +1,73 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A method value of a method with type parameters of its own: the method is
+// a function in the generated Go, so the value is a closure over the
+// receiver, which is read once, where the value is. Its type parameters come
+// from the function type of the slot it fills, or from type arguments
+// written on it.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Pair[U any](u U) Tuple[T, U] = (b.V, u)
+
+func (b Box[T]) Join[U any](us ...U) string = s"${b.V}:${ArrayOf(us...)}"
+
+func (b Box[T]) Empty[U any](t T) Option[U] = None()
+
+struct Holder(B Box[string])
+
+type Counter struct {
+    var n int
+}
+
+func (c *Counter) AddAll[U any](us List[U]) int {
+    c.n = c.n + us.Size()
+    c.n
+}
+
+func apply[A any, B any](f func(A) B, a A) B = f(a)
+
+// A receiver type argument spelled like Map's own U is no U of Map's.
+func firsts[U any](xs List[U], b Box[int]) List[int] {
+    val ys = xs.Map(b.Pair)
+    ys.Map((p) => p.V1 + 1)
+}
+
+func mkBox(v int) Box[int] {
+    Print("[mk]")
+    Box(v)
+}
+
+func main() {
+    val b = Box(1)
+
+    // From the slot: an argument, a typed val, a result-only type parameter.
+    Println(ListOf("a", "b").Map(b.Pair))
+    Println(Some("s").Map(b.Pair))
+    val typed func(string) Tuple[int, string] = b.Pair
+    Println(typed("t"))
+    val none func(int) Option[string] = b.Empty
+    Println(none(3))
+
+    // From written type arguments.
+    val flag = b.Pair[bool]
+    Println(flag(true), apply(b.Pair[string], "z"))
+    val join = b.Join[string]
+    Println(join("p", "q"))
+    val groups = ListOf(1, 2, 3).GroupBy[int]
+    Println(groups((x) => x % 2).Size())
+    Println(firsts(ListOf(true, false), b))
+
+    // The receiver is read once, and a pointer receiver is the variable.
+    val once func(string) Tuple[int, string] = mkBox(7).Pair
+    Println(once("a"), once("b"))
+    val h = Holder(Box("h"))
+    Println(ListOf(1, 2).Map(h.B.Pair))
+    var c = Counter(n = 0)
+    val add func(List[string]) int = c.AddAll
+    val first = add(ListOf("x", "y"))
+    val second = add(ListOf("z"))
+    Println(first, second, c.n)
+}

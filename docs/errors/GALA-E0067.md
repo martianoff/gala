@@ -9,7 +9,12 @@ called through its companion `Apply` (`Try(x)`), a partial type-argument list
 (`Mk[int](2, "c")`) whose remaining parameters the arguments do not fix, and a
 generic function or method whose type parameter only its result mentions
 (`parse()` for `func parse[T any]() Option[T]`, `b.Convert()` for
-`Convert[U any]() Option[U]`).
+`Convert[U any]() Option[U]`). It also covers a method value of a method with
+type parameters of its own (`val p = b.Pair` for `Pair[U any](u U) Tuple[T, U]`)
+when no type arguments are written and no function type it is passed to or
+declared with fixes them. A parameter whose type still names the callee's own
+type parameters fixes nothing: `xs.Map(b.Empty)` for `Empty[U any](t T) Option[U]`
+leaves U to Map's result, which nothing fixes either.
 
 **Minimal repro.**
 

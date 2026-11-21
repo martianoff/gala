@@ -71,6 +71,9 @@ type galaASTTransformer struct {
 	// resultGenericMethods holds the name of every known method whose own
 	// type parameters its result mentions (see isResultGenericMethodCall).
 	resultGenericMethods map[string]bool
+	// typeParamMethods holds the name of every known method with type
+	// parameters of its own (see isGenericMethodValue).
+	typeParamMethods map[string]bool
 	functions            map[string]*transpiler.FunctionMetadata
 	// galaPkgPaths is the set of import paths that are GALA packages, taken from
 	// richAST.Packages (the analyzer fills that map only inside its GALA-package
@@ -130,6 +133,7 @@ type galaASTTransformer struct {
 	genericMethodCalls     map[*ast.CallExpr]*transpiler.MethodMetadata  // calls of a generic method lowered to a free function, with the method (see galaCalleeResult)
 	goIdentSignatures      map[string]*transpiler.GoFuncSignature        // lookupGoIdentSignature's answer per bare name (nil: no Go function)
 	tryThunkLambda         lambdaSrc                                     // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
+	calleeTypeParams       []string                                      // the callee's unbound type parameters a method value's slot names (see withCalleeTypeParams)
 	needsEmbedImport       bool                                          // true when embed val declarations require import "embed"
 	warnTypeInference      bool                                          // when true, log warnings about type inference fallbacks
 	inferenceWarnings      []string                                      // collected type inference warnings
@@ -442,6 +446,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.patternReads = nil
 	t.genericMethods = make(map[string]map[string]bool)
 	t.resultGenericMethods = make(map[string]bool)
+	t.typeParamMethods = make(map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
 	t.goCtorClaims = nil
@@ -504,6 +509,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		for methodName, methodMeta := range meta.Methods {
 			if len(methodMeta.TypeParams) > 0 || methodMeta.IsGeneric {
 				t.genericMethods[typeName][methodName] = true
+			}
+			if len(methodMeta.TypeParams) > 0 {
+				t.typeParamMethods[methodName] = true
 			}
 			if len(methodMeta.TypeParams) > 0 && typeMentionsTypeParam(methodMeta.ReturnType, methodMeta.TypeParams) {
 				t.resultGenericMethods[methodName] = true
