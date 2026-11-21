@@ -2323,8 +2323,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			if expErr != nil {
 				return nil, nil, false, expErr
 			}
-			// The parameter the argument fills, -1 for a callee with no GALA
-			// metadata.
+			// The parameter the argument fills, -1 when the name is not one
+			// of the GALA callee's parameters (or there is no GALA callee).
 			paramIdx := -1
 			if fm := callCtx.funcMeta; fm != nil {
 				paramIdx = slices.Index(fm.ParamNames, argName)
@@ -2409,9 +2409,9 @@ func (t *galaASTTransformer) lowerFunctionArg(
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
 	s := slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}
-	// A parameter `f func(A) B` whose type parameters no other argument binds
-	// has no expected type (see resolveExpectedFuncArgType), but it still
-	// takes a function with one result.
+	// A parameter `f func(A) B` (or `Sendable[func(A) B]`, positional or
+	// named) whose type parameters no other argument binds has no expected
+	// type (see funcSlotType), but it still takes a function with one result.
 	if transpiler.IsUnusable(expected) && len(callCtx.inferredTypeSubst) == 0 {
 		if ft := t.unboundFuncParam(callCtx.funcMeta, paramIdx); ft != nil && len(ft.Results) == 1 {
 			s.funcResult = maskTypeParamResults(ft.Results, callCtx.funcMeta.TypeParams)[0]
