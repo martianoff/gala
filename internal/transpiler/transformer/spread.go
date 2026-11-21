@@ -88,8 +88,9 @@ func (t *galaASTTransformer) checkSpreadArg(e exprSrc, expr ast.Expr, elem trans
 // arguments are lowered, so a misplaced spread is told where it may go
 // before what it holds is checked (GALA-E0138), which presumes a variadic
 // parameter. The callee is a GALA function, a Go function passed arguments
-// by name, a companion Apply or the Apply of a value; a method is checked as
-// it is lowered (checkMethodSpreads).
+// by name or a companion Apply; a method is checked as it is lowered
+// (checkMethodSpreads), and the Apply of a value by Section 1.5
+// (checkValueApplySpread).
 func (t *galaASTTransformer) checkSpreadPlacement(fun ast.Expr, c callSrc, callCtx functionCallContext) error {
 	if !slices.ContainsFunc(c.args.list, argSrc.spread) {
 		return nil
@@ -135,10 +136,11 @@ func checkMethodSpreads(c callSrc, methodMeta *transpiler.MethodMetadata) error 
 }
 
 // checkValueApplySpread is checkSpreads for the Apply a call of fun makes
-// through a value (`joiner(parts...)`, `Joiner(",")(parts...)`); nothing when
-// the value's type is not known exactly (valueApplyType).
+// through a value (`joiner(parts...)`, `Joiner(",")(parts...)`, a call's
+// result); nothing when the value's type is not known exactly
+// (calleeApplyType).
 func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) error {
-	meta := t.valueApplyType(fun)
+	meta := t.calleeApplyType(fun)
 	if meta == nil {
 		return nil
 	}

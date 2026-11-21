@@ -191,7 +191,12 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 									slotArgs := t.resultSlotTypeArgs(methodMeta.ReturnType, typeMeta.TypeParams, pending)
 									if instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, nil, slotArgs); missing == nil {
 										receiverType = instantiated
-										t.expectedArgTypes.consume()
+										// A generic Apply's own type
+										// parameters take the slot too, in
+										// the method call below.
+										if !genericApply(typeMeta) {
+											t.expectedArgTypes.consume()
+										}
 									}
 								}
 							}
@@ -2982,6 +2987,12 @@ func (t *galaASTTransformer) fieldApplyType(lookupBaseName, field string) *trans
 	fieldType, isField := meta.Fields[field]
 	if !isField || slices.Contains(meta.TypeParams, fieldType.BaseName()) {
 		return nil
+	}
+	// Another package's struct names its field's type as that package does:
+	// a bare name is its own type, never a same-named one of this package.
+	if fieldType = unwrapValueMarkers(fieldType); !t.isLocalPackage(meta.Package) && fieldType.GetPackage() == "" &&
+		!strings.Contains(fieldType.BaseName(), ".") && !transpiler.IsPrimitiveType(fieldType.BaseName()) {
+		return t.applyTypeMeta(meta.Package + "." + fieldType.BaseName())
 	}
 	return t.applyTypeOf(fieldType)
 }

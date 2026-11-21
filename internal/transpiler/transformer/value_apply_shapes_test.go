@@ -99,4 +99,68 @@ func main() {
 `)
 	require.NoError(t, err)
 	require.Contains(t, out, "b.Next(2).Apply(3)")
+
+	// The slot binds both a generic companion's type parameter and its
+	// generic no-parameter Apply's own.
+	out, err = transpileBareVariant(t, `package main
+
+struct Pick[T any]()
+
+func (p Pick[T]) Apply[A any]() Tuple[Option[T], Option[A]] = (None[T](), None[A]())
+
+func main() {
+    val x Tuple[Option[int], Option[string]] = Pick()
+    Println(x)
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "Pick_Apply[string, int](Pick[int]{})")
+
+	// A misplaced spread names the value's type, through a call's result too.
+	_, err = transpileBareVariant(t, `package main
+
+import "martianoff/gala/go_interop"
+
+struct Join()
+
+func (j Join) Apply(parts ...string) int = parts.Size()
+
+func mk() Join = Join()
+
+func main() {
+    Println(mk()("a", go_interop.SliceOf("b")...))
+}
+`)
+	require.ErrorContains(t, err, `a spread argument must be the only argument of variadic parameter "parts" of Join.Apply`)
+
+	// Another package's struct field is called through its own type's
+	// Apply, not a same-named type's of this package.
+	files := map[string]string{
+		"go.mod":   "module example.com/fields\n\ngo 1.25\n",
+		"gala.mod": "module example.com/fields\n",
+		"lib/lib.gala": `package lib
+
+struct Plain(n int)
+
+func (p Plain) Apply(f func(int) int) int = f(p.n)
+
+struct Holder(var P Plain)
+`,
+		"main.gala": `package main
+
+import "example.com/fields/lib"
+
+struct Plain(s string)
+
+func (p Plain) Apply(x string) string = p.s + x
+
+func main() {
+    val h = lib.Holder(lib.Plain(1))
+    Println(h.P((x) => x + 1), Plain("a")("b"))
+}
+`,
+	}
+	out, err = transpileInModule(t, files, "main.gala")
+	require.NoError(t, err)
+	require.Contains(t, out, "h.P.Apply(func(x int) int")
 }
