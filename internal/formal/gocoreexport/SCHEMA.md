@@ -102,8 +102,11 @@ A function or method: `name`, `recv` (a field object, `null` for a function),
 
 ### `type-decl`
 
-A `type` declaration: `specs`, each `{"name", "typeParams", "alias", "type"}` for
-`type name[typeParams] type`, `alias` set for `type name = type`.
+A `type` declaration: `specs`, each `{"name", "namePos", "typeParams", "alias", "type"}`
+for `type name[typeParams] type`, `alias` set for `type name = type`. `namePos` is where
+the name is in the file as written, `{"line", "col"}` like `pos` but not changed by a
+`//line` directive: a type declared in a function body is one type per declaration
+(Go spec, "Type declarations"), and GoCore tells two such declarations apart by it.
 
 ### `value-decl`
 

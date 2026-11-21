@@ -88,6 +88,8 @@ def refsS (bound : List String) : Stmt → List String × List String
     let bk := if tok == ":=" then bound ++ declaredBy (k.toList ++ v.toList) else bound
     (refsE bound x ++ (refsSs bk b).1, bound)
   | .defer_ x => (refsE bound x, bound)
+  -- A local type's name is in scope from its spec on, in that spec too.
+  | .localType specs => refsTypeSpecs bound specs
   | _ => ([], bound)
 /-- Switch clauses: their cases in scope `bl`, their bodies in scope `bb`. -/
 def refsClauses (bl bb : List String) : List Clause → List String
@@ -97,6 +99,12 @@ def refsClauses (bl bb : List String) : List Clause → List String
 def refsSpecs (bound : List String) : List Spec → List String
   | [] => []
   | .mk _ t vs :: specs => refsOE bound t ++ refsEs bound vs ++ refsSpecs bound specs
+/-- Local type specs: each one's name is in scope from it on, in it too. -/
+def refsTypeSpecs (bound : List String) : List (TypeSpec × String) → List String × List String
+  | [] => ([], bound)
+  | (.mk x _ _ te, _) :: specs =>
+    let (r, b) := refsTypeSpecs (bound ++ [x]) specs
+    (refsE (bound ++ [x]) te ++ r, b)
 /-- The names `var` specs declare. -/
 def specNames : List Spec → List String
   | [] => []

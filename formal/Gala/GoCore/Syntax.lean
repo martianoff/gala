@@ -75,6 +75,10 @@ inductive Stmt
   | range (key value : Option Expr) (tok : String) (x : Expr) (body : List Stmt)
   /-- `defer call`. -/
   | defer_ (call : Expr)
+  /-- A `type` declaration in a function body (Go spec, "Type declarations"): each spec
+      with its site, `line:col` of its name in its file as written, not as a `//line`
+      directive maps it. The site is what gives the local type its identity. -/
+  | localType (specs : List (TypeSpec × String))
   | empty
   | unsupported (what : String)
 /-- `case list: body`, or `default:`. -/

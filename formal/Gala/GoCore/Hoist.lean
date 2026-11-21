@@ -94,6 +94,8 @@ structure Scope where
   file : Nat
   locals : List String := []
   tparams : List String := []
+  /-- The local types in scope (`Stmt.localType`), by name, newest first. -/
+  ltypes : List (String × TypeSpec) := []
   changeable : Std.HashSet String := {}
   /-- Locals of pointer type (parameters declared `*T`), not shadowed since. -/
   pointers : List String := []
@@ -113,23 +115,38 @@ def env (s : Scope) : Env := { pkg := s.pkg, file := s.file }
 
 def isLocal (s : Scope) (x : String) : Bool := s.locals.contains x
 
+/-- The spec of the local type a name stands for, if it stands for one. -/
+def ltype? (s : Scope) (x : String) : Option TypeSpec := s.ltypes.lookup x
+
+def isLType (s : Scope) (x : String) : Bool := (s.ltype? x).isSome
+
 /-- The package-level declaration a bare name stands for, if it is not local. -/
 def obj? (s : Scope) (x : String) : Option Obj :=
-  if s.isLocal x || s.tparams.contains x then none
+  if s.isLocal x || s.tparams.contains x || s.isLType x then none
   else (nameOwner s.c s.env x).bind fun p => (s.c.pkgs.get? p).bind (·.objs.get? x)
 
 /-- The package an import name stands for. -/
 def import? (s : Scope) (q : String) : Option String :=
-  if s.isLocal q then none else importOf s.c s.env q
+  if s.isLocal q || s.isLType q then none else importOf s.c s.env q
 
 /-- The declaration `q.x` stands for, `q` an import. -/
 def qualified? (s : Scope) (q x : String) : Option Obj :=
   (s.import? q).bind fun p => (s.c.pkgs.get? p).bind (·.objs.get? x)
 
 def bind (s : Scope) (xs : List String) : Scope :=
-  { s with locals := xs ++ s.locals, pointers := s.pointers.filter (!xs.contains ·),
+  { s with locals := xs ++ s.locals, ltypes := s.ltypes.filter fun (x, _) => !xs.contains x,
+           pointers := s.pointers.filter (!xs.contains ·),
            funcTypes := s.funcTypes.filter fun (x, _) => !xs.contains x,
            ifaces := s.ifaces.filter (!xs.contains ·) }
+
+/-- A local type declared: it shadows every local of its name. `bind` and `bindType`
+    shadow each other, and filter the same fields. -/
+def bindType (s : Scope) (spec : TypeSpec) : Scope :=
+  let .mk x .. := spec
+  { s with ltypes := (x, spec) :: s.ltypes, locals := s.locals.filter (· != x),
+           tparams := s.tparams.filter (· != x),
+           pointers := s.pointers.filter (· != x), funcTypes := s.funcTypes.filter (·.1 != x),
+           ifaces := s.ifaces.filter (· != x) }
 
 /-- The scope of a function body: its signature's names bound, and its parameters of
     pointer and function type recorded. -/
@@ -151,7 +168,7 @@ def isTypeObj : Option Obj → Bool
 def isType (s : Scope) : Expr → Bool
   | .ident x =>
     if s.isLocal x then false
-    else if s.tparams.contains x then true
+    else if s.tparams.contains x || s.isLType x then true
     else match nameOwner s.c s.env x with
       | some _ => isTypeObj (s.obj? x)
       | none => (universeType? x).isSome
@@ -193,7 +210,7 @@ def pureBuiltins : List String := ["len", "cap", "new", "make", "min", "max", "c
 def isByteSliceType (s : Scope) : Expr → Bool
   | .paren t => isByteSliceType s t
   | .arrayType none (.ident e) =>
-    !s.isLocal e && (nameOwner s.c s.env e).isNone && match universeType? e with
+    !s.isLocal e && !s.isLType e && (nameOwner s.c s.env e).isNone && match universeType? e with
       | some (.int k) => k == .uint8 || k == .int32
       | _ => false
   | _ => false
@@ -288,6 +305,7 @@ def assertShape (s : Scope) : Expr → Shape
   | .paren t => assertShape s t
   | .ident x =>
     if s.isLocal x || s.tparams.contains x then .unknown
+    else if let some (.mk _ _ alias te) := s.ltype? x then (if alias then .unknown else shapeOfTypeExpr te)
     else match nameOwner s.c s.env x with
       | none => if (universeType? x).isSome then .copied else .unknown
       | some _ => match s.obj? x with
@@ -419,6 +437,7 @@ def nonIface (s : Scope) : Expr → Bool
   | .star _ | .arrayType .. | .funcType _ | .structType _ | .mapType .. => true
   | .ident x =>
     if s.isLocal x then false
+    else if let some (.mk _ _ alias te) := s.ltype? x then !alias && concreteDef te
     else if s.tparams.contains x then true
     else match nameOwner s.c s.env x with
       | some _ => nonIfaceObj (s.obj? x)
@@ -437,11 +456,14 @@ def isIfaceType (s : Scope) : Expr → Bool
   | .paren t => isIfaceType s t
   | .interfaceType _ => true
   | .ident x =>
-    !s.isLocal x && !s.tparams.contains x && match nameOwner s.c s.env x with
-      | some _ => match s.obj? x with
-        | some (.type _ (.mk _ _ false (.interfaceType _))) => true
-        | _ => false
-      | none => x == "any" || x == "error"
+    !s.isLocal x && !s.tparams.contains x &&
+      match s.ltype? x with
+      | some (.mk _ _ alias te) => !alias && (te matches .interfaceType _)
+      | none => match nameOwner s.c s.env x with
+        | some _ => match s.obj? x with
+          | some (.type _ (.mk _ _ false (.interfaceType _))) => true
+          | _ => false
+        | none => x == "any" || x == "error"
   | .selector (.ident q) n => match s.import? q with
     | some "fmt" => n == "Stringer" && !s.c.pkgs.contains "fmt"
     | some _ => match s.qualified? q n with
@@ -481,7 +503,7 @@ def calleeParams (s : Scope) (fn : Expr) : Option (Scope × List String × Optio
   let declared (path : String) (o : Option Obj) (targs : List Expr) :=
     match o with
     | some (.func fi tps sig _) =>
-      some ({ s with pkg := path, file := fi, locals := [], tparams := [], funcTypes := [], pointers := [] },
+      some ({ s with pkg := path, file := fi, locals := [], tparams := [], ltypes := [], funcTypes := [], pointers := [] },
         fieldListNames tps, typeArgs tps targs, sig)
     | _ => none
   match fn with
@@ -513,7 +535,7 @@ def elemConv (s : Scope) (te : Option Expr) : Nat → String → Bool :=
   let structOf (path : String) (o : Option Obj) (targs : List Expr) : Option (Nat → String → Bool) :=
     match o with
     | some (.type fi (.mk _ tps false (.structType fs))) =>
-      let d : Scope := { s with pkg := path, file := fi, locals := [], tparams := [], funcTypes := [], pointers := [] }
+      let d : Scope := { s with pkg := path, file := fi, locals := [], tparams := [], ltypes := [], funcTypes := [], pointers := [] }
       let tpn := fieldListNames tps
       let sub := typeArgs tps targs
       let named := fs.flatMap fun | .mk ns ty => ns.map (·, ty)
@@ -1017,6 +1039,7 @@ def hS (s : Scope) : Stmt → HM (List Stmt × Scope)
     let sb := if tok == ":=" then s.bind (declaredBy (k.toList ++ v.toList)) else s
     let body' ← hSs sb body
     pure (hs ++ [.range k v tok x' body'], s)
+  | .localType specs => pure ([.localType specs], specs.foldl (fun s (spec, _) => s.bindType spec) s)
   | st => pure ([st], s)
 def hSs (s : Scope) : List Stmt → HM (List Stmt)
   | [] => pure []

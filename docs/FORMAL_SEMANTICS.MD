@@ -439,6 +439,11 @@ column lists what each milestone's claim rests on beyond them.
       literal by storing its constant entries first, then the others, which its order
       pass may move ahead of the statement. GoCore does not model that move, so it runs
       only literals whose entries are all constants. Other key types are unsupported too.
+    - Types declared in a function body are Go's: each declaration is one type, however
+      often it runs, named by where its name is written (the exporter's `namePos`, which
+      `//line` directives do not move), and in a generic function one type per
+      instantiation. A local type's name is in scope from its spec on and shadows outer
+      names. GoCore prints it as Go does, without its site.
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
     every compiled program's Go runs through GoCore and is compared with `go run`. In the
     CI run that set the baselines, GoCore agrees with `go run` on 371 programs that

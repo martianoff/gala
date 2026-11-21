@@ -121,6 +121,10 @@
               "specs": [
                 {
                   "name": "counter",
+                  "namePos": {
+                    "line": 11,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -796,6 +800,10 @@
               "specs": [
                 {
                   "name": "pt",
+                  "namePos": {
+                    "line": 36,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {

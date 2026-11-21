@@ -92,6 +92,12 @@ func (x *exporter) pos(p token.Pos) Pos {
 	return Pos{Line: pp.Line, Col: pp.Column}
 }
 
+// rawPos is p as written in its file, unadjusted by `//line` directives.
+func (x *exporter) rawPos(p token.Pos) Pos {
+	pp := x.fset.PositionFor(p, false)
+	return Pos{Line: pp.Line, Col: pp.Column}
+}
+
 // metaNode is a node type whose Meta the exporter fills.
 type metaNode interface {
 	Node
@@ -156,6 +162,7 @@ func (x *exporter) decl(d ast.Decl) Node {
 				ts := s.(*ast.TypeSpec)
 				td.Specs = append(td.Specs, &TypeSpec{
 					Name:       ts.Name.Name,
+					NamePos:    x.rawPos(ts.Name.Pos()),
 					TypeParams: x.fields(ts.TypeParams),
 					Alias:      ts.Assign.IsValid(),
 					Type:       x.expr(ts.Type),

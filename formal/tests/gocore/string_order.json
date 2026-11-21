@@ -28,6 +28,10 @@
               "specs": [
                 {
                   "name": "Name",
+                  "namePos": {
+                    "line": 9,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {

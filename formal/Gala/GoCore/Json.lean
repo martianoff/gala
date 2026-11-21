@@ -151,7 +151,17 @@ partial def decodeStmt (j : Json) : D Stmt := do
   if let some k ← unsupportedOf j then return .unsupported k
   match ← kindOf j with
   | "block" => return .block (← decodeBlock j)
-  | "decl-stmt" => return .decl (← decodeDecl (← field j "decl"))
+  | "decl-stmt" =>
+    let d ← field j "decl"
+    if (← unsupportedOf d).isNone && (← kindOf d) == "type-decl" then
+      -- A local type: its identity is its site, the unadjusted position of its name.
+      let specs ← (← arr d "specs").mapM fun s => do
+        let p ← field s "namePos"
+        let line ← int p "line"
+        let col ← int p "col"
+        return (← decodeTypeSpec s, s!"{line}:{col}")
+      return .localType specs
+    return .decl (← decodeDecl d)
   | "expr-stmt" => return .expr (← decodeExpr (← field j "x"))
   | "inc-dec" => return .incDec (← str j "op") (← decodeExpr (← field j "x"))
   | "assign" =>
@@ -207,16 +217,15 @@ partial def decodeDecl (j : Json) : D Decl := do
       | some b => some <$> decodeBlock b
     return .func (← str j "name") recv (← (← arr j "typeParams").mapM decodeField)
       (← decodeSig (← field j "type")) body
-  | "type-decl" =>
-    let specs ← (← arr j "specs").mapM fun s => do
-      return TypeSpec.mk (← str s "name") (← (← arr s "typeParams").mapM decodeField)
-        (← bool s "alias") (← decodeExpr (← field s "type"))
-    return .type specs
+  | "type-decl" => return .type (← (← arr j "specs").mapM decodeTypeSpec)
   | "value-decl" =>
     let specs ← (← arr j "specs").mapM fun s => do
       return Spec.mk (← strs s "names") (← optExpr s "type") (← (← arr s "values").mapM decodeExpr)
     return .value (← bool j "const") specs
   | k => throw s!"expected a declaration, got kind `{k}`"
+partial def decodeTypeSpec (s : Json) : D TypeSpec := do
+  return TypeSpec.mk (← str s "name") (← (← arr s "typeParams").mapM decodeField)
+    (← bool s "alias") (← decodeExpr (← field s "type"))
 end
 
 def decodeFile (j : Json) : D File := do

@@ -28,6 +28,10 @@
               "specs": [
                 {
                   "name": "box",
+                  "namePos": {
+                    "line": 7,
+                    "col": 6
+                  },
                   "typeParams": [
                     {
                       "names": [

@@ -54,6 +54,10 @@
               "specs": [
                 {
                   "name": "pair",
+                  "namePos": {
+                    "line": 12,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {

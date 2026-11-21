@@ -2,6 +2,7 @@ package gocoreexport_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"path"
@@ -150,6 +151,44 @@ func TestVersionAndOrder(t *testing.T) {
 	require.Error(t, err, "Go that does not parse is an error")
 	_, err = gocoreexport.Export([]gocoreexport.PackageSource{{Path: "main", Files: []gocoreexport.Source{{Name: "a.go", Text: "package main\n"}, {Name: "b.go", Text: "package other\n"}}}})
 	require.Error(t, err, "files of two packages under one path are an error")
+}
+
+// TestTypeSpecNamePosIgnoresLineDirectives pins that a type spec's namePos is
+// where its name is written, whatever `//line` directives say (the transpiler
+// emits them): GoCore names a local type by it, so two declarations that a
+// directive maps to the same GALA line stay two types.
+func TestTypeSpecNamePosIgnoresLineDirectives(t *testing.T) {
+	doc, ok := roundTrip(t, "l.go", `package main
+
+func f() {
+//line a.gala:7
+	type T int
+}
+
+func g() {
+//line a.gala:7
+	type T int
+}
+`)
+	require.True(t, ok)
+	type pos struct{ name, at, adjusted string }
+	var got []pos
+	str := func(p any) string {
+		m := p.(obj)
+		return fmt.Sprintf("%v:%v", m["line"], m["col"])
+	}
+	walk(doc, func(n obj) {
+		if n["kind"] != "decl-stmt" {
+			return
+		}
+		d := n["decl"].(obj)
+		for _, s := range d["specs"].([]any) {
+			s := s.(obj)
+			got = append(got, pos{s["name"].(string), str(s["namePos"]), str(d["pos"])})
+		}
+	})
+	require.Equal(t, []pos{{"T", "5:7", "7:0"}, {"T", "10:7", "7:0"}}, got,
+		"namePos is as written; the declaration's pos is as the directive maps it (column unknown)")
 }
 
 // TestExamplesRoundTrip transpiles every example, exports the Go it emits

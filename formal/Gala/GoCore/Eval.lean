@@ -33,13 +33,15 @@ namespace Gala.GoCore.Full
 open Std (HashMap)
 
 /-- Where code runs: its package and file (for imports), the local scopes (newest
-    first; each binds names to cells), the type parameters in scope, and `iota` in a
+    first; each binds names to cells), the type parameters and local types in scope, the
+    type arguments of the generic function or method running (`targs`), and `iota` in a
     constant declaration. -/
 structure Env where
   pkg : String
   file : Nat
   scopes : List (List (String × Nat)) := [[]]
   tenv : List (String × Ty) := []
+  targs : List Ty := []
   iota : Option Int := none
   deriving Inhabited
 
@@ -603,6 +605,10 @@ def underlying (c : Ctx) : Nat → Ty → GM Ty
   | n + 1, t => do
     match t with
     | .named path name args =>
+      if isLocalTypeName name then
+        let some lt := (← get).localType? path name args | stuck s!"no local type {name}"
+        let lenv : Env := { pkg := path, file := lt.file, scopes := lt.scopes, tenv := lt.tenv, targs := lt.targs }
+        return ← underlying c n (← evalType c n lenv lt.ty)
       -- A package the document does not hold: a type GoCore knows without its source.
       if !c.pkgs.contains path then
         if let some u := libType? path name then return u
@@ -763,7 +769,8 @@ def evalExpr (c : Ctx) : Nat → Env → Expr → GM Val
     | .composite none _ => stuck "a composite literal without a type outside another"
     | .funcLit sig body => do
       let id := (← get).closures.size
-      let cl : Closure := { pkg := env.pkg, file := env.file, scopes := env.scopes, tenv := env.tenv, sig, body }
+      let cl : Closure :=
+        { pkg := env.pkg, file := env.file, scopes := env.scopes, tenv := env.tenv, targs := env.targs, sig, body }
       modify fun s => { s with closures := s.closures.push cl }
       let t ← evalType c n env (.funcType sig)
       pure (.func_ t (some (.closure id)))
@@ -1966,7 +1973,7 @@ def callValue (c : Ctx) : Nat → Val → List Val → Bool → GM (List Val)
         let targs ← if targs.length == (fieldListNames tps).length then pure targs
           else inferTArgs tps sig targs vs spread
         let tenv ← bindTParams tps targs
-        callBody c n { pkg := path, file := fi, tenv } sig body none vs spread
+        callBody c n { pkg := path, file := fi, tenv, targs } sig body none vs spread
       | _ => stuck s!"{x} is not a function"
     | .func_ _ (some (.method p tn m args cell)) =>
       match methodOf c p tn m with
@@ -1975,7 +1982,7 @@ def callValue (c : Ctx) : Nat → Val → List Val → Bool → GM (List Val)
     | .func_ _ (some (.closure id)) =>
       match (← get).closures[id]? with
       | some cl =>
-        callBody c n { pkg := cl.pkg, file := cl.file, scopes := cl.scopes, tenv := cl.tenv }
+        callBody c n { pkg := cl.pkg, file := cl.file, scopes := cl.scopes, tenv := cl.tenv, targs := cl.targs }
           cl.sig (some cl.body) none vs spread
       | none => stuck "no closure"
     | _ => stuck "call of a non-function"
@@ -1992,7 +1999,7 @@ def callMethod (c : Ctx) : Nat → String → List Ty → Method → Val → Lis
       | .ptr _ none => nilDeref
       | v => pure v
     let tenv := me.recvTParams.zip args
-    callBody c n { pkg := p, file := me.file, tenv } me.sig me.body (some (me.recvName, recv)) vs spread
+    callBody c n { pkg := p, file := me.file, tenv, targs := args } me.sig me.body (some (me.recvName, recv)) vs spread
 
 /-- Type arguments of a generic function from its arguments' types (Go spec, "Type
     inference"); an untyped constant argument has its default type. Each argument for
@@ -2187,7 +2194,30 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
             | none => pure v
           env := env.bind x (← allocAs v.ty v)
       pure env
-    | .decl (.type _) => unsupported "local-type"
+    -- Local types (Go spec, "Type declarations", "Declarations and scope"). Each spec's
+    -- name is in scope from the spec on, in it too, so a type can refer to itself, and a
+    -- later spec of the declaration is not yet in scope for an earlier one. It shadows
+    -- every outer name, variables too. A type declaration denotes one type wherever and
+    -- however often it runs, and in a generic function one per instantiation: the type is
+    -- named by its site (`localTypeName`) and takes the function's type arguments.
+    | .localType specs =>
+      let mut env := env
+      for (.mk x _ alias te, site) in specs do
+        let bindName (t : Ty) (e : Env) : Env :=
+          { e with tenv := (x, t) :: e.tenv, scopes := e.scopes.map (·.filter (·.1 != x)) }
+        if alias then
+          env := bindName (← evalType c n env te) env
+        else
+          let name := localTypeName x env.file site
+          env := bindName (.named env.pkg name env.targs) env
+          -- Its definition is evaluated where it is written: the local constants there
+          -- included (`[n]T`), whose cells never change.
+          if ((← get).localType? env.pkg name env.targs).isNone then
+            let lt : LocalType := { pkg := env.pkg, name, targs := env.targs, file := env.file,
+                                    scopes := env.scopes, tenv := env.tenv, ty := te }
+            modify fun s => { s with localTypes := lt :: s.localTypes }
+      pure env
+    | .decl (.type _) => stuck "a type declaration in a function body outside `localType`"
     | .decl (.func ..) | .decl (.unsupported _) => unsupported "local-decl"
     | .incDec op x => do
       let p ← evalPlace c n env x

@@ -28,6 +28,10 @@
               "specs": [
                 {
                   "name": "V",
+                  "namePos": {
+                    "line": 9,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -179,6 +183,10 @@
               "specs": [
                 {
                   "name": "P",
+                  "namePos": {
+                    "line": 13,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -410,6 +418,10 @@
               "specs": [
                 {
                   "name": "Plain",
+                  "namePos": {
+                    "line": 19,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -475,6 +487,10 @@
               "specs": [
                 {
                   "name": "Outer",
+                  "namePos": {
+                    "line": 25,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {

@@ -28,6 +28,10 @@
               "specs": [
                 {
                   "name": "color",
+                  "namePos": {
+                    "line": 7,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -178,6 +182,10 @@
               "specs": [
                 {
                   "name": "odd",
+                  "namePos": {
+                    "line": 11,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -287,6 +295,10 @@
               "specs": [
                 {
                   "name": "wrapped",
+                  "namePos": {
+                    "line": 15,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
