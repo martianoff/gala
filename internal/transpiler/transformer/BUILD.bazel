@@ -240,6 +240,7 @@ go_test(
         "go_alias_chain_test.go",
         "go_build_only_errors_test.go",
         "go_constructors_test.go",
+        "go_generic_func_arg_inference_test.go",
         "go_generic_multireturn_instantiation_test.go",
         "go_generic_return_instantiation_test.go",
         "go_keyword_names_test.go",

@@ -388,8 +388,8 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 		})
 	}
 
-	// A generic Go named function type is not instantiated here, so a lambda
-	// in its slot still has no type to take.
+	// An instance of a generic Go named function type is instantiated with
+	// its type arguments, so a lambda in its slot takes their types (#1318).
 	for name, gala := range map[string]string{
 		"a generic Go named function type":                   "func apply(m Mapper[int]) int = m(1)\n\nfunc run() int = apply((x) => x)\n",
 		"a generic Go named function type in a val":          "func run() int {\n    val m Mapper[int] = (x) => x\n    m(1)\n}\n",
@@ -397,11 +397,107 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+gala)
-			_, err := transpileInModule(t, files, galaFile)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "GALA-E0033")
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, "func(x int) int")
 		})
 	}
+}
+
+// TestGenericGoNamedFuncTypeSlotOfGenericGalaCallee pins a GALA generic
+// callee whose parameter is a generic Go named function type
+// (`m Mapper2[T, U]`) typed through the function-type path: the bound
+// type arguments type the lambda's parameters, and an unbound one in the
+// result is left to the lambda's body, never written as the callee's `U`
+// (#1318).
+func TestGenericGoNamedFuncTypeSlotOfGenericGalaCallee(t *testing.T) {
+	const goSrc = `package main
+
+type Mapper2[T any, U any] func(T) U
+`
+	cases := []struct{ name, gala string }{
+		{"one type argument bound by another argument", `package main
+
+func apply[T any, U any](x T, m Mapper2[T, U]) U = m(x)
+
+func run() int = apply(1, (x) => x + 1)
+`},
+		{"one type argument bound by another argument, by name", `package main
+
+func apply[T any, U any](x T, m Mapper2[T, U]) U = m(x)
+
+func run() int = apply(x = 1, m = (x) => x + 1)
+`},
+		{"a generic struct field with only the result open", `package main
+
+struct Box[U any](m Mapper2[int, U])
+
+func run() int = Box(m = (x) => x * 2).m(1)
+`},
+		{"a generic struct field with only the result open, positional", `package main
+
+struct Box[U any](m Mapper2[int, U])
+
+func run() int = Box((x) => x * 2).m(1)
+`},
+		{"only the result open", `package main
+
+func run2[U any](m Mapper2[int, U]) U = m(1)
+
+func run() int = run2((x) => x * 2)
+`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, tc.gala)
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, "func(x int) int")
+			assert.NotContains(t, out, "func(x int) U")
+		})
+	}
+}
+
+// TestGenericGoNamedFuncTypeFieldInGenericCaller pins a generic struct's Go
+// func-type field filled positionally inside a caller whose own type
+// parameter is named like the struct's: the caller's U passed for the
+// struct's T is bound, not mistaken for the struct's open U.
+func TestGenericGoNamedFuncTypeFieldInGenericCaller(t *testing.T) {
+	files, galaFile := samePackageModule(".", `package main
+
+type Mapper2[T any, U any] func(T) U
+`, `package main
+
+struct Box2[T any, U any](x T, m Mapper2[T, U])
+
+func wrap[U any](v U) Box2[U, int] = Box2(v, (y) => 1)
+`)
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "func(y U) int")
+}
+
+// TestGenericGoNamedFuncTypeSlotKeepsQualifiedNames pins that substituting
+// a callee's type parameter T into a generic Go function type leaves a
+// package-qualified type of the same bare name (`*testing.T`) alone.
+func TestGenericGoNamedFuncTypeSlotKeepsQualifiedNames(t *testing.T) {
+	files, galaFile := samePackageModule(".", `package main
+
+import "testing"
+
+type Check[T any, U any] func(*testing.T, T) U
+`, `package main
+
+func run[T any, U any](x T, c Check[T, U]) U = c(nil, x)
+
+func main() {
+    Println(run(1, (tt, v) => v + 1))
+}
+`)
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "tt *testing.T")
+	assert.NotContains(t, out, "tt *int")
 }
 
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for
@@ -417,19 +513,52 @@ func TestConversionToNamedFuncTypeTypesTheLambda(t *testing.T) {
 }
 
 // TestConversionToGenericGoNamedFuncType covers a conversion to a generic Go
-// named function type declared in the package's own .go file. Its signature
-// is not instantiated, so the lambda gets no type from it (GALA-E0033) and is
-// never typed by the type's own parameter names (`func(x A) B`), with or
-// without type arguments.
+// named function type declared in the package's own .go file. Written
+// without type arguments its signature is not instantiated, so the lambda
+// gets no type from it (GALA-E0033) and is never typed by the type's own
+// parameter names (`func(x A) B`). With them, it is instantiated and the
+// lambda takes their types (#1318).
 func TestConversionToGenericGoNamedFuncType(t *testing.T) {
-	for _, call := range []string{"Conv((x) => x)", "Conv[int, int]((x) => x)"} {
-		t.Run(call, func(t *testing.T) {
-			files, galaFile := samePackageModule(".",
-				"package main\n\ntype Conv[A any, B any] func(A) B\n",
-				"package main\n\nfunc main() {\n    val c = "+call+"\n    Println(c != nil)\n}\n")
+	const goSrc = `package main
+
+type Conv[A any, B any] func(A) B
+`
+	cases := []struct {
+		name, gala string
+		wantErr    string   // a diagnostic code, or "" for none
+		want       []string // in the generated Go
+	}{
+		{"without type arguments", `package main
+
+func main() {
+    val c = Conv((x) => x)
+    Println(c != nil)
+}
+`, "GALA-E0033", nil},
+		// The lambda takes the instantiated types, and the converted value
+		// has the type it converts to.
+		{"with type arguments", `package main
+
+func main() {
+    val c = Conv[int, int]((x) => x)
+    val k = () => c
+    Println(k()(1))
+}
+`, "", []string{"func(x int) int", "func() Conv[int, int]"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, tc.gala)
 			out, err := transpileInModule(t, files, galaFile)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "GALA-E0033")
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			for _, w := range tc.want {
+				assert.Contains(t, out, w)
+			}
 			assert.NotContains(t, out, "x A")
 		})
 	}

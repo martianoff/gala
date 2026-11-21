@@ -634,7 +634,7 @@ func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, list argsSrc, ar
 			continue
 		}
 		bound := make(map[string]transpiler.Type)
-		t.unifyForInference(a.param, argType, o.params, bound)
+		t.unifyGoParam(a.param, argType, o.params, bound)
 		if err := t.checkPtrBoundTypeArgs(o, len(written), bound, argSource(a.at, argType), a.at); err != nil {
 			return err
 		}

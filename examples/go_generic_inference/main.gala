@@ -1,0 +1,22 @@
+package main
+
+import (
+    "math"
+    "martianoff/gala/go_interop"
+    . "martianoff/gala/examples/go_generic_inference_bridge"
+)
+
+// A lambda passed where a generic Go defined function type is expected
+// (`p Pred[T]`) takes its parameter types from the instantiated type (#1318),
+// and an untyped constant argument does not bind a type parameter before the
+// typed arguments and core types do (`Fold(floats, 0, f)` binds E to
+// float64, #1321).
+
+func main() {
+    Println(CountP(go_interop.SliceOf(1, 2, 3), (x) => x > 1))
+    Println(CountP(go_interop.SliceOf("a", "bb"), (s) => s.Size() > 1))
+    Println(CountP(go_interop.SliceOf(1, 2, 3), _ > 2))
+    Println(Fold(go_interop.SliceOf(1.5, 2.5), 0, (a, b) => a + b))
+    Println(Fold(go_interop.SliceOf("x", "y"), "", (a, b) => a + b))
+    Println(Fold(go_interop.SliceOf(0.5), math.MaxInt8, (a, b) => a + b))
+}

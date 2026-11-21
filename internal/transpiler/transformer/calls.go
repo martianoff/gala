@@ -724,7 +724,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			return nil
 		}
 		bound := make(map[string]transpiler.Type)
-		t.unifyForInference(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
+		t.unifyGoParam(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
 		return t.checkPtrBoundTypeArgs(methodOwner, len(typeArgs), bound, argSource(at, argType), at)
 	}
 	// The arguments that refer to a generic function, checked once the
@@ -872,7 +872,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if v.spread {
 				substitutedParamType = spreadArgType(substitutedParamType)
 			}
-			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+			t.unifyGoParam(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
 			if err := checkPtrArg(i, expr, v.expr.at(), v.spread); err != nil {
 				return true, nil, err
 			}
@@ -1591,29 +1591,79 @@ func (t *galaASTTransformer) goParamSlot(sig *transpiler.GoFuncSignature, i int,
 // function type, or when one of its parameters still names a type parameter,
 // which the lambda's parameters cannot be typed by.
 func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature, i int, prior []ast.Expr, fun ast.Expr) transpiler.Type {
-	ft := t.resolveTranspilerTypeAsFuncType(goSigParamType(sig, i))
+	raw := goSigParamType(sig, i)
+	var ft *transpiler.FuncType
+	// A generic Go defined function type (`iter.Seq[E]`, `Pred[T]`) is read
+	// as written: its type arguments name the callee's own type
+	// parameters, which are substituted and masked below.
+	if instance, ok := raw.(transpiler.GenericType); ok {
+		if u, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType); isFunc && len(u.Results) <= 1 {
+			ft = &u
+		}
+	}
+	if ft == nil {
+		ft = t.resolveTranspilerTypeAsFuncType(raw)
+	}
 	if ft == nil {
 		return transpiler.NilType{}
 	}
+	// Which type parameters stay open is read from the signature as
+	// declared: once substituted, a caller's own type parameter of the same
+	// name (an `E` passed for slices' `E`) would look open.
+	subst := t.inferGoSignatureTypeArgs(sig, prior, t.callSiteTypeArgs(&ast.CallExpr{Fun: fun}), false)
+	open := openTypeParams(sig.TypeParams, subst)
+	if funcTypeParamsMentionTypeParams(ft.Params, open) {
+		return transpiler.NilType{}
+	}
 	inst := *ft
-	if subst := t.inferGoSignatureTypeArgs(sig, prior, t.callSiteTypeArgs(&ast.CallExpr{Fun: fun}), false); len(subst) > 0 {
+	if len(subst) > 0 {
 		if sub, ok := t.substituteGoTypeParams(*ft, subst).(transpiler.FuncType); ok {
 			inst = sub
 		}
 	}
-	if funcTypeParamsMentionTypeParams(inst.Params, sig.TypeParams) {
-		return transpiler.NilType{}
-	}
-	inst.Results = maskTypeParamResults(inst.Results, sig.TypeParams)
+	inst.Results = maskOpenResults(ft.Results, inst.Results, open)
 	return inst
+}
+
+// maskOpenResults is results, the substituted form of declared, with each
+// result whose declared type names one of open, a type parameter no
+// argument binds, masked as NilType (see maskTypeParamResults).
+func maskOpenResults(declared, results []transpiler.Type, open []string) []transpiler.Type {
+	if !funcTypeParamsMentionTypeParams(declared, open) {
+		return results
+	}
+	out := make([]transpiler.Type, len(results))
+	for i, r := range results {
+		if i < len(declared) && typeMentionsTypeParam(declared[i], open) {
+			out[i] = transpiler.NilType{}
+		} else {
+			out[i] = r
+		}
+	}
+	return out
 }
 
 // readsGenericGoSlot reports whether v, an argument of a generic Go function
 // filling a parameter of type slot, is typed by the type arguments the other
 // arguments bind (genericGoLambdaSlot): a lambda, or a thunk for a parameter
-// taking nothing and giving several results.
-func readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
-	return v.lambda.ok() || isGoResultsThunkSlot(slot)
+// taking nothing and giving several results, or a placeholder lambda
+// (`_ > 1`) filling a function-typed slot (`func(E) bool`, or a generic Go
+// defined type over one, `Pred[T]`), which names the callee's type
+// parameters until they are bound. Any other value there (a val, a spread
+// slice) has a type of its own and is lowered as is.
+func (t *galaASTTransformer) readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
+	if v.lambda.ok() || isGoResultsThunkSlot(slot) {
+		return true
+	}
+	if v.spread {
+		return false
+	}
+	if instance, ok := slot.(transpiler.GenericType); ok {
+		// Read as written, its type arguments the callee's (genericGoLambdaSlot).
+		u, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
+		return isFunc && len(u.Results) <= 1 && v.expr.ok() && countPlaceholders(v.expr) > 0
+	}
+	return t.isPlaceholderLambdaArg(v.expr, slot)
 }
 
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
@@ -1966,7 +2016,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 						paramType = spreadArgType(paramType)
 						argType = t.followAliasChain(unwrapValueMarkers(argType))
 					}
-					t.unifyForInference(paramType, argType, typeMeta.TypeParams, inferredMap)
+					t.unifyGoParam(paramType, argType, typeMeta.TypeParams, inferredMap)
 				}
 			}
 		}
@@ -2198,7 +2248,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		case transpiler.IsUnusable(expectedType) && !v.spread:
 			expectedType = t.goParamSlot(goSig, slotIdx, v.expr)
 		}
-		if genericGo && readsGenericGoSlot(v, expectedType) {
+		if genericGo && (t.readsGenericGoSlot(v, expectedType) || !v.spread && t.readsGenericGoSlot(v, goSigParamType(goSig, slotIdx))) {
 			// The arguments lowered so far, each at its parameter, bind the
 			// type parameters: those passed by name too.
 			prior := positional
@@ -2234,10 +2284,10 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	}
 
 	// An argument passed by name to a generic Go function whose lowering
-	// reads its slot (a lambda, or a thunk for a parameter taking nothing and
-	// giving several results, see lowerSlot) is lowered after every argument
-	// that does not, whatever order they are written in: those bind the type
-	// parameters it is typed by.
+	// reads its slot (a lambda, a placeholder lambda, or a thunk for a
+	// parameter taking nothing and giving several results, see lowerSlot) is
+	// lowered after every argument that does not, whatever order they are
+	// written in: those bind the type parameters it is typed by.
 	type deferredArg struct {
 		v       argValue
 		name    string
@@ -2301,7 +2351,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		}
 
 		// Positional argument, or one passed by name to a Go function.
-		if argName != "" && genericGo && !v.spread && readsGenericGoSlot(v, goSigParamType(goSig, slotIdx)) {
+		if argName != "" && genericGo && !v.spread && t.readsGenericGoSlot(v, goSigParamType(goSig, slotIdx)) {
 			deferred = append(deferred, deferredArg{v, argName, slotIdx})
 			continue
 		}
@@ -2434,7 +2484,13 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
-				return t.substituteTranspilerTypeParams(callCtx.funcMeta.ParamTypes[i], callCtx.inferredTypeSubst), nil
+				param := callCtx.funcMeta.ParamTypes[i]
+				// A generic Go function-type instance, as positionally
+				// (resolveExpectedFuncArgType).
+				if slotType, ok := t.goInstanceSlot(param, callCtx.inferredTypeSubst, callCtx.funcMeta.TypeParams); ok {
+					return slotType, nil
+				}
+				return t.substituteTranspilerTypeParams(param, callCtx.inferredTypeSubst), nil
 			}
 		}
 	}
@@ -2716,6 +2772,13 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, args, fromSlot)
 						t.inferFromConstraints(typeParams, structMeta.TypeParamConstraints, ctx.structTypeSubst)
 						for i, ft := range ctx.structFieldExpectedTypes {
+							// A generic Go function-type field is typed from
+							// its declaration (goInstanceSlot): which type
+							// parameters stay open is read before substituting.
+							if slot, ok := t.goInstanceSlot(ft, ctx.structTypeSubst, typeParams); ok {
+								ctx.structFieldExpectedTypes[i] = slot
+								continue
+							}
 							ctx.structFieldExpectedTypes[i] = t.substituteTranspilerTypeParams(ft, ctx.structTypeSubst)
 						}
 					}
@@ -4408,7 +4471,7 @@ func (t *galaASTTransformer) unifyFieldArgForInference(fieldType transpiler.Type
 	if transpiler.IsUnusable(valType) {
 		return
 	}
-	t.unifyForInference(fieldType, valType, typeParams, inferred)
+	t.unifyGoParam(fieldType, valType, typeParams, inferred)
 }
 
 // buildGoCompositeLiteralWithNamedArgs emits a plain Go composite literal
@@ -4477,10 +4540,66 @@ func (t *galaASTTransformer) goStructTypeData(fun ast.Expr) *transpiler.GoTypeDa
 // field's slot from here.
 func (t *galaASTTransformer) structFieldSlot(fieldType transpiler.Type, subst typeSubstMap, unbound []string, inferred bool) transpiler.Type {
 	slotType := t.substituteTranspilerTypeParams(fieldType, subst)
-	if !typeMentionsTypeParam(slotType, unbound) || (inferred && t.isFuncOrTupleType(slotType)) {
+	if !typeMentionsTypeParam(slotType, unbound) {
+		return slotType
+	}
+	if !inferred {
+		return nil
+	}
+	// A generic Go function-type instance (`iter.Seq[T]`, `Mapper[int, U]`)
+	// is typed as for a function's parameter (goInstanceSlot), the struct's
+	// unbound type parameters the open ones: never the struct's T, which a
+	// caller's own T would capture.
+	if slot, ok := t.goInstanceSlot(fieldType, subst, unbound); ok {
+		if slot.IsNil() {
+			return nil
+		}
+		return slot
+	}
+	if t.isFuncOrTupleType(slotType) {
 		return slotType
 	}
 	return nil
+}
+
+// goInstanceSlot is the expected type of a lambda filling a callee parameter
+// of type param, an instance of a generic Go defined function type
+// (`m Mapper[T, U]`, `s iter.Seq[T]`), with subst the call's type arguments
+// for the callee's typeParams; ok is false for any other param. Its
+// parameters still naming a type parameter no argument binds give the lambda
+// no type (GALA-E0033), never the callee's T a caller's own T would capture.
+// With every one bound it is the instance itself, a Go named type (so never a
+// by-name thunk); with only results open, its function type with those
+// masked, for the lambda's body to fill in.
+func (t *galaASTTransformer) goInstanceSlot(param transpiler.Type, subst typeSubstMap, typeParams []string) (_ transpiler.Type, ok bool) {
+	instance, isInstance := t.followAliasChain(param).(transpiler.GenericType)
+	if !isInstance {
+		return nil, false
+	}
+	u, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
+	if !isFunc || len(u.Results) > 1 {
+		return nil, false
+	}
+	// Which type parameters stay open is read from the declaration, before
+	// substituting: a caller's own type parameter of the same name, passed
+	// for one, would look open afterwards (see genericGoLambdaSlot).
+	open := openTypeParams(typeParams, subst)
+	switch {
+	case funcTypeParamsMentionTypeParams(u.Params, open):
+		return transpiler.NilType{}, true
+	case !funcTypeParamsMentionTypeParams(u.Results, open) && !typeMentionsTypeParam(instance, open):
+		return t.substituteGoTypeParams(instance, subst), true
+	case len(u.Params) == 0 && funcTypeParamsMentionTypeParams(u.Results, open):
+		return transpiler.NilType{}, true
+	}
+	// Results still open, or a type argument the function type does not use
+	// (`Sink[T, U] func(T)`): the function type, never the instance naming
+	// the open one.
+	inst := u
+	if sub, isSubFunc := t.substituteGoTypeParams(u, subst).(transpiler.FuncType); isSubFunc && len(subst) > 0 {
+		inst = sub
+	}
+	return transpiler.FuncType{Params: inst.Params, Results: maskOpenResults(u.Results, inst.Results, open)}, true
 }
 
 // goStructFuncField is the function type of td's field name, directly or
@@ -5109,9 +5228,11 @@ func (t *galaASTTransformer) goTypeKey(name string) string {
 // fun names a function type rather than a function: a GALA alias (through a
 // chain of them; a generic one instantiated as written, `Conv[int, string]`),
 // a Go type of the package's own .go files, or an imported Go one
-// (`http.HandlerFunc`). It returns nil otherwise, including for a generic
-// alias written without its type arguments, which names no type yet, and for
-// a generic Go named type, whose signature is not instantiated here.
+// (`http.HandlerFunc`), a generic Go one written with its type arguments
+// (`Pred[int]`, `iter.Seq[string]`) instantiated with them. It returns nil
+// otherwise, including for a generic alias or Go named type written without
+// its type arguments, which names no type yet, and for an indexed value
+// (`fns[0](...)`).
 func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncType {
 	name := t.extractFuncName(fun)
 	if name == "" {
@@ -5119,6 +5240,21 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 	}
 	if _, isAlias := t.typeAliases[name]; isAlias {
 		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
+	}
+	switch f := fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		base, _ := splitCallFunTypeArgs(f)
+		if sel, ok := base.(*ast.SelectorExpr); ok {
+			base = sel.X // a local shadowing the package qualifier
+		}
+		if id, ok := base.(*ast.Ident); ok && t.shadowingScope(id.Name) != nil {
+			return nil
+		}
+		// Any number of results, as goNamedFuncType allows.
+		if ft, ok := t.goDefinedUnderlying(t.astTypeToTranspilerType(fun), nil).(transpiler.FuncType); ok {
+			return &ft
+		}
+		return nil
 	}
 	return t.goNamedFuncType(name)
 }
@@ -5841,9 +5977,9 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
-		t.unifyForInference(paramType, argType, typeParams, inferredMap)
+		t.unifyGoParam(paramType, argType, typeParams, inferredMap)
 		if typed != nil {
-			t.unifyForInference(paramType, t.typedPartType(expr, argType), typeParams, typed)
+			t.unifyGoParam(paramType, t.typedPartType(expr, argType), typeParams, typed)
 		}
 	}
 	return inferredMap

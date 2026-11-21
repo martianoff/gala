@@ -279,7 +279,16 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		// A parameter typed by an alias of a function type (`t Thunk[T]` for
 		// `type Thunk[T any] func() T`) is that function type, so it takes
 		// the function-type path, type-parameter masking included.
-		if ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[fi]); ft != nil {
+		ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[fi])
+		// One typed by a generic Go defined function type (`m Mapper[T, U]`,
+		// `s iter.Seq[T]`) is read as written, the callee's own type
+		// parameters known here (goInstanceSlot).
+		if ft == nil {
+			if slotType, ok := t.goInstanceSlot(ctx.funcMeta.ParamTypes[fi], ctx.typeSubst, ctx.funcMeta.TypeParams); ok {
+				return slotType
+			}
+		}
+		if ft != nil {
 			if len(ctx.typeSubst) > 0 {
 				// Substitute inferred or explicit type args (both void and non-void)
 				expectedType = t.substituteTranspilerTypeParams(*ft, ctx.typeSubst)
@@ -358,6 +367,9 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		ft := ctx.structFields[argIdx]
 		switch {
 		case ft == nil || ft.IsNil():
+			// A generic Go function-type field whose parameters name an
+			// unbound type parameter (see collectFunctionCallContext,
+			// goInstanceSlot) is recorded as NilType: no slot.
 		case t.isFuncOrTupleType(ft), ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
 			// The field's recorded type is its value's type
 			// (see transpiler.ShorthandFieldType).

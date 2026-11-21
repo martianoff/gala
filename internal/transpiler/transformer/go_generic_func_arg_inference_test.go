@@ -1,0 +1,330 @@
+package transformer_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestGoGenericInstanceSlotOfAnotherPackage pins a GALA generic of another
+// package whose parameter is a generic Go function type: its type
+// parameters are bound and masked as for one of this package, never written
+// into the lambda qualified (`lib.T`).
+func TestGoGenericInstanceSlotOfAnotherPackage(t *testing.T) {
+	const lib = `package lib
+
+import "iter"
+
+func Each[T any](s iter.Seq[T], p func(T) bool) int {
+    var n = 0
+    for x := range s {
+        if p(x) {
+            n = n + 1
+        }
+    }
+    n
+}
+
+func Collect[T any](s iter.Seq[T]) int = 0
+`
+	cases := []struct {
+		name, call, want string
+		wantE0033        bool
+	}{
+		{"bound by another argument", "lib.Each(slices.Values(go_interop.SliceOf(1, 2)), (x) => x > 1)", "func(x int) bool", false},
+		{"left open", "lib.Collect((yield) => {\n        yield(1)\n    })", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string]string{
+				"go.mod":       "module example.com/xpkg\n\ngo 1.25\n",
+				"gala.mod":     "module example.com/xpkg\n",
+				"lib/lib.gala": lib,
+				"main.gala": `package main
+
+import "slices"
+import "example.com/xpkg/lib"
+import "martianoff/gala/go_interop"
+
+func main() {
+    Println(` + tc.call + `)
+    Println(slices.Collect(slices.Values(go_interop.SliceOf(1))))
+}
+`,
+			}
+			out, err := transpileInModule(t, files, "main.gala")
+			if tc.wantE0033 {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "GALA-E0033")
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, out, tc.want)
+			}
+			require.NotContains(t, out, "lib.T")
+		})
+	}
+}
+
+// TestGoGenericInstanceSlotLeftOpenIsDiagnosed pins that a lambda in a GALA
+// callee's iter.Seq[T] slot is never typed with the callee's own unbound
+// type parameter (which go build rejects as undefined, or a caller's own T
+// of that name captures): with nothing bound it is GALA-E0033. Partly bound
+// (`iter.Seq2[K, V]`, K bound), it lowers as the same call with a plain
+// `func(func(K, V) bool)` parameter does.
+func TestGoGenericInstanceSlotLeftOpenIsDiagnosed(t *testing.T) {
+	cases := []struct {
+		name, caller, call, leak string
+		wantE0033                bool
+	}{
+		{"positional", "func main()", "collect((yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"by name", "func main()", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"by name, inside a generic caller with its own T", "func wrap[T any](x T)", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"a struct field, inside a generic caller with its own T", "func mk[T any](x T)", "Holder(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"partly bound", "func main()", "count2(1, (yield) => {\n        yield(1, 2)\n    })", "V) bool", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `package main
+
+import "iter"
+import "slices"
+
+func collect[T any](s iter.Seq[T]) []T = slices.Collect(s)
+
+func count2[K comparable, V any](k K, s iter.Seq2[K, V]) int = 0
+
+struct Holder[T any](s iter.Seq[T])
+
+` + tc.caller + ` {
+    Println(` + tc.call + `)
+}
+`
+			out, err := newForbiddenBuiltinTranspiler().Transpile(src, "")
+			if tc.wantE0033 {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "GALA-E0033")
+			} else {
+				require.NoError(t, err)
+			}
+			require.NotContains(t, out, tc.leak)
+		})
+	}
+}
+
+// TestGoGenericInferenceThroughDefinedFuncTypes pins #1318 and #1321: a
+// generic Go parameter of a defined function type (`iter.Seq[E]`) is typed
+// through its underlying function type. A GALA function passed there binds
+// E (it was left open, and `[]E` reached the generated Go), and a lambda
+// passed there takes its parameter types from it (it was GALA-E0033).
+//
+// Hermetic: slices and maps are Go stdlib, resolved via the Go SDK.
+func TestGoGenericInferenceThroughDefinedFuncTypes(t *testing.T) {
+	cases := []struct {
+		name, src string
+		want      []string
+	}{
+		{"a GALA function passed as iter.Seq[E]", `package main
+
+import "slices"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func main() {
+    val xs = slices.Collect(gen)
+    val h = () => xs
+    Println(h())
+}
+`, []string{"func() []int"}},
+		{"a GALA function passed as iter.Seq2[K, V]", `package main
+
+import "maps"
+
+func pairs(yield func(string, int) bool) {
+    yield("a", 1)
+}
+
+func main() {
+    val m = maps.Collect(pairs)
+    val h = () => m
+    Println(h())
+}
+`, []string{"func() map[string]int"}},
+		{"a lambda passed as iter.Seq[string]", `package main
+
+import "slices"
+
+func main() {
+    Println(slices.Collect[string]((yield) => {
+        yield("a")
+    }))
+}
+`, []string{"func(yield func(string) bool)"}},
+		{"a GALA function passed to a GALA generic taking iter.Seq[T]", `package main
+
+import "iter"
+import "slices"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func wrap[T any](s iter.Seq[T]) []T = slices.Collect(s)
+
+func main() {
+    val r = wrap(gen)
+    val h = () => r
+    Println(h())
+}
+`, []string{"func() []int"}},
+		{"a GALA function and a lambda to a GALA generic taking iter.Seq[T]", `package main
+
+import "iter"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func countSeq[T any](s iter.Seq[T], p func(T) bool) int {
+    var n = 0
+    for x := range s {
+        if p(x) {
+            n = n + 1
+        }
+    }
+    n
+}
+
+func main() {
+    Println(countSeq(gen, (x) => x > 0))
+}
+`, []string{"func(x int) bool"}},
+		{"a value converted to iter.Seq[string], read back", `package main
+
+import "iter"
+import "slices"
+
+func main() {
+    val u = iter.Seq[string]((yield) => {
+        yield("a")
+    })
+    val k = () => u
+    Println(slices.Collect(k()))
+}
+`, []string{"func() iter.Seq[string]"}},
+		{"a placeholder lambda in a generic Go function slot", `package main
+
+import "slices"
+import "martianoff/gala/go_interop"
+
+func main() {
+    Println(slices.IndexFunc(go_interop.SliceOf(1, 2, 3), _ > 1))
+}
+`, []string{"int) bool"}},
+		{"a placeholder lambda inside a generic caller with its own E", `package main
+
+import "cmp"
+import "slices"
+import "martianoff/gala/go_interop"
+
+func firstAbove[E cmp.Ordered](xs []E, x E) int = slices.IndexFunc(xs, _ > x)
+
+func main() {
+    Println(firstAbove(go_interop.SliceOf(1, 2, 3), 1))
+}
+`, []string{"E) bool"}},
+		{"a GALA function to a GALA alias of iter.Seq[T]", `package main
+
+import "iter"
+import "slices"
+
+type SeqOf[T any] iter.Seq[T]
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func viaAlias[T any](s SeqOf[T]) []T = slices.Collect(s)
+
+func main() {
+    val a = viaAlias(gen)
+    val k = () => a
+    Println(k())
+}
+`, []string{"func() []int"}},
+		{"an iter.Seq[int] value to a plain func parameter", `package main
+
+import "slices"
+import "martianoff/gala/go_interop"
+
+func firstOf[T any](f func(func(T) bool)) []T {
+    var out = go_interop.SliceEmpty[T]()
+    f((x) => {
+        out = go_interop.SliceAppend(out, x)
+        false
+    })
+    out
+}
+
+func main() {
+    val r = firstOf(slices.Values(go_interop.SliceOf(4, 5)))
+    val k = () => r
+    Println(k())
+}
+`, []string{"func() []int"}},
+		{"a GALA function to a Sendable[iter.Seq[T]] parameter", `package main
+
+import "iter"
+import "slices"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func run[T any](s Sendable[iter.Seq[T]]) []T = slices.Collect(s)
+
+func main() {
+    val r = run(gen)
+    val k = () => r
+    Println(k())
+}
+`, []string{"func() []int"}},
+		{"a GALA function to an iter.Seq[T] struct field", `package main
+
+import "iter"
+
+struct Holder[T any](Src iter.Seq[T])
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func main() {
+    val h = Holder(gen)
+    Println(h.Src != nil)
+}
+`, []string{"Holder[int]"}},
+		{"a lambda converted to iter.Seq[string]", `package main
+
+import "iter"
+import "slices"
+
+func main() {
+    val s = iter.Seq[string]((yield) => {
+        yield("a")
+    })
+    Println(slices.Collect(s))
+}
+`, []string{"func(yield func(string) bool)"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := newForbiddenBuiltinTranspiler().Transpile(tc.src, "")
+			require.NoError(t, err)
+			for _, w := range tc.want {
+				require.Contains(t, out, w)
+			}
+		})
+	}
+}

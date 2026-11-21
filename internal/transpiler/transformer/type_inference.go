@@ -660,7 +660,8 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 
 	// Try to infer type params from each argument, untyped constants last
 	// (constantsLast): `FoldLeft(0, f)` takes U from f when f fixes it.
-	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+	order, _ := constantsLast(args, t.isUntypedConstArg)
+	for _, i := range order {
 		arg := args[i]
 		if i >= len(substitutedParamTypes) {
 			continue
@@ -673,7 +674,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		// usefully. Instantiate it against the expected parameter type
 		// first, then unify with the concrete signature.
 		if instFT, ok := t.bareGenericFuncRefType(arg, paramType, foreign); ok {
-			t.unifyForInference(paramType, instFT, freshParamNames, inferredMap)
+			t.unifyGoParam(paramType, instFT, freshParamNames, inferredMap)
 			continue
 		}
 
@@ -684,7 +685,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
-		t.unifyForInference(paramType, argType, freshParamNames, inferredMap)
+		t.unifyGoParam(paramType, argType, freshParamNames, inferredMap)
 	}
 	t.inferMethodFromConstraints(methodMeta, freshParamNames, structTypeParams, structTypeArgs, inferredMap)
 
@@ -1005,9 +1006,10 @@ func (t *galaASTTransformer) constSlotTypeArgs(fMeta *transpiler.FunctionMetadat
 // constantsLast is the indices of args, those of the untyped constants
 // (isConst) after the others. Go binds a type parameter from an untyped
 // constant argument only when no typed argument binds it, so inference that
-// unifies the arguments in this order binds what Go does.
-func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) []int {
-	order := make([]int, 0, len(args))
+// unifies the arguments in this order binds what Go does. firstConst is the
+// position in order of the first constant (len(order) when there is none).
+func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) (order []int, firstConst int) {
+	order = make([]int, 0, len(args))
 	var consts []int
 	for i, arg := range args {
 		if arg != nil && isConst(arg) {
@@ -1016,7 +1018,7 @@ func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) []int {
 			order = append(order, i)
 		}
 	}
-	return append(order, consts...)
+	return append(order, consts...), len(order)
 }
 
 // argTypeArgs binds fMeta's type parameters from the lowered arguments of a
@@ -1024,7 +1026,8 @@ func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) []int {
 // argument determines appear in the result. A nil argument binds nothing.
 func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
-	for _, i := range constantsLast(args, t.isUntypedConstArg) {
+	order, _ := constantsLast(args, t.isUntypedConstArg)
+	for _, i := range order {
 		arg := args[i]
 		if arg == nil {
 			continue
@@ -1051,7 +1054,7 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
-		t.unifyForInference(paramType, argType, fMeta.TypeParams, inferredMap)
+		t.unifyGoParam(paramType, argType, fMeta.TypeParams, inferredMap)
 	}
 	t.inferFromConstraints(fMeta.TypeParams, fMeta.TypeParamConstraints, inferredMap)
 	return inferredMap
@@ -1577,7 +1580,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		if results := t.goCallResults(args[0]); len(results) == len(sig.Params) {
 			for i, r := range results {
 				if !transpiler.IsUnusable(r) {
-					t.unifyForInference(goSigParamType(sig, i), r, sig.TypeParams, inferred)
+					t.unifyGoParam(goSigParamType(sig, i), r, sig.TypeParams, inferred)
 				}
 			}
 			t.inferFromGoCoreTypes(sig, inferred)
@@ -1588,12 +1591,19 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		}
 	}
 
-	for i, arg := range args {
+	// As in Go, an untyped constant argument binds a type parameter only
+	// after the typed arguments and the core types have had their say:
+	// `Fold(floats, 0, f)` with `init E` takes E from floats, not from 0.
+	order, firstConst := constantsLast(args, t.isUntypedConstArg)
+	for n, i := range order {
+		if n == firstConst {
+			t.inferFromGoCoreTypes(sig, inferred)
+		}
+		arg := args[i]
 		paramType := goSigParamType(sig, i)
 		if paramType.IsNil() || arg == nil { // nil: a parameter not yet given (genericGoLambdaSlot)
 			continue
 		}
-
 		argType := t.getExprTypeNameManual(arg)
 		if transpiler.IsUnusable(argType) {
 			continue
@@ -1605,7 +1615,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 				argType = arrType.Elem
 			}
 		}
-		t.unifyForInference(paramType, argType, sig.TypeParams, inferred)
+		t.unifyGoParam(paramType, argType, sig.TypeParams, inferred)
 	}
 	t.inferFromGoCoreTypes(sig, inferred)
 
@@ -1613,6 +1623,33 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		return nil
 	}
 	return inferred
+}
+
+// unifyGoParam unifies a callee's parameter type param with the type arg
+// of the value filling it. A Go generic defined type (`iter.Seq[E]`,
+// `Pred[T]`) filled by a value of an unnamed type (a GALA function, a slice,
+// directly, through a GALA alias or behind an Immutable or Sendable marker)
+// unifies through its underlying type.
+func (t *galaASTTransformer) unifyGoParam(param, arg transpiler.Type, typeParams []string, inferred map[string]transpiler.Type) {
+	if instance, paramIsInstance := t.followAliasChain(unwrapValueMarkers(param)).(transpiler.GenericType); paramIsInstance {
+		switch unaliased := t.followAliasChain(unwrapValueMarkers(arg)); unaliased.(type) {
+		case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType, transpiler.PointerType:
+			if u := t.goDefinedUnderlying(instance, nil); u != nil {
+				param, arg = u, unaliased
+			}
+		}
+	} else if instance, argIsInstance := t.followAliasChain(unwrapValueMarkers(arg)).(transpiler.GenericType); argIsInstance {
+		// And the mirror: a value of a Go generic defined type
+		// (`Pred[int]`, `iter.Seq[int]`) filling a parameter of an unnamed
+		// type (`func(T) bool`) unifies through the value's underlying type.
+		switch unaliased := t.followAliasChain(unwrapValueMarkers(param)); unaliased.(type) {
+		case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType, transpiler.PointerType:
+			if u := t.goDefinedUnderlying(instance, nil); u != nil {
+				param, arg = unaliased, u
+			}
+		}
+	}
+	t.unifyForInference(param, arg, typeParams, inferred)
 }
 
 // inferFromGoCoreTypes adds to inferred the type parameters of sig that the

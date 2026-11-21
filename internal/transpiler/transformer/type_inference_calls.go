@@ -244,6 +244,16 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if id, ok := e.Fun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
 		return t.resolveType(id.Name)
 	}
+	// And a conversion to a generic Go function type written with its type
+	// arguments, `Pred[int](f)` or `iter.Seq[string](f)`.
+	switch e.Fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		name := t.extractFuncName(e.Fun)
+		if _, alias := t.typeAliases[name]; !alias && t.getFunction(name) == nil && len(e.Args) == 1 &&
+			!t.marked(e.Fun, operandThroughPointer) && t.conversionFuncType(e.Fun) != nil {
+			return t.astTypeToTranspilerType(e.Fun)
+		}
+	}
 
 	// A function read out of a slice or map, `fs[0](x)` (markIndex): the
 	// element's result. Its index is no type argument.
