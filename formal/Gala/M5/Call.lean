@@ -501,4 +501,264 @@ theorem eval_call_run (ds : Spec.Decls) (d k : Nat) (f : String) (args : List Sp
   simp only [hres]
   rw [Spec.run_bind_eq]
 
+theorem eval_ret_run (ds : Spec.Decls) (d k : Nat) (x : Spec.Expr) (s : Spec.St) (hs : s.steps = k + 1) :
+    (eval ds (d + 1) (.ret (some x))).run.run s = match (eval ds d x).run.run { s with steps := k } with
+      | (.ok v, t) => (.error (.ret v), t)
+      | (.error e, t) => (.error e, t) := by
+  rw [eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_succ s k hs]
+  rcases (eval ds d x).run.run { s with steps := k } with ⟨r, t⟩
+  cases r <;> rfl
+
 end SpecCall
+
+theorem execStmt_ret (c : Ctx) (n : Nat) (env : Env) (le : Expr) (g : St) :
+    (execStmt c (n + 3) env (.ret [le])).run.run g = match (evalExpr c (n + 1) env le).run.run g with
+      | (.ok w, g') => (.error (.ret w.results), g')
+      | (.error e, g') => (.error e, g') := by
+  rw [execStmt]
+  simp only [evalArgs, grun_bind]
+  rcases (evalExpr c (n + 1) env le).run.run g with ⟨r, g'⟩
+  cases r <;> rfl
+
+/-! ## The lowering of calls and `return` -/
+
+/-- The kind of a type the lowering accepts: `int`, `bool` or `string`. -/
+def tyKindS : Spec.Ty → Option Kind
+  | .name "int" => some .int
+  | .name "bool" => some .bool
+  | .name "string" => some .str
+  | _ => none
+
+theorem tyKindS_some {t : Spec.Ty} {k : Kind} (h : tyKindS t = some k) : t = .name (kindName k) := by
+  unfold tyKindS at h; split at h <;> cases h <;> rfl
+
+/-- The functions the lowering calls: each one's parameters' kinds and its result's. -/
+abbrev Sigs := String → Option (List Kind × Kind)
+
+/-- A function's parameters and result, when each is of a kind. -/
+def sigOf (F : Spec.Func) : Option (List (String × Kind) × Kind) := do
+  let xks ← F.params.mapM fun p => do pure (p.name, ← tyKindS (← p.type))
+  let ρ ← tyKindS (← F.result)
+  pure (xks, ρ)
+
+/-- A call somewhere in an operator tree. -/
+def hasCall : Spec.Expr → Bool
+  | .call .. => true
+  | .paren e => hasCall e
+  | .unary _ e => hasCall e
+  | .binary _ l r => hasCall l || hasCall r
+  | _ => false
+
+/-- A call-free expression, at most `K` deep in GoCore: step 2a's lowering. -/
+def lowerLeaf (K : Nat) (κ : String → Option Kind) (e : Spec.Expr) : Option (Kind × Expr) :=
+  if gdepth e ≤ K then lowerX κ e else none
+
+mutual
+/-- **The lowering of an expression with calls**: a call-free part is step 2a's (at most `K`
+    deep in GoCore); an operator over a call, the same operator; `f(args)` of a function the
+    lowering calls (`sg`), not shadowed by a local, with its arguments by position, one for
+    each parameter and of its kind, Go's call `f(args)`. No named argument and no default:
+    a call that leaves a parameter out or names one is not lowered. -/
+def lowerC (K : Nat) (sg : Sigs) (κ : String → Option Kind) : Spec.Expr → Option (Kind × Expr)
+  | .paren e => if hasCall e then (lowerC K sg κ e).map fun (k, l) => (k, .paren l) else lowerLeaf K κ (.paren e)
+  | .unary op e =>
+    if hasCall e then do
+      let (k, l) ← lowerC K sg κ e
+      let k' ← unaryKind op k
+      pure (k', .unary op l)
+    else lowerLeaf K κ (.unary op e)
+  | .binary op l r =>
+    if hasCall l || hasCall r then do
+      let (kl, ll) ← lowerC K sg κ l
+      let (kr, lr) ← lowerC K sg κ r
+      let k ← binaryKind op kl kr
+      if isShift op && (isLitE l || negLitE r) then none else pure (k, .binary op ll lr)
+    else lowerLeaf K κ (.binary op l r)
+  | .call (.name f) args =>
+    if f = "_" ∨ (κ f).isSome then none else do
+      let (ks, k) ← sg f
+      let las ← lowerArgs K sg κ ks args
+      pure (k, .call (.ident f) las false)
+  | .lit l => lowerLeaf K κ (.lit l)
+  | .name x => lowerLeaf K κ (.name x)
+  | _ => none
+/-- A call's arguments, by position, each of its parameter's kind. -/
+def lowerArgs (K : Nat) (sg : Sigs) (κ : String → Option Kind) : List Kind → List Spec.Expr → Option (List Expr)
+  | [], [] => some []
+  | k :: ks, a :: as =>
+    if Spec.isNamed a then none else
+    match lowerC K sg κ a with
+    | some (k', l) => if k' = k then (lowerArgs K sg κ ks as).map (l :: ·) else none
+    | none => none
+  | _, _ => none
+end
+
+mutual
+/-- **The lowering of a statement**, step 2b's shapes with calls in their expressions, and
+    `return e` of the result's kind `ρ`. -/
+def lowerS3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : Spec.Expr →
+    Option ((String → Option Kind) × Stmt)
+  | .decl _ [x] false none [e] =>
+    if x = "_" ∨ x = "true" ∨ x = "false" then none
+    else (lowerC K sg κ e).map fun (k, le) => (upd κ x k, .decl (.value false [.mk [x] none [le]]))
+  | .block ss => (lowerSs3 K sg ρ κ ss).map fun (_, l) => (κ, .block l)
+  | .ifStmt c (.block a) els =>
+    match lowerC K sg κ c, lowerSs3 K sg ρ κ a, lowerElse3 K sg ρ κ els with
+    | some (.bool, lc), some (_, la), some le => some (κ, .if_ none lc la le)
+    | _, _, _ => none
+  | .ret (some e) =>
+    match lowerC K sg κ e with
+    | some (k, le) => if k = ρ then some (κ, .ret [le]) else none
+    | none => none
+  | _ => none
+def lowerElse3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) :
+    Option Spec.Expr → Option (Option Stmt)
+  | none => some none
+  | some (.block ss) => (lowerSs3 K sg ρ κ ss).map fun (_, l) => some (.block l)
+  | some (.ifStmt c a els) => (lowerS3 K sg ρ κ (.ifStmt c a els)).map fun (_, l) => some l
+  | some _ => none
+def lowerSs3 (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : List Spec.Expr →
+    Option ((String → Option Kind) × List Stmt)
+  | [] => some (κ, [])
+  | s :: ss => do
+    let (κ₁, l) ← lowerS3 K sg ρ κ s
+    let (κ₂, ls) ← lowerSs3 K sg ρ κ₁ ss
+    pure (κ₂, l :: ls)
+end
+
+/-- The last element of a function's block body: an expression of the result's kind, or
+    `return` of one; Go's `return`. -/
+def lowerLast (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) (e : Spec.Expr) : Option Expr :=
+  match e with
+  | .ret (some x) => match lowerC K sg κ x with
+    | some (k, le) => if k = ρ then some le else none
+    | none => none
+  | x => match lowerC K sg κ x with
+    | some (k, le) => if k = ρ then some le else none
+    | none => none
+
+/-- A block body: statements, then the last element, returned. -/
+def lowerTail (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : List Spec.Expr → Option (List Stmt)
+  | [] => none
+  | [e] => (lowerLast K sg ρ κ e).map fun le => [.ret [le]]
+  | s :: s' :: ss => do
+    let (κ₁, l) ← lowerS3 K sg ρ κ s
+    let ls ← lowerTail K sg ρ κ₁ (s' :: ss)
+    pure (l :: ls)
+
+/-- The parameters' kinds, as the body sees them. -/
+def paramKinds (xks : List (String × Kind)) (x : String) : Option Kind := xks.lookup x
+
+/-- **The lowering of a function's body**: parameters of distinct names (none `_`, `true` or
+    `false`), each of a kind, and a result of one; the body `= e` is Go's `return e`, a
+    block body its statements and then `return` of its last element. -/
+def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) := do
+  let (xks, ρ) ← sigOf F
+  let names := xks.map (·.1)
+  if !names.Nodup ∨ "_" ∈ names ∨ "true" ∈ names ∨ "false" ∈ names then none
+  match F.body with
+  | .block ss => lowerTail K sg ρ (paramKinds xks) ss
+  | e => (lowerLast K sg ρ (paramKinds xks) e).map fun le => [.ret [le]]
+
+/-! ## The relations, with calls -/
+
+/-- **GoCore's state after code ran**: cells (and their types) only added to; every other
+    part (output, deferred calls, maps, ...) as it was, but the steps. -/
+def GFrame (g g' : St) : Prop :=
+  Pre g.cells g'.cells ∧ { g' with cells := g.cells, types := g.types, steps := g.steps } = g
+
+/-- **Steps**: GoCore spends no more than galaspec. -/
+def Spent (s s' : Spec.St) (g g' : St) : Prop := g.steps + s'.steps ≤ g'.steps + s.steps
+
+/-- **galaspec's state after an expression**: the heap only added to; locals, package-level
+    variables and output as they were. -/
+def SFrame (c c' : Spec.Core) : Prop := Pre c.heap c'.heap ∧ { c' with heap := c.heap } = c
+
+/-- **The state relation with calls**: step 2b's (`Inv`), and: the code runs in package `P`
+    with no type parameters; every local galaspec binds is one the lowering knows of, and so
+    is every GoCore local (so a name the lowering calls is no local); and no package-level
+    variable of galaspec is named as a function the lowering calls. -/
+structure Inv3 (cx : Ctx) (P : String) (sg : Sigs) (κ : String → Option Kind) (c : Spec.Core) (g : St)
+    (env : Env) : Prop where
+  inv : Inv cx κ c g env
+  pkg : env.pkg = P
+  tenv : env.tenv = []
+  closed : ∀ x, κ x = none → Spec.lookup c.locals x = none ∧ env.lookup x = none
+  globals : ∀ f, (sg f).isSome → Spec.lookup c.globals f = none
+
+/-- galaspec's panic and GoCore's agree, with equal outputs; GoCore's state framed. -/
+def PanOK (s : Spec.St) (g : St) (pc : Spec.PanicClass) (m : String) (s' : Spec.St) :
+    Except Stop α × St → Prop
+  | r => ∃ pv g', r = (.error (.panic pv true), g') ∧ PanicRel pc m pv ∧ s'.out = s.out ∧ GFrame g g'
+
+/-- A value `v` of kind `ρ` returned: GoCore returns a related one. -/
+def RetOK (ρ : Kind) (s : Spec.St) (g : St) (v : Spec.Val) (s' : Spec.St) : Except Stop α × St → Prop
+  | r => ∃ w g', r = (.error (.ret [w]), g') ∧ VRel v w ∧ valKind v = some ρ ∧ Pre s.heap s'.heap ∧
+      s'.globals = s.globals ∧ s'.out = s.out ∧ GFrame g g' ∧ Spent s s' g g'
+
+/-- **An expression's results agree**: a related value of kind `k` (not an untyped integer
+    unless `u`), with both states framed and GoCore spending no more steps; or the same panic.
+    An expression never ends with a `return` (`False`: proved, not assumed). Nothing is
+    claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`. -/
+def ERes3 (k : Kind) (u : Bool) (s : Spec.St) (g : St) :
+    Except Spec.Stop Spec.Val × Spec.St → Except Stop Val × St → Prop
+  | (.ok v, s'), r => ∃ w g', r = (.ok w, g') ∧ VRel v w ∧ valKind v = some k ∧ (u = false → ¬ UInt w) ∧
+      SFrame s.toCore s'.toCore ∧ GFrame g g' ∧ Spent s s' g g'
+  | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
+  | (.error (.ret _), _), _ => False
+  | _, _ => True
+
+/-- Arguments of kinds `ks`: related values, one each. -/
+def KRel : List Kind → List Spec.Val → List Val → Prop
+  | [], [], [] => True
+  | k :: ks, v :: vs, w :: ws => VRel v w ∧ valKind v = some k ∧ KRel ks vs ws
+  | _, _, _ => False
+
+/-- A call's arguments' results agree. -/
+def ARes3 (ks : List Kind) (s : Spec.St) (g : St) :
+    Except Spec.Stop (List Spec.Val) × Spec.St → Except Stop (List Val) × St → Prop
+  | (.ok vs, s'), r => ∃ ws g', r = (.ok ws, g') ∧ KRel ks vs ws ∧ SFrame s.toCore s'.toCore ∧
+      GFrame g g' ∧ Spent s s' g g'
+  | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
+  | (.error (.ret _), _), _ => False
+  | _, _ => True
+
+/-- **A statement list's results agree**: ending normally, related states with the kinds
+    `κ'` the list declared (galaspec's locals only extended); a panic, the same panic; a
+    `return` of a value of the result's kind `ρ`, the same `return`. -/
+def ResL3 (cx : Ctx) (P : String) (sg : Sigs) (ρ : Kind) (κ' : String → Option Kind) (s : Spec.St) (g : St) :
+    Except Spec.Stop Spec.Val × Spec.St → Except Stop Env × St → Prop
+  | (.ok _, s'), r => ∃ env' g', r = (.ok env', g') ∧ Inv3 cx P sg κ' s'.toCore g' env' ∧
+      Pre s.heap s'.heap ∧ s'.globals = s.globals ∧ (∃ pre, s'.locals = pre ++ s.locals) ∧
+      GFrame g g' ∧ Spent s s' g g'
+  | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
+  | (.error (.ret v), s'), r => RetOK ρ s g v s' r
+  | _, _ => True
+
+/-- The same for a block or an `if`, which leaves galaspec's locals as they were. -/
+def ResU3 (ρ : Kind) (Q : α → Prop) (s : Spec.St) (g : St) :
+    Except Spec.Stop Spec.Val × Spec.St → Except Stop α × St → Prop
+  | (.ok _, s'), r => ∃ a g', r = (.ok a, g') ∧ Q a ∧ SFrame s.toCore s'.toCore ∧ GFrame g g' ∧ Spent s s' g g'
+  | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
+  | (.error (.ret v), s'), r => RetOK ρ s g v s' r
+  | _, _ => True
+
+/-- **A function body's results agree**: the value galaspec's body gives or returns, of
+    the result's kind, is the value GoCore's `return`s; or the same panic. -/
+def ResB (ρ : Kind) (s : Spec.St) (g : St) : Except Spec.Stop Spec.Val × Spec.St → Except Stop Env × St → Prop
+  | (.ok v, s'), r => RetOK ρ s g v s' r
+  | (.error (.ret v), s'), r => RetOK ρ s g v s' r
+  | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
+  | _, _ => True
+
+/-- **The functions the lowering calls are GoCore's**: package `P` of `cx` (not the
+    standard library) declares no `true`, `false`, `int`, `bool` or `string`, and declares
+    each function `f` with `sg f = some sig` as the lowering of galaspec's `f`, of signature
+    `sig`, with the lowered signature and body. -/
+structure FunRel (K : Nat) (sg : Sigs) (ds : Spec.Decls) (cx : Ctx) (P : String) : Prop where
+  notStd : P ≠ stdPath
+  pkg : ∃ p, cx.pkgs.get? P = some p ∧ (∀ x ∈ ["true", "false", "int", "bool", "string"], p.objs.get? x = none) ∧
+    ∀ f sig, sg f = some sig → ∃ F xks ρ lb fi, ds.funcs.lookup f = some F ∧ sigOf F = some (xks, ρ) ∧
+      sig = (xks.map (·.2), ρ) ∧ lowerBody K sg F = some lb ∧
+      p.objs.get? f = some (.func fi [] (lowerSigOf xks ρ) (some lb))
