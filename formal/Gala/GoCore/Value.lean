@@ -147,8 +147,8 @@ def localTypeName (name : String) (file : Nat) (site : String) : String :=
 def isLocalTypeName (n : String) : Bool := n.contains localTypeSep
 
 mutual
-/-- A type's text as `%T` and Go's runtime print it (package names are the last
-    element of the import path). -/
+/-- A type's text in GoCore's messages and in the runtime's panic texts (package names
+    are the last element of the import path). `%T` is `typeText` (Eval.lean). -/
 def Ty.text : Ty → String
   | .int k => k.name
   | .bool => "bool"

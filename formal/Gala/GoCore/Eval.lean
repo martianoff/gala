@@ -412,17 +412,17 @@ def typeText (c : Ctx) (full : Bool) : Ty → Except String String
   | .bool => pure "bool"
   | .string => pure "string"
   | .float b => pure s!"float{b}"
-  | .untyped .int => pure "int"
-  | .untyped .rune => pure "int32"
-  | .untyped .float => pure "float64"
-  | .untyped .bool => pure "bool"
-  | .untyped .string => pure "string"
-  | .untyped .nil => throw "untyped-nil"
+  | .untyped k => match k.default with
+    | some t => pure t.text
+    | none => throw "untyped-nil"
   | .named p n args => do
     let q := (p.splitOn "/").getLast!
     if !full then
-      if let some pk := c.pkgs.get? p then
-        if pk.name != q then throw "package-name"
+      match c.pkgs.get? p with
+      | some pk => if pk.name != q then throw "package-name"
+      -- A package the document does not hold: its name is known only when its path
+      -- is one element (Go's standard library), not for `math/rand/v2`.
+      | none => if p.contains '/' then throw "package-name"
     let n := (n.splitOn localTypeSep.toString).head!
     let base := if p.isEmpty then n else s!"{if full then p else q}.{n}"
     -- Type arguments, at any depth, name their packages by import path.
@@ -2834,10 +2834,11 @@ def libCall (c : Ctx) : Nat → String → List Val → GM (List Val)
     -- `recoveredError(r any) error` (std/types.go, lines 318-335), the error a Try
     -- Failure holds for a recovered panic: a `*panicError` as it is; else a new
     -- `*panicError` of the error, of `errors.New(s)` for a string, or of
-    -- `fmt.Errorf("panic: %v", r)`, which is `errors.New` of its text. Its `pcs`, the stack `runtime.Callers` records,
-    -- are left nil: only `(*panicError).stack` reads them, through
-    -- `runtime.CallersFrames`, which GoCore does not run (`TestRecoveredErrorShape` and
-    -- `TestPanicErrorPcsReaders` in internal/formal/gocoreexport pin both).
+    -- `fmt.Errorf("panic: %v", r)`, which is `errors.New` of its text. Its `pcs`, the
+    -- stack `runtime.Callers` records, are left nil: only `(*panicError).stack` reads
+    -- them, through `runtime.CallersFrames`, which GoCore does not run
+    -- (`TestRecoveredErrorShape` and `TestPanicErrorPcsReaders` in
+    -- internal/formal/gocoreexport pin both).
     | "recoveredError", [r] =>
       let d := r.dyn
       let pt : Ty := .named stdPath "panicError" []
