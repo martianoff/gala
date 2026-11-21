@@ -46,7 +46,7 @@ print: those with an [unrepresentable node](#unrepresentable-nodes).
 
 ```json
 {
-  "gocore": 1,
+  "gocore": 2,
   "packages": [ { "path": "main", "name": "main", "files": [ { "kind": "file", ... } ] } ]
 }
 ```
@@ -103,7 +103,7 @@ A function or method: `name`, `recv` (a field object, `null` for a function),
 ### `type-decl`
 
 A `type` declaration: `specs`, each `{"name", "namePos", "typeParams", "alias", "type"}`
-for `type name[typeParams] type`, `alias` set for `type name = type`. `namePos` is where
+for `type name[typeParams] type`, `alias` set for `type name = type`. `namePos` (version 2) is where
 the name is in the file as written, `{"line", "col"}` like `pos` but not changed by a
 `//line` directive: a type declared in a function body is one type per declaration
 (Go spec, "Type declarations"), and GoCore tells two such declarations apart by it.

@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "gocore" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 1
+const Version = 2
 
 // Program is a GoCore JSON document: the packages of one Go program, the
 // main package and every package it imports that the exporter was given.

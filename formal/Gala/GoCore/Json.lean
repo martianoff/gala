@@ -17,7 +17,7 @@ namespace Gala.GoCore.Full.Json
 open Lean (Json)
 
 /-- The GoCore JSON version this decoder reads. -/
-def supportedVersion : Nat := 1
+def supportedVersion : Nat := 2
 
 /-- Decoding either succeeds or names what is malformed. -/
 abbrev D := Except String
