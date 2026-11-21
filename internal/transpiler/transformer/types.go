@@ -831,7 +831,7 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 		if v.Name == "string" {
 			return transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "rune"}
 		}
-		if k := scalarKindOfPrimitive(v.Name); k == scalarInt || k == scalarUint {
+		if isIntegerName(v.Name) {
 			// `for i := range n` binds i to n's type, a Go defined integer
 			// type (time.Duration) included (#1317).
 			if defined {
@@ -862,18 +862,22 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 	}
 	// A type parameter whose constraint has an integer core type (a Go
 	// `interface{ ~int64 }`) binds i to itself (#1378).
-	if _, c, ok := t.constrainedTypeParam(exprType); ok {
+	if c, ok := t.typeParamConstraint(exprType); ok {
 		if data := t.goConstraintData(c); data != nil {
-			if core, isBasic := data.CoreType.(transpiler.BasicType); isBasic {
-				if k := scalarKindOfPrimitive(core.Name); k == scalarInt || k == scalarUint {
-					return exprType, transpiler.NilType{}
-				}
+			if core, isBasic := data.CoreType.(transpiler.BasicType); isBasic && isIntegerName(core.Name) {
+				return exprType, transpiler.NilType{}
 			}
 		}
 	}
 
 	// Default: int key, unknown value
 	return transpiler.BasicType{Name: "int"}, transpiler.NilType{}
+}
+
+// isIntegerName reports whether name is a predeclared integer type.
+func isIntegerName(name string) bool {
+	k := scalarKindOfPrimitive(name)
+	return k == scalarInt || k == scalarUint
 }
 
 // rangeFuncYieldTypes is the key and value types a range-over-func loop binds

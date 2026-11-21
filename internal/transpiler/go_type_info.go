@@ -115,8 +115,8 @@ type GoTypeData struct {
 	EmbedsComparable bool
 	// CoreType is, for an interface whose type set is non-empty and has one
 	// underlying type (`interface{ ~int64 }`, `interface{ int64 | MyInt }`),
-	// that type; nil otherwise. A type parameter it constrains ranges as
-	// that type.
+	// that type; nil otherwise. A range over a type parameter it constrains
+	// to an integer core type binds the type parameter.
 	CoreType Type
 	// SelfEqual is true when the value method set of this (non-generic,
 	// non-interface) type has `Equal(T) bool` with T the type itself, as
