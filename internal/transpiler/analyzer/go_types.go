@@ -315,19 +315,21 @@ func goToolchain(goroot string) string {
 
 // toolchainMaySwitch reports whether a go command of version host ("go1.23.4",
 // "" when unknown) may build a module whose go line is GeneratedGoVersion with
-// another toolchain, given GOTOOLCHAIN. It is false only where it surely does
-// not: GOTOOLCHAIN=local; host known and new enough with the choice left to
-// the go line (auto, path, unset); or GOTOOLCHAIN naming host itself
-// (go1.25.5, go1.25.5+auto) with host new enough.
+// another toolchain, given GOTOOLCHAIN. It is false where it does not:
+// GOTOOLCHAIN=local; host new enough, or a development build (unknown), with
+// the choice left to the go line (auto, path, unset); or GOTOOLCHAIN naming
+// host itself (go1.25.5, go1.25.5+auto) with host new enough.
 func toolchainMaySwitch(host, gotoolchain string) bool {
 	if gotoolchain == "local" {
 		return false
 	}
-	if !version.IsValid(host) {
-		return true
-	}
 	name, _, _ := strings.Cut(gotoolchain, "+")
 	named := name != "" && name != "auto" && name != "path" && name != "local" // local+auto is auto
+	if !version.IsValid(host) {
+		// A release SDK has a VERSION; one without is a development build,
+		// which counts as the newest Go and switches only when told to.
+		return named
+	}
 	if version.Compare(host, "go"+GeneratedGoVersion) < 0 {
 		return true
 	}

@@ -1066,9 +1066,11 @@ The transpiler resolves the Go SDK in this priority order:
 Standalone `gala build` skips step 1 (no Bazel execution root) and uses the host
 Go discovered in steps 2–5. An SDK from steps 3–5 is then checked against the
 toolchain the build really uses: every go.mod GALA generates says `go 1.25`, so
-the go command switches to a newer toolchain when its own Go is older, or when
-`GOTOOLCHAIN` names one. In that case `switchedGoRoot` runs `go env GOROOT` in a
-temporary module with that go line and reads the SDK it reports. A `GOROOT` set
+the go command switches to a newer toolchain when its own Go is older, and to
+whatever toolchain `GOTOOLCHAIN` names, newer or older. Unless the go command
+surely builds with its own toolchain (`toolchainMaySwitch`), `switchedGoRoot`
+runs `go env GOROOT` in a temporary module with that go line and reads the SDK
+it reports, warning when that SDK is older than Go 1.25. A `GOROOT` set
 explicitly (step 2) is used as given.
 
 ---
