@@ -1001,6 +1001,30 @@ func main() {
     })
     Println(b(3))
 }`, []string{"func(k int) bool {", "return q > 2"}},
+		{"generic method", `package main
+
+struct Pipe(Label string)
+
+func (p Pipe) Wrap[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val b = Pipe("p").Wrap((k int) => {
+        val q = k - 1
+        q * 3
+    })
+    Println(b(5))
+}`, []string{"func(k int) int {", "return q * 3"}},
+		{"generic struct constructor", `package main
+
+struct Runner[A any, B any](F func(A) B)
+
+func main() {
+    val r = Runner((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(r.F(3))
+}`, []string{"func(k int) int {", "return q * q"}},
 		{"trailing if-expression", `package main
 
 func run[A any, B any](f func(A) B) func(A) B = f
