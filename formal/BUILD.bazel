@@ -274,13 +274,40 @@ lean_binary(
 sh_test(
     name = "gocore_tests",
     srcs = ["gocore_tests.sh"],
-    args = ["$(rootpath :gocore)"] + ["$(rootpath {})".format(f) for f in glob(["tests/gocore/*.json"])],
-    data = [":gocore"] + glob([
-        "tests/gocore/*.json",
-        "tests/gocore/*.out",
-        "tests/gocore/*.outcome",
-        "tests/gocore/*.panic",
-    ]),
+    args = ["$(rootpath :gocore)"] + ["$(rootpath {})".format(f) for f in glob(
+        ["tests/gocore/*.json"],
+        exclude = ["tests/gocore/fuel.json"],
+    )],
+    data = [":gocore"] + glob(
+        [
+            "tests/gocore/*.json",
+            "tests/gocore/*.out",
+            "tests/gocore/*.outcome",
+            "tests/gocore/*.panic",
+        ],
+        exclude = ["tests/gocore/fuel.*"],
+    ),
+)
+
+# The fuel fixture on its own: GoCore runs an unbounded recursion until its
+# default fuel (Cli.defaultFuel, what the differential run uses) runs out, which
+# alone takes most of a minute. It checks that a run of the full budget ends
+# `fuel`, never crashes, so it keeps that budget, in a target of its own.
+sh_test(
+    name = "gocore_fuel_test",
+    srcs = ["gocore_tests.sh"],
+    # About 52 s locally, more on a shared CI runner.
+    timeout = "long",
+    args = [
+        "$(rootpath :gocore)",
+        "$(rootpath tests/gocore/fuel.json)",
+    ],
+    data = [
+        ":gocore",
+        "tests/gocore/fuel.json",
+        "tests/gocore/fuel.out",
+        "tests/gocore/fuel.outcome",
+    ],
 )
 
 lean_library(

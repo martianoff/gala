@@ -1,5 +1,5 @@
 {
-  "gocore": 1,
+  "gocore": 2,
   "packages": [
     {
       "path": "main",
@@ -28,6 +28,10 @@
               "specs": [
                 {
                   "name": "celsius",
+                  "namePos": {
+                    "line": 8,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -426,6 +430,10 @@
               "specs": [
                 {
                   "name": "pair",
+                  "namePos": {
+                    "line": 29,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {

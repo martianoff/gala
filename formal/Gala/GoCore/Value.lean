@@ -133,6 +133,19 @@ end
 
 instance : BEq Ty := ⟨Ty.beq⟩
 
+/-- What separates a local type's name from its site in `localTypeName`; no Go
+    identifier holds it. -/
+def localTypeSep : Char := '·'
+
+/-- The name of the type a function body declares as `name`, at `site` of file `file`
+    of its package: one type per declaration, distinct from every other type named
+    `name` (Go spec, "Type declarations", "Type identity"). -/
+def localTypeName (name : String) (file : Nat) (site : String) : String :=
+  s!"{name}{localTypeSep}{file}:{site}"
+
+/-- Whether a defined type's name is a local type's (`localTypeName`). -/
+def isLocalTypeName (n : String) : Bool := n.contains localTypeSep
+
 mutual
 /-- A type's text as `%T` and Go's runtime print it (package names are the last
     element of the import path). -/
@@ -148,6 +161,8 @@ def Ty.text : Ty → String
   | .untyped .float => "untyped float"
   | .named p n args =>
     let q := (p.splitOn "/").getLast!
+    -- A local type's name carries its site (`localTypeName`), which Go does not print.
+    let n := (n.splitOn localTypeSep.toString).head!
     let base := if p.isEmpty then n else s!"{q}.{n}"
     if args.isEmpty then base else base ++ "[" ++ ",".intercalate (Ty.texts args) ++ "]"
   | .ptr t => "*" ++ t.text
@@ -306,8 +321,25 @@ structure Closure where
   file : Nat
   scopes : List (List (String × Nat))
   tenv : List (String × Ty)
+  /-- The type arguments of the generic function or method it was written in. -/
+  targs : List Ty := []
   sig : Sig
   body : List Stmt
+
+/-- A type declared in a function body, as the run met its declaration (Go spec, "Type
+    declarations"): the type `.named pkg name targs`, `name` its name and site, `targs`
+    the type arguments of the generic function or method it is declared in. Its
+    definition `ty` is evaluated where it was declared: in `file`, with the locals in
+    scope there, `scopes`, and the type environment there, `tenv`, in which it already
+    stands for itself. -/
+structure LocalType where
+  pkg : String
+  name : String
+  targs : List Ty
+  file : Nat
+  scopes : List (List (String × Nat))
+  tenv : List (String × Ty)
+  ty : Expr
 
 /-- The state of a run. -/
 structure St where
@@ -333,6 +365,12 @@ structure St where
   recoverable : Option (Nat × Val × Bool) := none
   /-- The run's maps, which map values refer to by index (`Val.map`). -/
   maps : Array MapObj := #[]
+  /-- The local types whose declarations the run has met (`LocalType`). -/
+  localTypes : List LocalType := []
+
+/-- The local type `.named pkg name targs` the run has met, if any. -/
+def St.localType? (s : St) (pkg name : String) (targs : List Ty) : Option LocalType :=
+  s.localTypes.find? fun l => l.pkg == pkg && l.name == name && Ty.beqs l.targs targs
 
 abbrev GM := ExceptT Stop (StateM St)
 

@@ -7,7 +7,7 @@ import "slices"
 
 // Version is the schema version, the "gocore" field of every document. A
 // consumer rejects a version it does not know.
-const Version = 1
+const Version = 2
 
 // Program is a GoCore JSON document: the packages of one Go program, the
 // main package and every package it imports that the exporter was given.
@@ -85,9 +85,13 @@ type TypeDecl struct {
 	Specs []*TypeSpec `json:"specs"`
 }
 
-// TypeSpec is `Name[params] Type`, or an alias `Name = Type`.
+// TypeSpec is `Name[params] Type`, or an alias `Name = Type`. NamePos is where
+// Name is in its file as written, which a `//line` directive does not change:
+// a type declared in a function body is one type per declaration, and its
+// position tells two declarations apart.
 type TypeSpec struct {
 	Name       string   `json:"name"`
+	NamePos    Pos      `json:"namePos"`
 	TypeParams []*Field `json:"typeParams"`
 	Alias      bool     `json:"alias"`
 	Type       Node     `json:"type"`

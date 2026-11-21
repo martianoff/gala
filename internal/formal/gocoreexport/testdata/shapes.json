@@ -1,5 +1,5 @@
 {
-  "gocore": 1,
+  "gocore": 2,
   "packages": [
     {
       "path": "main",
@@ -32,6 +32,10 @@
               "specs": [
                 {
                   "name": "Expr",
+                  "namePos": {
+                    "line": 6,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -201,6 +205,10 @@
               "specs": [
                 {
                   "name": "Num",
+                  "namePos": {
+                    "line": 18,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -704,6 +712,10 @@
               "specs": [
                 {
                   "name": "Pair",
+                  "namePos": {
+                    "line": 31,
+                    "col": 6
+                  },
                   "typeParams": [
                     {
                       "names": [
@@ -2773,6 +2785,10 @@
                       "specs": [
                         {
                           "name": "local",
+                          "namePos": {
+                            "line": 88,
+                            "col": 7
+                          },
                           "typeParams": [],
                           "alias": false,
                           "type": {

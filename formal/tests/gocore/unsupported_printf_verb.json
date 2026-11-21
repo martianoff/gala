@@ -1,5 +1,5 @@
 {
-  "gocore": 1,
+  "gocore": 2,
   "packages": [
     {
       "path": "main",

@@ -1,5 +1,5 @@
 {
-  "gocore": 1,
+  "gocore": 2,
   "packages": [
     {
       "path": "main",
@@ -28,6 +28,10 @@
               "specs": [
                 {
                   "name": "namer",
+                  "namePos": {
+                    "line": 7,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -80,6 +84,10 @@
               "specs": [
                 {
                   "name": "equaler",
+                  "namePos": {
+                    "line": 9,
+                    "col": 6
+                  },
                   "typeParams": [
                     {
                       "names": [
@@ -160,6 +168,10 @@
               "specs": [
                 {
                   "name": "a",
+                  "namePos": {
+                    "line": 11,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -252,6 +264,10 @@
               "specs": [
                 {
                   "name": "b",
+                  "namePos": {
+                    "line": 15,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {
@@ -344,6 +360,10 @@
               "specs": [
                 {
                   "name": "node",
+                  "namePos": {
+                    "line": 19,
+                    "col": 6
+                  },
                   "typeParams": [],
                   "alias": false,
                   "type": {

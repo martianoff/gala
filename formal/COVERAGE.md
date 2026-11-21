@@ -242,7 +242,33 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
 - string ordering (`string_order`): Go orders strings byte-wise, GoCore by code point,
   and on these strings (multi-byte ones differing in a lead or a continuation byte,
   prefixes, untyped constants, a defined string type, a sort) the two agree, as they
-  must on valid UTF-8. Tested on these strings, not proved.
+  must on valid UTF-8. Tested on these strings, not proved;
+- local types (`local_types`): one type per declaration, whatever the call or iteration,
+  and another declaration of the same name another type; in a generic function or a
+  method of a generic type, one type per instantiation, whether the type mentions the
+  type parameters or not, a function literal's included; a recursive type, a type that
+  outlives its function in a closure, an alias, a local interface, a type switch; a
+  definition naming local constants (`[n]T`); a local type shadowing a package-level type
+  (with a `String` method) or a variable, a variable shadowing it in an inner block, and a
+  later spec of the same declaration not yet in scope for an earlier one; and a conversion
+  to a local type, which gc reads late like any conversion. A generic local type stops the
+  run (`unsupported_local_generic_type`).
+
+Where GoCore stops on the corpus, and why. Tested programs only: each is the first
+construct a run reached, so a program may stop at another once it is modelled.
+- **Out of reach by design:** a `range` over a map of two or more entries (Go randomizes
+  the order), channels and goroutines (`time.After`, `go`), the file system and the
+  environment (`os`, `io/fs`), output that depends on the operating system
+  (`path/filepath`), `context`, `net/http`, and reflection (`encoding/json`, and the
+  reflective fallback of std's `Copy` and `Equal`).
+- **Deferred, reachable but costly:** `strings` and `bytes` (their Go source calls
+  `internal/bytealg`, written in assembly, and `unsafe` for `strings.Builder`; models of
+  both would be trusted), `time` (a large package, with time zones), complex numbers
+  (arithmetic and printing), and Go library packages used by a single program each
+  (`net/url`, `net`, `regexp`, `sync`, `sort`, `math`, `crypto/sha256`, `testing`,
+  `fmt.Fprintf` to an `io.Writer`); a selector promoted through an embedded field.
+- **Not yet modelled, reachable:** generic local types (`type Box[T any] ...` in a
+  function body), which gc 1.25.5 accepts; the run stops at the declaration.
 
 The differential run (`internal/formal/difftest`) runs every compiled program's Go through
 GoCore and compares it with `go run`; its results are in the "GoCore" part of the
