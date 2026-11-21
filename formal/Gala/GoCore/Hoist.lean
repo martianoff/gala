@@ -363,10 +363,12 @@ def singleResult (s : Scope) : Expr → Bool
     match s.import? q with
     | some p => match s.qualified? q f with
       | some (.func _ _ sig _) => resultCount sig == 1
-      -- A function of a package the document does not hold: the run stops at the call
-      -- (`evalCall`), except at the models, `slices.Clip` and `fmt`'s, which return one
-      -- value but for `Print`, `Println` and `Printf`.
-      | _ => if p == "fmt" then ["Sprint", "Sprintf", "Sprintln"].contains f else !s.c.pkgs.contains p
+      -- A function of a package the document holds none or only some files of (absent
+      -- or partial), and not in the files it holds (`qualified?` finds those, with their
+      -- signatures): the run stops at the call (`evalCall`), or it is a model,
+      -- `slices.Clip` or `fmt`'s, which return one value but for `Print`, `Println` and
+      -- `Printf`.
+      | _ => if p == "fmt" then ["Sprint", "Sprintf", "Sprintln"].contains f else partialPkg s.c p
     | none => methodsSingle s f
   | .selector _ m => methodsSingle s m
   | _ => false

@@ -13,13 +13,18 @@ import (
 )
 
 // RunnableStdlib lists the files of Go's standard library that GoCore runs as
-// Go's own source, by import path: small files that import only runnable or
-// quiet packages (checkRunnable), so the program runs the very code `go run`
-// links, not a model of it. It is reviewed like GoCore's library models: a file
+// Go's own source, by import path: files that import only runnable or quiet
+// packages (checkRunnable), so the program runs the source `go run` compiles,
+// not a model of it. gc may compile some of it to an intrinsic of the same
+// behaviour instead (math/bits' Len, Div64 and others on amd64); the differential
+// run compares the two. It is reviewed like GoCore's library models: a file
 // is added here only with the guards of checkRunnable and checkSiblings
 // passing.
 var RunnableStdlib = map[string][]string{
+	"cmp":          {"cmp.go"},
 	"errors":       {"errors.go"},
+	"math/bits":    {"bits.go", "bits_tables.go"},
+	"slices":       {"sort.go", "zsortanyfunc.go"},
 	"strconv":      {"atoi.go", "isprint.go", "quote.go"},
 	"unicode/utf8": {"utf8.go"},
 }

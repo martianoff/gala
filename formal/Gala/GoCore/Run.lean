@@ -106,13 +106,22 @@ end
 
 
 
-/-- The packages whose initialization prints nothing and does not panic: the list galaspec
-    lets a program import (`noOutputInitImports` in `Gala/Json.lean`) and gala2lean
-    shares, kept equal to them by a test (`TestNoOutputInitImportsInStep`), which also
-    checks the assumption for the GALA packages in it (`TestQuietInitPackages`). -/
+/-- The packages whose initialization prints nothing and does not panic: every package
+    galaspec lets a program import (`noOutputInitImports` in `Gala/Json.lean`, which
+    gala2lean shares; `TestNoOutputInitImportsInStep` checks this list holds them, and
+    `TestQuietInitPackages` checks the assumption for the GALA packages among them), and
+    the Go packages of which GoCore runs some files (`gocoreexport.RunnableStdlib`;
+    `TestRunnableStdlibIsQuiet`), whose other files' initializers it leaves out. The spec
+    need not trust the latter, so this list may be wider than galaspec's:
+    `cmp`, `math/bits` and `slices` (Go 1.25.5) have no `init` function and no
+    package-level variable but `math/bits`' two constant tables (`bits.go`) and its two
+    error variables (`bits_errors.go`), declared without an initializer and linknamed to
+    the runtime's; and all three are in `fmt`'s dependency closure (`go list -deps fmt`),
+    so any program that prints has initialized them, and what they import. -/
 def quietInitPackages : List String :=
-  ["bytes", "errors", "fmt", "math", "os", "sort", "strconv", "strings", "sync", "time",
-   "unicode", "unicode/utf8", "martianoff/gala/std", "martianoff/gala/collection_immutable"]
+  ["bytes", "cmp", "errors", "fmt", "math", "math/bits", "os", "slices", "sort", "strconv",
+   "strings", "sync", "time", "unicode", "unicode/utf8", "martianoff/gala/std",
+   "martianoff/gala/collection_immutable"]
 
 /-- The package-level variables of `p` the expressions `es` depend on, transitively
     through the functions and methods they refer to; `none` if the walk outgrew its
