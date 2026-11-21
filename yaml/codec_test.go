@@ -316,6 +316,8 @@ func TestDecoder_UndefinedEscapesFail(t *testing.T) {
 		{`"\'"`, `\'`},
 		{`"bad\xZZ!"`, `\xZZ`},
 		{`"\x4"`, `\x4`},
+		{`"\x4\n"`, `\x4`},
+		{`"\u12 abc"`, `\u12`},
 		{`"short\u00e"`, `\u00e`},
 		{`"\u00g9"`, `\u00g9`},
 		{`"\uD800"`, `\uD800`},
@@ -340,27 +342,48 @@ func TestDecoder_UndefinedEscapesFail(t *testing.T) {
 	}
 }
 
-// A body that ends in a lone backslash, which the parser never passes on,
-// still fails cleanly rather than indexing past the end.
-func TestUnescapeDoubleQuoted_TrailingBackslash(t *testing.T) {
-	defer func() {
-		if r, want := fmt.Sprint(recover()), `yaml: invalid escape \ in double-quoted scalar`; r != want {
-			t.Errorf("panic = %q, want %q", r, want)
-		}
-	}()
-	unescapeDoubleQuoted(`a\`)
+// Bodies the parser never passes on still fail cleanly: one that ends in a
+// lone backslash, and one with an invalid UTF-8 byte (the decoder replaces
+// those before parsing), whose escape is quoted in the error.
+func TestUnescapeDoubleQuoted_UnreachableBodies(t *testing.T) {
+	tests := []struct{ body, want string }{
+		{`a\`, `yaml: invalid escape \ in double-quoted scalar`},
+		{"a\\\xff", `yaml: invalid escape "\\\xff" in double-quoted scalar`},
+	}
+	for _, tt := range tests {
+		func() {
+			defer func() {
+				if r := fmt.Sprint(recover()); r != tt.want {
+					t.Errorf("unescapeDoubleQuoted(%q) panicked with %q, want %q", tt.body, r, tt.want)
+				}
+			}()
+			unescapeDoubleQuoted(tt.body)
+		}()
+	}
 }
 
-// An escape that holds an invalid UTF-8 byte is quoted in the error. The
-// decoder replaces such bytes before parsing, so this calls the unescaper
-// directly.
-func TestUnescapeDoubleQuoted_InvalidByteQuoted(t *testing.T) {
-	defer func() {
-		if r, want := fmt.Sprint(recover()), `yaml: invalid escape "\\\xff" in double-quoted scalar`; r != want {
-			t.Errorf("panic = %q, want %q", r, want)
+// A high and a low surrogate written as two escapes, as JSON writes a
+// character above U+FFFF, decode to that character; either half alone is an
+// error. The escapes are built from bytes, and their length checked, so that
+// no editor can turn them into the character they name.
+func TestDecoder_SurrogatePairEscape(t *testing.T) {
+	high := string([]byte{'\\', 'u', 'D', '8', '3', 'D'})
+	low := string([]byte{'\\', 'u', 'D', 'E', '0', '0'})
+	if len(high) != 6 || len(low) != 6 {
+		t.Fatalf("escape lengths %d and %d, want 6 and 6", len(high), len(low))
+	}
+	want := string(rune(0x1F600))
+	for _, pair := range []string{high + low, strings.ToLower(high + low)} {
+		if _, s, err := readKeyValue(`k: "` + pair + ` x"`); s != want+" x" || err != "" {
+			t.Errorf("%s => (%q, error %q), want %q", pair, s, err, want+" x")
 		}
-	}()
-	unescapeDoubleQuoted("a\\\xff")
+	}
+	for _, half := range []string{high, low, low + high} {
+		wantErr := "yaml: invalid escape " + half[:6] + " in double-quoted scalar"
+		if _, _, err := readKeyValue(`k: "` + half + `"`); err != wantErr {
+			t.Errorf("%s => error %q, want %q", half, err, wantErr)
+		}
+	}
 }
 
 // Strings the encoder double-quotes decode back to the original.

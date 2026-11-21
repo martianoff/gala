@@ -1353,9 +1353,12 @@ func unescapeDoubleQuoted(body string) string {
 			}
 		}
 		if !ok || !utf8.ValidRune(r) {
-			end = min(end, len(body))
-			for end < len(body) && !utf8.RuneStart(body[end]) {
-				end++ // show whole characters
+			// Show the escape: its letter and up to as many characters as it
+			// takes digits, stopping at white space or the next backslash.
+			end = i + 2
+			for n := 0; n < digits && end < len(body) && !strings.ContainsRune(" \t\\", rune(body[end])); n++ {
+				_, size := utf8.DecodeRuneInString(body[end:])
+				end += size
 			}
 			invalidEscape(body[i:end])
 		}
