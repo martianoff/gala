@@ -1,0 +1,9 @@
+part=a size=1 a!
+part=bb size=2 bb!
+part=ccc size=3 ccc!
+got=x
+got=y
+line=one bytes=4
+line=two bytes=4
+u?
+v?

@@ -1,0 +1,23 @@
+package main
+
+import "strings"
+
+// The strings iterators (SplitSeq, Lines, FieldsSeq, Go 1.24+) return
+// iter.Seq[string], so ranging over one binds a string (#1322).
+
+func main() {
+    for p := range strings.SplitSeq("a,bb,ccc", ",") {
+        Println(s"part=$p size=${p.Size()}", p + "!")
+    }
+    val parts = strings.SplitSeq("x;y", ";")
+    val get = () => parts
+    for p := range get() {
+        Println(s"got=$p")
+    }
+    for line := range strings.Lines("one\ntwo\n") {
+        Println(s"line=${strings.TrimSpace(line)} bytes=${line.ByteSize()}")
+    }
+    for f := range strings.FieldsSeq("  u  v ") {
+        Println(f + "?")
+    }
+}

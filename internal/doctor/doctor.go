@@ -210,10 +210,16 @@ func checkGo(env Env) (*goEnvValues, Check) {
 	switch {
 	case !version.IsValid(ge.version):
 		return ge, problem(Warn, name, fmt.Sprintf("%s at %s; cannot tell whether it is %s or newer", ge.version, goBin, minimum), fix, anchorGoSDK)
-	case version.Compare(ge.version, minimum) < 0:
+	case olderThanMinimum(ge.version):
 		return ge, problem(Fail, name, fmt.Sprintf("%s at %s is older than %s, the oldest GALA supports", ge.version, goBin, minimum), fix, anchorGoSDK)
 	}
 	return ge, ok(name, fmt.Sprintf("%s at %s (%s or newer required)", ge.version, goBin, minimum))
+}
+
+// olderThanMinimum reports whether goVersion ("go1.24.9") is a valid Go
+// version older than build.MinGoVersion.
+func olderThanMinimum(goVersion string) bool {
+	return version.IsValid(goVersion) && version.Compare(goVersion, "go"+build.MinGoVersion) < 0
 }
 
 // checkGoroot reports the Go SDK the analyzer reads Go package types from,
@@ -227,7 +233,10 @@ func checkGoroot(env Env, goEnv *goEnvValues) Check {
 		return problem(Fail, name, "no Go SDK found; Go type inference is disabled",
 			"put go on PATH, or set GOROOT to your Go installation", anchorGoSDK)
 	}
-	if goEnv != nil && goEnv.goroot != "" && !env.SameFile(root, goEnv.goroot) {
+	// A go older than the minimum switches toolchain to build GALA's code
+	// (GOTOOLCHAIN=auto), and the analyzer reads that toolchain's SDK: the
+	// roots differ by design, and the go check already says to upgrade.
+	if goEnv != nil && goEnv.goroot != "" && !olderThanMinimum(goEnv.version) && !env.SameFile(root, goEnv.goroot) {
 		return problem(Warn, name, fmt.Sprintf("type inference reads %s, but %s builds with %s", root, goEnv.bin, goEnv.goroot),
 			"set GOROOT to "+goEnv.goroot, anchorGoSDK)
 	}

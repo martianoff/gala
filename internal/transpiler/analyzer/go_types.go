@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -9,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"go/version"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
@@ -50,9 +53,35 @@ var (
 // importer is built from the same value, so a caller keying a cache on it names
 // exactly the SDK the analysis used.
 func GoSDKRoot() string {
-	goSDKRootOnce.Do(func() { goSDKRoot = findGOROOT() })
+	goSDKRootOnce.Do(func() {
+		var src sdkSource
+		goSDKRoot, src = findGOROOT()
+		if v := os.Getenv("GOROOT"); src != sdkFromBazel && v != "" && v != "GOROOT" && !isGoRoot(v) {
+			fmt.Fprintf(os.Stderr, "Warning: GOROOT (or --goroot) %s is not a Go SDK; ignoring it.\n", v)
+		}
+		switch {
+		case goSDKRoot != "" && src != sdkSwitched:
+			// The go commands gala runs (cgo through the source importer,
+			// `go build`) use the SDK it reads.
+			os.Setenv("GOROOT", goSDKRoot)
+		case !isGoRoot(os.Getenv("GOROOT")):
+			// A switched toolchain is not the go on PATH's own, so it is not
+			// exported: that go would run another release's tools under it.
+			// A GOROOT naming no SDK is cleared so the go commands find theirs.
+			os.Unsetenv("GOROOT")
+		}
+	})
 	return goSDKRoot
 }
+
+// sdkSource is where findGOROOT found the SDK.
+type sdkSource int
+
+const (
+	sdkFromBazel sdkSource = iota // the hermetic rules_go SDK
+	sdkFromHost                   // GOROOT, or an SDK installed on the host
+	sdkSwitched                   // the toolchain the go command switches to
+)
 
 func getGoImporter() types.Importer {
 	goImporterOnce.Do(func() {
@@ -63,10 +92,10 @@ func getGoImporter() types.Importer {
 			return
 		}
 
-		// Set GOROOT env and go/build.Default BEFORE creating importers.
-		// The source importer uses go/build.Default.GOROOT which is cached at init time,
-		// so we must also update it directly.
-		os.Setenv("GOROOT", goroot)
+		// Set go/build.Default BEFORE creating importers: the source importer
+		// reads go/build.Default.GOROOT, which is cached at init time.
+		// GoSDKRoot exports it as the process's GOROOT too, unless it is a
+		// switched toolchain, which only build.Default.GOROOT names.
 		build.Default.GOROOT = goroot
 		// Read packages with the cgo setting the go command would build them
 		// with (see GoCgoEnabled).
@@ -234,13 +263,7 @@ var goEnvFiles = sync.OnceValue(func() map[string]string {
 	if root := GoSDKRoot(); root != "" {
 		files = append(files, filepath.Join(root, "go.env"))
 	}
-	userFile := os.Getenv("GOENV")
-	if userFile == "" {
-		if dir, err := os.UserConfigDir(); err == nil {
-			userFile = filepath.Join(dir, "go", "env")
-		}
-	}
-	if userFile != "" && userFile != "off" {
+	if userFile := goUserEnvFile(); userFile != "" {
 		files = append(files, userFile) // read last: it overrides go.env
 	}
 	vals := make(map[string]string)
@@ -251,6 +274,67 @@ var goEnvFiles = sync.OnceValue(func() map[string]string {
 	}
 	return vals
 })
+
+// goUserEnvFile is the user's go env file (`go env -w` writes it), or "" when
+// there is none (GOENV=off).
+func goUserEnvFile() string {
+	userFile := os.Getenv("GOENV")
+	if userFile == "" {
+		if dir, err := os.UserConfigDir(); err == nil {
+			userFile = filepath.Join(dir, "go", "env")
+		}
+	}
+	if userFile == "off" {
+		return ""
+	}
+	return userFile
+}
+
+// goToolchain is GOTOOLCHAIN as the go command of the SDK at goroot sees it:
+// the process environment, else the user's go env file, else goroot/go.env.
+// GoEnvValue reads the same files, but for the resolved SDK, which is what
+// is being resolved here.
+func goToolchain(goroot string) string {
+	if v := os.Getenv("GOTOOLCHAIN"); v != "" {
+		return v
+	}
+	for _, f := range []string{goUserEnvFile(), filepath.Join(goroot, "go.env")} {
+		if f == "" {
+			continue
+		}
+		if data, err := os.ReadFile(f); err == nil {
+			vals := make(map[string]string)
+			parseGoEnvFile(string(data), vals)
+			if v := vals["GOTOOLCHAIN"]; v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// toolchainMaySwitch reports whether a go command of version host ("go1.23.4",
+// "" when unknown) may build a module whose go line is GeneratedGoVersion with
+// another toolchain, given GOTOOLCHAIN. It is false where it does not:
+// GOTOOLCHAIN=local; host new enough, or a development build (unknown), with
+// the choice left to the go line (auto, path, unset); or GOTOOLCHAIN naming
+// host itself (go1.25.5, go1.25.5+auto) with host new enough.
+func toolchainMaySwitch(host, gotoolchain string) bool {
+	if gotoolchain == "local" {
+		return false
+	}
+	name, _, _ := strings.Cut(gotoolchain, "+")
+	named := name != "" && name != "auto" && name != "path" && name != "local" // local+auto is auto
+	if !version.IsValid(host) {
+		// A release SDK has a VERSION; one without is a development build,
+		// which counts as the newest Go and switches only when told to.
+		return named
+	}
+	if version.Compare(host, "go"+GeneratedGoVersion) < 0 {
+		return true
+	}
+	return named && name != host
+}
 
 // parseGoEnvFile adds the KEY=VALUE lines of a go env file to vals.
 func parseGoEnvFile(data string, vals map[string]string) {
@@ -281,21 +365,55 @@ func defaultCC() string {
 // 2. runtime.GOROOT() (if valid)
 // 3. Walk up from the running binary to find a Go SDK layout (for Bazel)
 // 4. Find 'go' binary on PATH and derive GOROOT from it
-func findGOROOT() string {
+//
+// An SDK found by steps 2–4 goes through switchedGoRoot: a build may compile
+// with another toolchain than the one installed. A GOROOT set explicitly
+// (step 1, which --goroot also sets) is used as given.
+func findGOROOT() (string, sdkSource) {
 	// 0. Prefer the hermetic Go SDK that rules_go materializes inside the Bazel
 	// execution root. This must win over the GOROOT env / host PATH so that type
 	// inference uses the exact same Go version Bazel compiles the generated code
 	// with, instead of whatever `go` happens to be installed on the host. It only
 	// matches inside a Bazel action; standalone `gala build` falls through below.
 	if goroot := findBazelGoSDK(); goroot != "" {
-		return goroot
+		return goroot, sdkFromBazel
 	}
 
 	// 1. Check GOROOT env
 	if goroot := os.Getenv("GOROOT"); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
-		return goroot
+		return goroot, sdkFromHost
 	}
 
+	goroot := findHostGOROOT()
+	if goroot == "" {
+		return "", sdkFromHost
+	}
+	if abs, err := filepath.Abs(goroot); err == nil {
+		goroot = abs // the probe runs the go command from another directory
+	}
+	goPath, err := exec.LookPath(filepath.Join(goroot, "bin", "go"))
+	if err != nil {
+		return goroot, sdkFromHost // no go command to ask (a source tree, say)
+	}
+	if switched := switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) }); !sameDir(switched, goroot) {
+		return switched, sdkSwitched
+	}
+	return goroot, sdkFromHost
+}
+
+// sameDir reports whether a and b name the same directory, through symlinks:
+// `go env GOROOT` reports a resolved path.
+func sameDir(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ia, errA := os.Stat(a)
+	ib, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(ia, ib)
+}
+
+// findHostGOROOT is the Go SDK installed on the host: steps 2–4 of findGOROOT.
+func findHostGOROOT() string {
 	// 2. Check runtime.GOROOT()
 	if goroot := runtime.GOROOT(); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
 		return goroot
@@ -349,13 +467,100 @@ func gorootFromGoBinary(goPath string) string {
 		}
 	}
 	// Authoritative fallback: ask the toolchain itself.
-	if out, err := exec.Command(goPath, "env", "GOROOT").Output(); err == nil {
-		goroot := strings.TrimSpace(string(out))
-		if goroot != "" && isGoRoot(goroot) {
-			return goroot
-		}
+	return goEnvGoroot(goPath, "")
+}
+
+// GeneratedGoVersion is the go line of the go.mod files GALA generates, the Go
+// version every build asks the go command for. It mirrors stdlib.GoVersion
+// (asserted equal by a test in internal/build), which this package does not
+// import: that package embeds the whole standard library source.
+const GeneratedGoVersion = "1.25"
+
+// switchedGoRoot is the SDK a build compiles GALA's generated code with, given
+// goroot, the host's SDK, and gotoolchain, its GOTOOLCHAIN. The go command
+// switches to another toolchain when the module asks for a newer Go than its
+// own (every go.mod GALA generates asks for GeneratedGoVersion) or when
+// GOTOOLCHAIN names one. goEnv runs that SDK's `go env GOROOT` in a given
+// directory; it is run in a temporary module with that go line to learn which
+// toolchain the build uses. goroot is kept, with no subprocess, when the go
+// command surely does not switch (toolchainMaySwitch); also when goEnv gives
+// "".
+func switchedGoRoot(goroot, gotoolchain string, goEnv func(dir string) string) string {
+	if !toolchainMaySwitch(goRootVersion(goroot), gotoolchain) {
+		return goroot
+	}
+	switched := probeGoRoot(goEnv)
+	switch v := goRootVersion(switched); {
+	case switched == "":
+		fmt.Fprintf(os.Stderr, "Warning: could not tell which Go toolchain builds GALA code (go %s may switch away from %s); Go type inference reads %s.\n", GeneratedGoVersion, goroot, goroot)
+		return goroot
+	case version.IsValid(v) && version.Compare(v, "go"+GeneratedGoVersion) < 0:
+		// A go before 1.21 never switches; GOTOOLCHAIN can pin an old one.
+		fmt.Fprintf(os.Stderr, "Warning: GALA code builds with %s (%s), older than Go %s; install Go %s or newer.\n", v, switched, GeneratedGoVersion, GeneratedGoVersion)
+	}
+	return switched
+}
+
+// probeGoRoot is the root goEnv reports in a temporary module whose go line is
+// GeneratedGoVersion, or "" when it cannot run there.
+func probeGoRoot(goEnv func(dir string) string) string {
+	dir, err := os.MkdirTemp("", "gala-goroot-")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(dir)
+	mod := "module gala_goroot_probe\n\ngo " + GeneratedGoVersion + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+		return ""
+	}
+	return goEnv(dir)
+}
+
+// goEnvTimeout bounds a `go env GOROOT` run. Switching toolchain may first
+// download one; offline, that must not hang every gala process.
+const goEnvTimeout = 2 * time.Minute
+
+// goEnvGoroot is `go env GOROOT` as goPath reports it, or "" when that fails
+// or is no Go SDK. Run in dir, its toolchain is the one the user's GOTOOLCHAIN
+// and the go.work GOWORK names, else dir's go.mod, pick (the build's module
+// cache and workspace directory are not reproduced), and its stderr is the
+// user's, so that a toolchain download reports there. With dir "", it is goPath's own root: it
+// runs in the current directory with no toolchain switch (`go env` answers
+// even in a module that asks for a newer Go).
+func goEnvGoroot(goPath, dir string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goPath, "env", "GOROOT")
+	// A go that switches toolchain on Windows runs the other one as a child,
+	// which killing the parent leaves holding the output pipe.
+	cmd.WaitDelay = 5 * time.Second
+	// GOROOT, when set, is one findGOROOT rejected: let go find its own.
+	cmd.Env = append(os.Environ(), "GOROOT=")
+	if dir != "" {
+		cmd.Dir = dir
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Env = append(cmd.Env, "GOTOOLCHAIN=local")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	if goroot := strings.TrimSpace(string(out)); goroot != "" && isGoRoot(goroot) {
+		return goroot
 	}
 	return ""
+}
+
+// goRootVersion is the Go version of the SDK at goroot, from the first line of
+// its VERSION file ("go1.25.5"), or "" when it has none.
+func goRootVersion(goroot string) string {
+	data, err := os.ReadFile(filepath.Join(goroot, "VERSION"))
+	if err != nil {
+		return ""
+	}
+	first, _, _ := strings.Cut(string(data), "\n")
+	return strings.TrimSpace(first)
 }
 
 // findBazelGoSDK locates the hermetic Go SDK that rules_go provides when the
@@ -1341,7 +1546,7 @@ func GoPackageSourceDir(importPath string) string {
 	if importPath == "" {
 		return ""
 	}
-	goroot := findGOROOT()
+	goroot := GoSDKRoot()
 	if goroot == "" {
 		return ""
 	}

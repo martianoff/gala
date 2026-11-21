@@ -59,7 +59,9 @@ When it finds none, gala prints `Warning: Go SDK not found — Go type inference
 
 It warns, too, when the SDK type inference reads is not the one `go` on `PATH` builds with, usually because `GOROOT` points at an older install. GALA then infers types from one Go version and compiles with another. Set `GOROOT` to the output of `go env GOROOT`, or unset it if it points at an old install.
 
-`gala doctor` asks `go` for its version outside any module, so it reports the Go that is installed. Inside a module whose `go.mod` asks for a newer Go, the go command may download and switch to that toolchain (`GOTOOLCHAIN`), but type inference still reads the installed SDK. Install Go 1.25 or newer rather than relying on the switch.
+The go.mod files GALA generates ask for Go 1.25, so a `go` from 1.21 to 1.24 builds GALA code with a newer toolchain it downloads and switches to, under the default `GOTOOLCHAIN=auto`. With `GOTOOLCHAIN=local` the build fails instead, and a `go` older than 1.21 builds with itself, so code that needs a newer Go fails to compile. A `GOTOOLCHAIN` that names a toolchain switches too. When the SDK came from steps 3–5, type inference follows the switch: it asks the go command which toolchain it uses and reads that one. If the go command cannot tell, for example offline, gala prints a warning and reads the installed SDK.
+
+`gala doctor` asks `go` for its version outside any module, so it reports the Go that is installed (or the toolchain `GOTOOLCHAIN` names), and fails when that is older than Go 1.25. Install Go 1.25 or newer rather than relying on the switch: it downloads a toolchain, and every gala process asks the go command again.
 
 Under Bazel, the `.bazelrc` lines `build --action_env=GOROOT` and `build --action_env=PATH` pass the Go SDK through to the transpile actions; see [Required .bazelrc settings](DEPENDENCY_MANAGEMENT.MD#required-bazelrc-settings).
 

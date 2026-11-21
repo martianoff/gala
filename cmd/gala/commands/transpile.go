@@ -263,7 +263,15 @@ func runTranspile(cmd *cobra.Command, args []string) {
 
 	// Run if requested
 	if transpileRun {
-		execCmd := exec.Command("go", "run", actualOutput)
+		// Compile with the SDK the analyzer read types from: outside a module,
+		// the go on PATH would not switch to it (see analyzer.GoSDKRoot).
+		goBin := "go"
+		if root := analyzer.GoSDKRoot(); root != "" {
+			if sdkGo, err := exec.LookPath(filepath.Join(root, "bin", "go")); err == nil {
+				goBin = sdkGo
+			}
+		}
+		execCmd := exec.Command(goBin, "run", actualOutput)
 		execCmd.Stdout = os.Stdout
 		execCmd.Stderr = os.Stderr
 		err = execCmd.Run()
