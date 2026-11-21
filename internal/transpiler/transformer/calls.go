@@ -5013,10 +5013,10 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 	declaredResult := t.declaresAnyResult(s)
 	if !isFunc && s.funcResult != nil {
 		// A result is expected: the parameter's own type, which may spell
-		// `any`, or the body's type where it names a type parameter (NilType,
-		// spelled `any`).
+		// `any`, or the body's type where it names a type parameter or does
+		// not resolve (an unusable part, spelled `any` like a placeholder).
 		expectedRetType = t.typeToExpr(s.funcResult)
-		declaredResult = !s.open && !s.funcResult.IsNil()
+		declaredResult = !transpiler.ContainsUnusable(s.funcResult)
 	}
 	if !isFunc && s.typ != nil && (s.typ.IsAny() || s.typ.String() == "interface{}") {
 		// A slot typed `any` (a Go `func Register(h any)`) takes the lambda as

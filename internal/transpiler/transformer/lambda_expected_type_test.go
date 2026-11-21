@@ -1033,6 +1033,19 @@ func main() {
     })
     Println(b(3))
 }`, []string{"func(k int) any {", "return q * q"}},
+		{"declared result with a type parameter inside", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func run[A any, B any](f func(A) Array[B]) func(A) Array[B] = f
+
+func main() {
+    val b = run((k int) => {
+        val q = k + 1
+        ArrayOf(q, q)
+    })
+    Println(b(3))
+}`, []string{"func(k int) Array[int] {", "return ArrayOf(q, q)"}},
 		{"variadic parameter", `package main
 
 func first[A any, B any](fs ...func(A) B) func(A) B = fs[0]
