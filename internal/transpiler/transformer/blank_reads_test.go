@@ -1,12 +1,37 @@
 package transformer_test
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"martianoff/gala/galaerr"
 
 	"github.com/stretchr/testify/require"
 )
+
+// TestUnboundUnderscoreReadInDefault pins GALA-E0139 for an unbound `_` in a
+// default lowered at a use site in another package: it is reported in the
+// default's own file, where the `_` is written.
+func TestUnboundUnderscoreReadInDefault(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) string {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+		return full
+	}
+	write("gala.mod", "module example.com/blank\n\ngala dev\n")
+	libFile := write("lib/lib.gala", "package lib\n\nfunc Inc(n int) int = n + 1\n\nfunc F(n int = Inc(_)) int = n\n")
+	_, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/blank/lib\"\n\nfunc main() {\n    Println(lib.F())\n}\n")
+	require.Error(t, err)
+	var se *galaerr.SemanticError
+	require.True(t, errors.As(err, &se), "%v", err)
+	require.Equal(t, galaerr.CodeUnderscoreBindingRead, se.Code, "%v", err)
+	require.Equal(t, libFile, se.FilePath)
+	require.Equal(t, 5, se.Line)
+}
 
 // TestUnboundUnderscoreRead pins GALA-E0139 at a read of a `_` that nothing
 // binds, decided on the finished file: an argument lowered on trial before
@@ -20,6 +45,10 @@ func TestUnboundUnderscoreRead(t *testing.T) {
 			"package main\n\nfunc main() {\n    val y = 1\n    Println(y + _)\n}\n", "line 5:16 "},
 		{"an `also` clause's receiver",
 			"package main\n\nimport . \"martianoff/gala/concurrent\"\n\nfunc compute(n int) Future[int] = Future[int](n * n)\n\nfunc g(n int) Future[int] = Future[int](n + 1)\n\nfunc total() Future[int] {\n    bind a = compute(2)\n    also b = g(_)\n    Future[int](a + b)\n}\n\nfunc main() {\n    Println(total().Get())\n}\n", "line 11:15 "},
+		// No placeholder lambda takes a `_` inside an if-expression argument
+		// yet (#1346); its read is reported rather than left to Go.
+		{"inside an if-expression argument",
+			"package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() {\n    Println(ArrayOf(1, -2).Map(if (_ > 0) 1 else 2))\n}\n", "line 6:35 "},
 		{"the first of two reads",
 			"package main\n\nfunc add(a int, b int) int = a + b\n\nfunc main() {\n    Println(add(_, 1))\n    Println(add(2, _))\n}\n", "line 6:16 "},
 	}

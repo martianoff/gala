@@ -12,9 +12,8 @@ An increment, decrement or compound assignment of `_` (`_++`, `_--`,
 `_ += x`) is the same error, with or without a `_` binding in scope: each
 reads `_` before writing it. Only `=` writes to `_`, and `_ = x` discards x.
 
-A `_` that nothing binds is the same error when it is read: `inc(_)` where
-`inc` takes an `int` is no placeholder lambda, since a placeholder lambda
-takes `_` only where a function is expected.
+A `_` that nothing binds is the same error when it is read, as in `inc(_)`
+where `inc` takes an `int`: no placeholder lambda takes that `_`.
 
 **Minimal repro.**
 
