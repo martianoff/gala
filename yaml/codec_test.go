@@ -869,3 +869,30 @@ func TestDecoder_QuotedPartOfPlainScalar(t *testing.T) {
 		}
 	}
 }
+
+// Flow-style text, which this parser keeps as a string, keeps its quoted
+// items whole: a "#" or ": " inside one is neither a comment nor a key's
+// colon. A comment after the flow text is still dropped.
+func TestDecoder_FlowTextKeepsQuotedItems(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`key: [a, "b # c"]`, `{key: [a, "b # c"]}`},
+		{`key: [a, "b # c"] # note`, `{key: [a, "b # c"]}`},
+		{`k: {"a": "b # c"}`, `{k: {"a": "b # c"}}`},
+		{`- [1, "a # b"]`, `[[1, "a # b"]]`},
+		{`- ["x: y"]`, `[["x: y"]]`},
+		{`- ['it''s: x']`, `[['it''s: x']]`},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}
+
+// A document that is a literal block reads as a string, whatever its body
+// holds: a ": " in it does not make a key.
+func TestDecoder_BareLiteralBlockIsAString(t *testing.T) {
+	if got, want := parseDump("|\n  a: b\n  c\n"), "a: b\nc\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

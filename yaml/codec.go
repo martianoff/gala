@@ -816,7 +816,13 @@ func splitSignificantLines(input string) []pLine {
 		content := raw[indent:]
 		if endsWithLiteralBlock(content) {
 			joined, consumed := takeLiteralBlock(rawLines, i+1, indent)
-			collapsed := stripLiteralBlockMarker(content) + " " + doubleQuoted(joined)
+			// The block becomes a double-quoted scalar on its header's line.
+			// A bare "|" leaves no text before it, so the line starts with
+			// the quote and reads as a quoted scalar, never as a key.
+			collapsed := doubleQuoted(joined)
+			if before := stripLiteralBlockMarker(content); before != "" {
+				collapsed = before + " " + collapsed
+			}
 			out = append(out, pLine{indent: indent, raw: collapsed, lineNum: i + 1})
 			i += consumed
 			continue
@@ -1075,15 +1081,7 @@ func withoutComment(s string) string {
 // there is none before a comment. A plain scalar has no quoted regions: a
 // quote inside it, as in it's, is text.
 func findKeyColon(s string) int {
-	for i := 0; i < len(s); i++ {
-		switch {
-		case s[i] == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
-			return -1 // the rest is a comment
-		case s[i] == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'):
-			return i
-		}
-	}
-	return -1
+	return scanPlain(s, 0, true)
 }
 
 // findComment returns the index of the '#' that starts a comment in the
@@ -1103,8 +1101,39 @@ func findComment(s string, from int) int {
 		}
 		from = max(from, t+end+1)
 	}
+	return scanPlain(s, from, false)
+}
+
+// scanPlain returns, from index from on, the index of the '#' that starts a
+// comment, or with wantColon the index of the first ':' followed by white
+// space (or the end) before any comment; -1 if there is none. In plain text
+// a quote is text. Flow-style text ("[a, \"b # c\"]", "{...}"), which this
+// parser keeps as a string, is different: a quote inside it opens a quoted
+// item that may hold "#" or ": ", so quotes are tracked there.
+func scanPlain(s string, from int, wantColon bool) int {
+	t := from
+	for t < len(s) && (s[t] == ' ' || s[t] == '\t') {
+		t++
+	}
+	flow := t < len(s) && (s[t] == '[' || s[t] == '{')
+	quote := byte(0)
 	for i := from; i < len(s); i++ {
-		if s[i] == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
+		c := s[i]
+		switch {
+		case quote == '"' && c == '\\':
+			i++ // an escaped character never closes the quote
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case flow && (c == '"' || c == '\''):
+			quote = c
+		case c == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
+			if wantColon {
+				return -1 // the rest is a comment
+			}
+			return i
+		case wantColon && c == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'):
 			return i
 		}
 	}
