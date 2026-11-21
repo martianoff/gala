@@ -374,13 +374,18 @@ func TestDecoder_SurrogatePairEscape(t *testing.T) {
 	want := string(rune(0x1F600))
 	for _, pair := range []string{high + low, strings.ToLower(high + low)} {
 		if _, s, err := readKeyValue(`k: "` + pair + ` x"`); s != want+" x" || err != "" {
-			t.Errorf("%s => (%q, error %q), want %q", pair, s, err, want+" x")
+			t.Errorf("value %s => (%q, error %q), want %q", pair, s, err, want+" x")
+		}
+		if k, _, err := readKeyValue(`"` + pair + ` x": v`); k != want+" x" || err != "" {
+			t.Errorf("key %s => (%q, error %q), want %q", pair, k, err, want+" x")
 		}
 	}
 	for _, half := range []string{high, low, low + high} {
 		wantErr := "yaml: invalid escape " + half[:6] + " in double-quoted scalar"
-		if _, _, err := readKeyValue(`k: "` + half + `"`); err != wantErr {
-			t.Errorf("%s => error %q, want %q", half, err, wantErr)
+		for _, src := range []string{`k: "` + half + `"`, `"` + half + `": v`} {
+			if _, _, err := readKeyValue(src); err != wantErr {
+				t.Errorf("%s => error %q, want %q", src, err, wantErr)
+			}
 		}
 	}
 }
