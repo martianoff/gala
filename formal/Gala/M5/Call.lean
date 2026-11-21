@@ -1439,3 +1439,146 @@ theorem andor_sim3 (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 4 ≤ K) (κ : 
         fun _ => by simp [UInt], sframe_trans hsfl hsfr, gframe_trans hgfl hgfr, spent_trans hspl hspr⟩
 
 end Sim4
+
+section Args
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem lowerArgs_facts (κ : String → Option Kind) : ∀ (ks : List Kind) (args : List Spec.Expr) (las : List Expr),
+    lowerArgs K sg κ ks args = some las →
+      (∀ a ∈ args, Spec.isNamed a = false) ∧ args.length = ks.length
+  | [], [], _, _ => ⟨by simp, rfl⟩
+  | k :: ks, a :: as, las, h => by
+    simp only [lowerArgs] at h
+    split at h
+    · cases h
+    · rename_i hn
+      split at h
+      · rename_i k' l hl
+        split at h
+        · simp only [Option.map_eq_some_iff] at h
+          obtain ⟨ls, hls, -⟩ := h
+          obtain ⟨h1, h2⟩ := lowerArgs_facts κ ks as ls hls
+          refine ⟨fun b hb => ?_, by simp [h2]⟩
+          simp only [List.mem_cons] at hb
+          rcases hb with rfl | hb
+          · simpa using hn
+          · exact h1 b hb
+        · cases h
+      · cases h
+  | [], _ :: _, _, h | _ :: _, [], _, h => by simp [lowerArgs] at h
+
+theorem evalList_cons_run (d : Nat) (e : Spec.Expr) (es : List Spec.Expr) (s : Spec.St) :
+    (Spec.evalList ds d (e :: es)).run.run s = match (Spec.eval ds d e).run.run s with
+      | (.ok v, t) => match (Spec.evalList ds d es).run.run t with
+        | (.ok vs, t') => (.ok (v :: vs), t')
+        | (.error er, t') => (.error er, t')
+      | (.error er, t) => (.error er, t) := by
+  rw [Spec.evalList.eq_def]
+  simp only [Spec.run_bind_eq]
+  rcases (Spec.eval ds d e).run.run s with ⟨r, t⟩
+  cases r with
+  | error => rfl
+  | ok v =>
+    simp only
+    rcases (Spec.evalList ds d es).run.run t with ⟨r', t'⟩
+    cases r' <;> rfl
+
+theorem evalList_nil_run (d : Nat) (s : Spec.St) : (Spec.evalList ds d []).run.run s = (.ok [], s) := by
+  rw [Spec.evalList.eq_def]; rfl
+
+/-- **A call's arguments**, left to right on both sides. -/
+theorem mapM_sim (d : Nat) (ih : ExprSim ds cx P K sg d) (κ : String → Option Kind) :
+    ∀ (ks : List Kind) (args : List Spec.Expr) (las : List Expr), lowerArgs K sg κ ks args = some las →
+    ∀ (s : Spec.St) (g : St) (env : Env), Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps →
+    ∀ M, K * d ≤ M → ARes3 ks s g ((Spec.evalList ds d args).run.run s) ((las.mapM (evalExpr cx M env)).run.run g)
+  | [], [], las, h, s, g, env, _, _, M, _ => by
+    simp only [lowerArgs, Option.some.injEq] at h; subst h
+    rw [evalList_nil_run]
+    exact ⟨[], g, rfl, trivial, sframe_refl _, gframe_refl g, by unfold Spent; omega⟩
+  | k :: ks, a :: as, las, h, s, g, env, hi, hsg, M, hM => by
+    simp only [lowerArgs] at h
+    split at h
+    · cases h
+    split at h
+    · rename_i k' l hl
+      split at h
+      · rename_i hk; subst hk
+        simp only [Option.map_eq_some_iff] at h
+        obtain ⟨ls, hls, rfl⟩ := h
+        have hA := ih κ a k' l hl s g env hi hsg M hM
+        rw [evalList_cons_run, List.mapM_cons, grun_bind]
+        rcases hra : (Spec.eval ds d a).run.run s with ⟨ra, sa⟩
+        rw [hra] at hA
+        cases ra with
+        | error e =>
+          cases e with
+          | panic pc m => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hA; rw [hg]; exact ⟨pv, g', rfl, hp, ho, hgf⟩
+          | ret => exact hA.elim
+          | _ => trivial
+        | ok v =>
+        obtain ⟨w, ga, hg, hvw, hk, -, hsfa, hgfa, hspa⟩ := hA
+        rw [hg]
+        simp only
+        have hR := mapM_sim d ih κ ks as ls hls sa ga env (inv3_frame hi hsfa hgfa) (spent_le hspa hsg) M hM
+        rw [grun_bind]
+        rcases hrr : (Spec.evalList ds d as).run.run sa with ⟨rr, sr⟩
+        rw [hrr] at hR
+        cases rr with
+        | error e =>
+          cases e with
+          | panic pc m =>
+            obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hR; rw [hg]
+            exact ⟨pv, g', rfl, hp, by rw [ho, (sframe_parts hsfa).2.2], gframe_trans hgfa hgf⟩
+          | ret => exact hR.elim
+          | _ => trivial
+        | ok vs =>
+        obtain ⟨ws, gr, hg, hkr, hsfr, hgfr, hspr⟩ := hR
+        rw [hg]
+        exact ⟨w :: ws, gr, rfl, ⟨hvw, hk, hkr⟩, sframe_trans hsfa hsfr, gframe_trans hgfa hgfr,
+          spent_trans hspa hspr⟩
+      · cases h
+    · cases h
+  | [], _ :: _, _, h, _, _, _, _, _, _, _ | _ :: _, [], _, h, _, _, _, _, _, _, _ => by simp [lowerArgs] at h
+
+theorem krel_vrel : ∀ {ks : List Kind} {vs : List Spec.Val} {w : Val} {ws : List Val},
+    KRel ks vs (w :: ws) → ∃ v, VRel v w
+  | _ :: _, _ :: _, _, _, h => ⟨_, h.1⟩
+  | [], [], _, _, h | [], _ :: _, _, _, h | _ :: _, [], _, _, h => by simp [KRel] at h
+
+/-- ... and GoCore's `evalArgs`, which passes a single call's results as they are: here a
+    single argument is a value of a kind, whose results are itself. -/
+theorem args_sim (d : Nat) (ih : ExprSim ds cx P K sg d) (κ : String → Option Kind) (ks : List Kind)
+    (args : List Spec.Expr) (las : List Expr) (hl : lowerArgs K sg κ ks args = some las)
+    (s : Spec.St) (g : St) (env : Env) (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps)
+    (M : Nat) (hM : K * d ≤ M) :
+    ARes3 ks s g ((Spec.evalList ds d args).run.run s) ((evalArgs cx (M + 1) env las).run.run g) := by
+  have h := mapM_sim ds cx P K sg d ih κ ks args las hl s g env hi hsg M hM
+  match las, h with
+  | [a], h =>
+    simp only [evalArgs]
+    rw [List.mapM_cons, List.mapM_nil, grun_bind] at h
+    rw [grun_bind]
+    revert h
+    rcases (evalExpr cx M env a).run.run g with ⟨r, g'⟩
+    intro h
+    cases r with
+    | error e => simp only at h ⊢; exact h
+    | ok w =>
+      simp only [run_pureM, grun_bind] at h ⊢
+      rcases sr : (Spec.evalList ds d args).run.run s with ⟨rs, s'⟩
+      rw [sr] at h
+      rcases rs with er | vs
+      · cases er with
+        | panic => obtain ⟨_, _, hg, _⟩ := h; cases hg
+        | ret => exact h.elim
+        | _ => trivial
+      · obtain ⟨ws, g'', hg, hkr, rest⟩ := h
+        cases hg
+        obtain ⟨v, hv⟩ := krel_vrel hkr
+        exact ⟨[w], g', by rw [results_of_vrel hv], hkr, rest⟩
+  | [], h => simpa [evalArgs] using h
+  | a :: b :: rest, h => simpa [evalArgs] using h
+
+end Args
