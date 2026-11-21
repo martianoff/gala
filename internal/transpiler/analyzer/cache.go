@@ -855,35 +855,37 @@ func (c *analysisCache) Put(pkgPath string, contentHash string, depsHash string,
 	}
 }
 
-// evictStale removes old cache entries for the same package with different content hashes.
+// evictStale removes old cache entries for the same package with different
+// content hashes. It finds them by the hash that leads their names (see
+// cachePrefix) alone, which no other package's names start with, and which
+// a file system that rewrites names (normalizing a non-ASCII readable part,
+// say) leaves as it is.
 func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 	if !c.enabled {
 		return
 	}
-	prefix := cachePrefix(pkgPath)
-	keepName := cacheName(prefix, keepHash)
+	hashPrefix := pathHash(pkgPath) + "_"
+	keepName := cacheName(cachePrefix(pkgPath), keepHash)
 
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return
 	}
 	for _, entry := range entries {
-		if name := entry.Name(); !entry.IsDir() && strings.HasPrefix(name, prefix) && name != keepName {
+		if name := entry.Name(); !entry.IsDir() && strings.HasPrefix(name, hashPrefix) && name != keepName {
 			os.Remove(filepath.Join(c.dir, name))
 		}
 	}
 }
 
 // cachePrefix is the start of the name of every entry of the package at
-// pkgPath, which evictStale matches on: a hash of the path, then the path
-// made a file name, for reading. Led by the hash, no package's prefix starts
-// another's entry names, as the path alone did (lib_ those of lib/util; a/b_c
-// and a_b/c, both a_b_c, each other's). The hash tells packages apart, so
-// the readable part is cut to keep a long path's names within file-name
-// limits.
+// pkgPath: a hash of the path (pathHash), then the path made a file name,
+// for reading. Led by the hash, no package's prefix starts another's entry
+// names, as the path alone did (lib_ those of lib/util; a/b_c and a_b/c,
+// both a_b_c, each other's). The hash tells packages apart, so the readable
+// part is cut to keep a long path's names within file-name limits.
 func cachePrefix(pkgPath string) string {
 	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
-	sum := sha256.Sum256([]byte(slashed))
 	readable := strings.ReplaceAll(slashed, "/", "_")
 	if cut := len(readable) - maxReadableCacheName; cut > 0 {
 		// The cut moves on to a rune's start: a file name of invalid
@@ -894,7 +896,14 @@ func cachePrefix(pkgPath string) string {
 		}
 		readable = readable[cut:]
 	}
-	return hex.EncodeToString(sum[:6]) + "_" + readable + "_"
+	return pathHash(pkgPath) + "_" + readable + "_"
+}
+
+// pathHash is the first 12 hex digits of the SHA-256 of pkgPath, with `\`
+// made `/`: the part of the package's entry names that tells it apart.
+func pathHash(pkgPath string) string {
+	sum := sha256.Sum256([]byte(strings.ReplaceAll(pkgPath, "\\", "/")))
+	return hex.EncodeToString(sum[:6])
 }
 
 // maxReadableCacheName bounds, in bytes, the readable part of an entry's

@@ -289,7 +289,7 @@ func TestAnalysisCacheEntryNameOfLongPath(t *testing.T) {
 	} {
 		c := &analysisCache{dir: t.TempDir(), enabled: true}
 		name := filepath.Base(c.cachePath(long, "333333333333cccc"))
-		assert.LessOrEqual(t, len(name), 200, "entry name %s", name)
+		assert.LessOrEqual(t, len(name), len("hhhhhhhhhhhh_")+maxReadableCacheName+len("_cccccccccccc.bin"), "entry name %s", name)
 		assert.True(t, utf8.ValidString(name), "entry name %q is not valid UTF-8", name)
 		c.Put(long, "333333333333cccc", "deps", &transpiler.RichAST{PackageName: "pkg"}, nil)
 		got, _ := c.Get(long, "333333333333cccc", "deps")
