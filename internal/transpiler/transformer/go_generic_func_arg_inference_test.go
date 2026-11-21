@@ -56,6 +56,18 @@ func main() {
     }))
 }
 `, []string{"func(yield func(string) bool)"}},
+		{"a lambda converted to iter.Seq[string]", `package main
+
+import "iter"
+import "slices"
+
+func main() {
+    val s = iter.Seq[string]((yield) => {
+        yield("a")
+    })
+    Println(slices.Collect(s))
+}
+`, []string{"func(yield func(string) bool)"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

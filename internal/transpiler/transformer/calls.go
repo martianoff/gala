@@ -5061,6 +5061,12 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 	if _, isAlias := t.typeAliases[name]; isAlias {
 		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
 	}
+	// A generic Go named function type with its type arguments
+	// (`Pred[int]`, `iter.Seq[string]`) is instantiated with them.
+	switch fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		return t.goNamedFuncTypeOf(t.astTypeToTranspilerType(fun))
+	}
 	return t.goNamedFuncType(name)
 }
 
