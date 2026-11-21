@@ -309,8 +309,11 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		}
 
 		// A value whose type has an Apply is called as `v.Apply()` is (see
-		// Section 1.5 of transformCallWithArgsCtx).
-		if callee, ok := t.valueApplyCallee(base); ok {
+		// Section 1.5 of transformCallWithArgsCtx), unless that Apply takes
+		// parameters and is no generic one: such a call is left as written,
+		// so a value of a Go function type with an Apply is still called as
+		// the function it is.
+		if callee, ok := t.valueApplyCallee(base); ok && !takesArgs(t.calleeApplyType(base)) {
 			base = callee
 		}
 
@@ -329,7 +332,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			// registry key — rather than repeating it inline.
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 			// A struct field whose type has an Apply is called through it.
-			if callee, ok := t.fieldApplyCallee(base, zeroArgLookupBase, sel.Sel.Name); ok {
+			if callee, ok := t.fieldApplyCallee(base, zeroArgLookupBase, sel.Sel.Name); ok && !t.isImportIdent(sel.X) {
 				base = callee
 				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel, "Apply")
 			}
@@ -2969,6 +2972,23 @@ func genericApply(meta *transpiler.TypeMetadata) bool {
 	return apply != nil && (apply.IsGeneric || len(apply.TypeParams) > 0)
 }
 
+// isImportIdent reports whether e names an import, not a binding that
+// shadows one: what it selects is a package's member, never a field.
+func (t *galaASTTransformer) isImportIdent(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && t.importManager.IsPackage(id.Name) && t.shadowingScope(id.Name) == nil
+}
+
+// takesArgs reports whether meta's Apply is not generic and takes
+// parameters, so a call of it with none is not a call of that Apply.
+func takesArgs(meta *transpiler.TypeMetadata) bool {
+	if meta == nil || genericApply(meta) {
+		return false
+	}
+	apply := meta.Methods["Apply"]
+	return apply != nil && len(apply.ParamTypes) > 0
+}
+
 // callsGenericApply reports whether a call of recv's Apply is a generic method
 // call, by the test Section 3 rewrites one by.
 func (t *galaASTTransformer) callsGenericApply(recv ast.Expr) bool {
@@ -3219,7 +3239,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 	// A struct field, `x.f(...)`, whose type has an Apply is called through
 	// it (Section 1.5), now that the receiver's type is known.
-	if id, isIdent := receiver.(*ast.Ident); receiver == nil || isIdent && t.importManager.IsPackage(id.Name) && t.shadowingScope(id.Name) == nil {
+	if receiver == nil || t.isImportIdent(receiver) {
 		// A package's member is no field.
 	} else if callee, ok := t.fieldApplyCallee(fun, lookupBaseName, method); ok {
 		if slices.ContainsFunc(c.args.list, argSrc.spread) {
