@@ -296,6 +296,8 @@ sh_test(
 sh_test(
     name = "gocore_fuel_test",
     srcs = ["gocore_tests.sh"],
+    # About 52 s locally, more on a shared CI runner.
+    timeout = "long",
     args = [
         "$(rootpath :gocore)",
         "$(rootpath tests/gocore/fuel.json)",
