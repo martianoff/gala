@@ -76,6 +76,10 @@ type defaultLowering struct {
 	// emitTypeParams is the type parameters in scope where the lowered
 	// default is emitted (see shadowedByUse).
 	emitTypeParams map[string]bool
+	// useLine and useCol are where the use site is, in the file being
+	// transformed: where a diagnostic about a default goes when its own
+	// file or position is unknown (see placeForeignDefaultError).
+	useLine, useCol int
 }
 
 // shadowedByUse returns a package-level val, var, function or type — or a
@@ -386,7 +390,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if err := t.defaultCycle(src, useLine, useCol); err != nil {
 		return nil, err
 	}
-	t.loweringDefault = &defaultLowering{foreign: !local, useScope: t.currentScope, emitTypeParams: useSite, src: src, outer: prev}
+	t.loweringDefault = &defaultLowering{foreign: !local, useScope: t.currentScope, emitTypeParams: useSite, src: src, outer: prev, useLine: useLine, useCol: useCol}
 	// A default is not written in an interpolation it is lowered in.
 	prevInterp := t.interpolationScope
 	t.interpolationScope = nil
