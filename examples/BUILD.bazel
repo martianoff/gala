@@ -2091,6 +2091,15 @@ gala_exec_test(
 # slice type's methods. In a directory of its own: the single-file example
 # corpus that the transformer guards transpile cannot resolve its Go bridge
 # package.
+# #1378: a range over a type parameter whose Go constraint has an integer
+# core type binds the type parameter.
+gala_exec_test(
+    name = "range_type_param_int",
+    src = "range_type_param_int/main.gala",
+    expected = "range_type_param_int/main.out",
+    deps = ["//examples/go_int_constraint_bridge"],
+)
+
 gala_exec_test(
     name = "go_tilde_constraint_lambda",
     src = "go_tilde_constraint_lambda/main.gala",

@@ -1,10 +1,61 @@
 package transformer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// TestRangeOverIntegerTypeParam pins #1378: a range over a value of a type
+// parameter whose Go constraint has an integer core type binds the loop
+// variable to the type parameter, as Go does, so `s"$i"` uses %v and a
+// lambda returning i returns T. A constraint with no core type keeps the int
+// key (Go rejects ranging over it).
+func TestRangeOverIntegerTypeParam(t *testing.T) {
+	const bridge = `package main
+
+type Int64ish interface{ ~int64 }
+
+type Sized interface{ Int64ish }
+
+type Mixed interface{ ~int | ~int64 }
+`
+	cases := []struct {
+		name, constraint string
+		want             []string
+	}{
+		{"a ~int64 constraint", "Int64ish", []string{`"i=%v"`, "func() T"}},
+		{"a constraint embedding one", "Sized", []string{`"i=%v"`, "func() T"}},
+		{"a constraint with no core type", "Mixed", []string{`"i=%d"`, "func() int"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(bridge), 0o600))
+			src := `package main
+
+func steps[T ` + c.constraint + `](n T) {
+    for i := range n {
+        val f = () => i
+        Println(s"i=$i", f())
+    }
+}
+
+func main() {
+}
+`
+			mainPath := filepath.Join(dir, "main.gala")
+			require.NoError(t, os.WriteFile(mainPath, []byte(src), 0o600))
+			out, err := newForbiddenBuiltinTranspiler().Transpile(src, mainPath)
+			require.NoError(t, err)
+			for _, w := range c.want {
+				require.Contains(t, out, w)
+			}
+		})
+	}
+}
 
 // TestRangeOverGoNamedAndIterTypes pins the types `for k, v := range x` binds
 // when x is a Go named map type, a Go iterator (iter.Seq, iter.Seq2) or a

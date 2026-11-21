@@ -580,6 +580,7 @@ func (e *encoder) writeGoTypeData(t *transpiler.GoTypeData) {
 	e.writeBool(t.Incomparable)
 	e.writeBool(t.EmbedsComparable)
 	e.writeBool(t.SelfEqual)
+	e.writeType(t.CoreType)
 }
 
 func (e *encoder) writeStringGoTypeDataMap(m map[string]*transpiler.GoTypeData) {
@@ -1208,6 +1209,7 @@ func (d *decoder) readGoTypeData() *transpiler.GoTypeData {
 	t.Incomparable = d.readBool()
 	t.EmbedsComparable = d.readBool()
 	t.SelfEqual = d.readBool()
+	t.CoreType = d.readType()
 	return t
 }
 

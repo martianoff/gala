@@ -113,6 +113,11 @@ type GoTypeData struct {
 	// constrains is comparable, and == on it compares as on one constrained
 	// by comparable.
 	EmbedsComparable bool
+	// CoreType is, for an interface whose type set is non-empty and has one
+	// underlying type (`interface{ ~int64 }`, `interface{ int64 | MyInt }`),
+	// that type; nil otherwise. A type parameter it constrains ranges as
+	// that type.
+	CoreType Type
 	// SelfEqual is true when the value method set of this (non-generic,
 	// non-interface) type has `Equal(T) bool` with T the type itself, as
 	// time.Time's does: == on it calls that Equal.

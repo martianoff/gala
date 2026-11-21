@@ -87,6 +87,7 @@ go_test(
         "go_types_debug_test.go",
         "go_types_test.go",
         "import_name_test.go",
+        "interface_core_type_test.go",
         "internal_import_test.go",
         "multipackage_panic_test.go",
         "opaque_base_test.go",

@@ -1611,6 +1611,56 @@ func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bo
 	return false
 }
 
+// interfaceCoreType is the one underlying type of every term in iface's type
+// set (`~int64`, `int64 | MyInt`), counting the interfaces it embeds; nil when
+// it has no type terms, or terms of different underlying types (`~int |
+// ~int64`), which have no core type and cannot be ranged over. Embedded
+// interfaces intersect; terms are collected as a union here, so an
+// intersection that narrows mixed terms to one type is missed (nil), never
+// mistyped.
+func interfaceCoreType(iface *types.Interface) types.Type {
+	var core types.Type
+	consistent := true
+	var visit func(iface *types.Interface, seen map[*types.Interface]bool)
+	visit = func(iface *types.Interface, seen map[*types.Interface]bool) {
+		if seen[iface] {
+			return
+		}
+		seen[iface] = true
+		for i := range iface.NumEmbeddeds() {
+			e := iface.EmbeddedType(i)
+			var terms []types.Type
+			if u, isUnion := e.(*types.Union); isUnion {
+				for j := range u.Len() {
+					terms = append(terms, u.Term(j).Type())
+				}
+			} else if inner, isIface := e.Underlying().(*types.Interface); isIface {
+				visit(inner, seen)
+				continue
+			} else {
+				terms = []types.Type{e}
+			}
+			for _, term := range terms {
+				u := term.Underlying()
+				if _, isIface := u.(*types.Interface); isIface {
+					consistent = false // an interface term: no single type
+					continue
+				}
+				if core == nil {
+					core = u
+				} else if !types.Identical(core, u) {
+					consistent = false
+				}
+			}
+		}
+	}
+	visit(iface, map[*types.Interface]bool{})
+	if !consistent {
+		return nil
+	}
+	return core
+}
+
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
 // and methods are recorded and, when own (the type belongs to the package being
 // compiled), the unexported ones that package declares as well.
@@ -1655,6 +1705,9 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	}
 	if iface, ok := typ.Underlying().(*types.Interface); ok {
 		data.EmbedsComparable = embedsComparable(iface, nil)
+		if core := interfaceCoreType(iface); core != nil {
+			data.CoreType = goTypeToTranspilerType(core)
+		}
 	} else if !isGenericGoType(typ) {
 		data.SelfEqual = hasSelfEqual(typ)
 	}

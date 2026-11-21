@@ -1,0 +1,32 @@
+package main
+
+import (
+    "time"
+    "martianoff/gala/examples/go_int_constraint_bridge"
+)
+
+// A range over a value of a type parameter whose constraint has an integer
+// core type binds the loop variable to the type parameter, as Go does
+// (#1378): instantiated with time.Duration, interpolation prints through its
+// String method.
+
+func steps[T go_int_constraint_bridge.Int64ish](n T) {
+    for i := range n {
+        val same = () => i
+        Println(s"i=$i same=${same()}")
+    }
+}
+
+func total[T go_int_constraint_bridge.Sized](n T) T {
+    var sum T = 0
+    for i := range n {
+        sum = sum + i
+    }
+    sum
+}
+
+func main() {
+    steps(time.Nanosecond * 2)
+    steps(int64(2))
+    Println(total(int64(4)), total(time.Nanosecond * 3))
+}
