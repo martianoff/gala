@@ -977,3 +977,22 @@ func TestDecoder_DeeplyNestedSequenceLine(t *testing.T) {
 		t.Fatalf("innermost value %q, want %q", n.scalar, "x")
 	}
 }
+
+// A "# " or ": |" inside a quoted or flow value, or inside a quoted key, is
+// neither a comment nor a block indicator; a quoted key may still open a
+// block.
+func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"k: [a, \"b: | # c\"]\nm: 1", `{k: [a, "b: | # c"], m: 1}`},
+		{"k: 'x: | # y'\nm: 1", "{k: x: | # y, m: 1}"},
+		{"- 'a: | # b'\n- c", "[a: | # b, c]"},
+		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body, c: 1}]"},
+		{"- - 'k # x': |\n      body", "[[{k # x: body}]]"},
+		{"\"a|b\": | # note\n  body", "{a|b: body}"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+		}
+	}
+}

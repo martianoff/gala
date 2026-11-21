@@ -819,16 +819,9 @@ func splitSignificantLines(input string) []pLine {
 		}
 		indent := countLeadingSpaces(raw)
 		content := raw[indent:]
-		if header, ok := literalBlockHeader(content); ok {
-			joined, consumed := takeLiteralBlock(rawLines, i+1, literalBlockParent(header, indent))
-			// The block becomes a double-quoted scalar on its header's line.
-			// A bare "|" leaves no text before it, so the line starts with
-			// the quote and reads as a quoted scalar, never as a key.
-			collapsed := doubleQuoted(joined)
-			if before := stripLiteralBlockMarker(header); before != "" {
-				collapsed = before + " " + collapsed
-			}
-			out = append(out, pLine{indent: indent, raw: collapsed, lineNum: i + 1})
+		if before, parent, ok := literalBlockHeader(content, indent); ok {
+			joined, consumed := takeLiteralBlock(rawLines, i+1, parent)
+			out = append(out, pLine{indent: indent, raw: before + doubleQuoted(joined), lineNum: i + 1})
 			i += consumed
 			continue
 		}
@@ -858,24 +851,38 @@ func countLeadingSpaces(s string) int {
 	return n
 }
 
-// literalBlockHeader returns content without a trailing comment, which may
-// follow a block indicator ("key: | # note"), and whether it opens a literal
-// block scalar. Only a line holding a '|' can, so only such a line pays for
-// the comment scan.
-func literalBlockHeader(content string) (string, bool) {
+// literalBlockHeader reports whether content, a line without its
+// indentation, opens a literal block scalar: a bare "|", a sequence item
+// "- |" (or "- - |"), or a pair "key: |" (also as an item, "- key: |"),
+// each optionally "|-" and followed by a comment. It returns the text that
+// stands before the block's body once the body is collapsed into a
+// double-quoted scalar, and the column the body must be indented past.
+//
+// The pair is split by tryParseKeyValue, so a "#" or ": |" inside a quoted
+// or flow value, or inside a quoted key, is never taken for a comment or a
+// block indicator. Only a line holding a '|' can open a block, so only such
+// a line pays for the split.
+func literalBlockHeader(content string, indent int) (string, int, bool) {
 	if strings.IndexByte(content, '|') < 0 {
-		return "", false
+		return "", 0, false
 	}
-	header := withoutComment(content)
-	return header, endsWithLiteralBlock(header)
-}
-
-// endsWithLiteralBlock reports whether a line opens a literal block scalar:
-// a bare "|", a sequence item "- |" or a "key: |" pair, optionally "|-".
-func endsWithLiteralBlock(content string) bool {
-	t := strings.TrimRight(content, " \t")
-	return isBlockIndicator(t) || isBlockIndicatorItem(t) ||
-		strings.HasSuffix(t, ": |") || strings.HasSuffix(t, ": |-")
+	n, lastDash := itemPrefix(content)
+	rest := content[n:]
+	if isBlockIndicator(withoutComment(rest)) {
+		// A bare "|" leaves no text before the body, so the collapsed line
+		// starts with the quote and reads as a quoted scalar, never a key.
+		if n == 0 {
+			return "", indent, true
+		}
+		return content[:n], indent + lastDash, true
+	}
+	key, value, isPair := tryParseKeyValue(rest)
+	if !isPair || !isBlockIndicator(value) {
+		return "", 0, false
+	}
+	// The key is written back double-quoted, which reads back as the same
+	// key whatever it holds.
+	return content[:n] + doubleQuoted(key) + ": ", indent + n, true
 }
 
 func isBlockIndicator(s string) bool { return s == "|" || s == "|-" }
@@ -891,45 +898,6 @@ func itemPrefix(s string) (n, lastDash int) {
 		n += 1 + countLeadingSpaces(s[n+1:])
 	}
 	return n, lastDash
-}
-
-// isBlockIndicatorItem reports whether s is a sequence item whose value is
-// a literal block ("- |", or "- - |" one level down).
-func isBlockIndicatorItem(s string) bool {
-	n, _ := itemPrefix(s)
-	// Only spaces separate the dash from the indicator; itemPrefix counted
-	// them, so a tab there ("- \t|") is not a block header.
-	return n > 0 && isBlockIndicator(strings.TrimRight(s[n:], " \t"))
-}
-
-// literalBlockParent returns the column the body of the literal block that
-// header opens must be indented past: the dash's column for a "- |" item,
-// the key's column for a "- key: |" item, and the header line's own
-// indentation otherwise.
-func literalBlockParent(header string, indent int) int {
-	n, lastDash := itemPrefix(header)
-	switch {
-	case n == 0:
-		return indent
-	case isBlockIndicator(strings.TrimRight(header[n:], " \t")):
-		return indent + lastDash
-	default:
-		return indent + n
-	}
-}
-
-func stripLiteralBlockMarker(content string) string {
-	t := strings.TrimRight(content, " \t")
-	if strings.HasSuffix(t, " |-") {
-		return t[:len(t)-3]
-	}
-	if strings.HasSuffix(t, " |") {
-		return t[:len(t)-2]
-	}
-	if t == "|" || t == "|-" {
-		return ""
-	}
-	return t
 }
 
 func takeLiteralBlock(raw []string, start, parentIndent int) (string, int) {
