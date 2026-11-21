@@ -11,7 +11,7 @@ last_modified_at: 2026-11-21
 
 # GALA-E0006 — Multiple default cases in a match expression
 
-**What it means.** A `match` expression has two default cases in a row, with no earlier case that matches every value. A default case is an unguarded `case _ =>`, or, in a match with no unguarded `case _`, an unguarded binding of the whole value whose name starts with a lowercase letter or `_` (`case n =>`; a name of a variant of the matched type, or of a zero-field extractor, tests the value instead). It is reported on the second. Any other case written after a case that matches every value (`case _` after `case n`, say, or `case n` after `case _`) is [GALA-E0141](/docs/errors/gala-e0141/), reported on the later case.
+**What it means.** A `match` expression has two default cases in a row, with no earlier case that matches every value. A default case is an unguarded `case _ =>`, or, in a match with no unguarded `case _`, an unguarded binding of the whole value whose name starts with a lowercase letter or `_` (`case n =>`; a name of a variant of the matched type or of its sealed view, or of a standalone zero-field extractor, tests the value instead). It is reported on the second. Any other case written after a case that matches every value (`case _` after `case n`, say, or `case n` after `case _`) is [GALA-E0141](/docs/errors/gala-e0141/), reported on the later case.
 
 ---
 
