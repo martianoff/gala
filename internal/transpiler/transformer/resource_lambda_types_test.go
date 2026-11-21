@@ -435,10 +435,13 @@ func TestConversionToGenericGoNamedFuncType(t *testing.T) {
 		assert.NotContains(t, out, "x A")
 	})
 	t.Run("Conv[int, int]((x) => x)", func(t *testing.T) {
-		files, galaFile := samePackageModule(".", goSrc, program("Conv[int, int]((x) => x)"))
+		files, galaFile := samePackageModule(".", goSrc,
+			"package main\n\nfunc main() {\n    val c = Conv[int, int]((x) => x)\n    val k = () => c\n    Println(k()(1))\n}\n")
 		out, err := transpileInModule(t, files, galaFile)
 		require.NoError(t, err)
 		assert.Contains(t, out, "func(x int) int")
+		// The converted value has the type it converts to.
+		assert.Contains(t, out, "func() Conv[int, int]")
 		assert.NotContains(t, out, "x A")
 	})
 }

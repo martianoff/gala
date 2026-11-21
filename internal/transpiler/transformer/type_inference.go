@@ -665,7 +665,7 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		// usefully. Instantiate it against the expected parameter type
 		// first, then unify with the concrete signature.
 		if instFT, ok := t.bareGenericFuncRefType(arg, paramType, foreign); ok {
-			t.unifyForInference(paramType, instFT, freshParamNames, inferredMap)
+			t.unifyGoParam(paramType, instFT, freshParamNames, inferredMap)
 			continue
 		}
 

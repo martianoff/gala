@@ -73,6 +73,41 @@ func main() {
     Println(h())
 }
 `, []string{"func() []int"}},
+		{"a GALA function and a lambda to a GALA generic taking iter.Seq[T]", `package main
+
+import "iter"
+
+func gen(yield func(int) bool) {
+    yield(1)
+}
+
+func countSeq[T any](s iter.Seq[T], p func(T) bool) int {
+    var n = 0
+    for x := range s {
+        if p(x) {
+            n = n + 1
+        }
+    }
+    n
+}
+
+func main() {
+    Println(countSeq(gen, (x) => x > 0))
+}
+`, []string{"func(x int) bool"}},
+		{"a value converted to iter.Seq[string], read back", `package main
+
+import "iter"
+import "slices"
+
+func main() {
+    val u = iter.Seq[string]((yield) => {
+        yield("a")
+    })
+    val k = () => u
+    Println(slices.Collect(k()))
+}
+`, []string{"func() iter.Seq[string]"}},
 		{"a lambda converted to iter.Seq[string]", `package main
 
 import "iter"

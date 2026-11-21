@@ -724,7 +724,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			return nil
 		}
 		bound := make(map[string]transpiler.Type)
-		t.unifyForInference(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
+		t.unifyGoParam(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
 		return t.checkPtrBoundTypeArgs(methodOwner, len(typeArgs), bound, argSource(at, argType), at)
 	}
 	// The arguments that refer to a generic function, checked once the
@@ -845,7 +845,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if v.spread {
 				substitutedParamType = spreadArgType(substitutedParamType)
 			}
-			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+			t.unifyGoParam(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
 			if err := checkPtrArg(i, expr, v.expr.at(), v.spread); err != nil {
 				return true, nil, err
 			}
@@ -1928,7 +1928,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 						paramType = spreadArgType(paramType)
 						argType = t.followAliasChain(unwrapValueMarkers(argType))
 					}
-					t.unifyForInference(paramType, argType, typeMeta.TypeParams, inferredMap)
+					t.unifyGoParam(paramType, argType, typeMeta.TypeParams, inferredMap)
 				}
 			}
 		}
@@ -5792,9 +5792,9 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
-		t.unifyForInference(paramType, argType, typeParams, inferredMap)
+		t.unifyGoParam(paramType, argType, typeParams, inferredMap)
 		if typed != nil {
-			t.unifyForInference(paramType, t.typedPartType(expr, argType), typeParams, typed)
+			t.unifyGoParam(paramType, t.typedPartType(expr, argType), typeParams, typed)
 		}
 	}
 	return inferredMap
