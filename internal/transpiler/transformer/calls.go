@@ -2316,11 +2316,11 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	}
 	s := slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}
 	// A parameter `f func(A) B` whose type parameters no other argument binds
-	// has no expected type, but it still takes a function with one result.
-	if transpiler.IsUnusable(expected) && paramIdx >= 0 && len(callCtx.funcMeta.TypeParams) > 0 {
-		if ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx]); ft != nil && len(ft.Results) == 1 {
-			s.returnsValue = true
-		}
+	// has no expected type (see resolveExpectedFuncArgType), but it still
+	// takes a function with one result.
+	if transpiler.IsUnusable(expected) && paramIdx >= 0 {
+		ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx])
+		s.returnsValue = ft != nil && len(ft.Results) == 1 && funcTypeParamsMentionTypeParams(ft.Params, callCtx.funcMeta.TypeParams)
 	}
 	return t.lowerArg(v, s, strict)
 }
