@@ -58,9 +58,14 @@ func nums() List[int] = ListOf(1, 2)
 			contains: "_tmp_2 := mk()\n\t\t_tmp_3 := t(\"i\", 0)",
 		},
 		{
-			name:     "untyped shift keeps its place and the parameter's type",
+			name:     "untyped shift takes the parameter's type",
 			main:     "var n = 2\n    val w int64 = nums().FoldLeft(f = mk64(), initial = 1 << n)\n    Println(w)",
-			contains: "List_FoldLeft[int64, int](nums(), 1<<n, mk64())",
+			contains: "_tmp_2 := mk64()\n\t\t_tmp_3 := int64(1 << n)",
+		},
+		{
+			name:     "untyped constant stays in place",
+			main:     "val w int64 = nums().FoldLeft(f = mk64(), initial = 4)\n    Println(w)",
+			contains: "List_FoldLeft[int64, int](nums(), 4, mk64())",
 		},
 	}
 	for _, tt := range tests {
