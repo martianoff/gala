@@ -3330,6 +3330,27 @@ theorem lowerLeaf_mono (hKK : K ≤ K') {κ : String → Option Kind} {e : Spec.
     simp only [this, ↓reduceIte]; exact h
   · cases h
 
+theorem armOf_mono {x : Spec.Expr} {ot ot' : Option (Kind × List GoCore.Full.Stmt)}
+    {oe oe' : Option (Kind × GoCore.Full.Expr)} (ht : ∀ p, ot = some p → ot' = some p)
+    (he : ∀ p, oe = some p → oe' = some p) :
+    ∀ p, armOf x (fun _ => ot) (fun _ => oe) = some p → armOf x (fun _ => ot') (fun _ => oe') = some p := by
+  intro p h
+  unfold armOf at h ⊢
+  by_cases hc : isCompound x = true
+  · simp only [hc, ite_true] at h ⊢; exact ht p h
+  · simp only [hc, Bool.false_eq_true, ite_false, Option.map_eq_some_iff] at h ⊢
+    obtain ⟨q, hq, rfl⟩ := h
+    exact ⟨q, he q hq, rfl⟩
+
+theorem ifOf_mono {rc rc' : Option (Kind × GoCore.Full.Expr)} {ra ra' rb rb' : Option (Kind × List GoCore.Full.Stmt)}
+    (hc : ∀ p, rc = some p → rc' = some p) (ha : ∀ p, ra = some p → ra' = some p)
+    (hb : ∀ p, rb = some p → rb' = some p) {p : Kind × GoCore.Full.Stmt} (h : ifOf rc ra rb = some p) :
+    ifOf rc' ra' rb' = some p := by
+  obtain ⟨k, st⟩ := p
+  obtain ⟨lc, ta, tb, h1, h2, h3, rfl⟩ := ifOf_some h
+  rw [hc _ h1, ha _ h2, hb _ h3]
+  simp [ifOf]
+
 mutual
 theorem lowerC_mono (hKK : K ≤ K') (κ : String → Option Kind) : ∀ (e : Spec.Expr) (r : Kind × GoCore.Full.Expr),
     lowerC K sg κ e = some r → lowerC K' sg κ e = some r
@@ -3383,12 +3404,17 @@ theorem lowerC_mono (hKK : K ≤ K') (κ : String → Option Kind) : ∀ (e : Sp
         cases ha : lowerArgs K sg κ p.1 args with
         | none => rw [ha] at h; cases h
         | some las => rw [ha] at h; rw [lowerArgs_mono hKK κ p.1 args las ha]; exact h
+  | .ifExpr c a b, r, h => by
+    simp only [lowerC, Option.bind_eq_bind, Option.bind_eq_some_iff] at h ⊢
+    obtain ⟨p, hp, h⟩ := h
+    exact ⟨p, ifOf_mono (lowerC_mono hKK κ c) (armOf_mono (lowerT_mono hKK none κ a) (lowerC_mono hKK κ a))
+      (armOf_mono (lowerT_mono hKK none κ b) (lowerC_mono hKK κ b)) hp, h⟩
   | .call (.lit _) _, _, h | .call (.paren _) _, _, h | .call (.unary ..) _, _, h | .call (.binary ..) _, _, h
   | .call (.call ..) _, _, h | .call (.select ..) _, _, h | .call (.tuple _) _, _, h | .call (.ifExpr ..) _, _, h
   | .call (.mtch ..) _, _, h | .call (.block _) _, _, h | .call (.ifStmt ..) _, _, h | .call (.ret _) _, _, h
   | .call (.assign ..) _, _, h | .call (.incdec ..) _, _, h | .call (.decl ..) _, _, h | .call (.interp _) _, _, h
   | .call (.lambda ..) _, _, h | .call (.named ..) _, _, h | .call (.unsupported _) _, _, h
-  | .select .., _, h | .tuple _, _, h | .ifExpr .., _, h | .mtch .., _, h | .block _, _, h | .ifStmt .., _, h
+  | .select .., _, h | .tuple _, _, h | .mtch .., _, h | .block _, _, h | .ifStmt .., _, h
   | .ret _, _, h | .assign .., _, h | .incdec .., _, h | .decl .., _, h | .interp _, _, h | .lambda .., _, h
   | .named .., _, h | .unsupported _, _, h => by simp [lowerC] at h
 theorem lowerArgs_mono (hKK : K ≤ K') (κ : String → Option Kind) : ∀ (ks : List Kind) (args : List Spec.Expr) (las : List GoCore.Full.Expr),
@@ -3413,15 +3439,45 @@ theorem lowerArgs_mono (hKK : K ≤ K') (κ : String → Option Kind) : ∀ (ks 
           | some ls => rw [hr] at h; rw [lowerArgs_mono hKK κ ks as ls hr]; exact h
         · cases h
   | [], _ :: _, _, h | _ :: _, [], _, h => by simp [lowerArgs] at h
-end
-
-end MonoK
-
-section MonoK2
-
-variable {K K' : Nat} (sg : Sigs)
-
-mutual
+theorem lowerT_mono (hKK : K ≤ K') (r : Option Kind) (κ : String → Option Kind) : ∀ (e : Spec.Expr)
+    (p : Kind × List GoCore.Full.Stmt), lowerT K sg r κ e = some p → lowerT K' sg r κ e = some p
+  | .ifExpr c a b, p, h => by
+    simp only [lowerT, Option.map_eq_some_iff] at h ⊢
+    obtain ⟨q, hq, h⟩ := h
+    exact ⟨q, ifOf_mono (lowerC_mono hKK κ c) (armOf_mono (lowerT_mono hKK r κ a) (lowerC_mono hKK κ a))
+      (armOf_mono (lowerT_mono hKK r κ b) (lowerC_mono hKK κ b)) hq, h⟩
+  | .ifStmt c (.block as) (some b), p, h => by
+    simp only [lowerT, Option.map_eq_some_iff] at h ⊢
+    obtain ⟨q, hq, h⟩ := h
+    exact ⟨q, ifOf_mono (lowerC_mono hKK κ c) (lowerTs_mono hKK r κ as)
+      (armOf_mono (lowerT_mono hKK r κ b) (lowerC_mono hKK κ b)) hq, h⟩
+  | .block ss, p, h => by
+    simp only [lowerT] at h ⊢
+    exact lowerTs_mono hKK r κ ss p h
+  | .ret (some x), p, h => by
+    simp only [lowerT] at h ⊢
+    cases hx : lowerC K sg κ x with
+    | none => rw [hx] at h; cases h
+    | some q => rw [hx] at h; rw [lowerC_mono hKK κ x q hx]; exact h
+  | .ifStmt _ (.block _) none, _, h | .ret none, _, h => by simp [lowerT] at h
+  | .lit _, _, h | .name _, _, h | .unary .., _, h | .binary .., _, h | .call .., _, h | .select .., _, h
+  | .paren _, _, h | .tuple _, _, h | .mtch .., _, h | .assign .., _, h | .incdec .., _, h | .decl .., _, h
+  | .interp _, _, h | .lambda .., _, h | .named .., _, h | .unsupported _, _, h => by simp [lowerT] at h
+  | .ifStmt _ (.lit _) _, _, h | .ifStmt _ (.name _) _, _, h | .ifStmt _ (.unary ..) _, _, h
+  | .ifStmt _ (.binary ..) _, _, h | .ifStmt _ (.call ..) _, _, h | .ifStmt _ (.select ..) _, _, h
+  | .ifStmt _ (.paren _) _, _, h | .ifStmt _ (.tuple _) _, _, h | .ifStmt _ (.ifExpr ..) _, _, h
+  | .ifStmt _ (.mtch ..) _, _, h | .ifStmt _ (.ifStmt ..) _, _, h | .ifStmt _ (.ret _) _, _, h
+  | .ifStmt _ (.assign ..) _, _, h | .ifStmt _ (.incdec ..) _, _, h | .ifStmt _ (.decl ..) _, _, h
+  | .ifStmt _ (.interp _) _, _, h | .ifStmt _ (.lambda ..) _, _, h | .ifStmt _ (.named ..) _, _, h
+  | .ifStmt _ (.unsupported _) _, _, h => by simp [lowerT] at h
+theorem lowerTs_mono (hKK : K ≤ K') (r : Option Kind) (κ : String → Option Kind) : ∀ (ss : List Spec.Expr)
+    (p : Kind × List GoCore.Full.Stmt), lowerTs K sg r κ ss = some p → lowerTs K' sg r κ ss = some p
+  | [], _, h => by simp [lowerTs] at h
+  | [e], p, h => armOf_mono (lowerT_mono hKK r κ e) (lowerC_mono hKK κ e) p h
+  | st :: st' :: ss, p, h => by
+    simp only [lowerTs, Option.bind_eq_bind, Option.bind_eq_some_iff] at h ⊢
+    obtain ⟨⟨κ₁, l⟩, h1, q, h2, h3⟩ := h
+    exact ⟨(κ₁, l), lowerS3_mono hKK r κ st _ h1, q, lowerTs_mono hKK r κ₁ (st' :: ss) q h2, h3⟩
 theorem lowerS3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Option Kind) : ∀ (st : Spec.Expr)
     (r : (String → Option Kind) × GoCore.Full.Stmt), lowerS3 K sg ρ κ st = some r → lowerS3 K' sg ρ κ st = some r
   | .decl m [x] false none [e], r, h => by
@@ -3432,7 +3488,7 @@ theorem lowerS3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Option
       simp only [hc, ↓reduceIte]
       cases he : lowerC K sg κ e with
       | none => rw [he] at h; cases h
-      | some p => rw [he] at h; rw [lowerC_mono sg hKK κ e p he]; exact h
+      | some p => rw [he] at h; rw [lowerC_mono hKK κ e p he]; exact h
   | .block ss, r, h => by
     simp only [lowerS3] at h ⊢
     cases hs : lowerSs3 K sg ρ κ ss with
@@ -3450,13 +3506,13 @@ theorem lowerS3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Option
         | none => rw [hc, ha, he] at h; simp at h
         | some pe =>
           rw [hc, ha, he] at h
-          rw [lowerC_mono sg hKK κ c pc hc, lowerSs3_mono hKK ρ κ a pa ha, lowerElse3_mono hKK ρ κ els pe he]
+          rw [lowerC_mono hKK κ c pc hc, lowerSs3_mono hKK ρ κ a pa ha, lowerElse3_mono hKK ρ κ els pe he]
           exact h
   | .ret (some e), r, h => by
     simp only [lowerS3] at h ⊢
     cases he : lowerC K sg κ e with
     | none => rw [he] at h; cases h
-    | some p => rw [he] at h; rw [lowerC_mono sg hKK κ e p he]; exact h
+    | some p => rw [he] at h; rw [lowerC_mono hKK κ e p he]; exact h
   | .ifStmt _ (.lit _) _, _, h | .ifStmt _ (.name _) _, _, h | .ifStmt _ (.paren _) _, _, h
   | .ifStmt _ (.unary ..) _, _, h | .ifStmt _ (.binary ..) _, _, h | .ifStmt _ (.call ..) _, _, h
   | .ifStmt _ (.select ..) _, _, h | .ifStmt _ (.tuple _) _, _, h | .ifStmt _ (.ifExpr ..) _, _, h
@@ -3498,27 +3554,9 @@ theorem lowerSs3_mono (hKK : K ≤ K') (ρ : Option Kind) (κ : String → Optio
     exact ⟨(κ₁, l), lowerS3_mono hKK ρ κ st _ h1, (κ₂, ls), lowerSs3_mono hKK ρ κ₁ ss _ h2, h3⟩
 end
 
-theorem lowerLast_mono (hKK : K ≤ K') (ρ : Kind) (κ : String → Option Kind) (e : Spec.Expr) (le : GoCore.Full.Expr)
-    (h : lowerLast K sg ρ κ e = some le) : lowerLast K' sg ρ κ e = some le := by
-  rcases lowerLast_cases K sg h with ⟨x, rfl, hx⟩ | hx
-  · simp [lowerLast, lowerC_mono sg hKK κ x _ hx]
-  · have := lowerC_mono sg hKK κ e _ hx
-    unfold lowerLast
-    split
-    · rename_i x; simp [lowerC] at hx
-    · simp [this]
-
-theorem lowerTail_mono (hKK : K ≤ K') (ρ : Kind) : ∀ (κ : String → Option Kind) (ss : List Spec.Expr)
-    (ls : List GoCore.Full.Stmt), lowerTail K sg ρ κ ss = some ls → lowerTail K' sg ρ κ ss = some ls
-  | _, [], _, h => by simp [lowerTail] at h
-  | κ, [e], ls, h => by
-    simp only [lowerTail, Option.map_eq_some_iff] at h ⊢
-    obtain ⟨le, hle, rfl⟩ := h
-    exact ⟨le, lowerLast_mono sg hKK ρ κ e le hle, rfl⟩
-  | κ, st :: st' :: ss, ls, h => by
-    simp only [lowerTail, Option.bind_eq_bind, Option.bind_eq_some_iff] at h ⊢
-    obtain ⟨⟨κ₁, l⟩, h1, ls', h2, h3⟩ := h
-    exact ⟨(κ₁, l), lowerS3_mono sg hKK ρ κ st _ h1, ls', lowerTail_mono hKK ρ κ₁ (st' :: ss) ls' h2, h3⟩
+theorem tailOf_mono (hKK : K ≤ K') (r : Option Kind) (κ : String → Option Kind) (e : Spec.Expr)
+    (p : Kind × List GoCore.Full.Stmt) (h : tailOf K sg r κ e = some p) : tailOf K' sg r κ e = some p :=
+  armOf_mono (lowerT_mono sg hKK r κ e) (lowerC_mono sg hKK κ e) p h
 
 /-- **The lowering of a body at `K` is the same at every larger `K`**: `K`, the depth GoCore
     is allowed per galaspec level, excludes no program, as a large enough one lowers it. -/
@@ -3532,11 +3570,10 @@ theorem lowerBody_mono (hKK : K ≤ K') (F : Spec.Func) (lb : List GoCore.Full.S
     · rename_i hp
       simp only [hp, ↓reduceIte]
       split at h
-      · rename_i ss hb
-        exact lowerTail_mono sg hKK ρ _ ss lb h
-      · simp only [Option.map_eq_some_iff] at h ⊢
-        obtain ⟨le, hle, rfl⟩ := h
-        exact ⟨le, lowerLast_mono sg hKK ρ _ F.body le hle, rfl⟩
+      · rename_i k lb' htl
+        rw [tailOf_mono sg hKK _ _ F.body _ htl]
+        exact h
+      · cases h
     · cases h
 
-end MonoK2
+end MonoK
