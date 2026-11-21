@@ -1111,7 +1111,9 @@ func findComment(s string, from int) int {
 // parser keeps as a string, is different: a quote inside it opens a quoted
 // item that may hold "#" or ": ", so quotes are tracked there.
 func scanPlain(s string, from int, wantColon bool) int {
-	t := from
+	// Whether s is flow text depends on its first character, not on where
+	// the scan starts.
+	t := 0
 	for t < len(s) && (s[t] == ' ' || s[t] == '\t') {
 		t++
 	}

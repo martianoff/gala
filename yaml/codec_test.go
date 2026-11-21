@@ -881,6 +881,8 @@ func TestDecoder_FlowTextKeepsQuotedItems(t *testing.T) {
 		{`- [1, "a # b"]`, `[[1, "a # b"]]`},
 		{`- ["x: y"]`, `[["x: y"]]`},
 		{`- ['it''s: x']`, `[['it''s: x']]`},
+		{`"k":[a, "b # c"]`, `{k: [a, "b # c"]}`},
+		{`"k":{"a": "b # c"} # note`, `{k: {"a": "b # c"}}`},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
