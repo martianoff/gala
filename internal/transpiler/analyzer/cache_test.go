@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,9 +236,10 @@ func TestPruneStaleCaches_SkippedByEnv(t *testing.T) {
 }
 
 // Storing a package evicts its own entries for earlier contents, and only
-// those. The eviction matched entry names by the package's path made a file
-// name, so storing example.com/ev/lib evicted example.com/ev/lib/util's
-// entry, and a/b_c and a_b/c, both a_b_c, evicted each other's (#1354).
+// those. Entry names were the package's path made a file name: storing
+// example.com/ev/lib evicted example.com/ev/lib/util's entries, which that
+// name begins, and a/b_c and a_b/c, both a_b_c, shared their entries'
+// names (#1354).
 func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
 	c := &analysisCache{dir: t.TempDir(), enabled: true}
 	put := func(pkg, contentHash string) {
@@ -262,15 +264,35 @@ func TestAnalysisCachePutEvictsOnlyItsPackage(t *testing.T) {
 		}
 	}
 
-	put("example.com/ev/lib", newHash)
-	if cached("example.com/ev/lib", oldHash) {
-		t.Errorf("example.com/ev/lib: its entry for earlier contents was kept")
+	for _, restore := range []struct{ pkg, other string }{
+		{"example.com/ev/lib", "example.com/ev/lib/util"},
+		{"example.com/a/b_c", "example.com/a_b/c"},
+	} {
+		put(restore.pkg, newHash)
+		if cached(restore.pkg, oldHash) {
+			t.Errorf("%s: its entry for earlier contents was kept", restore.pkg)
+		}
+		if !cached(restore.pkg, newHash) {
+			t.Errorf("%s: its new entry is missing", restore.pkg)
+		}
+		if !cached(restore.other, oldHash) {
+			t.Errorf("%s: storing %s evicted its entry", restore.other, restore.pkg)
+		}
 	}
-	if !cached("example.com/ev/lib", newHash) {
-		t.Errorf("example.com/ev/lib: its new entry is missing")
+}
+
+// An entry's name stays within file-name limits however long its package's
+// path: the readable part of the name is cut, the hash keeps it unique.
+func TestAnalysisCacheEntryNameOfLongPath(t *testing.T) {
+	c := &analysisCache{dir: t.TempDir(), enabled: true}
+	long := "example.com/" + strings.Repeat("segment/", 40) + "pkg"
+	name := filepath.Base(c.cachePath(long, "333333333333cccc"))
+	if len(name) > 200 {
+		t.Errorf("entry name is %d bytes: %s", len(name), name)
 	}
-	if !cached("example.com/ev/lib/util", oldHash) {
-		t.Errorf("example.com/ev/lib/util: storing example.com/ev/lib evicted its entry")
+	c.Put(long, "333333333333cccc", "deps", &transpiler.RichAST{PackageName: "pkg"}, nil)
+	if got, _ := c.Get(long, "333333333333cccc", "deps"); got == nil {
+		t.Errorf("the entry of %s was not stored", long)
 	}
 }
 

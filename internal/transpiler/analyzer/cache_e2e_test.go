@@ -187,7 +187,7 @@ func readDiskCacheEntryRaw(t *testing.T, projectRoot, pkgRelPath string) []byte 
 	cacheDirs, err := filepath.Glob(filepath.Join(projectRoot, ".gala", "cache", "v*"))
 	require.NoError(t, err)
 	require.NotEmpty(t, cacheDirs, "expected at least one cache directory under %s", projectRoot)
-	prefix := strings.ReplaceAll(pkgRelPath, "/", "_") + "_"
+	prefix := (&analysisCache{}).cachePrefix(pkgRelPath)
 	for _, d := range cacheDirs {
 		entries, err := ioutil.ReadDir(d)
 		if err != nil {

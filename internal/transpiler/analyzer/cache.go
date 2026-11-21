@@ -243,7 +243,7 @@ import (
 // its type arguments wherever they spell exactly (iter.Seq2[string, int]),
 // and a GoFuncSignature records its type parameters' core types (CoreTypes).
 //
-// v52: an entry's name holds a hash of its package's path (see
+// v52: an entry's name starts with a hash of its package's path (see
 // cachePrefix), so storing a package no longer evicts its subpackages'
 // entries, and two packages no longer share a name (#1354). A v51
 // directory's entries would never be evicted under the new names; the bump
@@ -877,14 +877,25 @@ func (c *analysisCache) evictStale(pkgPath string, keepHash string) {
 }
 
 // cachePrefix is the start of the name of every entry of the package at
-// pkgPath, which evictStale matches on: the path, readable, then a hash of
-// it, so that no package's prefix starts another's entry names (lib_ those
-// of lib/util; a/b_c and a_b/c, both a_b_c, each other's).
+// pkgPath, which evictStale matches on: a hash of the path, then the path
+// made a file name, for reading. Led by the hash, no package's prefix starts
+// another's entry names, as the path alone did (lib_ those of lib/util; a/b_c
+// and a_b/c, both a_b_c, each other's). The hash tells packages apart, so
+// the readable part is cut to keep a long path's names within file-name
+// limits.
 func (c *analysisCache) cachePrefix(pkgPath string) string {
 	slashed := strings.ReplaceAll(pkgPath, "\\", "/")
 	sum := sha256.Sum256([]byte(slashed))
-	return strings.ReplaceAll(slashed, "/", "_") + "_" + hex.EncodeToString(sum[:6]) + "_"
+	readable := strings.ReplaceAll(slashed, "/", "_")
+	if len(readable) > maxReadableCacheName {
+		readable = readable[len(readable)-maxReadableCacheName:]
+	}
+	return hex.EncodeToString(sum[:6]) + "_" + readable + "_"
 }
+
+// maxReadableCacheName bounds the readable part of an entry's name (see
+// cachePrefix); its end, the most specific part of a path, is kept.
+const maxReadableCacheName = 96
 
 func (c *analysisCache) cachePath(pkgPath, contentHash string) string {
 	return filepath.Join(c.dir, cacheName(c.cachePrefix(pkgPath), contentHash))
