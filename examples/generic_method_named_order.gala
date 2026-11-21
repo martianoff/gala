@@ -1,0 +1,43 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Named arguments to a method with type parameters of its own are evaluated
+// in the order they are written, as they are for a plain method and a
+// generic function. Each argument prints its name when it is evaluated.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Gen[U any](u U, w int) string = s"$u $w"
+
+func (b Box[T]) Plain(u int, w int) string = s"$u $w"
+
+func (b Box[T]) Tri[U any, W any](u U, w W, sep string = "-") string = s"$u$sep$w"
+
+func free[U any](u U, w int) string = s"$u $w"
+
+func t(name string, v int) int {
+    Print(name)
+    v
+}
+
+func mk() func(int, int) int {
+    Print("f")
+    (acc, x) => acc + x
+}
+
+func mkBox(n int) Box[int] {
+    Print("b")
+    Box(n)
+}
+
+func main() {
+    val b = Box(0)
+    Println(" ", b.Gen(w = t("w", 2), u = t("u", 1)))
+    Println(" ", b.Plain(w = t("w", 2), u = t("u", 1)))
+    Println(" ", free(w = t("w", 2), u = t("u", 1)))
+    Println(" ", b.Gen(u = t("u", 1), w = t("w", 2)))
+    Println(" ", b.Tri(sep = "+", w = t("w", 2), u = t("u", 1)))
+    Println(" ", mkBox(0).Gen(w = t("w", 2), u = t("u", 1)))
+    Println(" ", ListOf(1, 2).FoldLeft(f = mk(), initial = t("i", 0)))
+}

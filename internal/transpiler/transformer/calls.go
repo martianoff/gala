@@ -961,8 +961,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if v.spread {
 			hasSpread = true
 		}
-		// Reuse pre-transformed expression if available.
+		// Reuse pre-transformed expression if available, recorded where
+		// it is written as lowerArg records the others, so the call
+		// evaluates its arguments in written order (call_order.go).
 		if expr, ok := preTransformed[i]; ok {
+			t.recordCallArg(v, expr)
 			mArgs = append(mArgs, expr)
 			continue
 		}
