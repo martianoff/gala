@@ -2721,20 +2721,15 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// The error of the first file left out of the package's metadata — it
 	// did not parse, or its analysis failed — is why the metadata is
 	// partial (see RichAST.DependencyErrors). The first only: two files
-	// declaring a type each fail on the other. An error with no place to
-	// stamp the file on names it in its text, as it is reported for an
-	// importer.
+	// declaring a type each fail on the other. It is reported for an
+	// importer, so it carries the file (see attributeTo).
 	dropped := false
 	drop := func(err error, filePath string) {
 		if err == nil || dropped {
 			return
 		}
 		dropped = true
-		var ge galaerr.GalaError
-		if !errors.As(err, &ge) {
-			err = fmt.Errorf("%s: %w", filePath, err)
-		}
-		pkgAST.AddDependencyErrors(galaerr.WithFilePath(err, filePath))
+		pkgAST.AddDependencyErrors(attributeTo(err, filePath))
 	}
 
 	for i, entry := range entries {
@@ -2918,6 +2913,24 @@ func mergeOwnPackageVals(pkgAST, res *transpiler.RichAST, isThisFile func(string
 			pkgAST.PackageVals[name] = pv
 		}
 	}
+}
+
+// attributeTo returns err, the error of the file at filePath, with the file
+// on each error it holds: stamped on a GALA error that has none, and named
+// in the text of any other error, which has no place for it.
+func attributeTo(err error, filePath string) error {
+	if multi, ok := err.(*galaerr.MultiError); ok {
+		errs := make([]error, len(multi.Errors))
+		for i, e := range multi.Errors {
+			errs[i] = attributeTo(e, filePath)
+		}
+		return &galaerr.MultiError{Errors: errs}
+	}
+	var ge galaerr.GalaError
+	if !errors.As(err, &ge) {
+		return fmt.Errorf("%s: %w", filePath, err)
+	}
+	return galaerr.WithFilePath(err, filePath)
 }
 
 // storeAnalyzedPkg projects `importedAST` to its own-only form and records
