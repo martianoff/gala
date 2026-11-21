@@ -1,7 +1,9 @@
 package transformer
 
 import (
+	"errors"
 	"go/ast"
+	"path/filepath"
 
 	"martianoff/gala/galaerr"
 )
@@ -21,14 +23,18 @@ type blankRead struct {
 }
 
 // recordBlankRead records ident, the lowering of an unbound `_` written at at.
-// A `_` in a default lowered at its use site is written in the default's file.
+// A `_` in a default lowered at its use site is written in the default's file;
+// one in a default whose file is unknown cannot be placed, and is left to Go.
 func (t *galaASTTransformer) recordBlankRead(ident *ast.Ident, at srcNode) {
+	read := blankRead{at: at.rng()}
+	if d := t.loweringDefault; d != nil && d.foreign {
+		if d.src.file == "" {
+			return
+		}
+		read.file = filepath.Clean(d.src.file)
+	}
 	if t.blankReads == nil {
 		t.blankReads = make(map[*ast.Ident]blankRead)
-	}
-	read := blankRead{at: at.rng()}
-	if d := t.loweringDefault; d != nil && d.src.file != t.filePath {
-		read.file = d.src.file
 	}
 	t.blankReads[ident] = read
 }
@@ -66,7 +72,8 @@ func (t *galaASTTransformer) checkBlankReads(file *ast.File) error {
 	err := spanErrorAt(galaerr.CodeUnderscoreBindingRead, first.at, first.at,
 		"`_` is read here, but nothing binds it: `_` names no value",
 		"bind a name and read it instead; for example an explicit lambda `(x) => g(x)`")
-	if se, ok := err.(*galaerr.SemanticError); ok && first.file != "" {
+	var se *galaerr.SemanticError
+	if first.file != "" && errors.As(err, &se) {
 		se.FilePath = first.file
 	}
 	return err

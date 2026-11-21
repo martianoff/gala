@@ -23,14 +23,25 @@ func TestUnboundUnderscoreReadInDefault(t *testing.T) {
 		return full
 	}
 	write("gala.mod", "module example.com/blank\n\ngala dev\n")
-	libFile := write("lib/lib.gala", "package lib\n\nfunc Inc(n int) int = n + 1\n\nfunc F(n int = Inc(_)) int = n\n")
-	_, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/blank/lib\"\n\nfunc main() {\n    Println(lib.F())\n}\n")
-	require.Error(t, err)
-	var se *galaerr.SemanticError
-	require.True(t, errors.As(err, &se), "%v", err)
-	require.Equal(t, galaerr.CodeUnderscoreBindingRead, se.Code, "%v", err)
-	require.Equal(t, libFile, se.FilePath)
-	require.Equal(t, 5, se.Line)
+	libFile := write("lib/lib.gala", "package lib\n\nfunc Inc(n int) int = n + 1\n\nfunc F(n int = Inc(_)) int = n\n\nstruct Box(N int)\n\nfunc (b Box) Add(k int = Inc(_)) int = b.N + k\n\nstruct Opts(K int = Inc(_))\n")
+	for _, tc := range []struct {
+		name, use string
+		line      int
+	}{
+		{"a function parameter default", "lib.F()", 5},
+		{"a method parameter default", "lib.Box(1).Add()", 9},
+		{"a field default", "lib.Opts().K", 11},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/blank/lib\"\n\nfunc main() {\n    Println("+tc.use+")\n}\n")
+			require.Error(t, err)
+			var se *galaerr.SemanticError
+			require.True(t, errors.As(err, &se), "%v", err)
+			require.Equal(t, galaerr.CodeUnderscoreBindingRead, se.Code, "%v", err)
+			require.Equal(t, libFile, se.FilePath)
+			require.Equal(t, tc.line, se.Line)
+		})
+	}
 }
 
 // TestUnboundUnderscoreRead pins GALA-E0139 at a read of a `_` that nothing
