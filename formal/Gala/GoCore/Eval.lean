@@ -236,37 +236,106 @@ def fieldTypes (fs : List Field) : List Expr :=
     parameters or results, takes one, so it allows types about 32 levels deep. -/
 def maxUnifyDepth : Nat := 64
 
+/-- The definition of the generic defined type a type expression's head names (`T` or
+    `pkg.T`, before its type arguments): its type parameters and the type it is
+    defined as, for `unify`'s inexact case. -/
+abbrev TypeDefs := Expr → Option (List String × Expr)
+
 mutual
 /-- Type parameters bound by matching a parameter's type expression against an
     argument's type, for function argument type inference (Go spec, "Type inference":
     the type equations of the call's typed arguments). `k` bounds the depth of the
     types matched; past it nothing is bound, and inference reports what it lacks. -/
-def unify (tps : List String) : Nat → Expr → Ty → List (String × Ty)
+def unify (tps : List String) (defs : TypeDefs) : Nat → Expr → Ty → List (String × Ty)
   | 0, _, _ => []
   | k + 1, e, t =>
     match e, t with
     | .ident x, t => if tps.contains x then [(x, t)] else []
-    | .star e, .ptr t => unify tps k e t
+    | .star e, .ptr t => unify tps defs k e t
     -- The same generic type's arguments, pairwise; a generic alias, named otherwise,
     -- binds nothing here.
     | .index (.ident n) es, .named _ m args | .index (.selector _ n) es, .named _ m args =>
-      if n == m then unifyAll tps k es args else []
-    | .paren e, t => unify tps k e t
-    | .arrayType none e, .slice t => unify tps k e t
-    | .arrayType (some _) e, .array _ t => unify tps k e t
-    | .mapType ke ve, .map kt vt => unify tps k ke kt ++ unify tps k ve vt
+      if n == m then unifyAll tps defs k es args else []
+    | .paren e, t => unify tps defs k e t
+    | .arrayType none e, .slice t => unify tps defs k e t
+    | .arrayType (some _) e, .array _ t => unify tps defs k e t
+    | .mapType ke ve, .map kt vt => unify tps defs k ke kt ++ unify tps defs k ve vt
     -- A function type, parameter by parameter and result by result; a final `...T`
     -- parameter has type `[]T` (Go spec, "Function types").
     | .funcType (.mk ps rs v), .func_ pts rts _ =>
       let pes := fieldTypes ps
       let pes := if v then pes.dropLast ++ (pes.getLast?.map (Expr.arrayType none)).toList else pes
-      unifyAll tps k pes pts ++ unifyAll tps k (fieldTypes rs) rts
+      unifyAll tps defs k pes pts ++ unifyAll tps defs k (fieldTypes rs) rts
+    -- Inexact unification (Go spec, "Type unification"): a generic defined type
+    -- against a type literal, which is assignable to it, through the type it is
+    -- defined as. Its own parameters are bound first, then matched with the
+    -- arguments written: `Conv[A, B]`, `type Conv[X, Y any] func(X) Y`, against
+    -- `func(string) int` binds `A` to `string` and `B` to `int`. A defined type of
+    -- another name binds nothing. Inside that definition nothing is unified inexactly
+    -- again (its names are another declaration's).
+    | .index hd es, t =>
+      if t matches .named .. then [] else
+      match defs hd with
+      | some (ps, te) =>
+        (unify ps (fun _ => none) k te t).flatMap fun (p, ty) =>
+          match (ps.zip es).lookup p with
+          | some e => unify tps defs k e ty
+          | none => []
+      | none => []
     | _, _ => []
 /-- `unify` on type arguments, pairwise. -/
-def unifyAll (tps : List String) : Nat → List Expr → List Ty → List (String × Ty)
+def unifyAll (tps : List String) (defs : TypeDefs) : Nat → List Expr → List Ty → List (String × Ty)
   | 0, _, _ => []
-  | k + 1, es, ts => (es.zip ts).flatMap fun (e, t) => unify tps k e t
+  | k + 1, es, ts => (es.zip ts).flatMap fun (e, t) => unify tps defs k e t
 end
+
+/-- The type declaration a type name (`T` or `pkg.T`) refers to where `env` is. -/
+def typeDeclOf (c : Ctx) (env : Env) : Expr → Option TypeSpec
+  | .ident x =>
+    if (env.lookup x).isSome || (env.tenv.lookup x).isSome then none else
+    (nameOwner c env x).bind fun p => match (c.pkgs.get? p).bind (·.objs.get? x) with
+      | some (.type _ spec) => some spec
+      | _ => none
+  | .selector (.ident q) x =>
+    if (env.lookup q).isSome then none else
+    (importOf c env q).bind fun p => match (c.pkgs.get? p).bind (·.objs.get? x) with
+      | some (.type _ spec) => some spec
+      | _ => none
+  | _ => none
+
+/-- A generic function named without type arguments (`f` or `pkg.F`) where `env` is:
+    its package and name. -/
+def genericRef? (c : Ctx) (env : Env) : Expr → Option (String × String)
+  | .ident x =>
+    if (env.lookup x).isSome || (env.tenv.lookup x).isSome then none else
+    (nameOwner c env x).bind fun p => match (c.pkgs.get? p).bind (·.objs.get? x) with
+      | some (.func _ (_ :: _) _ _) => some (p, x)
+      | _ => none
+  | .selector (.ident q) x =>
+    if (env.lookup q).isSome then none else
+    (importOf c env q).bind fun p => match (c.pkgs.get? p).bind (·.objs.get? x) with
+      | some (.func _ (_ :: _) _ _) => some (p, x)
+      | _ => none
+  | _ => none
+
+/-- `unify`'s generic defined types where `env` is (`TypeDefs`). -/
+def typeDefs (c : Ctx) (env : Env) : TypeDefs := fun hd =>
+  match typeDeclOf c env hd with
+  | some (.mk _ tps@(_ :: _) _ te) => some (fieldListNames tps, te)
+  | _ => none
+
+/-- Whether a type parameter's constraint certainly has no core type (Go spec, "Core
+    types"), so constraint type inference cannot fix the parameter: `any`,
+    `comparable`, or an interface that lists methods only (a type term, `~T` or a
+    union, or an embedded element, could give one). -/
+def noCoreType (c : Ctx) (env : Env) : Expr → Bool
+  | .ident "any" | .ident "comparable" => true
+  | e =>
+    let hd := match e with | .index hd _ => hd | e => e
+    match typeDeclOf c env hd with
+    | some (.mk _ _ false (.interfaceType elems)) =>
+      elems.all fun | .mk ns (.funcType _) => !ns.isEmpty | _ => false
+    | _ => false
 
 /-- Whether the type expression `e` may mention the name `x`; past the depth bound `k`,
     or at a form it does not look into, it answers yes. -/
@@ -1732,7 +1801,7 @@ def evalCall (c : Ctx) : Nat → Env → Expr → List Expr → Bool → GM (Lis
     -- A declared function called by name: a generic one gets its type arguments by
     -- inference from the arguments (Go spec, "Type inference").
     if let some fv ← declaredFunc? c n env fn then
-      return ← callValue c n fv (← evalArgs c n env args) spread
+      return ← callValue c n fv (← genericArgs c n env fv args spread) spread
     let fv ← evalExpr c n env fn
     let vs ← evalArgs c n env args
     callValue c n fv vs spread
@@ -1803,6 +1872,66 @@ def layout (c : Ctx) : Nat → Ty → GM GcRuntime.Layout
     | .array k e => pure (.array k (← layout c n e))
     | .struct_ fs => pure (.struct_ (← fs.mapM fun (_, ft) => layout c n ft))
     | u => unsupported s!"layout-{u}"
+
+/-- The arguments of a call of a declared generic function `fv` whose type arguments are
+    not all given, when an argument is a generic function named without its own (Go spec,
+    "Type inference": a generic function passed as a function value is inferred with
+    the call). GoCore follows the one direction these calls take: the type parameters
+    the other arguments fix give the parameter types of the function parameter, which
+    fix the generic argument's type arguments; its result types then reach the callee's
+    inference as any argument's type does (`inferTArgs`). Where that does not settle
+    them (an untyped argument, a variadic function, a parameter whose types are not
+    all fixed), the run stops `type-inference`. A function name has no effect, so the
+    other arguments evaluated first, in order, keep the order of effects. Other calls
+    evaluate their arguments as `evalArgs` does. -/
+def genericArgs (c : Ctx) : Nat → Env → Val → List Expr → Bool → GM (List Val)
+  | 0, _, _, _, _ => throw .fuel
+  | n + 1, env, fv, args, spread => do
+    let some (path, f, targs) := (match fv with
+        | .func_ _ (some (.decl p f ts)) => some (p, f, ts)
+        | _ => none) | evalArgs c n env args
+    let some (.func fi tps (.mk ps _ variadic) _) := (c.pkgs.get? path).bind (·.objs.get? f)
+      | evalArgs c n env args
+    let names := fieldListNames tps
+    let pending := args.map (genericRef? c env)
+    if spread || targs.length ≥ names.length || pending.all Option.isNone then
+      return ← evalArgs c n env args
+    if variadic then unsupported "type-inference"
+    let denv : Env := { pkg := path, file := fi }
+    let vals ← (args.zip pending).mapM fun (a, p) =>
+      if p.isSome then pure none else some <$> evalExpr c n env a
+    let ptys := fieldTypes ps
+    let defs := typeDefs c denv
+    let mut known := names.zip targs ++ (ptys.zip vals).flatMap fun
+      | (pe, some v) => if v.ty.isUntyped then [] else unify names defs maxUnifyDepth pe v.ty
+      | (_, none) => []
+    -- The generic arguments left to right, each instantiated one's type adding to what
+    -- is known for the next (`both(x, id, pairOf)`).
+    let mut out : List Val := []
+    for (pe, v?, p?) in ptys.zip (vals.zip pending) do
+      let v ← match v?, p? with
+      | some v, _ => pure v
+      | none, some (gpath, g) => do
+        let .funcType (.mk pps _ _) := pe | unsupported "type-inference"
+        let some (.func gfi gtps (.mk gps _ gvariadic) _) := (c.pkgs.get? gpath).bind (·.objs.get? g)
+          | stuck s!"{g} is not a function"
+        if gvariadic then unsupported "type-inference"
+        let gnames := fieldListNames gtps
+        let pts ← (fieldTypes pps).mapM fun e => do
+          if names.any fun x => (known.lookup x).isNone && mayMention x maxUnifyDepth e then
+            unsupported "type-inference"
+          evalType c n { denv with tenv := known } e
+        let geqs := ((fieldTypes gps).zip pts).flatMap fun (ge, t) =>
+          unify gnames (typeDefs c { pkg := gpath, file := gfi }) maxUnifyDepth ge t
+        let gtargs ← gnames.mapM fun x =>
+          match (geqs.filter (·.1 == x)).map (·.2) with
+          | t :: ts => if ts.all (· == t) then pure t else unsupported "type-inference"
+          | [] => unsupported "type-inference"
+        funcVal c n gpath g gtargs
+      | none, none => stuck "an argument neither evaluated nor generic"
+      if p?.isSome then known := known ++ unify names defs maxUnifyDepth pe v.ty
+      out := out ++ [v]
+    pure out
 
 /-- A declared function named by `fn` (`f`, `pkg.F`, or with some of its type
     arguments, `f[T]`), as a value whose remaining type arguments a call infers from
@@ -2042,7 +2171,9 @@ def callValue (c : Ctx) : Nat → Val → List Val → Bool → GM (List Val)
       match p.objs.get? x with
       | some (.func fi tps sig body) =>
         let targs ← if targs.length == (fieldListNames tps).length then pure targs
-          else inferTArgs tps sig targs vs spread
+          else
+            let denv : Env := { pkg := path, file := fi }
+            inferTArgs (typeDefs c denv) (noCoreType c denv) tps sig targs vs spread
         let tenv ← bindTParams tps targs
         callBody c n { pkg := path, file := fi, tenv, targs } sig body none vs spread
       | _ => stuck s!"{x} is not a function"
@@ -2075,7 +2206,8 @@ def callMethod (c : Ctx) : Nat → String → List Ty → Method → Val → Lis
 /-- Type arguments of a generic function from its arguments' types (Go spec, "Type
     inference"); an untyped constant argument has its default type. Each argument for
     a final `...T` parameter is typed `T`; the slice `f(xs...)` passes, `[]T`. -/
-def inferTArgs (tps : List Field) (sig : Sig) (explicit : List Ty) (vs : List Val) (spread : Bool) : GM (List Ty) := do
+def inferTArgs (defs : TypeDefs) (coreFree : Expr → Bool) (tps : List Field) (sig : Sig)
+    (explicit : List Ty) (vs : List Val) (spread : Bool) : GM (List Ty) := do
   let names := fieldListNames tps
   let .mk ps _ variadic := sig
   let ptys := fieldTypes ps
@@ -2085,17 +2217,18 @@ def inferTArgs (tps : List Field) (sig : Sig) (explicit : List Ty) (vs : List Va
       let lastTy := if spread then Expr.arrayType none last else last
       (ptys.take k).zip vs ++ (vs.drop k).map (lastTy, ·)
     else ptys.zip vs
-  -- Typed arguments first (Go spec, "Type inference"). GoCore unifies only identical
-  -- shapes: where Go's inexact unification would go through a defined type's
-  -- underlying type, or two equations disagree, it reports `type-inference`.
+  -- Typed arguments first (Go spec, "Type inference"). GoCore unifies identical
+  -- shapes, and inexactly only a generic defined type against a type literal (`unify`);
+  -- where Go's inexact unification would go another way, or two equations disagree,
+  -- it reports `type-inference`.
   let typed := pairs.filter (!·.2.ty.isUntyped)
-  let eqs := typed.flatMap fun (t, v) => unify names maxUnifyDepth t v.ty
+  let eqs := typed.flatMap fun (t, v) => unify names defs maxUnifyDepth t v.ty
   -- An untyped constant then binds a type parameter to its default type, an untyped
   -- rune's if one of them is a rune; untyped `nil` binds nothing. GoCore does so only
   -- where Go would too: the parameter is in no typed argument's parameter type (which
   -- unification above may have failed to read) and no constraint has a core type that
-  -- could fix it (every constraint is `any` or `comparable`).
-  let trivial := tps.all fun | .mk _ (.ident "any") | .mk _ (.ident "comparable") => true | _ => false
+  -- could fix it (`noCoreType`: `any`, `comparable`, or an interface of methods only).
+  let trivial := tps.all fun | .mk _ te => coreFree te
   let untypedKinds := fun (x : String) => pairs.filterMap fun (t, v) => match t, v.ty with
     | .ident y, .untyped k => if y == x && k != .nil then some k else none
     | _, _ => none
