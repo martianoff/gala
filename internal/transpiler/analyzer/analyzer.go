@@ -2710,12 +2710,22 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// What the package's defaults mean where they were written, for a use
 	// site in an importing package (see defaultScopeRecorder).
 	scopes := newDefaultScopeRecorder(importPath)
-	// The error of the first file left out of the package's metadata.
-	var droppedErr error
+	// The error of the first file left out of the package's metadata — it
+	// did not parse, or its analysis failed — is why the metadata is
+	// partial (see RichAST.DependencyErrors). The first only: two files
+	// declaring a type each fail on the other.
+	dropped := false
+	drop := func(err error, filePath string) {
+		if err != nil && !dropped {
+			dropped = true
+			pkgAST.AddDependencyErrors(galaerr.WithFilePath(err, filePath))
+		}
+	}
 
 	for i, entry := range entries {
 		filePath := candidatePaths[i]
 		if entry == nil {
+			drop(parseErrs[i], filePath)
 			continue
 		}
 		// Mimic the original per-file loop body — Analyze does the heavy
@@ -2726,9 +2736,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			if ie := asInternal(err); ie != nil {
 				return nil, ie
 			}
-			if err != nil && droppedErr == nil {
-				droppedErr = galaerr.WithFilePath(err, filePath)
-			}
+			drop(err, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -2857,12 +2865,14 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// inflating each on-disk entry to N×M of the dependency graph. A package
 	// whose metadata is partial — a file of its own left out, or of a
 	// package it imports, as its files' merged DependencyErrors say — is not
-	// stored: the entry would hold that metadata without the errors.
-	if droppedErr != nil {
-		pkgAST.DependencyErrors = append([]error{droppedErr}, pkgAST.DependencyErrors...)
-	}
-	if contentHash != "" && a.cache != nil && len(pkgAST.DependencyErrors) == 0 {
-		a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
+	// stored: the entry would hold that metadata without the errors. Its
+	// entries for earlier contents go all the same, as a Put would drop them.
+	if contentHash != "" && a.cache != nil {
+		if len(pkgAST.DependencyErrors) == 0 {
+			a.cache.Put(relPath, contentHash, depsHash, pkgAST, directImports)
+		} else {
+			a.cache.evictStale(relPath, contentHash)
+		}
 	}
 
 	// Memoize for in-process reuse so the closure walker doesn't re-do the

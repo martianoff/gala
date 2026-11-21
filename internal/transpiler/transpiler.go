@@ -230,7 +230,7 @@ func (r *RichAST) ReportSiblingSyntaxErrors(err error) error {
 // package whose dependency does not compile reports the dependency's error,
 // not what its missing declarations lead to in the importer.
 func (r *RichAST) ReportDependencyErrors(err error) error {
-	if err == nil || r == nil || len(r.DependencyErrors) == 0 {
+	if err == nil || r == nil || len(r.DependencyErrors) == 0 || isTransformerPanic(err) {
 		return err
 	}
 	if len(r.DependencyErrors) == 1 {
@@ -239,11 +239,23 @@ func (r *RichAST) ReportDependencyErrors(err error) error {
 	return &galaerr.MultiError{Errors: slices.Clone(r.DependencyErrors)}
 }
 
-// addDependencyErrors adds to r.DependencyErrors each of errs it does not
-// hold yet: a package reached through two importers brings its errors twice.
-// The slice is never appended to in place, as another RichAST may share it.
-func (r *RichAST) addDependencyErrors(errs []error) {
+// isTransformerPanic reports whether err is a transpiler bug (GALA-E0017),
+// which no dependency's error explains.
+func isTransformerPanic(err error) bool {
+	var se *galaerr.SemanticError
+	return errors.As(err, &se) && se.Code == galaerr.CodeInternalTransformerPanic
+}
+
+// AddDependencyErrors adds to r.DependencyErrors each of errs, and each error
+// of a galaerr.MultiError among them, that it does not hold yet: a package
+// reached through two importers brings its errors twice. The slice is never
+// appended to in place, as another RichAST may share it.
+func (r *RichAST) AddDependencyErrors(errs ...error) {
 	for _, err := range errs {
+		if multi, ok := err.(*galaerr.MultiError); ok {
+			r.AddDependencyErrors(multi.Errors...)
+			continue
+		}
 		if !slices.ContainsFunc(r.DependencyErrors, func(e error) bool { return errors.Is(e, err) }) {
 			r.DependencyErrors = append(slices.Clip(r.DependencyErrors), err)
 		}
@@ -265,7 +277,7 @@ func (r *RichAST) Merge(other *RichAST) {
 	if other == nil {
 		return
 	}
-	r.addDependencyErrors(other.DependencyErrors)
+	r.AddDependencyErrors(other.DependencyErrors...)
 	if r.Types == nil {
 		r.Types = make(map[string]*TypeMetadata)
 	}

@@ -97,6 +97,28 @@ func TestImportedPackageErrorReportedBeforeImporterCascade(t *testing.T) {
 	}
 }
 
+// A file of an imported package that does not parse is left out of its
+// metadata too, and its syntax error is what an importer that fails reports.
+func TestImportedPackageSyntaxErrorReportedBeforeImporterCascade(t *testing.T) {
+	for _, pkg := range []string{"lib", "zlib", "shapes"} {
+		t.Run(pkg, func(t *testing.T) {
+			root := t.TempDir()
+			_, err := transpileInModuleAt(t, root, map[string]string{
+				"gala.mod":      "module example.com/dup\n\ngala dev\n",
+				pkg + "/a.gala": "package " + pkg + "\n\nstruct Box(V int)\n\nfunc (b Box) Plain(u int, w int) int = u + w\n\nfunc Broken() int = )\n",
+				pkg + "/b.gala": "package " + pkg + "\n\nfunc Other() int = 1\n",
+				"main.gala":     mainImporting(pkg, "Println("+pkg+".Box(1).Plain(w = 2, u = 1))"),
+			}, "main.gala")
+			require.Error(t, err)
+			diags := galaerr.Diagnostics(err)
+			require.NotEmpty(t, diags, "err: %v", err)
+			require.Equal(t, filepath.Join(root, pkg, "a.gala"), diags[0].File, "diagnostic %q; err: %v", diags[0].Message, err)
+			require.Empty(t, diags[0].Code, "a syntax error is uncoded; got %s %q", diags[0].Code, diags[0].Message)
+			require.Equal(t, 7, diags[0].Line)
+		})
+	}
+}
+
 // What an earlier analysis of the package, before its second declaration
 // was added, left in the analysis cache must not change what is reported.
 func TestImportedPackageErrorReportedAfterEarlierAnalysis(t *testing.T) {
