@@ -4,9 +4,9 @@ import "time"
 
 // Range over a defined integer type binds the loop variable to that type, as
 // Go does (#1317): interpolation prints it with the type's String method, and
-// its methods are callable. A GALA type over an integer type binds too.
+// its methods are callable. An opaque type over an integer type binds too.
 
-type Millis int64
+opaque type Millis int64
 
 func main() {
     val d = time.Duration(3)

@@ -848,10 +848,13 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 		}
 	}
 	// A GALA type over an integer type (`type Millis int64`, lowered to a Go
-	// defined type) binds i to itself too.
+	// defined type) binds i to itself too; one over string ranges as a string.
 	if _, _, via := t.resolveScalar(exprType); via != nil {
-		if _, kind, _ := t.resolveScalar(t.underlyingType(via)); kind == scalarInt || kind == scalarUint {
+		switch _, kind, _ := t.resolveScalar(t.underlyingType(via)); kind {
+		case scalarInt, scalarUint:
 			return exprType, transpiler.NilType{}
+		case scalarString:
+			return transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "rune"}
 		}
 	}
 

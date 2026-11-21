@@ -114,13 +114,17 @@ func main() {
     }
 }
 `, []string{`"i=%v"`, "func() time.Duration", "i.Nanoseconds()"}},
-		{"a GALA type over an integer type", `package main
+		// An opaque type is a Go defined type: i is bound to it. A `type`
+		// declaration is an alias: i is bound to the aliased type.
+		{"an opaque type over an integer type", `package main
 
 import "time"
 
-type Millis int64
+opaque type Millis int64
 
-type Wait time.Duration
+opaque type Wait time.Duration
+
+type Count int64
 
 func main() {
     for i := range Millis(3) {
@@ -131,8 +135,24 @@ func main() {
         val g = () => w
         Println(g())
     }
+    for c := range Count(2) {
+        val h = () => c
+        Println(h())
+    }
 }
-`, []string{"func() Millis", "func() Wait"}},
+`, []string{"func() Millis", "func() Wait", "func() int64"}},
+		// An opaque type over string ranges as a string: an int key and a rune.
+		{"an opaque type over string", `package main
+
+opaque type Name string
+
+func main() {
+    for i, c := range Name("ab") {
+        val f = () => c
+        Println(i, f())
+    }
+}
+`, []string{"func() rune"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
