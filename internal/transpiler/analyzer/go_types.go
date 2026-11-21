@@ -265,26 +265,48 @@ func goUserEnvFile() string {
 	return userFile
 }
 
-// goToolchainNamed reports whether GOTOOLCHAIN, from the process environment
-// or the user's go env file, names a toolchain (go1.26.0, go1.26.0+auto)
-// rather than leaving the choice to the go line (auto, local, path). It reads
-// no SDK's go.env, which GoEnvValue would: it runs while the SDK is resolved.
-func goToolchainNamed() bool {
-	v := os.Getenv("GOTOOLCHAIN")
-	if v == "" {
-		if f := goUserEnvFile(); f != "" {
-			if data, err := os.ReadFile(f); err == nil {
-				vals := make(map[string]string)
-				parseGoEnvFile(string(data), vals)
-				v = vals["GOTOOLCHAIN"]
+// goToolchain is GOTOOLCHAIN as the go command of the SDK at goroot sees it:
+// the process environment, else the user's go env file, else goroot/go.env.
+// GoEnvValue reads the same files, but for the resolved SDK, which is what
+// is being resolved here.
+func goToolchain(goroot string) string {
+	if v := os.Getenv("GOTOOLCHAIN"); v != "" {
+		return v
+	}
+	for _, f := range []string{goUserEnvFile(), filepath.Join(goroot, "go.env")} {
+		if f == "" {
+			continue
+		}
+		if data, err := os.ReadFile(f); err == nil {
+			vals := make(map[string]string)
+			parseGoEnvFile(string(data), vals)
+			if v := vals["GOTOOLCHAIN"]; v != "" {
+				return v
 			}
 		}
 	}
-	switch v {
-	case "", "auto", "local", "path":
+	return ""
+}
+
+// toolchainMaySwitch reports whether a go command of version host ("go1.23.4",
+// "" when unknown) may build a module whose go line is GeneratedGoVersion with
+// another toolchain, given GOTOOLCHAIN. It is false only where it surely does
+// not: GOTOOLCHAIN=local; host new enough with the choice left to the go line
+// (auto, path, unset); or GOTOOLCHAIN naming host itself (go1.25.5,
+// go1.25.5+auto) with host new enough.
+func toolchainMaySwitch(host, gotoolchain string) bool {
+	if gotoolchain == "local" {
 		return false
 	}
-	return true
+	name, _, _ := strings.Cut(gotoolchain, "+")
+	named := name != "" && name != "auto" && name != "path"
+	if !version.IsValid(host) {
+		return named
+	}
+	if version.Compare(host, "go"+GeneratedGoVersion) < 0 {
+		return true
+	}
+	return named && name != host
 }
 
 // parseGoEnvFile adds the KEY=VALUE lines of a go env file to vals.
@@ -317,8 +339,9 @@ func defaultCC() string {
 // 3. Walk up from the running binary to find a Go SDK layout (for Bazel)
 // 4. Find 'go' binary on PATH and derive GOROOT from it
 //
-// A host SDK (1–4) goes through switchedGoRoot: a build may compile with a
-// newer toolchain than the one found.
+// An SDK found by steps 2–4 goes through switchedGoRoot: a build may compile
+// with another toolchain than the one installed. A GOROOT set explicitly
+// (step 1, which --goroot also sets) is used as given.
 func findGOROOT() string {
 	// 0. Prefer the hermetic Go SDK that rules_go materializes inside the Bazel
 	// execution root. This must win over the GOROOT env / host PATH so that type
@@ -328,21 +351,25 @@ func findGOROOT() string {
 	if goroot := findBazelGoSDK(); goroot != "" {
 		return goroot
 	}
-	goroot := findHostGOROOT()
-	if goroot == "" {
-		return ""
-	}
-	goPath := filepath.Join(goroot, "bin", "go")
-	return switchedGoRoot(goroot, goToolchainNamed(), func(dir string) string { return goEnvGoroot(goPath, dir) })
-}
 
-// findHostGOROOT is the Go SDK installed on the host: steps 1–4 of findGOROOT.
-func findHostGOROOT() string {
 	// 1. Check GOROOT env
 	if goroot := os.Getenv("GOROOT"); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
 		return goroot
 	}
 
+	goroot := findHostGOROOT()
+	if goroot == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(goroot); err == nil {
+		goroot = abs // the probe runs the go command from another directory
+	}
+	goPath := filepath.Join(goroot, "bin", "go")
+	return switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) })
+}
+
+// findHostGOROOT is the Go SDK installed on the host: steps 2–4 of findGOROOT.
+func findHostGOROOT() string {
 	// 2. Check runtime.GOROOT()
 	if goroot := runtime.GOROOT(); goroot != "" && goroot != "GOROOT" && isGoRoot(goroot) {
 		return goroot
@@ -406,17 +433,16 @@ func gorootFromGoBinary(goPath string) string {
 const GeneratedGoVersion = "1.25"
 
 // switchedGoRoot is the SDK a build compiles GALA's generated code with, given
-// goroot, the host's SDK. The go command switches to another toolchain when the
-// module asks for a newer Go than its own (every go.mod GALA generates asks for
-// GeneratedGoVersion) or when GOTOOLCHAIN names one (toolchainNamed). goEnv
-// runs that SDK's `go env GOROOT` in a given directory; it is run in a
-// temporary module with that go line to learn which toolchain the build uses.
-// goroot is kept, with no subprocess, when it is new enough and no toolchain
-// is named, or when its VERSION is unreadable; also when goEnv gives ""
-// (GOTOOLCHAIN=local with an old SDK, say).
-func switchedGoRoot(goroot string, toolchainNamed bool, goEnv func(dir string) string) string {
-	v := goRootVersion(goroot)
-	if !version.IsValid(v) || version.Compare(v, "go"+GeneratedGoVersion) >= 0 && !toolchainNamed {
+// goroot, the host's SDK, and gotoolchain, its GOTOOLCHAIN. The go command
+// switches to another toolchain when the module asks for a newer Go than its
+// own (every go.mod GALA generates asks for GeneratedGoVersion) or when
+// GOTOOLCHAIN names one. goEnv runs that SDK's `go env GOROOT` in a given
+// directory; it is run in a temporary module with that go line to learn which
+// toolchain the build uses. goroot is kept, with no subprocess, when the go
+// command surely does not switch (toolchainMaySwitch); also when goEnv gives
+// "".
+func switchedGoRoot(goroot, gotoolchain string, goEnv func(dir string) string) string {
+	if !toolchainMaySwitch(goRootVersion(goroot), gotoolchain) {
 		return goroot
 	}
 	dir, err := os.MkdirTemp("", "gala-goroot-")
@@ -447,6 +473,9 @@ func goEnvGoroot(goPath, dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, goPath, "env", "GOROOT")
+	// A go that switches toolchain on Windows runs the other one as a child,
+	// which killing the parent leaves holding the output pipe.
+	cmd.WaitDelay = 5 * time.Second
 	if dir != "" {
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
