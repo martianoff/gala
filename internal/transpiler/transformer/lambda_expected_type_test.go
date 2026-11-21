@@ -959,7 +959,9 @@ func main() {
 // generic function whose type parameters only the lambda's annotated
 // parameters bind returns its trailing value, as the expression lambda does.
 // The parameter `f func(A) B` has no expected type before the lambda is
-// lowered, but it still takes a function with a result.
+// lowered, but it still takes a function with a result. The generic method
+// and constructor cases took another path that already worked; they guard it.
+// A lambda passed by name is #1327.
 func TestBlockLambdaBindsCalleeTypeParams(t *testing.T) {
 	trans := newDefaultsTranspiler()
 	cases := []struct {
@@ -989,7 +991,7 @@ func main() {
         val n = s.Size()
         s"$n"
     }))
-}`, []string{"func(s string) string {"}},
+}`, []string{"func(s string) string {", `return fmt.Sprintf("%d", n)`}},
 		{"after a positional argument", `package main
 
 func pair[A any, B any](n int, f func(A) B) func(A) B = f
@@ -1035,7 +1037,7 @@ func main() {
         if (q > 2) "big" else "small"
     })
     Println(b(3))
-}`, []string{"func(k int) string {"}},
+}`, []string{"func(k int) string {", `return "big"`, `return "small"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
