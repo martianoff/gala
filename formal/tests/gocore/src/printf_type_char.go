@@ -45,4 +45,5 @@ func main() {
 	fmt.Printf("%5T|%-6T|%.3T|%v\n", 1, "s", T(2), 2)
 	fmt.Printf("%c|%c|%c|%c|%c|%c\n", 'a', 65, 0x4e16, rune(-1), 0x110000, 0xD800)
 	fmt.Printf("%c|%3c|%-3c|%c|\n", byte('z'), 'b', 'c', T(66))
+	fmt.Printf("%05T|%05c|%-05T|%05s|\n", 1, 'x', 2, "ab")
 }

@@ -423,6 +423,9 @@ def typeText (c : Ctx) (full : Bool) : Ty → Except String String
       -- A package the document does not hold: its name is known only when its path
       -- is one element (Go's standard library), not for `math/rand/v2`.
       | none => if p.contains '/' then throw "package-name"
+    -- gc names a local type in a type argument `main.L·N`, N a counter GoCore does
+    -- not keep (`main.Box[main.L·1]`); elsewhere `main.L`.
+    if full && isLocalTypeName n then throw "local-type-argument"
     let n := (n.splitOn localTypeSep.toString).head!
     let base := if p.isEmpty then n else s!"{if full then p else q}.{n}"
     -- Type arguments, at any depth, name their packages by import path.
@@ -438,7 +441,12 @@ def typeText (c : Ctx) (full : Bool) : Ty → Except String String
   | .func_ ps rs variadic => do
     let ps ← typeTexts c full ps
     -- A final `...T` parameter has type `[]T` (Go spec, "Function types").
-    let ps := if variadic then ps.dropLast ++ (ps.getLast?.map fun p => "..." ++ String.ofList (p.toList.drop 2)).toList else ps
+    let ps ← if !variadic then pure ps else
+      match ps.getLast? with
+      | some p =>
+        if p.startsWith "[]" then pure (ps.dropLast ++ ["..." ++ String.ofList (p.toList.drop 2)])
+        else throw "variadic"
+      | none => throw "variadic"
     let rs ← typeTexts c full rs
     let res := match rs with
       | [] => ""
@@ -2687,8 +2695,6 @@ def fmtSpec (c : Ctx) : Nat → Val → Char → FmtSpec → GM String
   | n + 1, v, verb, spec => do
     let v := v.materialize
     if spec.plain && ['v', 's', 'd', 't'].contains verb then return ← fmtArg c n v verb
-    -- `%T` and `%c` pad with zeros under `0` as no other string does; not modelled.
-    if (verb == 'T' || verb == 'c') && spec.zero then unsupported s!"fmt-flag-zero-{verb}"
     -- `%T`, before any method: the operand's dynamic type, `<nil>` for none, as `fmtS`
     -- prints a string (`printArg`).
     if verb == 'T' then
