@@ -1088,7 +1088,9 @@ def structFields (c : Ctx) : Std.HashSet String :=
     | _ => acc) acc) {}
 
 /-- The scope a function or method body of package `pkg`, file `fi`, starts in: its
-    receiver and parameters as locals, its type parameters, and the locals it may change. -/
+    receiver and parameters as locals, its own and its receiver's type parameters, the
+    locals it may change, a pointer receiver as a pointer local, its interface-typed
+    parameters (`withIfaces`), and the program's struct fields and methods. -/
 def funcScope (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String (List Method))
     (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
     (body : List Stmt) : Scope :=
@@ -1108,7 +1110,8 @@ def funcScope (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap Str
 def hDecl (c : Ctx) (fields : Std.HashSet String) (methods : Std.HashMap String (List Method))
     (pkg : String) (fi : Nat) : Decl → HM Decl
   | .func name recv tps sig (some body) => do
-    pure (.func name recv tps sig (some (← hSs (funcScope c fields methods pkg fi recv tps sig body) body)))
+    let s := funcScope c fields methods pkg fi recv tps sig body
+    pure (.func name recv tps sig (some (← hSs s body)))
   | .value false specs => do
     -- Its function literals' locals: those a nested literal assigns may change.
     let s : Scope := { c, pkg, file := fi, fields, methods,
