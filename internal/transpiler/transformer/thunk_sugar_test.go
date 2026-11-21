@@ -364,3 +364,59 @@ func main() {
 	assert.Contains(t, body, "return riskyDivide(10, 2)", "thunk body must return the original expression")
 	assert.Contains(t, body, "Try[int]{}.Apply(", "must dispatch to Try's companion Apply with T=int")
 }
+
+// A by-name argument to a method with type parameters of its own (lowered to
+// the free function Box_Lazy) is lifted to its thunk as it is for a generic
+// function, and the thunk's result binds the method's U (#1302).
+func TestThunkSugar_GenericMethodOwnTypeParam(t *testing.T) {
+	trans := newThunkSugarTranspiler()
+
+	input := `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
+
+func side() int = 1
+
+func main() {
+    val b = Box(1)
+    Println(b.Lazy(side(), true))
+    Println(b.Lazy(on = false, d = side()))
+    Println(b.Lazy[int](side(), true))
+}`
+
+	out, err := trans.Transpile(input, "")
+	require.NoError(t, err)
+	body := mainBodyOf(t, out)
+
+	assert.Equal(t, 3, strings.Count(body, "return side()"), "each by-name argument must be lifted into a thunk:\n%s", body)
+	assert.NotContains(t, body, "(b, side()", "the bare expression must not be passed:\n%s", body)
+}
+
+// A by-name argument for a Sendable[func() U] parameter of such a method is
+// lifted too, and its thunk is checked as a lambda crossing the boundary is:
+// capturing a reassignable var is GALA-E0037, as for a generic function.
+func TestThunkSugar_GenericMethodSendableByName(t *testing.T) {
+	src := func(decl string) string {
+		return `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
+func main() {
+    ` + decl + ` n = 1
+    val b = Box(1)
+    Println(b.Run(n + 1))
+}`
+	}
+
+	out, err := newThunkSugarTranspiler().Transpile(src("val"), "")
+	require.NoError(t, err)
+	assert.Contains(t, mainBodyOf(t, out), "return n + 1", "the by-name argument must be lifted into a thunk")
+
+	_, err = newThunkSugarTranspiler().Transpile(src("var"), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0037")
+}

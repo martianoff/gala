@@ -1,0 +1,44 @@
+package main
+
+// By-name arguments to a method with type parameters of its own: the plain
+// expression is lifted to a thunk, so it runs only when the method calls it,
+// as it does for a generic function or a method using only its receiver's
+// type parameter.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
+
+func (b Box[T]) LazyT(d func() T, on bool) Option[T] = if (on) Some(d()) else None()
+
+func (b Box[T]) OrElse[U any](o Option[U], d func() U) U = o match {
+    case Some(v) => v
+    case None() => d()
+}
+
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
+func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
+
+var cnt = 0
+
+func side() int {
+    cnt = cnt + 1
+    cnt
+}
+
+func label(s string) string {
+    cnt = cnt + 10
+    s
+}
+
+func main() {
+    val b = Box(1)
+    Println(lazy(side(), false), cnt, lazy(side(), true), cnt)
+    Println(b.LazyT(side(), false), cnt, b.LazyT(side(), true), cnt)
+    Println(b.Lazy(side(), false), cnt, b.Lazy(side(), true), cnt)
+    Println(b.Lazy(on = false, d = label("x")), cnt, b.Lazy(on = true, d = label("y")), cnt)
+    Println(b.Lazy[int](side(), true), cnt)
+    Println(b.Run(side()), cnt)
+    Println(b.OrElse(Some("set"), label("unused")), cnt, b.OrElse(None[string](), label("fallback")), cnt)
+}
