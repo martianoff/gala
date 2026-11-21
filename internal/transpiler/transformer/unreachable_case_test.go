@@ -111,6 +111,8 @@ func TestUnreachableCase(t *testing.T) {
 			"func f(t Tuple[int, string]) string = t match {\n    case (n, s) => s\"$n $s\"\n}\n"},
 		{"a default binding named like the match subject",
 			"func f(x int) int = x match {\n    case 0 => 0\n    case _subj => _subj + 1\n}\n"},
+		{"a typed catch-all named like the match subject",
+			"func f(x int) int = x match {\n    case _subj: int => _subj + 1\n}\n"},
 		{"partial-function cases after a guarded binding",
 			"func f() Array[string] = ArrayOf(1, 2, 3).Collect({ case n if n > 2 => \"big\" case 1 => \"one\" case _ => \"other\" })\n"},
 	}
