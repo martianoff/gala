@@ -662,11 +662,15 @@ func (t *galaASTTransformer) isGenericFuncRef(expr ast.Expr) bool {
 	return fm != nil && len(fm.TypeParams) > 0
 }
 
-// isNullaryGenericFuncRef is isGenericFuncRef for a function of no
-// parameters (`zero` for `func zero[X any]() X`): a thunk itself.
-func (t *galaASTTransformer) isNullaryGenericFuncRef(expr ast.Expr) bool {
-	fm := t.lookupBareFuncRefMeta(expr)
-	return fm != nil && len(fm.TypeParams) > 0 && len(fm.ParamTypes) == 0
+// namesGenericFunc reports whether e, as written, is a bare reference to a
+// generic GALA function, as isGenericFuncRef reports for one lowered.
+func (t *galaASTTransformer) namesGenericFunc(e exprSrc) bool {
+	name := e.bareIdent()
+	if name == "" {
+		return false
+	}
+	fm, ok := t.functionByName(name)
+	return ok && len(fm.TypeParams) > 0
 }
 
 // anyGenericFuncRef reports whether a value of named is isGenericFuncRef.

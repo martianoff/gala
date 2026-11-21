@@ -761,27 +761,20 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			var expr ast.Expr
 			var txErr error
 			byNameType, sendable := transpiler.UnwrapSendable(substitutedParamType)
-			if ft := t.resolveTranspilerTypeAsFuncType(byNameType); !v.spread && ft != nil && len(ft.Params) == 0 {
+			if ft := t.resolveTranspilerTypeAsFuncType(byNameType); !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesGenericFunc(v.expr) {
 				// Lift a by-name argument (`func() U`) to its thunk, as
 				// transformArgument does for a generic function; the
 				// thunk's result type (the expression's own type while U
 				// is unbound) then binds U below. A thunk crossing a
 				// Sendable boundary is checked as a lambda there is (a
 				// lambda or partial function never reaches here, so a
-				// function literal is the lifted thunk).
+				// function literal is the lifted thunk). A generic
+				// function named alone is passed as it is (below).
 				byNameType = t.substituteTranspilerTypeParams(byNameType, typeSubst)
 				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: typeMentionsTypeParam(byNameType, methodMeta.TypeParams)}, false)
-				if txErr == nil {
-					_, lifted := expr.(*ast.FuncLit)
-					if !lifted && !t.isGenericFuncRef(expr) && t.resolveTranspilerTypeAsFuncType(t.getExprTypeName(expr)) == nil {
-						// Not lifted for want of a result type: the
-						// main loop lowers it once more is bound.
-						continue
-					}
-					if lifted && sendable {
-						if err := t.enforceSendableCapturesInArg(v); err != nil {
-							return true, nil, err
-						}
+				if _, lifted := expr.(*ast.FuncLit); txErr == nil && lifted && sendable {
+					if err := t.enforceSendableCapturesInArg(v); err != nil {
+						return true, nil, err
 					}
 				}
 			} else {
@@ -5289,12 +5282,6 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// of a named function type (`type Getter func() int`) is passed as itself
 	// or wrapped as the thunk's value (see passesNamedFunctionAsThunk).
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
-		return expr, false
-	}
-	// So is a reference to a generic function of no parameters (`zero` for
-	// `func zero[X any]() X`), whose type arguments the slot gives once it
-	// is instantiated. One with parameters (`id`) is the thunk's value.
-	if t.isNullaryGenericFuncRef(expr) {
 		return expr, false
 	}
 	if fn := t.resolveTranspilerTypeAsFuncType(exprType); fn != nil && t.passesNamedFunctionAsThunk(*fn, ft) {

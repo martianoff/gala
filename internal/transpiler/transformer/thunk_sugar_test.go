@@ -368,9 +368,10 @@ func main() {
 // By-name arguments to a method with type parameters of its own, lowered to
 // a free function (#1302): a plain expression is lifted to its thunk as it
 // is for a generic function, the thunk's result binding the method's U; a
-// reference to a generic function of no parameters is a thunk itself, and
-// one with parameters is the thunk's value; a thunk lifted for a Sendable
-// parameter is checked as a lambda there is (GALA-E0037).
+// generic function named alone is passed as it is, and to a method without
+// type parameters of its own one with parameters is the thunk's value; a
+// thunk lifted for a Sendable parameter is checked as a lambda there is
+// (GALA-E0037).
 func TestThunkSugar_GenericMethodByName(t *testing.T) {
 	const decls = `package main
 
@@ -381,8 +382,6 @@ func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) e
 func (b Box[T]) Seeded[U any](seed U, d func() U) U = d()
 
 func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
-
-func seeded[U any](d func() U, seed U) U = d()
 
 func (b Box[T]) Fn(d func() func(int) int) int = d()(4)
 
@@ -410,8 +409,8 @@ func zero[X any]() X {
 			notContains: []string{"(b, side()"},
 		},
 		{
-			name:        "nullary generic function reference passed as itself",
-			main:        "val b = Box(1)\n    Println(b.Seeded(1, zero), seeded(zero, 1))",
+			name:        "generic function reference passed as itself",
+			main:        "val b = Box(1)\n    Println(b.Seeded(1, zero))",
 			contains:    []string{"Box_Seeded(b, 1, zero"},
 			notContains: []string{"return zero"},
 		},
