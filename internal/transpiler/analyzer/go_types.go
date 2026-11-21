@@ -1612,53 +1612,48 @@ func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bo
 }
 
 // interfaceCoreType is the one underlying type of every term in iface's type
-// set (`~int64`, `int64 | MyInt`), counting the interfaces it embeds; nil when
-// it has no type terms, or terms of different underlying types (`~int |
-// ~int64`), which have no core type and cannot be ranged over. Embedded
-// interfaces intersect; terms are collected as a union here, so an
-// intersection that narrows mixed terms to one type is missed (nil), never
-// mistyped.
+// set (`~int64`, `int64 | MyInt`, an embedded `interface{ ~int64 }`), or nil
+// when it has no type terms or terms of different underlying types (`~int |
+// ~int64`), which Go cannot range over. Embedded interfaces intersect, but
+// their terms are pooled here: a constraint whose intersection narrows mixed
+// terms to one type is missed (nil), never mistyped.
 func interfaceCoreType(iface *types.Interface) types.Type {
-	var core types.Type
-	consistent := true
-	var visit func(iface *types.Interface, seen map[*types.Interface]bool)
-	visit = func(iface *types.Interface, seen map[*types.Interface]bool) {
-		if seen[iface] {
-			return
-		}
-		seen[iface] = true
-		for i := range iface.NumEmbeddeds() {
-			e := iface.EmbeddedType(i)
-			var terms []types.Type
-			if u, isUnion := e.(*types.Union); isUnion {
-				for j := range u.Len() {
-					terms = append(terms, u.Term(j).Type())
-				}
-			} else if inner, isIface := e.Underlying().(*types.Interface); isIface {
-				visit(inner, seen)
-				continue
-			} else {
-				terms = []types.Type{e}
-			}
-			for _, term := range terms {
-				u := term.Underlying()
-				if _, isIface := u.(*types.Interface); isIface {
-					consistent = false // an interface term: no single type
-					continue
-				}
-				if core == nil {
-					core = u
-				} else if !types.Identical(core, u) {
-					consistent = false
-				}
-			}
-		}
-	}
-	visit(iface, map[*types.Interface]bool{})
-	if !consistent {
+	if iface.IsMethodSet() {
 		return nil
 	}
+	var core types.Type
+	for _, term := range typeTerms(iface) {
+		u := term.Underlying()
+		if _, isIface := u.(*types.Interface); isIface {
+			return nil
+		}
+		if core == nil {
+			core = u
+		} else if !types.Identical(core, u) {
+			return nil
+		}
+	}
 	return core
+}
+
+// typeTerms is the types of iface's type terms, those of the interfaces it
+// embeds included.
+func typeTerms(iface *types.Interface) (terms []types.Type) {
+	for i := range iface.NumEmbeddeds() {
+		switch e := iface.EmbeddedType(i).(type) {
+		case *types.Union:
+			for j := range e.Len() {
+				terms = append(terms, e.Term(j).Type())
+			}
+		default:
+			if inner, isIface := e.Underlying().(*types.Interface); isIface {
+				terms = append(terms, typeTerms(inner)...)
+			} else {
+				terms = append(terms, e)
+			}
+		}
+	}
+	return terms
 }
 
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
@@ -2010,37 +2005,15 @@ func hasArrayType(t types.Type) bool {
 	return false
 }
 
-// constraintCoreType is the underlying type of the one type term tp's
-// constraint lists (`~[]E` and `[]E` give []E), or nil when it lists none or
-// several. Only a composite core type is kept: it is the one that names other
-// type parameters and so can bind them.
+// constraintCoreType is the core type of tp's constraint (`~[]E` and `[]E`
+// give []E; see interfaceCoreType), or nil. Only a composite core type is
+// kept: it is the one that names other type parameters and so can bind them.
 func constraintCoreType(tp *types.TypeParam) types.Type {
 	iface, ok := tp.Constraint().Underlying().(*types.Interface)
 	if !ok {
 		return nil
 	}
-	var term types.Type
-	for i := 0; i < iface.NumEmbeddeds(); i++ {
-		e := iface.EmbeddedType(i)
-		if u, isUnion := e.(*types.Union); isUnion {
-			if u.Len() != 1 {
-				return nil
-			}
-			e = u.Term(0).Type()
-		} else if _, isIface := e.Underlying().(*types.Interface); isIface {
-			// An embedded interface (comparable, one required for its
-			// methods) is not read for type terms.
-			continue
-		}
-		if term != nil {
-			return nil
-		}
-		term = e
-	}
-	if term == nil {
-		return nil
-	}
-	switch core := term.Underlying().(type) {
+	switch core := interfaceCoreType(iface).(type) {
 	case *types.Slice, *types.Map, *types.Pointer, *types.Chan, *types.Signature, *types.Array:
 		return core
 	}

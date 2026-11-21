@@ -94,3 +94,13 @@ func Pairs(s Scores) iter.Seq2[string, int] {
 		}
 	}
 }
+
+// Int64ish has the integer core type int64 (time.Duration is in its type
+// set): a range over a type parameter it constrains binds the type parameter
+// (#1378).
+type Int64ish interface{ ~int64 }
+
+// Sized embeds Int64ish: its core type is int64 too.
+type Sized interface {
+	Int64ish
+}
