@@ -2202,7 +2202,9 @@ def execStmt (c : Ctx) : Nat → Env → Stmt → GM Env
     -- named by its site (`localTypeName`) and takes the function's type arguments.
     | .localType specs =>
       let mut env := env
-      for (.mk x _ alias te, site) in specs do
+      for (.mk x tps alias te, site) in specs do
+        -- A generic local type (Go 1.25 accepts one) is not modelled.
+        if !tps.isEmpty then unsupported "local-generic-type"
         let bindName (t : Ty) (e : Env) : Env :=
           { e with tenv := (x, t) :: e.tenv, scopes := e.scopes.map (·.filter (·.1 != x)) }
         if alias then

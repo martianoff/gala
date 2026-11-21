@@ -251,7 +251,8 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
   definition naming local constants (`[n]T`); a local type shadowing a package-level type
   (with a `String` method) or a variable, a variable shadowing it in an inner block, and a
   later spec of the same declaration not yet in scope for an earlier one; and a conversion
-  to a local type, which gc reads late like any conversion.
+  to a local type, which gc reads late like any conversion. A generic local type stops the
+  run (`unsupported_local_generic_type`).
 
 Where GoCore stops on the corpus, and why. Tested programs only: each is the first
 construct a run reached, so a program may stop at another once it is modelled.

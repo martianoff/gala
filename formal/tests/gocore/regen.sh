@@ -12,7 +12,8 @@
 # (unsupported_map_range_*), at a map of a key type it does not run (unsupported_map_key),
 # at a capacity that depends on gc's escape analysis
 # (unsupported_escape), at constraint type inference (unsupported_inference),
-# at panic(nil) (unsupported_panic_nil), at a struct that embeds an interface
+# at panic(nil) (unsupported_panic_nil), at a generic type declared in a function body
+# (unsupported_local_generic_type), at a struct that embeds an interface
 # (unsupported_embedded) or a type with methods, directly, through another
 # embedded type or of a package GoCore does not hold (unsupported_embedded_*),
 # at an operand whose order of evaluation gc decides by its static type
