@@ -648,7 +648,8 @@ def lowerTail (K : Nat) (sg : Sigs) (ρ : Kind) (κ : String → Option Kind) : 
     pure (l :: ls)
 
 /-- The parameters' kinds, as the body sees them. -/
-def paramKinds (xks : List (String × Kind)) (x : String) : Option Kind := xks.lookup x
+def paramKinds (xks : List (String × Kind)) : String → Option Kind :=
+  xks.foldl (fun κ xk => upd κ xk.1 xk.2) fun _ => none
 
 /-- **The lowering of a function's body**: parameters of distinct names (none `_`, `true` or
     `false`), each of a kind, and a result of one; the body `= e` is Go's `return e`, a
