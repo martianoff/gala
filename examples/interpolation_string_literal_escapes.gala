@@ -1,0 +1,13 @@
+package main
+
+import "strings"
+
+// An escape in a string literal inside ${...} keeps its usual meaning: `\"`
+// is a quote inside the literal, not the literal's end.
+func main() {
+    Println(s"quote: ${strings.ReplaceAll("say \"hi\"", "\"", "'")}")
+    Println(s"one literal: ${"x\"+\""}")
+    Println(s"brace after quote: ${"a\"}" + "b"}")
+    Println(f"padded: ${"\"q\""}%6s|")
+    Println(s"escaped-quote form: ${strings.Repeat(\"ab\", 2) + "\""}")
+}

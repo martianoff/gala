@@ -46,8 +46,10 @@ func (e *exporter) interpolated(l native.LiteralNode) Node {
 			out = append(out, textRun(p.Start, p.End, value))
 			continue
 		}
-		if strings.Contains(content[p.Offset:p.End], `\"`) {
-			// `\"` inside `${...}`: the expression is not its source text.
+		if !strings.HasPrefix(content[p.Offset:], p.Text) {
+			// The expression is not its source text (a `\"` outside a string
+			// literal, as the lexer delimits one, was unescaped), so its
+			// positions would not be the file's.
 			return e.unsupported(UnsupportedInterpEscape, l.GalaNodeRef)
 		}
 		pl, pc := interpolation.Position(content, p.Offset, line, col)

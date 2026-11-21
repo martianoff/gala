@@ -31,6 +31,11 @@ func TestSplitStringLiteralInEmbeddedExpr(t *testing.T) {
 		{"both braces in strings", `[${f("{")}|${f("}")}]`, []string{`f("{")`, `f("}")`}},
 		{"escaped backslash in string", `${strings.ReplaceAll(p, "\\", "/")}`, []string{`strings.ReplaceAll(p, "\\", "/")`}},
 		{"escaped backslash then brace", `${f("\\", "}")}!`, []string{`f("\\", "}")`}},
+		// An escape inside a string literal keeps its usual meaning (#1304).
+		{"escaped quote in string", `${strings.ReplaceAll(s, "\"", "'")}`, []string{`strings.ReplaceAll(s, "\"", "'")`}},
+		{"escaped quotes in one string", `${"x\"+\""}`, []string{`"x\"+\""`}},
+		{"escaped quote then brace", `${f("a\"}")}`, []string{`f("a\"}")`}},
+		{"string literal in escaped-quote form", `${f(\"a\", "\"")}`, []string{`f("a", "\"")`}},
 		// Unchanged forms: escaped quotes outside a string literal, nested
 		// braces, and string literals without braces.
 		{"escaped-quote form", `${r.Get(\"k\").GetOrElse(\"none\")}`, []string{`r.Get("k").GetOrElse("none")`}},

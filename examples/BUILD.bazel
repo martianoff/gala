@@ -3070,6 +3070,13 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# An escape in a string literal inside ${...} keeps its usual meaning (#1304)
+gala_exec_test(
+    name = "interpolation_string_literal_escapes",
+    src = "interpolation_string_literal_escapes.gala",
+    expected = "interpolation_string_literal_escapes.out",
+)
+
 # String interpolation with escaped quotes inside ${...}
 gala_exec_test(
     name = "interpolation_escaped_quotes",

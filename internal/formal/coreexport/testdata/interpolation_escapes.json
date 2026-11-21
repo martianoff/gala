@@ -1,0 +1,143 @@
+{
+  "core": 11,
+  "files": [
+    {
+      "kind": "file",
+      "pos": {
+        "line": 1,
+        "col": 1,
+        "off": 0,
+        "end": 98
+      },
+      "path": "interpolation_escapes.gala",
+      "package": "main",
+      "decls": [
+        {
+          "kind": "func",
+          "pos": {
+            "line": 3,
+            "col": 1,
+            "off": 14,
+            "end": 98
+          },
+          "name": "main",
+          "receiver": null,
+          "type-params": [],
+          "params": [],
+          "result": null,
+          "body": {
+            "kind": "block",
+            "pos": {
+              "line": 3,
+              "col": 13,
+              "off": 26,
+              "end": 98
+            },
+            "stmts": [
+              {
+                "kind": "call",
+                "pos": {
+                  "line": 4,
+                  "col": 5,
+                  "off": 32,
+                  "end": 96
+                },
+                "callee": {
+                  "kind": "name",
+                  "pos": {
+                    "line": 4,
+                    "col": 5,
+                    "off": 32,
+                    "end": 39
+                  },
+                  "name": "Println"
+                },
+                "args": [
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 4,
+                      "col": 13,
+                      "off": 40,
+                      "end": 54
+                    },
+                    "text": "s\"${\"x\\\"+\\\"\"}\"",
+                    "parts": [
+                      {
+                        "kind": "string",
+                        "pos": {
+                          "line": 4,
+                          "col": 17,
+                          "off": 44,
+                          "end": 52
+                        },
+                        "text": "\"x\\\"+\\\"\"",
+                        "value": "x\"+\"",
+                        "raw": false
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "interp",
+                    "pos": {
+                      "line": 4,
+                      "col": 29,
+                      "off": 56,
+                      "end": 73
+                    },
+                    "text": "s\"${\"a\\\\\" + \"}\"}\"",
+                    "parts": [
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 4,
+                          "col": 33,
+                          "off": 60,
+                          "end": 71
+                        },
+                        "op": "+",
+                        "left": {
+                          "kind": "string",
+                          "pos": {
+                            "line": 4,
+                            "col": 33,
+                            "off": 60,
+                            "end": 65
+                          },
+                          "text": "\"a\\\\\"",
+                          "value": "a\\",
+                          "raw": false
+                        },
+                        "right": {
+                          "kind": "string",
+                          "pos": {
+                            "line": 4,
+                            "col": 41,
+                            "off": 68,
+                            "end": 71
+                          },
+                          "text": "\"}\"",
+                          "value": "}",
+                          "raw": false
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "unsupported": "interpolated-escape",
+                    "pos": {
+                      "line": 4,
+                      "col": 48,
+                      "off": 75,
+                      "end": 95
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -146,6 +146,15 @@ func main() {
     })
 }
 `},
+		// An escape inside a string literal in ${...} is the literal's own,
+		// so the expression is its source text and is exported; an escaped
+		// quote outside one is not (#1304).
+		{"interpolation_escapes", `package main
+
+func main() {
+    Println(s"${"x\"+\""}", s"${"a\\" + "}"}", s"${f(\"a\", "\"")}")
+}
+`},
 		{"lambdas", `package main
 
 func apply(x int, f func(int) int) int = f(x)
