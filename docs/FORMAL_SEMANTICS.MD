@@ -1071,7 +1071,7 @@ reported as unsupported, before other work goes on. After that, when work compet
 1. the proof chain's next step;
 2. the GoCore work that step, or M6, needs;
 3. gala2lean's current phase;
-4. the GoCore long tail.
+4. the cheap GoCore gaps; costly ones are deferred.
 
 ```mermaid
 flowchart LR
@@ -1103,7 +1103,8 @@ flowchart LR
 The differential run compares galaspec, GoCore and gala2lean with `go run` on every
 program; that is testing. The proofs run along track 1. M5 proves that the reference
 lowering from galaspec into GoCore preserves meaning; so far that is proved for call-free
-expressions and for `val`/`var`, `if` and blocks. M6 will prove, program by program, that
+expressions and for `val`/`var`, `if` and blocks (gc's order for them rests on
+obligations step 3 carries). M6 will prove, program by program, that
 the transpiler's Go is that lowering up to proved normalizations. Both claims are about
 GoCore, so GoCore's fidelity to Go (track 2) is what connects them to real Go.
 
@@ -1155,12 +1156,14 @@ numbers.
 **Order:**
 1. What M5 and M6 need for S1, then for S2: every shape the transformer emits for them,
    so that a program in the subset never stops in GoCore.
-2. Then the long tail, by how many programs stop at each construct (the "GoCore stopped
+2. Then the cheap gaps, by how many programs stop at each construct (the "GoCore stopped
    at" table in COVERAGE.md): more of the standard library, `math`, generic functions
-   used as values, and the rest.
+   used as values, and the like.
+3. Costly long-tail items, where a construct is hard to model for the few programs that
+   reach it, are deferred. They stay reported as `unsupported`; nothing pushes for 100%.
 
-**Target:** every deterministic program in the subset the transpiler emits for typical
-GALA programs runs in GoCore. Some Go is excluded by design; these exclusions are
+**Target:** the deterministic Go the transpiler emits for typical GALA programs runs in
+GoCore, with the costly gaps above left for later. Some Go is excluded by design; these exclusions are
 accepted, not open gaps. A run that reaches one ends `unsupported`, so it is reported,
 never guessed, and the "GoCore stopped at" table in COVERAGE.md counts the programs that
 stop at each (map range order: 2 in the current baseline):
@@ -1172,8 +1175,8 @@ stop at each (map range order: 2 in the current baseline):
   library GoCore neither runs from source nor models.
 
 So agreement on 100% of the corpus is not a goal: the corpus includes programs that use
-these. Progress is the agreeing count, and an unsupported program that stops at an
-excluded construct is the expected result for it.
+these, and some that reach a deferred construct. Progress is the agreeing count, and an
+unsupported program that stops at an excluded construct is the expected result for it.
 
 ### Track 3: gala2lean
 
@@ -1221,7 +1224,7 @@ gantt
     M7 S2, methods, Option/Either/Try, generics :m7, after m6, 84d
     section GoCore
     what M5 and M6 need, S1 then S2          :active, g1, after m4, 126d
-    long tail by stop count                  :g2, after g1, 84d
+    cheap gaps by stop count                 :g2, after g1, 84d
     section gala2lean
     phase 1, S1                              :done, l1, 2026-11-15, 1d
     phase 2, S2 and Go library models        :active, l2, after l1, 90d
