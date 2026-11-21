@@ -7,26 +7,42 @@ import (
 )
 
 // TestGoGenericInstanceSlotLeftOpenIsDiagnosed pins that a lambda in a GALA
-// callee's iter.Seq[T] slot with T bound by nothing is GALA-E0033, never
-// typed with the callee's own T (which go build rejects as undefined).
+// callee's iter.Seq[T] slot is never typed with the callee's own unbound
+// type parameter (which go build rejects as undefined): with nothing bound
+// it is GALA-E0033; partly bound, the open one is left to the lambda as for
+// a plain function-type slot.
 func TestGoGenericInstanceSlotLeftOpenIsDiagnosed(t *testing.T) {
-	src := `package main
+	cases := []struct {
+		name, call, leak string
+		wantE0033        bool
+	}{
+		{"positional", "collect((yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"by name", "collect(s = (yield) => {\n        yield(1)\n    })", "func(yield func(T) bool)", true},
+		{"partly bound", "count2(1, (yield) => {\n        yield(1, 2)\n    })", "V) bool", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `package main
 
 import "iter"
 import "slices"
 
 func collect[T any](s iter.Seq[T]) []T = slices.Collect(s)
 
+func count2[K comparable, V any](k K, s iter.Seq2[K, V]) int = 0
+
 func main() {
-    Println(collect((yield) => {
-        yield(1)
-    }))
+    Println(` + tc.call + `)
 }
 `
-	out, err := newForbiddenBuiltinTranspiler().Transpile(src, "")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "GALA-E0033")
-	require.NotContains(t, out, "func(yield func(T) bool)")
+			out, err := newForbiddenBuiltinTranspiler().Transpile(src, "")
+			if tc.wantE0033 {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "GALA-E0033")
+			}
+			require.NotContains(t, out, tc.leak)
+		})
+	}
 }
 
 // TestGoGenericInferenceThroughDefinedFuncTypes pins #1318 and #1321: a

@@ -282,24 +282,24 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		// So is one typed by a generic Go defined function type
 		// (`m Mapper[T, U]`, `s iter.Seq[T]`).
 		ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[fi])
-		goInstance := false
-		if _, instance := t.followAliasChain(ctx.funcMeta.ParamTypes[fi]).(transpiler.GenericType); ft == nil && instance {
-			ft = t.goNamedFuncTypeOf(t.followAliasChain(ctx.funcMeta.ParamTypes[fi]))
-			goInstance = ft != nil
-		}
-		// A Go instance's parameters that still name the callee's type
-		// parameters give a lambda no type to take (`collect((yield) => ...)`
-		// for `s iter.Seq[T]` with T unbound): it is GALA-E0033, never the
-		// callee's T written into the lambda.
-		if goInstance {
-			params := ft.Params
-			if len(ctx.typeSubst) > 0 {
-				if sub, ok := t.substituteTranspilerTypeParams(*ft, ctx.typeSubst).(transpiler.FuncType); ok {
-					params = sub.Params
+		if instance, isInstance := t.followAliasChain(ctx.funcMeta.ParamTypes[fi]).(transpiler.GenericType); ft == nil && isInstance {
+			// The callee's own type parameters are known here, so the
+			// instance is read as written and the open ones handled below.
+			if u, ok := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType); ok && len(u.Results) <= 1 {
+				// Its parameters that still name a type parameter no
+				// argument binds give a lambda no type to take
+				// (`collect((yield) => ...)` for `s iter.Seq[T]`): it is
+				// GALA-E0033, never the callee's T written into the lambda.
+				params := u.Params
+				if len(ctx.typeSubst) > 0 {
+					if sub, ok := t.substituteTranspilerTypeParams(u, ctx.typeSubst).(transpiler.FuncType); ok {
+						params = sub.Params
+					}
 				}
-			}
-			if funcTypeParamsMentionTypeParams(params, openTypeParams(ctx.funcMeta.TypeParams, ctx.typeSubst)) {
-				ft = nil
+				if funcTypeParamsMentionTypeParams(params, openTypeParams(ctx.funcMeta.TypeParams, ctx.typeSubst)) {
+					return transpiler.NilType{}
+				}
+				ft = &u
 			}
 		}
 		if ft != nil {

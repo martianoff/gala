@@ -1310,6 +1310,26 @@ func (t *galaASTTransformer) aliasedFuncType(tp transpiler.Type) *transpiler.Fun
 	return nil
 }
 
+// namesNoType reports whether typ mentions a bare name that is no type in
+// scope: not a predeclared type, a type parameter of an enclosing generic
+// declaration, a GALA type or alias, or a Go type. Such a name is a type
+// parameter of some callee, left unbound.
+func (t *galaASTTransformer) namesNoType(typ transpiler.Type) bool {
+	return typeNameMatches(typ, func(name string) bool {
+		if strings.Contains(name, ".") || transpiler.IsPrimitiveType(name) || t.activeTypeParams[name] {
+			return false
+		}
+		if t.getTypeMeta(name) != nil {
+			return false
+		}
+		if _, alias := t.typeAliases[name]; alias {
+			return false
+		}
+		_, data := t.goTypeDataFor(transpiler.BasicType{Name: name})
+		return data == nil
+	})
+}
+
 // goNamedFuncTypeOf returns the underlying function type of typ when typ names
 // a Go named function type with at most one result (`fs.WalkDirFunc`, a type
 // of the package's own .go files, or an instance of a generic one such as
@@ -1323,6 +1343,14 @@ func (t *galaASTTransformer) goNamedFuncTypeOf(typ transpiler.Type) *transpiler.
 	switch v := typ.(type) {
 	case transpiler.NamedType, transpiler.BasicType:
 	case transpiler.GenericType:
+		// A type argument naming no type here (a callee's type parameter
+		// the call left unbound, `iter.Seq[T]`) leaves the slot untyped: a
+		// lambda there must not be written with that name.
+		for _, arg := range v.Params {
+			if t.namesNoType(arg) {
+				return nil
+			}
+		}
 		// goDefinedUnderlying finds no Go type a GALA type hides.
 		if ft, ok := t.goDefinedUnderlying(v, nil).(transpiler.FuncType); ok && len(ft.Results) <= 1 {
 			return &ft

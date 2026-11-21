@@ -1553,7 +1553,19 @@ func (t *galaASTTransformer) goParamSlot(sig *transpiler.GoFuncSignature, i int,
 // function type, or when one of its parameters still names a type parameter,
 // which the lambda's parameters cannot be typed by.
 func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature, i int, prior []ast.Expr, fun ast.Expr) transpiler.Type {
-	ft := t.resolveTranspilerTypeAsFuncType(goSigParamType(sig, i))
+	raw := goSigParamType(sig, i)
+	var ft *transpiler.FuncType
+	// A generic Go defined function type (`iter.Seq[E]`, `Pred[T]`) is read
+	// as written: its type arguments name the callee's own type
+	// parameters, which are substituted and masked below.
+	if instance, ok := raw.(transpiler.GenericType); ok {
+		if u, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType); isFunc && len(u.Results) <= 1 {
+			ft = &u
+		}
+	}
+	if ft == nil {
+		ft = t.resolveTranspilerTypeAsFuncType(raw)
+	}
 	if ft == nil {
 		return transpiler.NilType{}
 	}
@@ -1579,8 +1591,18 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 // parameters until they are bound. Any other value there (a val, a spread
 // slice) has a type of its own and is lowered as is.
 func (t *galaASTTransformer) readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
-	return v.lambda.ok() || isGoResultsThunkSlot(slot) ||
-		!v.spread && t.isPlaceholderLambdaArg(v.expr, slot)
+	if v.lambda.ok() || isGoResultsThunkSlot(slot) {
+		return true
+	}
+	if v.spread {
+		return false
+	}
+	if instance, ok := slot.(transpiler.GenericType); ok {
+		// Read as written, its type arguments the callee's (genericGoLambdaSlot).
+		_, isFunc := t.goDefinedUnderlying(instance, nil).(transpiler.FuncType)
+		return isFunc && v.expr.ok() && countPlaceholders(v.expr) > 0
+	}
+	return t.isPlaceholderLambdaArg(v.expr, slot)
 }
 
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
