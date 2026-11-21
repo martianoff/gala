@@ -104,6 +104,10 @@ end
 instance : Inhabited Expr := ⟨.unsupported ""⟩
 instance : Inhabited Stmt := ⟨.empty⟩
 
+-- Structural equality on syntax, used to compare a rewritten program with the original
+-- (`#guard` cross-checks of `Order.gc`).
+deriving instance BEq for Expr, Field, Sig, Stmt, Clause, Decl, TypeSpec, Spec
+
 /-- An import: its name (`""` for none, `.` or `_`) and its path. -/
 structure Import where
   name : String

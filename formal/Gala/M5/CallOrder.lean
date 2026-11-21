@@ -574,21 +574,12 @@ theorem noTrigOS_of (s : Scope) : ∀ (els : Option Stmt), body3OS els = true �
   | some st, hb, hf => noTrigS_of s st hb hf
 end
 
-/-- The scope gc's rewrite gives function `body` of package `pkg`, file `fi` of `p`
-    (`Hoist.hDecl`). -/
+/-- The scope gc's rewrite gives function `body` of package `pkg`, file `fi` of `p`: `Hoist.funcScope`,
+    as `Hoist.hDecl` builds it over the program's tables. -/
 def gcScope (p : Program) (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
     (body : List Stmt) : Scope :=
   let c := buildCtx p
-  let recvNames := match recv with
-    | some (.mk ns _) => ns
-    | none => []
-  let recvTParams := match recv with
-    | some (.mk _ rty) => ((recvBase rty).map (·.2.1)).getD []
-    | none => []
-  (Scope.enter { c, pkg, file := fi, locals := recvNames,
-                 tparams := fieldListNames tps ++ recvTParams,
-                 changeable := Std.HashSet.ofList (chSs (takesAddress (allMethods c)) false body),
-                 pointers := pointerNames recv.toList, fields := structFields c, methods := allMethods c } sig).withIfaces sig
+  funcScope c (structFields c) (allMethods c) pkg fi recv tps sig body
 
 /-- **An order step 3a's bodies run as written in**: every `Body3` function body that fits
     the scope gc's rewrite gives it is in its place unchanged. That the lowered programs'
@@ -627,7 +618,8 @@ theorem gc_runs3 : RunsAsWritten3 Order.gc := by
       intro h3
       simp only [hDecl, StateT.run_bind, StateT.run_pure]
       have hid := hSs_noTrig _ body (noTrigSs_of _ body hb hfit) h3
-      erw [hid]
+      simp only [gcScope] at hid
+      rw [hid]
       rfl)
   subst hP
   exact hd'
