@@ -2917,7 +2917,9 @@ func mergeOwnPackageVals(pkgAST, res *transpiler.RichAST, isThisFile func(string
 
 // attributeTo returns err, the error of the file at filePath, with the file
 // on each error it holds: stamped on a GALA error that has none, and named
-// in the text of any other error, which has no place for it.
+// in the text of any other error, which has no place for it. An error that
+// already has its file, a dependency's error an importer's file failed with,
+// keeps it.
 func attributeTo(err error, filePath string) error {
 	if multi, ok := err.(*galaerr.MultiError); ok {
 		errs := make([]error, len(multi.Errors))
@@ -2927,11 +2929,25 @@ func attributeTo(err error, filePath string) error {
 		return &galaerr.MultiError{Errors: errs}
 	}
 	var ge galaerr.GalaError
-	if !errors.As(err, &ge) {
-		return fmt.Errorf("%s: %w", filePath, err)
+	var fe *fileError
+	switch {
+	case errors.As(err, &fe):
+		return err
+	case !errors.As(err, &ge):
+		return &fileError{file: filePath, err: err}
 	}
 	return galaerr.WithFilePath(err, filePath)
 }
+
+// fileError is an error of the file at file that has no place of its own
+// for the file to be recorded in.
+type fileError struct {
+	file string
+	err  error
+}
+
+func (e *fileError) Error() string { return e.file + ": " + e.err.Error() }
+func (e *fileError) Unwrap() error { return e.err }
 
 // storeAnalyzedPkg projects `importedAST` to its own-only form and records
 // it in analyzedPkgs along with the direct imports needed to recover the
