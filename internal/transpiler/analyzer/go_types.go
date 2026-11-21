@@ -521,10 +521,11 @@ func probeGoRoot(goEnv func(dir string) string) string {
 const goEnvTimeout = 2 * time.Minute
 
 // goEnvGoroot is `go env GOROOT` as goPath reports it, or "" when that fails
-// or is no Go SDK. Run in dir, its toolchain is the one dir's go.mod picks
-// (or a GOWORK file, as for the build), and its stderr is the user's, so that
-// a toolchain download reports there. With dir "", it is goPath's own root:
-// it runs in the current directory with no toolchain switch.
+// or is no Go SDK. Run in dir, its toolchain is the one dir's go.mod picks,
+// with the build's environment, and its stderr is the user's, so that a
+// toolchain download reports there. With dir "", it is goPath's own root: it
+// runs in the current directory with no toolchain switch (`go env` answers
+// even in a module that asks for a newer Go).
 func goEnvGoroot(goPath, dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
 	defer cancel()
