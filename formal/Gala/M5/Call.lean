@@ -925,3 +925,266 @@ theorem pureEval_noRet (ds : Spec.Decls) : ∀ e, NoRet (pureEval ds e)
     intro c w; unfold pureEval; exact fun h => nomatch h
 
 end NoRet
+
+/-! ## Frames -/
+
+section Frames
+open Gala.GoCore.Full
+
+theorem gframe_refl (g : St) : GFrame g g := ⟨pre_refl _, by cases g; rfl⟩
+
+theorem gframe_trans {g₁ g₂ g₃ : St} (h₁ : GFrame g₁ g₂) (h₂ : GFrame g₂ g₃) : GFrame g₁ g₃ := by
+  refine ⟨pre_trans h₁.1 h₂.1, ?_⟩
+  have e₁ := h₁.2; have e₂ := h₂.2
+  cases g₁; cases g₂; cases g₃
+  simp only [St.mk.injEq] at e₁ e₂ ⊢
+  obtain ⟨-, -, a1, a2, -, a3, a4, a5, a6, a7⟩ := e₁
+  obtain ⟨-, -, b1, b2, -, b3, b4, b5, b6, b7⟩ := e₂
+  subst_vars
+  simp
+
+theorem gframe_out {g g' : St} (h : GFrame g g') : g'.out = g.out := by
+  have e := h.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
+
+theorem gframe_defers {g g' : St} (h : GFrame g g') : g'.defers = g.defers := by
+  have e := h.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.2.2.2.2.1
+
+theorem spent_trans {s₁ s₂ s₃ : Spec.St} {g₁ g₂ g₃ : St} (h₁ : Spent s₁ s₂ g₁ g₂) (h₂ : Spent s₂ s₃ g₂ g₃) :
+    Spent s₁ s₃ g₁ g₃ := by unfold Spent at *; omega
+
+theorem spent_le {s s' : Spec.St} {g g' : St} (h : Spent s s' g g') (hle : s.steps ≤ g.steps) :
+    s'.steps ≤ g'.steps := by unfold Spent at h; omega
+
+theorem sframe_refl (c : Spec.Core) : SFrame c c := ⟨pre_refl _, by cases c; rfl⟩
+
+theorem sframe_trans {c₁ c₂ c₃ : Spec.Core} (h₁ : SFrame c₁ c₂) (h₂ : SFrame c₂ c₃) : SFrame c₁ c₃ := by
+  refine ⟨pre_trans h₁.1 h₂.1, ?_⟩
+  have e₁ := h₁.2; have e₂ := h₂.2
+  cases c₁; cases c₂; cases c₃
+  simp only [Spec.Core.mk.injEq] at e₁ e₂ ⊢
+  obtain ⟨a1, a2, a3, -⟩ := e₁
+  obtain ⟨b1, b2, b3, -⟩ := e₂
+  subst_vars
+  simp
+
+theorem sframe_parts {c c' : Spec.Core} (h : SFrame c c') :
+    c'.locals = c.locals ∧ c'.globals = c.globals ∧ c'.out = c.out := by
+  have e := h.2; cases c; cases c'; simp only [Spec.Core.mk.injEq] at e; exact ⟨e.1, e.2.1, e.2.2.1⟩
+
+/-- Code that only added cells, on either side, keeps the state relation. -/
+theorem inv3_frame {cx : Ctx} {P : String} {sg : Sigs} {κ : String → Option Kind} {c c' : Spec.Core}
+    {g g' : St} {env : Env} (hi : Inv3 cx P sg κ c g env) (hs : SFrame c c') (hg : GFrame g g') :
+    Inv3 cx P sg κ c' g' env := by
+  obtain ⟨hl, hgl, ho⟩ := sframe_parts hs
+  refine ⟨⟨locRel_mono hi.inv.loc hs.1 hl hg.1, ?_, hi.inv.pre⟩, hi.pkg, hi.tenv, ?_, ?_⟩
+  · rw [ho, gframe_out hg]; exact hi.inv.out
+  · intro x hx; rw [hl]; exact hi.closed x hx
+  · intro f hf; rw [hgl]; exact hi.globals f hf
+
+end Frames
+
+/-! ## The call-free parts: step 2a -/
+
+section Leaf
+open Gala.GoCore.Full
+
+theorem lowerE_shape (κ : String → Option Kind) : ∀ (e : Spec.Expr) (k : Kind) (le : Expr),
+    lowerE κ e = some (k, le) → CFShape e
+  | .lit _, _, _, _ | .name _, _, _, _ => trivial
+  | .paren x, k, le, h => by
+    simp only [lowerE, Option.map_eq_some_iff] at h
+    obtain ⟨⟨k', l'⟩, h', -⟩ := h
+    exact lowerE_shape κ x k' l' h'
+  | .unary op x, k, le, h => by
+    simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+    obtain ⟨⟨k', l'⟩, h', -⟩ := h
+    exact lowerE_shape κ x k' l' h'
+  | .binary op l r, k, le, h => by
+    simp only [lowerE, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+    obtain ⟨⟨kl, ll⟩, hl, ⟨kr, lr⟩, hr, -⟩ := h
+    exact ⟨lowerE_shape κ l kl ll hl, lowerE_shape κ r kr lr hr⟩
+
+/-- **A call-free part**, step 2a's: as `expr_correct`, with both states framed, GoCore
+    spending no step, and no `return`. -/
+theorem leaf_sim (ds : Spec.Decls) (cx : Ctx) (P : String) (sg : Sigs) (K : Nat) (κ : String → Option Kind)
+    (e : Spec.Expr) (k : Kind) (le : Expr) (hl : lowerLeaf K κ e = some (k, le)) (s : Spec.St) (g : St)
+    (env : Env) (hi : Inv3 cx P sg κ s.toCore g env) (d N : Nat) (hN : K ≤ N) :
+    ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) := by
+  unfold lowerLeaf at hl
+  split at hl
+  · rename_i hK
+    obtain ⟨hnc, hle⟩ := lowerX_some hl
+    obtain ⟨hcore, hrel⟩ := expr_correct ds cx κ e k le hle hnc s g env hi.inv.loc hi.inv.pre d
+    have hrel := hrel N (by omega)
+    have hmono := eval_mono ds e d (lowerE_shape κ e k le hle) s
+    have hpure := (eval_pure ds e d s (pure_of_lower κ s.toCore g.cells env hi.inv.loc e k le hle)).1
+    rcases hr : (Spec.eval ds d e).run.run s with ⟨r, s'⟩
+    rw [hr] at hrel hcore hmono hpure
+    simp only at hcore hmono hpure
+    cases r with
+    | ok v =>
+      obtain ⟨w, hg, hvw, hk, hu⟩ := hrel
+      exact ⟨w, g, hg, hvw, hk, hu, by rw [hcore]; exact sframe_refl _, gframe_refl g,
+        by unfold Spent; omega⟩
+    | error er =>
+      cases er with
+      | panic pc m =>
+        obtain ⟨pv, hg, hpv⟩ := hrel
+        exact ⟨pv, g, hg, hpv, congrArg Spec.Core.out hcore, gframe_refl g⟩
+      | ret v =>
+        rcases hpure with h | h
+        · cases h
+        · exact pureEval_noRet ds e s.toCore v h.symm
+      | _ => trivial
+  · cases hl
+
+end Leaf
+
+/-! ## The simulation -/
+
+section Sim
+open Gala.GoCore.Full
+
+/-- galaspec's state after its `tick`: what the program sees is the same, a step fewer. -/
+structure Ticked (s₁ s : Spec.St) : Prop where
+  core : s₁.toCore = s.toCore
+  le : s₁.steps ≤ s.steps
+
+theorem ticked_of (s : Spec.St) (k : Nat) (hs : s.steps = k + 1) : Ticked { s with steps := k } s :=
+  ⟨rfl, by simp [hs]⟩
+
+theorem panOK_tick {s₁ s : Spec.St} (ht : Ticked s₁ s) {g : St} {pc m s'} {r : Except Stop α × St}
+    (h : PanOK s₁ g pc m s' r) : PanOK s g pc m s' r := by
+  obtain ⟨pv, g', hr, hp, ho, hg⟩ := h
+  exact ⟨pv, g', hr, hp, by rw [ho, show s₁.out = s.out from congrArg Spec.Core.out ht.core], hg⟩
+
+theorem retOK_tick {s₁ s : Spec.St} (ht : Ticked s₁ s) {ρ g v s'} {r : Except Stop α × St}
+    (h : RetOK ρ s₁ g v s' r) : RetOK ρ s g v s' r := by
+  obtain ⟨w, g', hr, hv, hk, hh, hgl, ho, hg, hsp⟩ := h
+  have hc := ht.core
+  refine ⟨w, g', hr, hv, hk, ?_, ?_, ?_, hg, ?_⟩
+  · rw [show s.heap = s₁.heap from (congrArg Spec.Core.heap hc).symm]; exact hh
+  · rw [hgl, show s₁.globals = s.globals from congrArg Spec.Core.globals hc]
+  · rw [ho, show s₁.out = s.out from congrArg Spec.Core.out hc]
+  · unfold Spent at *; have := ht.le; omega
+
+theorem eRes3_tick {s₁ s : Spec.St} (ht : Ticked s₁ s) {k u g} {sr : Except Spec.Stop Spec.Val × Spec.St}
+    {r : Except Stop Val × St} (h : ERes3 k u s₁ g sr r) : ERes3 k u s g sr r := by
+  rcases sr with ⟨_ | v, s'⟩
+  · rename_i e
+    cases e with
+    | panic pc m => exact panOK_tick ht h
+    | ret => exact h
+    | _ => trivial
+  · obtain ⟨w, g', hr, hv, hk, hu, hs, hg, hsp⟩ := h
+    refine ⟨w, g', hr, hv, hk, hu, ht.core ▸ hs, hg, ?_⟩
+    unfold Spent at *; have := ht.le; omega
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+/-- The expressions, at galaspec depth `d` and GoCore depth from `K * d` on. -/
+def ExprSim (d : Nat) : Prop :=
+  ∀ κ e k le, lowerC K sg κ e = some (k, le) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d ≤ N →
+      ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g)
+
+/-- What `lowerC` takes apart, for a part with a call. -/
+theorem lowerC_paren {κ : String → Option Kind} {x : Spec.Expr} {k : Kind} {le : Expr}
+    (h : lowerC K sg κ (.paren x) = some (k, le)) (hc : hasCall x = true) :
+    ∃ l, lowerC K sg κ x = some (k, l) ∧ le = .paren l := by
+  simp only [lowerC, hc, ite_true, Option.map_eq_some_iff, Prod.mk.injEq] at h
+  obtain ⟨⟨k', l⟩, h, rfl, rfl⟩ := h
+  exact ⟨l, h, rfl⟩
+
+theorem lowerC_unary {κ : String → Option Kind} {op : String} {x : Spec.Expr} {k : Kind} {le : Expr}
+    (h : lowerC K sg κ (.unary op x) = some (k, le)) (hc : hasCall x = true) :
+    ∃ kx l, lowerC K sg κ x = some (kx, l) ∧ unaryKind op kx = some k ∧ le = .unary op l := by
+  simp only [lowerC, hc, ite_true, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+    Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨⟨kx, l⟩, hx, k', hk', rfl, rfl⟩ := h
+  exact ⟨kx, l, hx, hk', rfl⟩
+
+/-- A part with a call is never a literal, and its value never an untyped constant. -/
+theorem isLitE_of_hasCall : ∀ (e : Spec.Expr), hasCall e = true → isLitE e = false
+  | .paren x, h => isLitE_of_hasCall x h
+  | .lit _, h => by simp [hasCall] at h
+  | .name _, _ | .unary .., _ | .binary .., _ | .call .., _ | .select .., _ | .tuple _, _ | .ifExpr .., _
+  | .mtch .., _ | .block _, _ | .ifStmt .., _ | .ret _, _ | .assign .., _ | .incdec .., _ | .decl .., _
+  | .interp _, _ | .lambda .., _ | .named .., _ | .unsupported _, _ => rfl
+
+theorem eval_paren_run (d k : Nat) (x : Spec.Expr) (s : Spec.St) (hs : s.steps = k + 1) :
+    (Spec.eval ds (d + 1) (.paren x)).run.run s = (Spec.eval ds d x).run.run { s with steps := k } := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_succ s k hs]
+
+/-- galaspec's `unary` on an operand that is no literal. -/
+theorem eval_unary_run (d k : Nat) (op : String) (x : Spec.Expr) (s : Spec.St) (hs : s.steps = k + 1)
+    (hx : isLitE x = false) :
+    (Spec.eval ds (d + 1) (.unary op x)).run.run s =
+      (do Spec.unop op (← Spec.eval ds d x)).run.run { s with steps := k } := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq, tick_succ s k hs]
+  split
+  all_goals first
+    | (rename_i heq; obtain ⟨-, rfl⟩ := heq; simp [isLitE] at hx; done)
+    | (rename_i heq; obtain ⟨rfl, rfl⟩ := heq; rw [Spec.run_bind_eq]; done)
+    | (rename_i heq; simp at heq; done)
+
+theorem paren_sim (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 1 ≤ K) (κ : String → Option Kind)
+    (x : Spec.Expr) (k : Kind) (le : Expr) (hl : lowerC K sg κ (.paren x) = some (k, le))
+    (hc : hasCall x = true) (s : Spec.St) (g : St) (env : Env) (hi : Inv3 cx P sg κ s.toCore g env)
+    (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ERes3 k (isLitE (.paren x)) s g ((Spec.eval ds (d + 1) (.paren x)).run.run s)
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨l, hlx, rfl⟩ := lowerC_paren K sg hl hc
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k' =>
+  rw [eval_paren_run ds d k' x s hs, evalExpr_paren]
+  exact eRes3_tick (ticked_of s k' hs)
+    (ih κ x k l hlx { s with steps := k' } g env hi (by show k' ≤ g.steps; omega) n (by rw [Nat.mul_succ] at hN; omega))
+
+theorem unary_sim3 (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (κ : String → Option Kind)
+    (op : String) (x : Spec.Expr) (k : Kind) (le : Expr) (hl : lowerC K sg κ (.unary op x) = some (k, le))
+    (hc : hasCall x = true) (s : Spec.St) (g : St) (env : Env) (hi : Inv3 cx P sg κ s.toCore g env)
+    (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ERes3 k (isLitE (.unary op x)) s g ((Spec.eval ds (d + 1) (.unary op x)).run.run s)
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨kx, l, hlx, hku, rfl⟩ := lowerC_unary K sg hl hc
+  have hop : op ≠ "&" := by intro h; subst h; unfold unaryKind at hku; split at hku <;> simp_all
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 3 := ⟨N - 3, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k' =>
+  rw [eval_unary_run ds d k' op x s hs (isLitE_of_hasCall _ hc), evalExpr_unary _ _ _ _ _ hop]
+  have h := ih κ x kx l hlx { s with steps := k' } g env hi (by show k' ≤ g.steps; omega) (n + 2)
+    (by rw [Nat.mul_succ] at hN; omega)
+  rw [Spec.run_bind_eq, grun_bind]
+  rcases hr : (Spec.eval ds d x).run.run { s with steps := k' } with ⟨r, s'⟩
+  rw [hr] at h
+  cases r with
+  | error e =>
+    cases e with
+    | panic pc m =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := h
+      rw [hg]
+      exact ⟨pv, g', rfl, hp, by rw [ho], hgf⟩
+    | ret => exact h.elim
+    | _ => trivial
+  | ok v =>
+    obtain ⟨w, g', hg, hvw, hkv, hnu, hsf, hgf, hsp⟩ := h
+    rw [hg]
+    simp only
+    obtain ⟨v', w', hv', hw', hvw', hk', hnu'⟩ := unary_sim cx n op v w kx k g' s'.toCore hvw hkv hku
+      (hnu (isLitE_of_hasCall _ hc))
+    rw [Spec.run_liftM, hv', hw']
+    simp only
+    have hst : (Spec.unop op v).run.run s'.toCore = (.ok v', s'.toCore) := by
+      have := readOnly_unop op v s'.toCore
+      rw [← hv']; exact Prod.ext rfl this
+    rw [hst]
+    exact ⟨w', g', rfl, hvw', hk', fun _ => hnu', hsf, hgf,
+      by unfold Spent at *; simp at hsp ⊢; omega⟩
+
+end Sim
