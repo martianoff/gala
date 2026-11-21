@@ -183,7 +183,11 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 							if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 								if rewritten, ok := t.injectSealedVariantTypeArgs(base, pending); ok {
 									receiverType = rewritten
-									t.expectedArgTypes.consume()
+									// As below, a generic Apply takes the
+									// slot in the method call.
+									if !genericApply(typeMeta) {
+										t.expectedArgTypes.consume()
+									}
 								} else if baseExpr == base && len(typeMeta.TypeParams) > 0 {
 									// Any other companion takes them from the
 									// slot as one called with arguments does:
@@ -246,8 +250,14 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 							// A generic Apply has no Go method: it is called
 							// as `T{}.Apply()` written out is, by the
 							// zero-argument generic method call below, which
-							// binds its type parameters from the slot.
-							base = applySelector(receiver, nil)
+							// binds its type parameters from the slot. Type
+							// arguments written on a type that takes none are
+							// the generic Apply's own (`Missing[int]()`).
+							if _, typeArgs := splitCallFunTypeArgs(base); len(typeArgs) > 0 && len(typeMeta.TypeParams) == 0 {
+								base = applySelector(&ast.CompositeLit{Type: baseExpr}, typeArgs)
+							} else {
+								base = applySelector(receiver, nil)
+							}
 						}
 					} else if len(methodMeta.DefaultExprs) > 0 || t.sealedVariantOf(typeName).parent != nil {
 						// A sealed case with fields, or an Apply with
@@ -2913,7 +2923,7 @@ func (t *galaASTTransformer) valueApplyCallee(fun ast.Expr) (ast.Expr, bool) {
 	// No value of a struct type can be indexed, so an index of one is the
 	// type arguments of its generic Apply.
 	if base, typeArgs := splitCallFunTypeArgs(fun); len(typeArgs) > 0 {
-		if meta := t.calleeApplyType(base); genericApply(meta) && isStructMeta(meta) {
+		if meta := t.calleeApplyType(base); genericApply(meta) && t.isStructMeta(meta) {
 			return applySelector(base, typeArgs), true
 		}
 	}
@@ -2938,7 +2948,7 @@ func (t *galaASTTransformer) fieldApplyCallee(fun ast.Expr, lookupBaseName, fiel
 		return nil, false
 	}
 	base, typeArgs := splitCallFunTypeArgs(fun)
-	if len(typeArgs) > 0 && !(genericApply(meta) && isStructMeta(meta)) {
+	if len(typeArgs) > 0 && !(genericApply(meta) && t.isStructMeta(meta)) {
 		return nil, false
 	}
 	return applySelector(base, typeArgs), true
@@ -2961,9 +2971,14 @@ func applySelector(recv ast.Expr, typeArgs []ast.Expr) ast.Expr {
 }
 
 // isStructMeta reports whether meta is a struct or sealed type's, whose
-// values Go cannot index.
-func isStructMeta(meta *transpiler.TypeMetadata) bool {
-	return meta != nil && !meta.IsOpaque && (meta.IsShorthand || meta.IsSealed || len(meta.FieldNames) > 0)
+// values Go cannot index: no interface, opaque type or alias (`type Names
+// []string` with an Apply could be indexed).
+func (t *galaASTTransformer) isStructMeta(meta *transpiler.TypeMetadata) bool {
+	if meta == nil || meta.IsOpaque || meta.IsInterface {
+		return false
+	}
+	_, isAlias := t.lookupTypeAlias(meta.Name)
+	return !isAlias
 }
 
 // resultApplyType is the metadata of the type of fun when fun is a call, a

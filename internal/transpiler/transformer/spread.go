@@ -141,7 +141,7 @@ func checkMethodSpreads(c callSrc, methodMeta *transpiler.MethodMetadata) error 
 // (calleeApplyType).
 func (t *galaASTTransformer) checkValueApplySpread(fun ast.Expr, c callSrc) error {
 	meta := t.calleeApplyType(fun)
-	if meta == nil {
+	if meta == nil || meta.Methods["Apply"] == nil {
 		return nil
 	}
 	// The type as the file names it, `lib.Joiner` (under an import alias too),

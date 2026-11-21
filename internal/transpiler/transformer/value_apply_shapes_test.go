@@ -116,6 +116,27 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "Pick_Apply[string, int](Pick[int]{})")
 
+	// Type arguments go to a generic Apply of a block-form struct with no
+	// fields, and of a companion whose type takes none.
+	out, err = transpileBareVariant(t, `package main
+
+type Tag struct {}
+
+func (g Tag) Apply[A any](a A) string = s"#$a"
+
+struct Missing()
+
+func (m Missing) Apply[A any]() Option[A] = None[A]()
+
+func main() {
+    val g = Tag{}
+    Println(g[int64](3), Missing[int]())
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "Tag_Apply[int64](g, 3)")
+	require.Contains(t, out, "Missing_Apply[int](Missing{})")
+
 	// A misplaced spread names the value's type, through a call's result too.
 	_, err = transpileBareVariant(t, `package main
 
