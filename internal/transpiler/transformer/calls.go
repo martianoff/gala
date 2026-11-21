@@ -2504,7 +2504,12 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
-				param := callCtx.funcMeta.ParamTypes[i]
+				// A `Sendable[F]` parameter is F, as for a positional
+				// argument (sendableInnerExpected).
+				param, sendable := transpiler.UnwrapSendable(callCtx.funcMeta.ParamTypes[i])
+				if sendable {
+					return t.sendableInnerExpected(param, callCtx.funcMeta.TypeParams, callCtx.inferredTypeSubst), nil
+				}
 				// A generic Go function-type instance, as positionally
 				// (resolveExpectedFuncArgType).
 				if slotType, ok := t.goInstanceSlot(param, callCtx.inferredTypeSubst, callCtx.funcMeta.TypeParams); ok {
@@ -2514,8 +2519,7 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 				// binds takes the slot a positional argument does
 				// (funcSlotType), never the declared type with them in it.
 				if len(callCtx.inferredTypeSubst) == 0 {
-					inner, _ := transpiler.UnwrapSendable(param)
-					if ft := t.aliasedFuncType(inner); ft != nil && typeMentionsTypeParam(*ft, callCtx.funcMeta.TypeParams) {
+					if ft := t.aliasedFuncType(param); ft != nil && typeMentionsTypeParam(*ft, callCtx.funcMeta.TypeParams) {
 						return t.funcSlotType(*ft, callCtx.funcMeta.TypeParams, nil), nil
 					}
 				}
