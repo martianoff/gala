@@ -307,8 +307,8 @@ gala_exec_test(
     deps = ["//concurrent"],
 )
 
-# A `_` clause in a Zip-lowered `also` group, first or later, still builds
-# and runs; reading its `_` is GALA-E0139.
+# A `_` clause in a Zip-lowered `also` group, first or later, builds and runs
+# (a read of its `_` is pinned as GALA-E0139 by TestAlsoUnderscoreClause).
 gala_exec_test(
     name = "also_underscore_clause",
     src = "also_underscore_clause.gala",
