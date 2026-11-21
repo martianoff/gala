@@ -164,7 +164,7 @@ program's translation under gala2lean's prelude), not about the transpiler.
 
 Not proved: T5–T7.
 
-## GoCore: the Go the transpiler emits (M4, in progress)
+## GoCore: the Go the transpiler emits (M4)
 
 `gocore` (`Gala/GoCore/*.lean`, `GoCoreMain.lean`) runs the transformer's actual Go
 output, read by the Go AST exporter (`internal/formal/gocoreexport`), together with the
