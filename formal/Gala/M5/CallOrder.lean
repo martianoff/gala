@@ -436,4 +436,199 @@ theorem scanArgs_eq (s : Scope) (conv : List Bool) : ∀ (es : List Expr), CCs e
     split <;> simp
 end
 
+
+/-! ## The orders step 3a allows -/
+
+mutual
+/-- `CC`, as a check. -/
+def ccB : Expr → Bool
+  | .ident _ | .intLit _ | .strLit _ => true
+  | .paren x => ccB x
+  | .unary op x => decide (op ∈ ["-", "+", "^", "!"]) && ccB x
+  | .binary _ x y => ccB x && ccB y
+  | .call (.ident _) args false => ccBs args
+  | _ => false
+def ccBs : List Expr → Bool
+  | [] => true
+  | a :: as => ccB a && ccBs as
+end
+
+mutual
+theorem ccB_sound : ∀ (e : Expr), ccB e = true → CC e
+  | .ident _, _ | .intLit _, _ | .strLit _, _ => trivial
+  | .paren x, h => ccB_sound x h
+  | .unary op x, h => by
+    simp only [ccB, Bool.and_eq_true, decide_eq_true_eq] at h
+    exact ⟨h.1, ccB_sound x h.2⟩
+  | .binary _ x y, h => by
+    simp only [ccB, Bool.and_eq_true] at h
+    exact ⟨ccB_sound x h.1, ccB_sound y h.2⟩
+  | .call (.ident _) args false, h => ccBs_sound args h
+  | .charLit _, h | .floatLit .., h | .composite .., h | .keyValue .., h | .funcLit .., h
+  | .selector .., h | .index .., h | .sliceExpr .., h | .typeAssert .., h | .star _, h
+  | .structType _, h | .interfaceType _, h | .funcType _, h | .arrayType .., h | .mapType .., h
+  | .ellipsis, h | .unsupported _, h | .call (.ident _) _ true, h => by simp [ccB] at h
+  | .call (.intLit _) _ _, h | .call (.strLit _) _ _, h | .call (.charLit _) _ _, h
+  | .call (.floatLit ..) _ _, h | .call (.composite ..) _ _, h | .call (.keyValue ..) _ _, h
+  | .call (.funcLit ..) _ _, h | .call (.paren _) _ _, h | .call (.selector ..) _ _, h
+  | .call (.index ..) _ _, h | .call (.sliceExpr ..) _ _, h | .call (.typeAssert ..) _ _, h
+  | .call (.call ..) _ _, h | .call (.star _) _ _, h | .call (.unary ..) _ _, h | .call (.binary ..) _ _, h
+  | .call (.structType _) _ _, h | .call (.interfaceType _) _ _, h | .call (.funcType _) _ _, h
+  | .call (.arrayType ..) _ _, h | .call (.mapType ..) _ _, h | .call .ellipsis _ _, h
+  | .call (.unsupported _) _ _, h => by simp [ccB] at h
+theorem ccBs_sound : ∀ (es : List Expr), ccBs es = true → CCs es
+  | [], _ => trivial
+  | a :: as, h => by
+    simp only [ccBs, Bool.and_eq_true] at h
+    exact ⟨ccB_sound a h.1, ccBs_sound as h.2⟩
+end
+
+/-- A lowered expression on which gc's trigger does not fire, read without a scope. -/
+def noTrigE (top : Bool) (e : Expr) : Bool := ccB e && !triggers (canon top e)
+
+mutual
+/-- **No statement fires gc's trigger** on `canon`'s events: decidable. -/
+def body3S : Stmt → Bool
+  | .decl d => match declExpr? d with
+    | some (_, e) => noTrigE true e
+    | none => false
+  | .ret es => match es with
+    | [e] => noTrigE true e
+    | _ => false
+  | .block ss => body3Ss ss
+  | .if_ init c b els => init.isNone && noTrigE false c && body3Ss b && body3OS els
+  | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
+  | .defer_ _ | .empty | .unsupported _ => false
+def body3Ss : List Stmt → Bool
+  | [] => true
+  | st :: ss => body3S st && body3Ss ss
+def body3OS : Option Stmt → Bool
+  | none => true
+  | some st => body3S st
+end
+
+/-- **A body step 3a's order result speaks of**: no statement in which an operand that may
+    panic (`/` or `%` by a non-literal, a shift by a non-literal count) precedes a call in
+    the same operand list, a call's arguments being a list of their own. -/
+def Body3 (body : List Stmt) : Prop := body3Ss body = true
+
+mutual
+/-- **A body fits a scope**: its statements' expressions do (`FitsE`), each in the scope gc's
+    rewrite gives it (a declaration's name bound for the statements after it). -/
+def FitsS (s : Scope) : Stmt → Prop
+  | .decl d => ∀ x e, declExpr? d = some (x, e) → FitsE s e
+  | .ret es => ∀ e ∈ es, FitsE s e
+  | .block ss => FitsSs s ss
+  | .if_ _ c b els => FitsE s c ∧ FitsSs s b ∧ FitsOS s els
+  | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
+  | .defer_ _ | .empty | .unsupported _ => True
+def FitsSs (s : Scope) : List Stmt → Prop
+  | [] => True
+  | st :: ss => FitsS s st ∧ FitsSs (afterS s st) ss
+def FitsOS (s : Scope) : Option Stmt → Prop
+  | none => True
+  | some st => FitsS s st
+end
+
+theorem noTrigE_spec {s : Scope} {top : Bool} {e : Expr} (h : noTrigE top e = true) (hf : FitsE s e) :
+    CC e ∧ triggers (scanE s top e) = false := by
+  simp only [noTrigE, Bool.and_eq_true, Bool.not_eq_true'] at h
+  have hc := ccB_sound e h.1
+  exact ⟨hc, by rw [canon_eq s top e hc hf]; exact h.2⟩
+
+mutual
+/-- **In a scope it fits, a `Body3` statement fires no trigger** (`canon_eq`). -/
+theorem noTrigS_of (s : Scope) : ∀ (st : Stmt), body3S st = true → FitsS s st → NoTrigS s st
+  | .decl d, hb, hf => by
+    simp only [body3S] at hb
+    split at hb
+    · rename_i x e hd
+      obtain ⟨hc, ht⟩ := noTrigE_spec hb (hf x e hd)
+      exact ⟨x, e, hd, hc, by simpa [scanOperands] using ht⟩
+    · cases hb
+  | .ret es, hb, hf => by
+    simp only [body3S] at hb
+    split at hb
+    · rename_i e
+      obtain ⟨hc, ht⟩ := noTrigE_spec hb (hf e (by simp))
+      exact ⟨e, rfl, hc, by simpa [scanOperands] using ht⟩
+    · cases hb
+  | .block ss, hb, hf => noTrigSs_of s ss hb hf
+  | .if_ init c b els, hb, hf => by
+    simp only [body3S, Bool.and_eq_true, Option.isNone_iff_eq_none] at hb
+    obtain ⟨⟨⟨hi, hcb⟩, hbb⟩, heb⟩ := hb
+    obtain ⟨hfc, hfb, hfe⟩ := hf
+    obtain ⟨hc, ht⟩ := noTrigE_spec hcb hfc
+    exact ⟨hi, hc, ht, noTrigSs_of s b hbb hfb, noTrigOS_of s els heb hfe⟩
+  | .expr _, hb, _ | .incDec .., hb, _ | .assign .., hb, _ | .branch _, hb, _ | .switch .., hb, _
+  | .typeSwitch .., hb, _ | .for_ .., hb, _ | .range .., hb, _ | .defer_ _, hb, _
+  | .empty, hb, _ | .unsupported _, hb, _ => by simp [body3S] at hb
+theorem noTrigSs_of (s : Scope) : ∀ (ss : List Stmt), body3Ss ss = true → FitsSs s ss → NoTrigSs s ss
+  | [], _, _ => trivial
+  | st :: ss, hb, ⟨h1, h2⟩ => by
+    simp only [body3Ss, Bool.and_eq_true] at hb
+    exact ⟨noTrigS_of s st hb.1 h1, noTrigSs_of (afterS s st) ss hb.2 h2⟩
+theorem noTrigOS_of (s : Scope) : ∀ (els : Option Stmt), body3OS els = true → FitsOS s els → NoTrigOS s els
+  | none, _, _ => trivial
+  | some st, hb, hf => noTrigS_of s st hb hf
+end
+
+/-- The scope gc's rewrite gives function `body` of package `pkg`, file `fi` of `p`
+    (`Hoist.hDecl`). -/
+def gcScope (p : Program) (pkg : String) (fi : Nat) (recv : Option Field) (tps : List Field) (sig : Sig)
+    (body : List Stmt) : Scope :=
+  let c := buildCtx p
+  let recvNames := match recv with
+    | some (.mk ns _) => ns
+    | none => []
+  let recvTParams := match recv with
+    | some (.mk _ rty) => ((recvBase rty).map (·.2.1)).getD []
+    | none => []
+  (Scope.enter { c, pkg, file := fi, locals := recvNames,
+                 tparams := fieldListNames tps ++ recvTParams,
+                 changeable := Std.HashSet.ofList (chSs (takesAddress (allMethods c)) false body),
+                 pointers := pointerNames recv.toList, fields := structFields c, methods := allMethods c } sig).withIfaces sig
+
+/-- **An order step 3a's bodies run as written in**: every `Body3` function body that fits
+    the scope gc's rewrite gives it is in its place unchanged. That the lowered programs'
+    bodies fit is owed by step 3d (from `FunRel` and `buildCtx`). -/
+def RunsAsWritten3 (ord : Order) : Prop :=
+  ∀ p pi fi i pk name recv tps sig body, p.packages[pi]? = some pk → Body3 body →
+    FitsSs (gcScope p pk.path fi recv tps sig body) body →
+    declAt p pi fi i = some (.func name recv tps sig (some body)) →
+    declAt (ord p) pi fi i = some (.func name recv tps sig (some body))
+
+/-- Left to right, GoCore's evaluator as it is, is such an order. -/
+theorem leftToRight_runs3 : RunsAsWritten3 Order.leftToRight :=
+  fun _ _ _ _ _ _ _ _ _ _ _ _ _ h => h
+
+/-- **GoCore's model of gc 1.25.5's order runs such bodies as written**: in the scope it
+    gives a fitting `Body3` body, no statement fires the trigger (`noTrigSs_of`), and the
+    rewrite leaves each as it is (`hSs_noTrig`). -/
+theorem gc_runs3 : RunsAsWritten3 Order.gc := by
+  intro p pi fi i pk0 name recv tps sig body hpk0 hb hfit hd
+  simp only [declAt, Option.bind_eq_bind, Option.bind_eq_some_iff] at hd
+  obtain ⟨pk, hpk, f, hf, hdi⟩ := hd
+  rw [hpk0] at hpk
+  cases hpk
+  simp only [Order.gc, gcOrder, declAt, Option.bind_eq_bind, Option.bind_eq_some_iff,
+    StateT.run']
+  refine Exists.imp (fun a ⟨h1, h2⟩ => ⟨h1, h2⟩) (mapM_getElem (σ := HState) _ _ p.packages {} pi pk0 hpk0 ?_)
+  intro h'
+  simp only [StateT.run_bind, StateT.run_pure, idbp]
+  refine Exists.imp (fun a ⟨h1, h2⟩ => ⟨h1, h2⟩)
+    (mapM_getElem (σ := HState) _ _ pk0.files.zipIdx h' fi (f, fi) (by simp [List.getElem?_zipIdx, hf]) ?_)
+  intro h''
+  simp only [StateT.run_bind, StateT.run_pure, idbp]
+  obtain ⟨d', hd', hP⟩ := mapM_getElem
+    (hDecl (buildCtx p) (structFields (buildCtx p)) (allMethods (buildCtx p)) pk0.path fi)
+    (· = Decl.func name recv tps sig (some body)) f.decls h'' i _ hdi (by
+      intro h3
+      simp only [hDecl, StateT.run_bind, StateT.run_pure]
+      have hid := hSs_noTrig _ body (noTrigSs_of _ body hb hfit) h3
+      erw [hid]
+      rfl)
+  subst hP
+  exact hd'
+
 end Gala.M5
