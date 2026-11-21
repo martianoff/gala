@@ -2318,7 +2318,7 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	// A parameter `f func(A) B` whose type parameters no other argument binds
 	// has no expected type (see resolveExpectedFuncArgType), but it still
 	// takes a function with one result.
-	if transpiler.IsUnusable(expected) && paramIdx >= 0 {
+	if transpiler.IsUnusable(expected) && paramIdx >= 0 && len(callCtx.inferredTypeSubst) == 0 {
 		typeParams := callCtx.funcMeta.TypeParams
 		if ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx]); ft != nil && len(ft.Results) == 1 && funcTypeParamsMentionTypeParams(ft.Params, typeParams) {
 			s.funcResult = maskTypeParamResults(ft.Results, typeParams)[0]

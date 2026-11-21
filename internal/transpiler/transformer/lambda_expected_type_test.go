@@ -1033,6 +1033,17 @@ func main() {
     })
     Println(b(3))
 }`, []string{"func(k int) any {", "return q * q"}},
+		{"variadic parameter", `package main
+
+func first[A any, B any](fs ...func(A) B) func(A) B = fs[0]
+
+func main() {
+    val b = first((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, []string{"func(k int) int {", "return q * q"}},
 		{"generic method", `package main
 
 struct Pipe(Label string)
