@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"martianoff/gala/internal/formal/gocoreexport"
 )
 
 func TestParseGoCore(t *testing.T) {
@@ -129,7 +131,7 @@ func TestExportGoCore(t *testing.T) {
 		} `json:"packages"`
 	}
 	require.NoError(t, json.Unmarshal(data, &doc))
-	require.Equal(t, 1, doc.GoCore)
+	require.Equal(t, gocoreexport.Version, doc.GoCore)
 	require.Len(t, doc.Packages, 2)
 	require.Equal(t, "main", doc.Packages[0].Path)
 	require.Equal(t, "martianoff/gala/std", doc.Packages[1].Path)

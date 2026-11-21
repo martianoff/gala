@@ -185,7 +185,7 @@ show up in the declarations that use them.
 | `//formal:galaspec` | `lean_binary` of `Gala.Main`: the same `galaspec` as `lake exe galaspec` (`bazel run --config=formal //formal:galaspec -- run "$PWD/prog.json"`; `bazel run` starts it in its runfiles, so pass an absolute path). |
 | `//formal:galaspec_tests` | Runs the fixtures in `tests/`, like `lake exe galaspec-tests`. |
 | `//formal:galaspec_cli_test` | Checks the command-line contract the differential harness relies on (exit code and outcome line on a panic, deep recursion with `--fuel`), like the smoke steps of the Lake job. |
-| `//formal:gocore`, `//formal:gocore_tests` | `lean_binary` of `GoCoreMain`, the same `gocore` as `lake exe gocore`, and its fixtures in `tests/gocore/`. |
+| `//formal:gocore`, `//formal:gocore_tests`, `//formal:gocore_fuel_test` | `lean_binary` of `GoCoreMain`, the same `gocore` as `lake exe gocore`, and its fixtures in `tests/gocore/`; the `fuel` fixture, which runs the default budget out, in a target of its own. |
 
 The differential run uses `//formal:galaspec` under the config, so it too needs nothing
 but Bazel:
