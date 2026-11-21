@@ -521,7 +521,7 @@ func dumpNode(n *yNode) string {
 	case n == nil:
 		return "<nil>"
 	case n.kind == yScalar && n.nullish:
-		return "~"
+		return "<null>"
 	case n.kind == yScalar:
 		return n.scalar
 	case n.kind == ySeq:
@@ -607,7 +607,7 @@ func TestDecoder_SequenceAtKeyIndent(t *testing.T) {
 			"empty items and comments",
 			"m:\n# note\n-\n- x # c\nk: v",
 			"m:\n  # note\n  -\n  - x # c\nk: v",
-			"{m: [~, x], k: v}",
+			"{m: [<null>, x], k: v}",
 		},
 	}
 	for _, tt := range tests {
@@ -627,7 +627,7 @@ func TestDecoder_SequenceAtKeyIndent(t *testing.T) {
 func TestDecoder_SequenceItemKeysAfterBlockValue(t *testing.T) {
 	tests := []struct{ src, want string }{
 		{"- a:\n    x: 1\n  b: 2", "[{a: {x: 1}, b: 2}]"},
-		{"- a:\n  b: 2", "[{a: ~, b: 2}]"},
+		{"- a:\n  b: 2", "[{a: <null>, b: 2}]"},
 		{"- a:\n    - 1\n  b: 2\n- c: 3", "[{a: [1], b: 2}, {c: 3}]"},
 		// The item's keys line up with the first key, wherever the spaces
 		// after the dash put it.
@@ -650,6 +650,8 @@ func TestDecoder_SequenceAtKeyIndentErrors(t *testing.T) {
 		{"- a: x\n  - 1", "error: yaml: unexpected indent at line 2"},
 		{"-   a:\n  - 1", "error: yaml: unexpected indent at line 2"},
 		{"-  a:\n  - 1\n  b: 2", "error: yaml: unexpected indent at line 2"},
+		// The item's later keys must line up with its first key.
+		{"-  a: 1\n  b: 2", "error: yaml: unexpected indent at line 2"},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
