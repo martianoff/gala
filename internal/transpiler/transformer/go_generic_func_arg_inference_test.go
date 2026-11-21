@@ -136,6 +136,26 @@ func main() {
     Println(k())
 }
 `, []string{"func() []int"}},
+		{"an iter.Seq[int] value to a plain func parameter", `package main
+
+import "slices"
+import "martianoff/gala/go_interop"
+
+func firstOf[T any](f func(func(T) bool)) []T {
+    var out = go_interop.SliceEmpty[T]()
+    f((x) => {
+        out = go_interop.SliceAppend(out, x)
+        false
+    })
+    out
+}
+
+func main() {
+    val r = firstOf(slices.Values(go_interop.SliceOf(4, 5)))
+    val k = () => r
+    Println(k())
+}
+`, []string{"func() []int"}},
 		{"a GALA function to a Sendable[iter.Seq[T]] parameter", `package main
 
 import "iter"

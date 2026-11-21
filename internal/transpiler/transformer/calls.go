@@ -1580,7 +1580,7 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 // slice) has a type of its own and is lowered as is.
 func (t *galaASTTransformer) readsGenericGoSlot(v argValue, slot transpiler.Type) bool {
 	return v.lambda.ok() || isGoResultsThunkSlot(slot) ||
-		!v.spread && v.expr.ok() && countPlaceholders(v.expr) > 0 && t.resolveTranspilerTypeAsFuncType(slot) != nil
+		!v.spread && t.isPlaceholderLambdaArg(v.expr, slot)
 }
 
 // isGoResultsThunkSlot reports whether slot is a function type taking nothing
@@ -2201,10 +2201,10 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	}
 
 	// An argument passed by name to a generic Go function whose lowering
-	// reads its slot (a lambda, or a thunk for a parameter taking nothing and
-	// giving several results, see lowerSlot) is lowered after every argument
-	// that does not, whatever order they are written in: those bind the type
-	// parameters it is typed by.
+	// reads its slot (a lambda, a placeholder lambda, or a thunk for a
+	// parameter taking nothing and giving several results, see lowerSlot) is
+	// lowered after every argument that does not, whatever order they are
+	// written in: those bind the type parameters it is typed by.
 	type deferredArg struct {
 		v       argValue
 		name    string

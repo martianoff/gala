@@ -1629,6 +1629,16 @@ func (t *galaASTTransformer) unifyGoParam(param, arg transpiler.Type, typeParams
 				param, arg = u, unaliased
 			}
 		}
+	} else if instance, argIsInstance := t.followAliasChain(unwrapValueMarkers(arg)).(transpiler.GenericType); argIsInstance {
+		// And the mirror: a value of a Go generic defined type
+		// (`Pred[int]`, `iter.Seq[int]`) filling a parameter of an unnamed
+		// type (`func(T) bool`) unifies through the value's underlying type.
+		switch t.followAliasChain(unwrapValueMarkers(param)).(type) {
+		case transpiler.FuncType, transpiler.ArrayType, transpiler.MapType, transpiler.ChanType, transpiler.PointerType:
+			if u := t.goDefinedUnderlying(instance, nil); u != nil {
+				arg = u
+			}
+		}
 	}
 	t.unifyForInference(param, arg, typeParams, inferred)
 }
