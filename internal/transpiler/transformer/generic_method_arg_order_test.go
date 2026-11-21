@@ -31,6 +31,8 @@ func mk64() func(int64, int) int64 = (acc, x) => acc + int64(x)
 
 func nums() List[int] = ListOf(1, 2)
 
+func (b Box[T]) Write[U any](u U, p int) (int, error) = Success(p)
+
 func bumpAt(p *Box[int], n int) int {
     *p = Box(n)
     n
@@ -61,6 +63,13 @@ func bumpAt(p *Box[int], n int) int {
 			name:     "std collection method",
 			main:     `Println(nums().FoldLeft(f = mk(), initial = t("i", 0)))`,
 			contains: "_tmp_2 := mk()\n\t\t_tmp_3 := t(\"i\", 0)",
+		},
+		{
+			// Not reordered until #1365: a function literal around the
+			// call would hide it from the Go-results lift.
+			name:     "method with Go results is not wrapped",
+			main:     `val b = Box(0)` + "\n    " + `Println(b.Write(p = t("p", 2), u = t("u", 1)))`,
+			contains: `Box_Write(b, t("u", 1), t("p", 2))`,
 		},
 		{
 			name:     "receiver read through a pointer goes first",

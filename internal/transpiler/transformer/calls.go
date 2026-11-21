@@ -966,9 +966,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		// evaluates its arguments in written order (call_order.go). An
 		// untyped constant expression stays in place: lowered with no
 		// slot, a temporary would give it its default type, not the
-		// parameter's (`1 << n` for an int64 U).
+		// parameter's (`1 << n` for an int64 U). Nor is a call of a
+		// method declaring Go results reordered: its lift to one GALA
+		// value does not see through the function literal sequencing
+		// wraps it in, as for any method (#1365).
 		if expr, ok := preTransformed[i]; ok {
-			if !t.isUntypedConstArg(expr) {
+			if !t.isUntypedConstArg(expr) && methodMeta.GoResults == nil {
 				t.recordCallArg(v, expr)
 			}
 			mArgs = append(mArgs, expr)
