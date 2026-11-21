@@ -4,7 +4,7 @@ title: "GALA-E0141 — Unreachable Case After a Catch-All"
 description: "GALA-E0141 fires when a match or partial function has a case after an unguarded case that matches every value, such as case _ or case x. Cases run in written order, so the later case can never run. Move the catch-all last."
 keywords: "gala-e0141, gala unreachable case, gala case order, gala match catch-all, gala case _ before other cases"
 permalink: /docs/errors/gala-e0141/
-last_modified_at: 2026-11-20
+last_modified_at: 2026-11-21
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0141</p>
@@ -34,10 +34,11 @@ patterns are not counted, even one that happens to match every value, such as
 an extractor whose fields are all bindings.
 
 A case with a guard, `case x if x > 0`, does not match every value, so the
-cases after it stay reachable. In a `match`, a second `case _` (or a second
-binding whose name starts with a lowercase letter or `_`, when there is no `case _`) is
-[GALA-E0006](/docs/errors/gala-e0006/) instead; in a partial-function literal
-it is this error too.
+cases after it stay reachable. In a `match`, a second default right after a
+first — a second unguarded `case _`, or, with no unguarded `case _`, a second
+binding whose name starts with a lowercase letter or `_` after such a binding
+— is [GALA-E0006](/docs/errors/gala-e0006/) instead. In a partial-function
+literal it is this error too.
 
 ---
 

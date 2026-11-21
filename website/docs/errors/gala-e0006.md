@@ -4,14 +4,14 @@ title: "GALA-E0006 — Multiple Default Cases in a Match Expression"
 description: "GALA-E0006 fires when a match has more than one catch-all branch. See the triggering code, the compiler message, and how to restructure so a single default handles every remaining case."
 keywords: "gala-e0006, multiple default cases, gala match default, unreachable match branch, gala pattern matching error"
 permalink: /docs/errors/gala-e0006/
-last_modified_at: 2026-11-20
+last_modified_at: 2026-11-21
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0006</p>
 
 # GALA-E0006 — Multiple default cases in a match expression
 
-**What it means.** A `match` expression has more than one default branch — either two `case _ =>` clauses, or, in a match without `case _`, more than one unguarded binding pattern whose name starts with a lowercase letter or `_` (`case n =>`). A binding written before or after `case _` is [GALA-E0141](/docs/errors/gala-e0141/).
+**What it means.** A `match` expression has a second default branch after a first: a second unguarded `case _ =>`, or, in a match with no unguarded `case _`, a second unguarded binding whose name starts with a lowercase letter or `_` (`case n =>`) right after such a binding. Any other case written after a case that matches every value, including a binding before or after an unguarded `case _`, is [GALA-E0141](/docs/errors/gala-e0141/).
 
 ---
 
