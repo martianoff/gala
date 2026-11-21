@@ -261,7 +261,8 @@ func (c *catchAllScan) next(cc caseSrc, catchesAll func() bool) error {
 func unreachableCaseError(cc, first caseSrc) error {
 	line, col := cc.at().start()
 	firstLine, _ := first.at().start()
-	firstText := first.pattern().at().sourceText()
+	// The pattern as written, on one line.
+	firstText := strings.Join(strings.Fields(first.pattern().at().sourceText()), " ")
 	return galaerr.NewCodedSemanticError(galaerr.CodeUnreachableCase, line, col,
 		fmt.Sprintf("unreachable case: `case %s` on line %d matches every value, so no case after it can run",
 			firstText, firstLine),

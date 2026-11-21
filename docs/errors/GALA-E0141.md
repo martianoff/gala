@@ -8,7 +8,7 @@ match every value:
 - `case _`;
 - a plain binding, `case x`;
 - a typed pattern of the subject's own type, `case n: int` over an `int`, when
-  that type is a predeclared type other than `error`, or a named GALA or Go
+  that type is a predeclared type other than `error` or `any`, or a named GALA or Go
   type that is not an interface (a typed pattern over `any`, an interface or a
   type parameter does not match `nil`);
 - a tuple pattern of the subject's arity whose elements are each `_`, a
@@ -19,8 +19,9 @@ Other patterns are not counted, even one that happens to match every value,
 such as an extractor whose fields are all bindings.
 
 A case with a guard, `case x if x > 0`, does not match every value, so the
-cases after it stay reachable. A second `case _` (or second plain binding) is
-[GALA-E0006](GALA-E0006.md) instead.
+cases after it stay reachable. In a `match`, a second `case _` (or a second
+plain binding, when there is no `case _`) is [GALA-E0006](GALA-E0006.md)
+instead; in a partial-function literal it is this error too.
 
 **Minimal repro.**
 
