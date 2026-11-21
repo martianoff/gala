@@ -392,10 +392,21 @@ func findGOROOT() (string, sdkSource) {
 	if err != nil {
 		return goroot, sdkFromHost // no go command to ask (a source tree, say)
 	}
-	if switched := switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) }); switched != goroot {
+	if switched := switchedGoRoot(goroot, goToolchain(goroot), func(dir string) string { return goEnvGoroot(goPath, dir) }); !sameDir(switched, goroot) {
 		return switched, sdkSwitched
 	}
 	return goroot, sdkFromHost
+}
+
+// sameDir reports whether a and b name the same directory, through symlinks:
+// `go env GOROOT` reports a resolved path.
+func sameDir(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ia, errA := os.Stat(a)
+	ib, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(ia, ib)
 }
 
 // findHostGOROOT is the Go SDK installed on the host: steps 2–4 of findGOROOT.
