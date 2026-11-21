@@ -1215,6 +1215,26 @@ func main() {
         n * 3
     }))
 }`, []string{"func() int {", "return n * 3"}},
+		{"unannotated lambda to Sendable by name, type bound by another argument", `package main
+
+func run2[T any](x T, f Sendable[func(T) T]) T = f(x)
+
+func main() {
+    Println(run2(1, f = (k) => k + 1))
+}`, []string{"func(k int) int {"}},
+		{"block lambda to a generic method's Sendable parameter", `package main
+
+struct Box(N int)
+
+func (b Box) Go[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val g = Box(1).Go((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(g(3))
+}`, []string{"func(k int) int {", "return q * q"}},
 		{"expression lambda to Sendable by name", `package main
 
 func run[A any, B any](f Sendable[func(A) B]) func(A) B = f
@@ -1233,7 +1253,8 @@ func main() {
 			}
 			_, body, ok := strings.Cut(out, "func main")
 			require.True(t, ok)
-			assert.NotRegexp(t, `\) [BT] \{`, body, "the callee's type parameter reached the call site")
+			// No callee type parameter in a lambda's parameters or result.
+			assert.NotRegexp(t, `func\([^)]*\b[ABT]\b[^)]*\)|\) [ABT] \{`, body, "the callee's type parameter reached the call site")
 		})
 	}
 }

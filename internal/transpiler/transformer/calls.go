@@ -2454,16 +2454,21 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
+				// A `Sendable[F]` parameter is F, as for a positional
+				// argument (sendableInnerExpected).
+				param, sendable := transpiler.UnwrapSendable(callCtx.funcMeta.ParamTypes[i])
+				if sendable {
+					return t.sendableInnerExpected(param, callCtx.funcMeta.TypeParams, callCtx.inferredTypeSubst), nil
+				}
 				// A function parameter naming type parameters no argument
 				// binds takes the slot a positional argument does
 				// (funcSlotType), never the declared type with them in it.
 				if len(callCtx.inferredTypeSubst) == 0 {
-					param, _ := transpiler.UnwrapSendable(callCtx.funcMeta.ParamTypes[i])
 					if ft := t.aliasedFuncType(param); ft != nil && typeMentionsTypeParam(*ft, callCtx.funcMeta.TypeParams) {
 						return t.funcSlotType(*ft, callCtx.funcMeta.TypeParams, nil), nil
 					}
 				}
-				return t.substituteTranspilerTypeParams(callCtx.funcMeta.ParamTypes[i], callCtx.inferredTypeSubst), nil
+				return t.substituteTranspilerTypeParams(param, callCtx.inferredTypeSubst), nil
 			}
 		}
 	}

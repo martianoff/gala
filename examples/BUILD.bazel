@@ -281,13 +281,17 @@ gala_exec_test(
     expected = "bind_in_branches.out",
 )
 
-# A block lambda passed to a generic function whose type parameters only the
-# lambda's annotated parameters bind returns its trailing value (#1297)
+# A lambda passed by name, or through Sendable, to a generic function whose
+# type parameters only the lambda binds is typed as a positional one (#1327,
+# #1334)
 gala_exec_test(
     name = "lambda_generic_slot_by_name",
     src = "lambda_generic_slot_by_name.gala",
     expected = "lambda_generic_slot_by_name.out",
 )
+
+# A block lambda passed to a generic function whose type parameters only the
+# lambda's annotated parameters bind returns its trailing value (#1297)
 
 gala_exec_test(
     name = "block_lambda_generic_result",
