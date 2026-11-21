@@ -284,6 +284,12 @@ gala_exec_test(
 # A block lambda passed to a generic function whose type parameters only the
 # lambda's annotated parameters bind returns its trailing value (#1297)
 gala_exec_test(
+    name = "lambda_generic_slot_by_name",
+    src = "lambda_generic_slot_by_name.gala",
+    expected = "lambda_generic_slot_by_name.out",
+)
+
+gala_exec_test(
     name = "block_lambda_generic_result",
     src = "block_lambda_generic_result.gala",
     expected = "block_lambda_generic_result.out",
