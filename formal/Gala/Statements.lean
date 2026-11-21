@@ -24,6 +24,7 @@ import Gala.AlphaEval
 import Gala.AlphaProg
 import Gala.M5.Expr
 import Gala.M5.StmtOrder
+import Gala.M5.CallInst
 
 namespace Gala.Statements
 
@@ -574,5 +575,91 @@ theorem gc_runsStep2 : RunsStep2AsWritten Order.gc :=
 open Gala Gala.M5 GoCore.Full in
 theorem leftToRight_runsStep2 : RunsStep2AsWritten Order.leftToRight :=
   Gala.M5.leftToRight_runsStep2
+
+open Gala Gala.M5 GoCore.Full in
+theorem calls_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
+    FunRel K sg ds cx P → 7 ≤ K → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind) (le : Expr),
+    lowerC K sg κ e = some (k, le) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
+    ∀ N ≥ K * d, ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) :=
+  Gala.M5.calls_correct
+
+open Gala Gala.M5 GoCore.Full in
+theorem body_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
+    FunRel K sg ds cx P → 7 ≤ K → ∀ (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (lb : List Stmt),
+    sigOf F = some (xks, ρ) → lowerBody K sg F = some lb → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg (paramKinds xks) s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
+    ∀ N ≥ K * d + 3, ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g) :=
+  Gala.M5.body_correct
+
+open Gala Gala.M5 GoCore.Full in
+theorem stmts3_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
+    FunRel K sg ds cx P → 7 ≤ K → ∀ (ρ : Kind) (κ κ' : String → Option Kind) (ss : List Spec.Expr)
+    (ls : List Stmt), lowerSs3 K sg ρ κ ss = some (κ', ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
+    ∀ N ≥ K * d + 1, ResL3 cx P sg ρ κ' s g ((Spec.evalBlock ds d ss).run.run s)
+      ((execStmts cx N env ls).run.run g) :=
+  Gala.M5.stmts3_correct
+
+open Gala Gala.M5 GoCore.Full in
+theorem lowerBody_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (F : Spec.Func) (lb : List Stmt),
+    lowerBody K sg F = some lb → lowerBody K' sg F = some lb :=
+  Gala.M5.lowerBody_mono
+
+open Gala Gala.M5 GoCore.Full in
+theorem lowerC_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (κ : String → Option Kind) (e : Spec.Expr)
+    (r : Kind × Expr), lowerC K sg κ e = some r → lowerC K' sg κ e = some r :=
+  Gala.M5.lowerC_mono
+
+open Gala Gala.M5 GoCore.Full Hoist in
+theorem canon_eq : ∀ (s : Scope) (top : Bool) (e : Expr), CC e → FitsE s e → scanE s top e = canon top e :=
+  Gala.M5.canon_eq
+
+open Gala Gala.M5 GoCore.Full in
+theorem gc_runs3 : RunsAsWritten3 Order.gc :=
+  Gala.M5.gc_runs3
+
+open Gala Gala.M5 GoCore.Full in
+theorem leftToRight_runs3 : RunsAsWritten3 Order.leftToRight :=
+  Gala.M5.leftToRight_runs3
+
+open Gala Gala.M5 GoCore.Full in
+theorem calls_correct_instance : ∀ (steps d : Nat), steps ≤ 10 →
+    ∀ N ≥ 8 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
+      ((Spec.eval incDs d incCall).run.run { incCore with steps })
+      ((evalExpr incCtx N incEnv incCallG).run.run incSt) :=
+  Gala.M5.calls_correct_instance
+
+open Gala Gala.M5 GoCore.Full in
+theorem inc_spec_ok : (Spec.eval incDs 4 incCall).run.run { incCore with steps := 10 } =
+    (.ok (.int 6), { incCore with steps := 5 }) :=
+  Gala.M5.inc_spec_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem inc_gocore_ok : ∀ (N : Nat), N ≥ 32 →
+    ∃ w g', (evalExpr incCtx N incEnv incCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 6) w :=
+  Gala.M5.inc_gocore_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem ordProg_gc :
+    declAt (Order.gc ordProg) 0 0 0 = some (.func "fact" none [] factSig (some factBody)) ∧
+    declAt (Order.gc ordProg) 0 0 1 = some (.func "g" none [] gSig (some gBody)) :=
+  Gala.M5.ordProg_gc
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_div_call :
+    ¬ Body3 [.ret [.binary "+" (.binary "/" (.ident "x") (.ident "z")) (.call (.ident "f") [.ident "x"] false)]] :=
+  Gala.M5.body3_div_call
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_div_arg_call :
+    ¬ Body3 [.ret [.call (.ident "g") [.binary "/" (.ident "x") (.ident "z"), .call (.ident "f") [] false] false]] :=
+  Gala.M5.body3_div_arg_call
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_div_inside_call :
+    Body3 [.ret [.binary "+" (.call (.ident "f") [.binary "/" (.ident "x") (.ident "z")] false)
+      (.call (.ident "g") [] false)]] :=
+  Gala.M5.body3_div_inside_call
 
 end Gala.Statements
