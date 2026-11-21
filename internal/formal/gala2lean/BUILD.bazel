@@ -22,6 +22,7 @@ go_library(
         "names.go",
         "options.go",
         "packages.go",
+        "placeholders.go",
         "program.go",
         "run.go",
         "stats.go",
@@ -64,6 +65,7 @@ go_test(
     name = "gala2lean_internal_test",
     srcs = [
         "imports_internal_test.go",
+        "placeholders_internal_test.go",
         "prelude_internal_test.go",
         "run_internal_test.go",
         "stdnames_internal_test.go",

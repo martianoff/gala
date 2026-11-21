@@ -197,6 +197,11 @@ func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
 // lambda translates a lambda; expect is the function type the context wants,
 // or nil.
 func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFunc) term {
+	if g.placeholders[l] && (expect == nil || len(expect.Params) != 1) {
+		// The transformer makes a lambda of `_` only for a function type,
+		// of one parameter per `_` (placeholders.go).
+		unsup(l.Pos, "placeholder-lambda")
+	}
 	ls := newScope(sc, 0)
 	var ps []string
 	for i, pn := range l.Params {

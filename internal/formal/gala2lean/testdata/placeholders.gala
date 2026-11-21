@@ -1,0 +1,46 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A call argument that is an expression with one `_`, where a function is
+// wanted, is a lambda of one parameter: `rs.Map(_.Lo)` is
+// `rs.Map((r) => r.Lo)`.
+
+struct R(Lo int, Hi int, Name string)
+
+func lows(rs Array[R]) Array[int] = rs.Map(_.Lo)
+
+func named(rs Array[R], n string) bool = rs.Exists(_.Name == n)
+
+func scaled(rs Array[R], n int) Array[int] = rs.Map(_.Lo * n + 1)
+
+func kind(r R) string = r match {
+    case R(lo, _, _) if lo > 2 => {
+        val cut = lo + 1
+        val big = ArrayOf(lo, r.Hi, 7).Filter(_ > cut)
+        s"big ${big}"
+    }
+    case _ => "small"
+}
+
+func main() {
+    val rs = ArrayOf(R(1, 2, "a"), R(5, 9, "b"), R(3, 3, ""))
+    val his = rs.Filter(_.Name != "").Map(_.Hi)
+    val names = rs.Map(_.Name).Filter(_ != "")
+    val marked = names.Map(_ + "!")
+    val third = rs.Find(_.Hi == 3)
+    val nested = rs.Map((r) => ArrayOf(r.Lo, r.Hi).Filter(_ > 2))
+    Println(lows(rs), named(rs, "b"), named(rs, "z"), scaled(rs, 2))
+    Println(his, names, marked, third)
+    Println(nested, rs.Map(kind))
+    if rs.Exists(_.Lo > 4) {
+        Println("exists")
+    }
+    val l = ListOf(4, 1, 3)
+    val total = l.Filter(_ % 2 == 1).FoldLeft(0, (a, b) => a + b)
+    val off = 10
+    val shifted = l.Map(_ + off)
+    val negs = l.Map(-_)
+    val hasOne = l.Exists(_ == 1)
+    Println(total, negs, hasOne, shifted)
+}
