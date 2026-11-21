@@ -1320,3 +1320,121 @@ theorem binary_sim3 (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 4 ≤ K) (κ :
       gframe_trans hgfl hgfr, spent_trans hspl hspr⟩
 
 end Sim3
+
+section Sim4
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+theorem spec_asBool_run (b : Bool) (c : Spec.Core) : (Spec.asBool (.bool b)).run.run c = (.ok b, c) := rfl
+
+/-- **`&&` and `||` over a call**: each operand evaluated as galaspec and Go short-circuit. -/
+theorem andor_sim3 (d : Nat) (ih : ExprSim ds cx P K sg d) (hK : 4 ≤ K) (κ : String → Option Kind)
+    (op : String) (hop : op = "&&" ∨ op = "||") (l r : Spec.Expr) (k : Kind) (le : Expr)
+    (hl : lowerC K sg κ (.binary op l r) = some (k, le))
+    (hc : (hasCall l || hasCall r) = true) (s : Spec.St) (g : St) (env : Env)
+    (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    ERes3 k (isLitE (.binary op l r)) s g ((Spec.eval ds (d + 1) (.binary op l r)).run.run s)
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨kl, ll, kr, lr, hll, hlr, hb, -, rfl⟩ := lowerC_binary K sg hl hc
+  have hkb : kl = .bool ∧ kr = .bool ∧ k = .bool := by
+    rcases hop with rfl | rfl <;> (unfold binaryKind at hb; split at hb <;> simp_all)
+  obtain ⟨rfl, rfl, rfl⟩ := hkb
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by rw [Nat.mul_succ] at hN; omega⟩
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+  | succ k' =>
+  have ht := ticked_of s k' hs
+  have hL := ih κ l .bool ll hll { s with steps := k' } g env hi (by show k' ≤ g.steps; omega) (n + 3)
+    (by rw [Nat.mul_succ] at hN; omega)
+  rcases hop with rfl | rfl
+  · rw [eval_and_run ds d k' l r s hs, evalExpr_and]
+    rw [Spec.run_bind_eq, grun_bind]
+    rcases hrl : (Spec.eval ds d l).run.run { s with steps := k' } with ⟨rl, sl⟩
+    rw [hrl] at hL
+    cases rl with
+    | error e =>
+      cases e with
+      | panic pc m => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hL; rw [hg]; exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+      | ret => exact hL.elim
+      | _ => trivial
+    | ok vl =>
+    obtain ⟨wl, gl, hg, hvl, hkl, hul, hsfl, hgfl, hspl⟩ := hL
+    obtain ⟨b, t, rfl, rfl, htb⟩ := vrel_bool hvl hkl
+    rw [hg]
+    simp only
+    rw [Spec.run_bind_eq, Spec.run_liftM, spec_asBool_run, grun_bind, gasBool]
+    cases b with
+    | false =>
+      simp only [Bool.false_eq_true, ite_false, run_pureM]
+      exact eRes3_tick ht ⟨_, gl, rfl, vrel_of_bool false t htb, rfl, fun _ => by simp [UInt], hsfl, hgfl, hspl⟩
+    | true =>
+      simp only [ite_true]
+      have hR := ih κ r .bool lr hlr sl gl env (inv3_frame hi hsfl hgfl)
+        (spent_le hspl (by show k' ≤ g.steps; omega)) (n + 3) (by rw [Nat.mul_succ] at hN; omega)
+      rw [Spec.run_bind_eq, grun_bind]
+      rcases hrr : (Spec.eval ds d r).run.run sl with ⟨rr, sr⟩
+      rw [hrr] at hR
+      cases rr with
+      | error e =>
+        cases e with
+        | panic pc m =>
+          obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hR; rw [hg]
+          refine panOK_tick ht ⟨pv, g', rfl, hp, ?_, gframe_trans hgfl hgf⟩
+          rw [ho, (sframe_parts hsfl).2.2]
+        | ret => exact hR.elim
+        | _ => trivial
+      | ok vr =>
+      obtain ⟨wr, gr, hg, hvr, hkr, -, hsfr, hgfr, hspr⟩ := hR
+      obtain ⟨b', t', rfl, rfl, htb'⟩ := vrel_bool hvr hkr
+      rw [hg]
+      simp only
+      rw [Spec.run_bind_eq, Spec.run_liftM, spec_asBool_run, grun_bind, gasBool]
+      exact eRes3_tick ht ⟨_, gr, rfl, vrel_of_bool b' _ (boolType_cases t t' true b' htb htb'), rfl,
+        fun _ => by simp [UInt], sframe_trans hsfl hsfr, gframe_trans hgfl hgfr, spent_trans hspl hspr⟩
+  · rw [eval_or_run ds d k' l r s hs, evalExpr_or]
+    rw [Spec.run_bind_eq, grun_bind]
+    rcases hrl : (Spec.eval ds d l).run.run { s with steps := k' } with ⟨rl, sl⟩
+    rw [hrl] at hL
+    cases rl with
+    | error e =>
+      cases e with
+      | panic pc m => obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hL; rw [hg]; exact panOK_tick ht ⟨pv, g', rfl, hp, ho, hgf⟩
+      | ret => exact hL.elim
+      | _ => trivial
+    | ok vl =>
+    obtain ⟨wl, gl, hg, hvl, hkl, hul, hsfl, hgfl, hspl⟩ := hL
+    obtain ⟨b, t, rfl, rfl, htb⟩ := vrel_bool hvl hkl
+    rw [hg]
+    simp only
+    rw [Spec.run_bind_eq, Spec.run_liftM, spec_asBool_run, grun_bind, gasBool]
+    cases b with
+    | true =>
+      simp only [ite_true, run_pureM]
+      exact eRes3_tick ht ⟨_, gl, rfl, vrel_of_bool true t htb, rfl, fun _ => by simp [UInt], hsfl, hgfl, hspl⟩
+    | false =>
+      simp only [Bool.false_eq_true, ite_false]
+      have hR := ih κ r .bool lr hlr sl gl env (inv3_frame hi hsfl hgfl)
+        (spent_le hspl (by show k' ≤ g.steps; omega)) (n + 3) (by rw [Nat.mul_succ] at hN; omega)
+      rw [Spec.run_bind_eq, grun_bind]
+      rcases hrr : (Spec.eval ds d r).run.run sl with ⟨rr, sr⟩
+      rw [hrr] at hR
+      cases rr with
+      | error e =>
+        cases e with
+        | panic pc m =>
+          obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hR; rw [hg]
+          refine panOK_tick ht ⟨pv, g', rfl, hp, ?_, gframe_trans hgfl hgf⟩
+          rw [ho, (sframe_parts hsfl).2.2]
+        | ret => exact hR.elim
+        | _ => trivial
+      | ok vr =>
+      obtain ⟨wr, gr, hg, hvr, hkr, -, hsfr, hgfr, hspr⟩ := hR
+      obtain ⟨b', t', rfl, rfl, htb'⟩ := vrel_bool hvr hkr
+      rw [hg]
+      simp only
+      rw [Spec.run_bind_eq, Spec.run_liftM, spec_asBool_run, grun_bind, gasBool]
+      exact eRes3_tick ht ⟨_, gr, rfl, vrel_of_bool b' _ (boolType_cases t t' false b' htb htb'), rfl,
+        fun _ => by simp [UInt], sframe_trans hsfl hsfr, gframe_trans hgfl hgfr, spent_trans hspl hspr⟩
+
+end Sim4
