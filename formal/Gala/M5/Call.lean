@@ -2725,3 +2725,80 @@ theorem bodySim_of (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihE' : ∀ d', d = 
   · cases hlb
 
 end Bodies
+
+/-! ## The induction on galaspec's depth, and the theorems -/
+
+section Main
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+
+/-- Every part, at every galaspec depth: induction on the depth. -/
+theorem sim3_all (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) : ∀ d,
+    ExprSim ds cx P K sg d ∧ BodySim ds cx P K sg d ∧ StmtSim ds cx P K sg d ∧ ListSim3 ds cx P K sg d ∧
+      BlockSim3 ds cx P K sg d ∧ IfSim3 ds cx P K sg d ∧ TailSim ds cx P K sg d
+  | 0 => by
+    have hE := exprSim_zero ds cx P K sg
+    have hS := stmtSim_zero ds cx P K sg
+    have hT := tailSim_of ds cx P K sg 0 hS hE (fun _ h => by cases h) (by omega)
+    exact ⟨hE, bodySim_of ds cx P K sg 0 hE (fun _ h => by cases h) (fun _ h => by cases h) (by omega), hS,
+      listSim_of ds cx P K sg 0 hS, blockSim_zero ds cx P K sg, ifSim_zero ds cx P K sg, hT⟩
+  | d + 1 => by
+    obtain ⟨hE, hB, hS, hL, hBl, hI, hT⟩ := sim3_all hF hK d
+    have hE1 := exprSim_succ ds cx P K sg d hF hK hE hB
+    have hBl1 := blockSim_succ ds cx P K sg d hL
+    have hI1 := ifSim_succ ds cx P K sg d hE hBl hI (by omega)
+    have hS1 := stmtSim_succ ds cx P K sg d hE hBl1 hI1 (by omega)
+    have hE' : ∀ d', d + 1 = d' + 1 → ExprSim ds cx P K sg d' := fun d' h => by cases h; exact hE
+    exact ⟨hE1, bodySim_of ds cx P K sg (d + 1) hE1 hE' (fun d' h => by cases h; exact hT) (by omega), hS1,
+      listSim_of ds cx P K sg (d + 1) hS1, hBl1, hI1, tailSim_of ds cx P K sg (d + 1) hS1 hE1 hE' (by omega)⟩
+
+/-- **M5, step 3a: direct calls and `return`.** An expression the reference lowering
+    accepts (`lowerC`), calls of the program's functions in it included, evaluated by
+    galaspec from a state related to GoCore's (`Inv3`) with no more steps than GoCore has:
+    wherever galaspec's evaluation ends with a value, GoCore's evaluation of the lowering, at
+    every depth from `K * d` on, ends with a related value of the expression's kind; both
+    states only gain cells (and GoCore's otherwise unchanged: `GFrame`, `SFrame`); and GoCore
+    spends no more steps than galaspec (`Spent`). Wherever galaspec panics, GoCore panics the
+    same way, with equal outputs. An expression never ends with a `return`. Nothing is
+    claimed when galaspec runs out of fuel or depth or stops `stuck` or `unsupported`.
+
+    * **The functions**: `FunRel` says GoCore's package `P` declares every function the
+      lowering calls (`sg`) as the lowering of galaspec's: parameters and result of kinds
+      `int`, `bool`, `string`; positional arguments, one for each parameter (no named
+      argument, no default); the body `= e` as `return e`, a block body as its statements
+      and `return` of its last element; `return` statements inside.
+    * **Depth.** A call's depth in GoCore is not bounded by the program's text (a recursive
+      call goes as deep as the run), so the bound is `K * d` for galaspec's depth `d` and a
+      `K` of the program: each galaspec level costs GoCore at most `K` levels when `K` is at
+      least 7 (a call takes seven) and at least the depth of each call-free part (the
+      lowering at `K` accepts only those; `lowerC_mono`: raising `K` loses nothing). The
+      claim is for every GoCore depth from `K * d` on: GoCore never runs out of depth there.
+    * **Steps.** GoCore takes one step per call, galaspec at least one per evaluation;
+      with no more steps than GoCore to start with, galaspec's run that ends has paid for
+      every step GoCore takes, so GoCore never runs out of steps where galaspec does not.
+    * **Order.** Stated for GoCore's evaluator as it is, left to right; `Body3` and
+      `gc_runs3` say when GoCore's model of gc's order runs a lowered body as written. -/
+theorem calls_correct (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (κ : String → Option Kind) (e : Spec.Expr)
+    (k : Kind) (le : Expr) (hl : lowerC K sg κ e = some (k, le)) (s : Spec.St) (g : St) (env : Env)
+    (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (d : Nat) :
+    ∀ N ≥ K * d, ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) :=
+  fun N hN => (sim3_all ds cx P K sg hF hK d).1 κ e k le hl s g env hi hsg N hN
+
+/-- **A function's body**, called: the value galaspec's body gives or returns is the value
+    Go's body `return`s, or the same panic; as `calls_correct`. -/
+theorem body_correct (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (F : Spec.Func) (xks : List (String × Kind))
+    (ρ : Kind) (lb : List Stmt) (hs : sigOf F = some (xks, ρ)) (hl : lowerBody K sg F = some lb) (s : Spec.St)
+    (g : St) (env : Env) (hi : Inv3 cx P sg (paramKinds xks) s.toCore g env) (hsg : s.steps ≤ g.steps) (d : Nat) :
+    ∀ N ≥ K * d + 3, ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g) :=
+  fun N hN => (sim3_all ds cx P K sg hF hK d).2.1 F xks ρ lb hs hl s g env hi hsg N hN
+
+/-- **Statement lists with calls and `return`**: step 2b's claim (`stmts_correct`) with
+    calls in the expressions, and a `return` of the result's kind `ρ` matched by Go's. -/
+theorem stmts3_correct (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ρ : Kind) (κ κ' : String → Option Kind)
+    (ss : List Spec.Expr) (ls : List Stmt) (hl : lowerSs3 K sg ρ κ ss = some (κ', ls)) (s : Spec.St) (g : St)
+    (env : Env) (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (d : Nat) :
+    ∀ N ≥ K * d + 1, ResL3 cx P sg ρ κ' s g ((Spec.evalBlock ds d ss).run.run s) ((execStmts cx N env ls).run.run g) :=
+  fun N hN => (sim3_all ds cx P K sg hF hK d).2.2.2.1 ρ κ ss κ' ls hl s g env hi hsg N hN
+
+end Main
