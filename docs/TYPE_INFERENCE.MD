@@ -1064,7 +1064,12 @@ The transpiler resolves the Go SDK in this priority order:
    GOROOT` as an authoritative fallback.
 
 Standalone `gala build` skips step 1 (no Bazel execution root) and uses the host
-Go discovered in steps 2–5.
+Go discovered in steps 2–5. An SDK from steps 3–5 is then checked against the
+toolchain the build really uses: every go.mod GALA generates says `go 1.25`, so
+the go command switches to a newer toolchain when its own Go is older, or when
+`GOTOOLCHAIN` names one. In that case `switchedGoRoot` runs `go env GOROOT` in a
+temporary module with that go line and reads the SDK it reports. A `GOROOT` set
+explicitly (step 2) is used as given.
 
 ---
 

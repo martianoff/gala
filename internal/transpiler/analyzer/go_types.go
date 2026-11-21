@@ -453,16 +453,20 @@ func switchedGoRoot(goroot, gotoolchain string, goEnv func(dir string) string) s
 	if !toolchainMaySwitch(goRootVersion(goroot), gotoolchain) {
 		return goroot
 	}
-	if switched := probeGoRoot(goEnv); switched != "" {
-		return switched
+	switched := probeGoRoot(goEnv)
+	switch v := goRootVersion(switched); {
+	case switched == "":
+		fmt.Fprintf(os.Stderr, "Warning: could not tell which Go toolchain builds GALA code (go %s may switch away from %s); Go type inference reads %s.\n", GeneratedGoVersion, goroot, goroot)
+		return goroot
+	case version.IsValid(v) && version.Compare(v, "go"+GeneratedGoVersion) < 0:
+		// A go before 1.21 never switches; GOTOOLCHAIN can pin an old one.
+		fmt.Fprintf(os.Stderr, "Warning: GALA code builds with %s (%s), older than Go %s; install Go %s or newer.\n", v, switched, GeneratedGoVersion, GeneratedGoVersion)
 	}
-	fmt.Fprintf(os.Stderr, "Warning: could not tell which Go toolchain builds GALA code (go %s may switch away from %s); Go type inference reads %s.\n", GeneratedGoVersion, goroot, goroot)
-	return goroot
+	return switched
 }
 
 // probeGoRoot is the root goEnv reports in a temporary module whose go line is
-// GeneratedGoVersion, or "" when it cannot run there or reports an SDK older
-// than that line (a go before 1.21 never switches toolchain).
+// GeneratedGoVersion, or "" when it cannot run there.
 func probeGoRoot(goEnv func(dir string) string) string {
 	dir, err := os.MkdirTemp("", "gala-goroot-")
 	if err != nil {
@@ -473,11 +477,7 @@ func probeGoRoot(goEnv func(dir string) string) string {
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
 		return ""
 	}
-	switched := goEnv(dir)
-	if v := goRootVersion(switched); switched == "" || version.IsValid(v) && version.Compare(v, "go"+GeneratedGoVersion) < 0 {
-		return ""
-	}
-	return switched
+	return goEnv(dir)
 }
 
 // goEnvTimeout bounds a `go env GOROOT` run. Switching toolchain may first

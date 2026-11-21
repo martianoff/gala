@@ -267,7 +267,9 @@ func runTranspile(cmd *cobra.Command, args []string) {
 		// the go on PATH would not switch to it (see analyzer.GoSDKRoot).
 		goBin := "go"
 		if root := analyzer.GoSDKRoot(); root != "" {
-			goBin = filepath.Join(root, "bin", "go")
+			if sdkGo, err := exec.LookPath(filepath.Join(root, "bin", "go")); err == nil {
+				goBin = sdkGo
+			}
 		}
 		execCmd := exec.Command(goBin, "run", actualOutput)
 		execCmd.Stdout = os.Stdout
