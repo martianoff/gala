@@ -71,6 +71,10 @@ func newCacheFixture(t *testing.T) *cacheFixture {
 		// Go module behind a local replace.
 		"gogreet/go.mod":   "module example.com/gogreet\n\ngo 1.21\n",
 		"gogreet/greet.go": "package gogreet\n\nfunc Hello() string { return \"v1\" }\n",
+		// Go module behind a local replace that the project does not require
+		// itself: one of its Go modules' go.mod files may.
+		"godeep/go.mod":  "module example.com/godeep\n\ngo 1.21\n",
+		"godeep/deep.go": "package godeep\n\nfunc Deep() string { return \"v1\" }\n",
 	}
 	for rel, content := range files {
 		writeFixtureFile(t, filepath.Join(root, filepath.FromSlash(rel)), content)
@@ -83,7 +87,7 @@ func newCacheFixture(t *testing.T) *cacheFixture {
 func fixtureGalaMod(gala, depVersion string) string {
 	return "module example.com/app\n\ngala " + gala + "\n\n" +
 		"require (\n\texample.com/localdep " + depVersion + "\n\texample.com/gogreet v0.0.0 // go\n)\n\n" +
-		"replace (\n\texample.com/localdep => ../localdep\n\texample.com/gogreet => ../gogreet\n)\n"
+		"replace (\n\texample.com/localdep => ../localdep\n\texample.com/gogreet => ../gogreet\n\texample.com/godeep => ../godeep\n)\n"
 }
 
 func writeFixtureFile(t *testing.T, path, content string) {
@@ -199,6 +203,10 @@ func TestCacheKeyMutationMatrix(t *testing.T) {
 		{"Go module behind a local replace edited", func(t *testing.T, fx *cacheFixture) {
 			writeFixtureFile(t, filepath.Join(filepath.Dir(fx.projectDir), "gogreet", "greet.go"),
 				"package gogreet\n\nfunc Hello() int { return 2 }\n")
+		}, miss, miss},
+		{"Go module behind a local replace the project does not require edited", func(t *testing.T, fx *cacheFixture) {
+			writeFixtureFile(t, filepath.Join(filepath.Dir(fx.projectDir), "godeep", "deep.go"),
+				"package godeep\n\nfunc Deep() int { return 2 }\n")
 		}, miss, miss},
 		{"stdlib snapshot changed", func(t *testing.T, fx *cacheFixture) {
 			fx.toolchain.Stdlib = "stdlib-b"

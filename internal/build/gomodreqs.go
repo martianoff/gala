@@ -83,6 +83,19 @@ func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, replaces []mod.R
 	return reqs, replaces, append(skipped, replacesSkipped...)
 }
 
+// UnwritableGoModReplaces returns the modules (path and version limit) that a
+// replace directive of goMod replaces with a path gala.mod cannot hold, which
+// GoRequirementsOf leaves out. gala.mod has to replace those with another path.
+func UnwritableGoModReplaces(goMod *modfile.File) map[mod.ModuleVersion]bool {
+	olds := make(map[mod.ModuleVersion]bool)
+	for _, rep := range goModReplaces(goMod) {
+		if unwritableReplace(rep) {
+			olds[rep.Old] = true
+		}
+	}
+	return olds
+}
+
 // unwritableReplace reports whether gala.mod cannot hold rep: its replacement
 // path has a space in it.
 func unwritableReplace(rep mod.Replace) bool {

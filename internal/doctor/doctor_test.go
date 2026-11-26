@@ -428,6 +428,11 @@ func TestModDrift(t *testing.T) {
 			goMod:   "",
 		},
 		{
+			name:    "a go.mod replace gala.mod cannot hold, replaced in gala.mod with another path",
+			galaMod: "require a.com/x v0.0.0 // go\n\nreplace a.com/x => ../mydir",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
+		},
+		{
 			name:    "gala.mod Go dependency missing from go.mod",
 			galaMod: "require a.com/x v1.0.0 // go",
 			goMod:   "",

@@ -3,7 +3,11 @@ package build
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/modfile"
+
+	"martianoff/gala/internal/depman/mod"
 )
 
 func TestResolvedGoRequires(t *testing.T) {
@@ -26,10 +30,55 @@ replace example.com/galadep => ./deps/example.com/galadep@v1.0.0
 
 replace golang.org/x/term => golang.org/x/term v0.25.1
 `
-	reqs, err := resolvedGoRequires([]byte(goMod))
+	f, err := modfile.Parse("go.mod", []byte(goMod), nil)
 	require.NoError(t, err)
 	require.Equal(t, []GoRequire{
 		{Path: "golang.org/x/term", Version: "v0.25.0"},
 		{Path: "golang.org/x/sys", Version: "v0.26.0", Indirect: true},
-	}, reqs, "modules served from local directories are left out; an indirect requirement stays marked")
+	}, resolvedGoRequires(f), "modules served from local directories are left out; an indirect requirement stays marked")
+}
+
+// The Go modules gala export refuses are those the build needs, as the tidied
+// workspace go.mod lists them, that gala.mod replaces as Go modules: a module
+// replaced by a directory or a version, indirect or not, each once. A replace
+// of a GALA module or the standard library, or of a module the build does not
+// need, is not one.
+func TestReplacedGoModules(t *testing.T) {
+	galaMod := &mod.File{
+		Module: mod.Module{Path: "example.com/app"},
+		Require: []mod.Require{
+			{Path: "example.com/lib", Version: "v0.1.0"},
+			{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true},
+			{Path: "example.com/greet", Version: "v0.0.0", Go: true},
+		},
+		Replace: []mod.Replace{
+			{Old: mod.ModuleVersion{Path: "example.com/lib"}, New: mod.ModuleVersion{Path: "../lib"}},
+			{Old: mod.ModuleVersion{Path: "github.com/google/uuid"}, New: mod.ModuleVersion{Path: "github.com/google/uuid", Version: "v1.6.0"}},
+			{Old: mod.ModuleVersion{Path: "github.com/google/uuid", Version: "v1.3.0"}, New: mod.ModuleVersion{Path: "github.com/google/uuid", Version: "v1.5.0"}},
+			{Old: mod.ModuleVersion{Path: "example.com/greet"}, New: mod.ModuleVersion{Path: "./greet"}},
+			{Old: mod.ModuleVersion{Path: "golang.org/x/text"}, New: mod.ModuleVersion{Path: "golang.org/x/text", Version: "v0.3.0"}},
+			{Old: mod.ModuleVersion{Path: "golang.org/x/unused"}, New: mod.ModuleVersion{Path: "../unused"}},
+			{Old: mod.ModuleVersion{Path: "martianoff/gala/std"}, New: mod.ModuleVersion{Path: "../gala/std"}},
+		},
+	}
+	workspaceGoMod, err := modfile.Parse("go.mod", []byte(`module gala-build-workspace
+
+go 1.24
+
+require (
+	martianoff/gala/std v0.0.0
+	example.com/lib v0.0.0
+	github.com/google/uuid v1.3.0
+	example.com/greet v0.0.0
+)
+
+require golang.org/x/text v0.20.0 // indirect
+`), nil)
+	require.NoError(t, err)
+	b := &Builder{
+		config:    &Config{StdlibDir: t.TempDir(), GalaPkgDir: t.TempDir()},
+		workspace: &Workspace{ProjectDir: t.TempDir()},
+		galaMod:   galaMod,
+	}
+	assert.Equal(t, []string{"github.com/google/uuid", "example.com/greet", "golang.org/x/text"}, b.replacedGoModules(workspaceGoMod))
 }

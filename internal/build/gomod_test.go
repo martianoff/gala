@@ -120,9 +120,10 @@ func TestWorkspaceGoModTracksReplacementGoMod(t *testing.T) {
 	assert.NotEqual(t, before, generate("module example.com/greet\n\ngo 1.21\n\nrequire github.com/google/uuid v1.6.0\n"))
 }
 
-// The replaces the workspace applies to Go modules, which gala export refuses,
-// are every replace but those of the standard library and the GALA modules:
-// one of a Go module gala.mod does not require applies too, as in Go.
+// GoReplaces, which gala export checks, are the replaces the workspace go.mod
+// applies to Go modules: every replace but those of the standard library and
+// the GALA modules. One of a Go module gala.mod does not require applies too,
+// as in Go.
 func TestGoReplacesAreTheWorkspaceGoModReplaces(t *testing.T) {
 	galaMod := &mod.File{
 		Module: mod.Module{Path: "example.com/app"},
