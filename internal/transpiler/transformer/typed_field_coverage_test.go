@@ -66,6 +66,16 @@ func f(r R) string = r match {
 `,
 		},
 		{
+			name: "a concrete Go field",
+			src: `import "time"
+
+func f(o Option[time.Duration]) int = o match {
+    case Some(d: time.Duration) => int(d)
+    case None() => 0
+}
+`,
+		},
+		{
 			name: "an error field with a nil-safe default",
 			src: `sealed type R {
     case Ok(Err error)

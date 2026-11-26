@@ -407,11 +407,12 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 		case patKindExpr:
 			fields[i] = patCell(pat.expr())
 		case patKindTyped:
-			// `x: T` of the field's own type matches every value of it, when
-			// that type holds no other: a typed pattern over an interface or a
-			// type parameter does not match nil (see
-			// typedPatternMatchesEveryValue).
-			if !c.t.typedPatternMatchesEveryValue(pat, ctor.fields[i], ctor.fields[i]) {
+			// `x: T` of the field's own type matches every value of it, unless
+			// the field may hold a value of another type: a typed pattern over
+			// an interface (`error`, `any` included) or a type parameter does
+			// not match nil.
+			field := ctor.fields[i]
+			if transpiler.IsUnusable(field) || c.t.holdsAnyType(field) || !c.t.typedPatternOfType(pat, field) {
 				fields[i] = covRefutable
 			}
 		default:
