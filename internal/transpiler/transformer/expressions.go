@@ -760,7 +760,7 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 	if f.grouped.ok() {
 		return t.needsExpectedType(f.grouped)
 	}
-	return f.lambda.ok() || f.partial.ok() || f.ifExpr.ok() || f.match.ok()
+	return f.partial.ok() || t.carriesLambda(f)
 }
 
 // carriesLambda reports whether a value of form f can hold the lambda a slot
