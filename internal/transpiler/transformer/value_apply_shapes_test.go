@@ -372,22 +372,34 @@ func main() {
 	for _, w := range []string{"h.p.Apply(1)", "h.q.Apply(3)", "r.Apply(5)", "ptrOf(Node{v: 7}).Apply(1)"} {
 		require.Contains(t, out, w)
 	}
-	_, err = transpileBareVariant(t, `package main
+	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "w(1)"} {
+		_, err = transpileBareVariant(t, `package main
 
 struct Node(var v int)
 
 func (n Ptr[Node]) Apply(x int) int = n.v + x
 
+struct Zero(var v int)
+
+func (z Ptr[Zero]) Apply() int = z.v
+
+type NodeRef *Node
+
 struct Hold(var p *Node)
 
 func mk() *Node = nil
 
+func mkZero() *Zero = nil
+
 func main() {
-    val h = Hold(mk())
-    Println(h.p(1))
+    val r = mk()
+    val z = mkZero()
+    val w NodeRef = mk()
+    Println(`+call+`)
 }
 `)
-	require.ErrorContains(t, err, "GALA-E0080")
+		require.ErrorContains(t, err, "GALA-E0080", call)
+	}
 
 	// So do they with no arguments.
 	out, err = transpileBareVariant(t, `package main

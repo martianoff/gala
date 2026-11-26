@@ -3183,13 +3183,12 @@ func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMeta
 	if !ok || b.typ.IsNil() {
 		return nil
 	}
-	typ := b.typ
 	// A pointer is called through the Apply of the type it points to
 	// (applyTypeOf).
-	if ptr, isPtr := unwrapValueMarkers(typ).(transpiler.PointerType); isPtr {
-		typ = ptr.Elem
+	if elem, isPtr := t.pointee(b.typ); isPtr {
+		return t.pointeeApplyType(t.applyTypeMeta, elem)
 	}
-	return t.applyTypeMeta(typ.BaseName())
+	return t.applyTypeMeta(b.typ.BaseName())
 }
 
 // valueApplyType is the metadata of the type whose Apply a call of fun calls
@@ -3348,11 +3347,11 @@ func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, c callSrc, li
 		at := c.post.primaryAt()
 		text := c.calleeText()
 		if text == "" {
-			text = "this value"
+			text = "(...)"
 		}
 		return at, at, text
 	}
-	if err := t.checkPtrReceiverIn(sel.X, recvType, "Apply", source); err != nil {
+	if err := t.checkPtrReceiverIn(sel.X, t.followAliasChain(unwrapValueMarkers(recvType)), "Apply", source); err != nil {
 		return nil, err
 	}
 	recv := sel.X
@@ -3417,13 +3416,37 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 // Ptr receiver (addressedApplyCallee).
 func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMetadata {
 	typ = unwrapValueMarkers(typ)
-	if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
-		typ = unwrapValueMarkers(ptr.Elem)
+	if elem, isPtr := t.pointee(typ); isPtr {
+		return t.pointeeApplyType(t.applyTypeByName, elem)
 	}
 	if transpiler.IsUnusable(typ) {
 		return nil
 	}
 	return t.applyTypeByName(typ.BaseName())
+}
+
+// pointee is the type typ points to, through aliases and value markers, and
+// false when typ is no pointer.
+func (t *galaASTTransformer) pointee(typ transpiler.Type) (transpiler.Type, bool) {
+	ptr, isPtr := t.followAliasChain(unwrapValueMarkers(typ)).(transpiler.PointerType)
+	if !isPtr {
+		return nil, false
+	}
+	return unwrapValueMarkers(ptr.Elem), true
+}
+
+// pointeeApplyType is the metadata lookup finds for elem, a pointer's element
+// type, unless elem is an interface: Go selects no method through a pointer
+// to one.
+func (t *galaASTTransformer) pointeeApplyType(lookup func(string) *transpiler.TypeMetadata, elem transpiler.Type) *transpiler.TypeMetadata {
+	if transpiler.IsUnusable(elem) {
+		return nil
+	}
+	meta := lookup(elem.BaseName())
+	if meta == nil || meta.IsInterface {
+		return nil
+	}
+	return meta
 }
 
 // applyTypeByName is applyTypeMeta for the type named name, except a type
