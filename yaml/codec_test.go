@@ -1036,7 +1036,7 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"tab past the indentation, more indented, leading", "k: |\n    \t\n  a\nj: 1", "  \t\na\n"},
 		{"tab line at the parent's indentation ends a keep block", "k: |+\n  a\n\t\nj: 1", "a\n"},
 		{"final carriage return is a line break", "k: |\r\n  a\r", "a\n"},
-		{"only a tab past the indentation, clip","k: |\n  \t\nj: 1", "\t\n"},
+		{"only a tab past the indentation, clip", "k: |\n  \t\nj: 1", "\t\n"},
 		{"only a tab past the indentation, strip", "k: |-\n  \t\nj: 1", "\t"},
 		{"only a tab past the indentation, keep", "k: |+\n  \t\n\nj: 1", "\t\n\n"},
 		{"trailing tab past the indentation is text", "k: |\n  a\n  \t\n\nj: 1", "a\n\t\n"},
