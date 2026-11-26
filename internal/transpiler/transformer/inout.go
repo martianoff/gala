@@ -622,8 +622,8 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (d
 
 // goDefinedUnderlying is the underlying type of typ, a type Go defines
 // (goDeclaredType) or an instance of a generic Go alias, instantiated with
-// typ's type arguments; nil for any other type. A Go struct's is the
-// placeholder `any`, never a StructType.
+// typ's type arguments; nil for any other type. A defined Go struct's is the
+// placeholder `any`, never a StructType; a generic alias of a struct gives nil.
 func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []string) transpiler.Type {
 	_, data, args := t.goDeclaredType(typ, free)
 	if data == nil {
@@ -666,6 +666,8 @@ func (t *galaASTTransformer) namesBareGoGeneric(typ transpiler.Type) bool {
 		return t.namesBareGoGeneric(v.Key) || t.namesBareGoGeneric(v.Elem)
 	case transpiler.FuncType:
 		return slices.ContainsFunc(v.Params, t.namesBareGoGeneric) || slices.ContainsFunc(v.Results, t.namesBareGoGeneric)
+	case transpiler.StructType, transpiler.InterfaceType:
+		return slices.ContainsFunc(transpiler.MemberTypes(v), t.namesBareGoGeneric)
 	}
 	return false
 }

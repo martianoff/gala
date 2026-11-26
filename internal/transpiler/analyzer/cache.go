@@ -257,7 +257,11 @@ import (
 // v54: a Go interface records whether its type set provably has no core
 // type (GoTypeData.NoCoreType), which GALA-E0142 reads. A v53 payload lacks
 // it.
-const CacheVersion = "v54"
+//
+// v55: a generic Go alias records its underlying type exactly (instance type
+// arguments, array lengths, interface methods), as it types lambdas in slots
+// of its instances. A v54 payload holds the lossy spelling.
+const CacheVersion = "v55"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
