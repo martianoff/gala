@@ -32,6 +32,19 @@ func makePlain(n int) Plain = Plain(n)
 
 func makeShow() Show = Show()
 
+// Counter adds its n through a pointer receiver.
+struct Counter(var n int)
+
+// Apply adds n to x; it reads its receiver only.
+func (c *Counter) Apply(x int) int = c.n + x
+
+// Shelf keeps a Counter in a field.
+struct Shelf(var c Counter)
+
+func makeShelf() Shelf = Shelf(Counter(100))
+
+func makeCounter() Counter = Counter(40)
+
 func main() {
     val p = Plain(10)
     Println(p(_ + 1))
@@ -48,4 +61,7 @@ func main() {
 
     val n Option[int] = Missing()
     Println(n.GetOrElse(9))
+
+    Println(makeShelf().c(1))
+    Println(makeCounter()(2))
 }
