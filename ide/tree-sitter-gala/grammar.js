@@ -107,6 +107,8 @@ module.exports = grammar({
     // A result type is optional, so the next line may be one or start anew:
     // an interface method `ForEach(f func(T))` followed by `Size() int`.
     [$._signature],
+    // So is a function type's: a struct field `f func()` followed by `g int`.
+    [$.function_type],
     // `if (c) a else b` is an if expression; `if (c) { ... }` an if statement
     // with a parenthesized condition.
     [$.parenthesized_expression, $.if_expression],
@@ -675,11 +677,14 @@ module.exports = grammar({
     // gala.g4 parses its parameters with the `parameter` rule, where a lone
     // name could be either; in a function type it is a type, `func(int) bool`,
     // so here a parameter has a name only when a type follows it.
-    function_type: $ => prec.right(seq(
+    // The result is optional, so a name on the next line may be the result or
+    // what follows the type (`f func()` then a field `g int`): a conflict, for
+    // GLR to decide, as gala.g4's lookahead does.
+    function_type: $ => seq(
       'func',
       field('parameters', alias($._function_type_parameter_list, $.parameter_list)),
       optional(field('result', choice($._type, $.result_list))),
-    )),
+    ),
 
     _function_type_parameter_list: $ => seq(
       $._lparen,

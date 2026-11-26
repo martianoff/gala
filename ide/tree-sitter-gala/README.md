@@ -238,6 +238,9 @@ Commit the regenerated `src/` with the change to `grammar.js`.
   next line) is read by the scanner to find that line break, and so is not a
   node of its own: it is not highlighted as a comment. A comment on a line of
   its own is.
+- Where only a call can follow, such a comment hides the line break from the
+  grammar: `f(a` then `/* c */ (y))` on the next line parses as a call, which
+  GALA rejects.
 - Pattern bindings in `locals.scm` are found at the top level of a pattern and
   one extractor deep (`case Some(x)`), not deeper.
 - Format specifiers in `f"..."` strings (`%.2f`) are plain string content.

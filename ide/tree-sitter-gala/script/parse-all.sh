@@ -21,10 +21,12 @@ trap 'rm -rf "$work"' EXIT
 # Repository-relative paths, one per line; `#` starts a comment.
 sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$exclude_file" | sort -u > "$work/excluded"
 
-# Prune the skipped trees instead of filtering their files out: a local
-# checkout's .claude/worktrees holds whole copies of the repository.
-(cd "$repo_root" && find . \( -path './bazel-*' -o -path './.claude/worktrees' -o -path './.git' -o -name node_modules \) -prune \
-    -o -name '*.gala' -print \
+# Skip hidden directories (.git, .claude/worktrees with whole copies of the
+# repository, the .gala build cache with vendored stdlib snapshots),
+# bazel-* and node_modules, as internal/parser/inputs_test.go does. Prune
+# them rather than filter their files out, so find never walks them.
+(cd "$repo_root" && find . \( -name '.?*' -o -name 'bazel-*' -o -name node_modules \) -prune \
+    -o -type f -name '*.gala' -print \
   | sed 's|^\./||' | sort) > "$work/all"
 
 # An exclusion that names no file is stale: the file moved or was deleted.

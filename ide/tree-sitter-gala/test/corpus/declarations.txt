@@ -488,3 +488,53 @@ type Index map[string]*Node
       (type_identifier)
       (pointer_type
         (type_identifier)))))
+
+==================
+A function type with no result, followed by a line of its own
+==================
+
+package main
+
+type S struct {
+    f func()
+    g int
+    h func() int
+}
+
+type I interface {
+    Handler() func()
+    Close() int
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (type_declaration
+    (type_identifier)
+    (struct_type
+      (field_declaration
+        (field_identifier)
+        (function_type
+          (parameter_list)))
+      (field_declaration
+        (field_identifier)
+        (type_identifier))
+      (field_declaration
+        (field_identifier)
+        (function_type
+          (parameter_list)
+          (type_identifier)))))
+  (type_declaration
+    (type_identifier)
+    (interface_type
+      (method_spec
+        (field_identifier)
+        (parameter_list)
+        (function_type
+          (parameter_list)))
+      (method_spec
+        (field_identifier)
+        (parameter_list)
+        (type_identifier)))))

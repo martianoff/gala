@@ -34,8 +34,22 @@
 (sealed_case
   name: (type_identifier) @local.definition.type)
 
-(parameter
-  name: (identifier) @local.definition.parameter)
+; Only the parameters of a function, a function literal or a lambda: a name in
+; a function type, `f func(x int) int`, binds nothing.
+(function_declaration
+  parameters: (parameter_list
+    (parameter
+      name: (identifier) @local.definition.parameter)))
+
+(func_literal
+  parameters: (parameter_list
+    (parameter
+      name: (identifier) @local.definition.parameter)))
+
+(lambda_expression
+  parameters: (parameter_list
+    (parameter
+      name: (identifier) @local.definition.parameter)))
 
 (receiver
   name: (identifier) @local.definition.parameter)
