@@ -1,0 +1,76 @@
+package main
+
+// Named arguments to a function or method that declares a Go result list are
+// evaluated in the order they are written, as for any other call, and the
+// call is still one GALA value: a Try for results ending in `error`, a Tuple
+// otherwise. Each argument prints its name when it is evaluated.
+
+struct Box[T any](V T)
+
+func (b Box[T]) PlainWrite(u int, p int) (int, error) = Success(p)
+
+func (b Box[T]) Write[U any](u U, p int, q int = p) (int, error) = Success(p + q)
+
+func (b Box[T]) Get[U any](u U, p int) (U, error) = Success(u)
+
+func (b Box[T]) Apply[U any](f func(int) U, p int) (U, error) = Success(f(p))
+
+func (b Box[T]) Conv[U any](u U, p int) (Tuple[T, U], error) = Success((b.V, u))
+
+// The receiver's type argument is spelled like Conv's own type parameter.
+func conv[U any](b Box[U], x int) Try[Tuple[U, int]] = b.Conv(p = t("p", 1), u = t("u", x))
+
+func (b Box[T]) Pair(u int, p int) (int, int) = (u, p)
+
+func (b Box[T]) Three(u int, p int) (int, string, error) = Success((u + p, s"$u/$p"))
+
+struct Labeled[T any](Label string, Value T)
+
+// Results naming the receiver's type parameter take its type argument.
+func (l Labeled[T]) Pick(a int, b int) (T, error) = Success(l.Value)
+
+func write(u int, p int) (int, error) = Success(u * 10 + p)
+
+// A body that is such a call returns its results as they are.
+func passThrough() (int, error) = write(p = t("p", 1), u = t("u", 2))
+
+func down(k int, acc int = k) (int, error) = if (k == 0) Success(acc) else down(k = t("k", k - 1), acc = acc + 1)
+
+func t(name string, v int) int {
+    Print(name)
+    v
+}
+
+func mkBox() Box[int] {
+    Print("b")
+    Box(0)
+}
+
+func main() {
+    val b = Box(0)
+    Println(" ", b.PlainWrite(p = t("p", 1), u = t("u", 2)))
+    Println(" ", write(p = t("p", 1), u = t("u", 2)))
+    Println(" ", b.Write(p = t("p", 2), u = t("u", 1)))
+    Println(" ", b.Get(p = t("p", 1), u = t("u", 2)))
+    Println(" ", b.Apply(p = t("p", 1), f = (x) => s"$x!"))
+    // In written order, with a default that reads an earlier argument.
+    Println(" ", b.Write(u = t("u", 1), p = t("p", 2)))
+    Println(" ", b.Pair(p = t("p", 1), u = t("u", 2)))
+    Println(" ", b.Three(p = t("p", 1), u = t("u", 2)))
+    Println(" ", mkBox().PlainWrite(p = t("p", 1), u = t("u", 2)))
+    Println(" ", Labeled("x", 1).Pick(b = t("b", 1), a = t("a", 2)))
+    Println(" ", conv(Box("s"), 2))
+    Println(" ", passThrough())
+    Println(" ", down(2))
+    // The results bound by name, read through Try, and discarded.
+    val n, err = b.PlainWrite(p = t("p", 1), u = t("u", 2))
+    Println(" ", n + 1, err)
+    var m = 0
+    var merr error = nil
+    m, merr = b.PlainWrite(p = t("p", 1), u = t("u", 2))
+    Println(" ", m, merr)
+    Println(" ", Try(b.PlainWrite(p = t("p", 1), u = t("u", 2))))
+    Println(" ", Try(() => b.PlainWrite(p = t("p", 1), u = t("u", 2))))
+    b.PlainWrite(p = t("p", 1), u = t("u", 2))
+    Println()
+}

@@ -23,10 +23,10 @@ func (t *galaASTTransformer) lowerMember(base ast.Expr, m memberSrc) (ast.Expr, 
 	return t.resolveFieldAccess(base, m)
 }
 
-// applyGoCallSuffix applies a call suffix, then presents a call to a Go
-// function returning several results as one GALA value (see go_results.go).
-// GALA's own Println and Print are statements, not Go calls, and keep their
-// plain form.
+// applyGoCallSuffix applies a call suffix (applyCallSuffix, which presents a
+// call to a Go function returning several results as one GALA value, see
+// go_results.go), then checks the printed values of a Println or Print and a
+// conversion to a basic type of a converted Go call.
 func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Expr, error) {
 	isPrint := t.isBuiltinPrint(base)
 	if id, ok := ast.Unparen(base).(*ast.Ident); ok && t.typeParamValue(id.Name) {
@@ -67,7 +67,7 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Ex
 			}
 		}
 	}
-	return t.liftGoResults(call, c)
+	return call, nil
 }
 
 // resolveFieldAccess handles member access `base.name` (m) with automatic

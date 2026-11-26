@@ -585,7 +585,7 @@ func (t *galaASTTransformer) selfCall(b *goResultsBody, expr ast.Expr) string {
 	if res == nil || b.selfName == "" {
 		return ""
 	}
-	switch fun := res.raw.Fun.(type) {
+	switch fun := res.callee.(type) {
 	case *ast.Ident:
 		if b.selfRecv != "" || fun.Name != b.selfName {
 			return ""

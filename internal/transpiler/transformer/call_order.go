@@ -42,10 +42,11 @@ type frameArg struct {
 	expr      ast.Expr
 }
 
-// frameTemp is the temporary name that holds expr.
+// frameTemp is the temporary name that holds expr, of type typ.
 type frameTemp struct {
 	expr ast.Expr
 	name string
+	typ  transpiler.Type
 }
 
 // topCallFrame is the frame of the innermost call being lowered, nil when
@@ -113,14 +114,27 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 		}
 		return read
 	}
+	tmp := t.frameTempOf(frame, arg)
+	read := ast.NewIdent(tmp.name)
+	if !transpiler.ContainsUnusable(tmp.typ) {
+		t.exprTypeCache[read] = tmp.typ
+	}
+	return read
+}
+
+// frameTempOf is the temporary frame evaluates arg into, made on first use and
+// typed as arg is. The type only types the temporary's reads for GALA (the Go
+// temporary takes arg's own), so a type GALA cannot infer is probed for, not
+// counted as an inference failure.
+func (t *galaASTTransformer) frameTempOf(frame *callFrame, arg ast.Expr) frameTemp {
 	for _, tmp := range frame.temps {
 		if tmp.expr == arg {
-			return ast.NewIdent(tmp.name)
+			return tmp
 		}
 	}
-	name := t.nextTempVar()
-	frame.temps = append(frame.temps, frameTemp{expr: arg, name: name})
-	return ast.NewIdent(name)
+	tmp := frameTemp{expr: arg, name: t.nextTempVar(), typ: t.probeExprType(arg)}
+	frame.temps = append(frame.temps, tmp)
+	return tmp
 }
 
 // changeableInScope reports whether name is bound to a variable a call could
@@ -260,17 +274,27 @@ func (t *galaASTTransformer) orderKeyedElements(lit *ast.CompositeLit, ops []cal
 // where it is unless it makes a call: a pointer-receiver method must see the
 // variable itself, not a copy.
 func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, at map[ast.Expr]int, temps []frameTemp, line, col int) (ast.Expr, error) {
-	var resultType ast.Expr
+	unknown := func() error {
+		return galaerr.NewSemanticErrorAt(line, col,
+			"cannot evaluate the arguments of this call in the order they are written: the type of its result is unknown; write the arguments in parameter order, or bind them to vals first")
+	}
+	var results *ast.FieldList
 	if lit, ok := expr.(*ast.CompositeLit); ok && lit.Type != nil {
-		resultType = lit.Type
+		results = &ast.FieldList{List: []*ast.Field{{Type: lit.Type}}}
+	} else if res := t.goResultsByRaw[asCall(expr)]; res != nil {
+		// A Go call lifted to one GALA value (sequenceGoResults): the
+		// literal returns the call's results as the call does.
+		// A type parameter nothing binds here cannot be spelled.
+		if results = t.goResultsOfValue(res.Type, res.count()); results == nil || t.mentionsUnboundTypeParam(res.Type) {
+			return nil, unknown()
+		}
 	} else {
 		typ := t.getExprTypeName(expr)
 		switch {
 		case transpiler.IsUnusable(typ):
-			return nil, galaerr.NewSemanticErrorAt(line, col,
-				"cannot evaluate the arguments of this call in the order they are written: the type of its result is unknown; write the arguments in parameter order, or bind them to vals first")
+			return nil, unknown()
 		case !typ.IsVoid():
-			resultType = t.typeToExpr(typ)
+			results = t.resultFieldList([]transpiler.Type{typ})
 		}
 	}
 	replace := map[ast.Expr]ast.Expr{}
@@ -312,10 +336,10 @@ func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, a
 	}
 	expr = replaceExprs(expr, replace)
 	fn := &ast.FuncLit{Type: &ast.FuncType{Params: &ast.FieldList{}}, Body: &ast.BlockStmt{List: stmts}}
-	if resultType == nil {
+	if results == nil {
 		fn.Body.List = append(fn.Body.List, &ast.ExprStmt{X: expr})
 	} else {
-		fn.Type.Results = &ast.FieldList{List: []*ast.Field{{Type: resultType}}}
+		fn.Type.Results = results
 		fn.Body.List = append(fn.Body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 	}
 	return &ast.CallExpr{Fun: fn}, nil
@@ -389,6 +413,30 @@ func (t *galaASTTransformer) copyUntypedReplacing(expr ast.Expr, with map[ast.Ex
 	}
 	t.copyMarks(expr, rebuilt)
 	return rebuilt
+}
+
+// sequenceGoResults puts the values of res.raw, the raw Go call that wrapper
+// (from liftGoResults) converts to one GALA value, in GALA's order, as
+// sequenceCall does for any call. When they are evaluated into temporaries,
+// the function literal holding them returns the call's results as they are,
+// and stands for the raw call in wrapper and everywhere the raw call is read
+// back (rawGoCall): a multi-name binding, Try(...), a discarded statement.
+func (t *galaASTTransformer) sequenceGoResults(wrapper *ast.CallExpr, res *goResult, fun ast.Expr, frame *callFrame, line, col int) error {
+	seq, err := t.sequenceCall(res.raw, fun, frame, line, col)
+	if err != nil || seq == res.raw {
+		return err
+	}
+	// A call sequenced into temporaries is the call of the literal holding
+	// them (evaluateInOrder).
+	wrapped, ok := seq.(*ast.CallExpr)
+	if !ok {
+		return galaerr.NewSemanticErrorAt(line, col, "cannot evaluate the arguments of this call in the order they are written; write the arguments in parameter order, or bind them to vals first")
+	}
+	wrapper.Args[0] = wrapped
+	delete(t.goResultsByRaw, res.raw)
+	res.raw = wrapped
+	t.goResultsByRaw[wrapped] = res
+	return nil
 }
 
 // replaceExprs returns expr with every node that is a key of with replaced by

@@ -65,11 +65,11 @@ func bumpAt(p *Box[int], n int) int {
 			contains: "_tmp_2 := mk()\n\t\t_tmp_3 := t(\"i\", 0)",
 		},
 		{
-			// Not reordered until #1365: a function literal around the
-			// call would hide it from the Go-results lift.
-			name:     "method with Go results is not wrapped",
+			// The literal returns the call's Go results, which the
+			// conversion to one GALA value takes (#1365).
+			name:     "method with Go results",
 			main:     `val b = Box(0)` + "\n    " + `Println(b.Write(p = t("p", 2), u = t("u", 1)))`,
-			contains: `Box_Write(b, t("u", 1), t("p", 2))`,
+			contains: "GoTry(func() (int, error) {\n\t\t_tmp_1 := t(\"p\", 2)\n\t\t_tmp_2 := t(\"u\", 1)\n\t\treturn Box_Write(b, _tmp_2, _tmp_1)\n\t}())",
 		},
 		{
 			name:     "receiver read through a pointer goes first",

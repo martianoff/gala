@@ -1,0 +1,18 @@
+pu  Success(1)
+pu  Success(21)
+pu  Success(4)
+pu  Success(2)
+p  Success(1!)
+up  Success(4)
+pu  (2, 1)
+pu  Success((3, 2/1))
+bpu  Success(1)
+ba  Success(1)
+pu  Success((s, 2))
+pu  Success(21)
+kk  Success(4)
+pu  2 <nil>
+pu  1 <nil>
+pu  Success(1)
+pu  Success(1)
+pu
