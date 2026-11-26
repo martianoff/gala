@@ -336,6 +336,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 //   - methodName: the method being called (e.g., "Zip", "FlatMap")
 //   - typeArgs: explicit type arguments on the call (e.g., [string] for Zip[string])
 //   - args: all arguments to the call expression
+//   - hasSpread: whether the last argument is spread (`xs...`)
 //   - receiverArgIndex: which arg is the receiver (-1 if the receiver is not among the args,
 //     e.g., for receiver.Method() calls where receiver is sel.X not an arg)
 func (t *galaASTTransformer) resolveMethodCallType(
@@ -343,9 +344,10 @@ func (t *galaASTTransformer) resolveMethodCallType(
 	methodName string,
 	typeArgs []transpiler.Type,
 	args []ast.Expr,
+	hasSpread bool,
 	receiverArgIndex int,
 ) transpiler.Type {
-	return t.resolveMethodCallTypeWithParams(receiverTypeName, methodName, typeArgs, args, receiverArgIndex, nil)
+	return t.resolveMethodCallTypeWithParams(receiverTypeName, methodName, typeArgs, args, hasSpread, receiverArgIndex, nil)
 }
 
 // resolveMethodCallTypeWithParams is like resolveMethodCallType but accepts pre-resolved
@@ -356,6 +358,7 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	methodName string,
 	typeArgs []transpiler.Type,
 	args []ast.Expr,
+	hasSpread bool,
 	receiverArgIndex int,
 	preResolvedGenericParams []transpiler.Type,
 ) transpiler.Type {
@@ -425,7 +428,7 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 			if receiverArgIndex >= 0 && receiverArgIndex < len(args) {
 				methodArgs = args[receiverArgIndex+1:]
 			}
-			inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodRenameMap, methodParamNames, methodArgs, typeMeta.TypeParams, receiverGenericParams)
+			inferredTypeArgs := t.inferMethodTypeParamsFromArgs(methodMeta, methodRenameMap, methodParamNames, methodArgs, hasSpread, typeMeta.TypeParams, receiverGenericParams)
 			if len(inferredTypeArgs) > 0 {
 				result = t.substituteConcreteTypes(result, methodParamNames, inferredTypeArgs)
 			}
@@ -660,7 +663,7 @@ func itoaInt(i int) string {
 // slice is ordered to match freshParamNames (which is 1:1 with
 // methodMeta.TypeParams). Pass a nil rename map and methodMeta.TypeParams to
 // disable renaming.
-func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpiler.MethodMetadata, methodRenameMap map[string]transpiler.Type, freshParamNames []string, args []ast.Expr, structTypeParams []string, structTypeArgs []transpiler.Type) []transpiler.Type {
+func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpiler.MethodMetadata, methodRenameMap map[string]transpiler.Type, freshParamNames []string, args []ast.Expr, hasSpread bool, structTypeParams []string, structTypeArgs []transpiler.Type) []transpiler.Type {
 	if len(methodMeta.TypeParams) == 0 || len(methodMeta.ParamTypes) == 0 || len(args) == 0 {
 		return nil
 	}
@@ -697,10 +700,12 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 			typed = maps.Clone(inferredMap)
 		}
 		arg := args[i]
-		if i >= len(substitutedParamTypes) {
+		// A trailing argument of a variadic method fills its last parameter.
+		pi := paramIndex(i, substitutedParamTypes, methodMeta.Variadic)
+		if pi < 0 {
 			continue
 		}
-		paramType := substitutedParamTypes[i]
+		paramType := substitutedParamTypes[pi]
 
 		// A bare (unapplied) reference to a GENERIC function has no type of its
 		// own: its signature still contains its own type variables, so
@@ -716,6 +721,15 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		argType := t.getExprTypeNameManual(arg)
 		if transpiler.IsUnusable(argType) {
 			continue
+		}
+		// A spread `xs...` fills the variadic parameter, recorded element-wise,
+		// with a whole slice: its element binds.
+		if hasSpread && methodMeta.Variadic && i == len(args)-1 {
+			elem, ok := t.spreadElemType(argType)
+			if !ok {
+				continue
+			}
+			argType = elem
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
@@ -1120,13 +1134,15 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 			continue
 		}
 
-		// When spread operator is used (e.g., ArrayOf(keys...)), the arg type is []T
-		// but the variadic param type has already been unwrapped to T, so we need to
-		// unwrap the arg type as well to get the element type.
-		if hasEllipsis {
-			if arrType, ok := argType.(transpiler.ArrayType); ok {
-				argType = arrType.Elem
+		// When spread operator is used (e.g., ArrayOf(keys...)), the last arg's
+		// type is []T but the variadic param type has already been unwrapped
+		// to T, so we need to unwrap the arg type as well to get the element type.
+		if hasEllipsis && i == len(args)-1 {
+			elem, ok := t.spreadElemType(argType)
+			if !ok {
+				continue
 			}
+			argType = elem
 		}
 
 		// Try to unify paramType with argType to find type param substitutions

@@ -39,7 +39,7 @@ func (t *galaASTTransformer) sealedViewOf(typ transpiler.Type) transpiler.Type {
 	if !ok || len(method.ParamTypes) > 0 || len(method.TypeParams) > 0 || method.Variadic {
 		return nil
 	}
-	view := t.resolveMethodCallTypeWithParams(resolved, sealedViewMethod, nil, nil, -1, t.getReceiverTypeArgTypes(typ))
+	view := t.resolveMethodCallTypeWithParams(resolved, sealedViewMethod, nil, nil, false, -1, t.getReceiverTypeArgTypes(typ))
 	if transpiler.IsUnusable(view) {
 		return nil
 	}
