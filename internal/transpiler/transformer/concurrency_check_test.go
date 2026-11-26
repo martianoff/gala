@@ -77,6 +77,39 @@ func main() {
 			expectCapture:  "g",
 		},
 		{
+			name: "function value by name to a Sendable parameter of a generic method",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](u U, f Sendable[func() U]) U = f()
+
+func main() {
+    var n = 1
+    val g = () => n + 1
+    val b = Box(1)
+    Println(b.Run(f = g, u = 0))
+}`,
+			expectContains: "function value",
+			expectCapture:  "g",
+		},
+		{
+			name: "var captured by a by-name argument of a generic method",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
+func main() {
+    var counter = 0
+    val b = Box(1)
+    Println(b.Run(counter + 1))
+}`,
+			expectContains: "reassignable var",
+			expectCapture:  "counter",
+		},
+		{
 			name: "var capture via thunk sugar",
 			input: `package main
 
