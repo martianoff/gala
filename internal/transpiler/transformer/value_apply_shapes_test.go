@@ -391,7 +391,7 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "b.p.Apply(3)")
 
-	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)"} {
+	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)", "Gen(mkG()).g[int]()"} {
 		_, err = transpileBareVariant(t, `package main
 
 struct Node(var v int)
@@ -405,6 +405,14 @@ func (z Ptr[Zero]) Apply() int = z.v
 struct Hold(var p *Node)
 
 struct Box[T any](var p *T)
+
+struct G(var v int)
+
+func (g Ptr[G]) Apply[A any]() Option[A] = None[A]()
+
+struct Gen(var g *G)
+
+func mkG() *G = nil
 
 func mk() *Node = nil
 
