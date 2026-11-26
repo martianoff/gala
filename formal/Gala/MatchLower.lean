@@ -2540,9 +2540,10 @@ theorem Part.mono_pre {P Q : Spec.Core → Prop} {post : Spec.Val → Prop} {x :
 
 /-- The arms of `3 match { case 1 => 10; case _ if false => 20; case x => x }`. The
     wildcard is guarded, so the binder after it is reachable and the compiler accepts the
-    program (an unguarded catch-all before another arm is GALA-E0141); the binder's body
-    reads the pattern variable, as the compiler requires of a binder. The same program is
-    `examples/formal_match_witness.gala`, which keeps it one the compiler accepts. -/
+    program (it rejects an arm after an unguarded catch-all, GALA-E0141 or GALA-E0006);
+    the binder's body reads the pattern variable, as the compiler requires of a binder.
+    `examples/formal_match_witness.gala` is the same program and tests that the compiler
+    accepts it; nothing checks that the two agree, so change them together. -/
 def instanceArms : List Arm :=
   [⟨.lit (.int 1), none, (.lit (.int 10), .lit (.int 10))⟩,
    ⟨.wild, some (.lit (.bool false), .lit (.bool false)), (.lit (.int 20), .lit (.int 20))⟩,
