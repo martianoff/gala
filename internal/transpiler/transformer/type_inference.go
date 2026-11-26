@@ -87,15 +87,19 @@ func isUntypedStringConst(expr ast.Expr) bool {
 	return false
 }
 
-// goOperandUnderlying is the underlying type of typ, a Go type an index or
-// a receive reads through: a package-qualified one (goNamedUnderlying), or
-// one written bare: a dot-imported one (`Values` under `import . "net/url"`)
-// or one of the package's own .go files, through Go aliases.
-func (t *galaASTTransformer) goOperandUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
-	if u, ok := t.goNamedUnderlying(typ); ok {
-		return u, true
+// goBareUnderlying is goNamedUnderlying of typ, a Go named type written
+// bare: a dot-imported one (`Values` under `import . "net/url"`) or one of
+// the package's own .go files, through Go aliases. A GALA type or a type
+// parameter of the name is no Go type.
+func (t *galaASTTransformer) goBareUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
+	name, bare := bareTypeName(typ)
+	if !bare || transpiler.IsPrimitiveType(name) || t.isActiveTypeParam(name) {
+		return nil, false
 	}
-	if name, bare := bareTypeName(typ); !bare || transpiler.IsPrimitiveType(name) {
+	// A GALA type of the name is none of Go's, though a Go package of the
+	// package's name may declare one so named; a type of the package's own
+	// .go files may have GALA methods, which give it metadata too.
+	if !t.isOwnGoType(name) && t.getTypeMeta(name) != nil {
 		return nil, false
 	}
 	switch td, target := t.goTypeDataThroughAliases(typ); {
@@ -191,7 +195,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// underlying type. A generic one named without type arguments is
 		// the type being instantiated (`pkg.Bag[string]`), not a value.
 		if _, td := t.goTypeDataFor(xType); td == nil || len(td.TypeParams) == 0 {
-			if u, ok := t.goOperandUnderlying(xType); ok {
+			if u, ok := t.goNamedUnderlying(xType); ok {
 				xType = u
 			}
 		}
@@ -256,7 +260,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			// A receive yields the channel's element type, also through a
 			// GALA alias of a channel or a Go type defined over one.
 			xType := t.followAliasChain(t.getExprTypeNameManual(e.X))
-			if u, ok := t.goOperandUnderlying(xType); ok {
+			if u, ok := t.goNamedUnderlying(xType); ok {
 				xType = u
 			}
 			if ch, ok := xType.(transpiler.ChanType); ok {

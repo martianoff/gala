@@ -2255,6 +2255,28 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# #1399: Go named types written bare, dot-imported or of the package's own
+# .go files: .Size() on a slice or map one, and a numeric one an untyped
+# constant fills.
+gala_library(
+    name = "go_bare_named_size",
+    srcs = ["go_bare_named_size/sizes.gala"],
+    go_srcs = ["go_bare_named_size/names.go"],
+    importpath = "martianoff/gala/examples/go_bare_named_size",
+    visibility = ["//visibility:public"],
+    deps = ["//go_interop"],
+)
+
+gala_exec_test(
+    name = "go_bare_named_size_test",
+    src = "go_bare_named_size_test.gala",
+    expected = "go_bare_named_size_test.out",
+    deps = [
+        ":go_bare_named_size",
+        "//go_interop",
+    ],
+)
+
 # #1322: the strings iterators (SplitSeq, Lines, FieldsSeq) range over strings.
 # Bazel reads its own Go SDK, so this covers the range typing only; the
 # decision to follow the toolchain switch a go on PATH older than 1.25 makes

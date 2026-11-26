@@ -123,6 +123,18 @@ func (q fileQualifiers) qualify(t transpiler.Type, gi *transpiler.GoTypeInfo) tr
 	return nt
 }
 
+// goDotImportedType is the type named name a Go package the file dot-imports
+// declares, tied to that import as qualify ties a type written `pkg.Name`;
+// false when none does, or none's type info was loaded.
+func (q fileQualifiers) goDotImportedType(name string, gi *transpiler.GoTypeInfo) (transpiler.Type, bool) {
+	for _, b := range q.dots {
+		if !b.IsGala && b.PkgName != "" && gi.DeclaresType(b.PkgName, name) {
+			return transpiler.NamedType{Package: b.PkgName, Name: name, ImportPath: b.Path}, true
+		}
+	}
+	return nil, false
+}
+
 // galaImportPaths adds to set the path of every GALA package the file imports.
 func (q fileQualifiers) galaImportPaths(set map[string]bool) {
 	for _, b := range q.named {

@@ -73,20 +73,21 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 	return t.resolveNamedGoCollectionUnderlying(recvType)
 }
 
-// goNamedUnderlying resolves a NAMED Go type (package-qualified) to its
-// underlying type via the analyzer's Go type info — e.g. time.Duration -> int64,
-// url.Values -> map[string][]string; an instance of a generic one
-// (`pkg.Bag[string]`) to its underlying with the type arguments substituted.
-// Returns (nil, false) when goTypeInfo is absent, the type is unusable, or it
-// is not a resolvable package-qualified Go named type. Shared by the Sendable
-// Go-scalar check, the .Size()-sugar collection resolver and index typing.
+// goNamedUnderlying resolves a NAMED Go type to its underlying type via the
+// analyzer's Go type info — e.g. time.Duration -> int64, url.Values ->
+// map[string][]string; an instance of a generic one (`pkg.Bag[string]`) to
+// its underlying with the type arguments substituted. The type is written
+// package-qualified, or bare (goBareUnderlying): a dot-imported one, or one
+// of the package's own .go files. Returns (nil, false) when goTypeInfo is
+// absent, the type is unusable, or it is no resolvable Go named type. Every
+// read through a Go named type goes through it.
 func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
 	if t.goTypeInfo == nil || transpiler.IsUnusable(typ) {
 		return nil, false
 	}
 	named, ok := goNamedBase(typ)
 	if !ok || named.Package == "" {
-		return nil, false
+		return t.goBareUnderlying(typ)
 	}
 	if _, isGeneric := typ.(transpiler.GenericType); isGeneric {
 		// Only an instance of a generic function, slice, map or channel
@@ -128,13 +129,39 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 	case transpiler.ArrayType, transpiler.MapType:
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
-		named, _ := goNamedBase(typ) // goNamedUnderlying only reports ok for a NamedType or an instance of one
-		if t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(named), "Size") != nil {
+		// The key Go type info files it under, a bare name's included; a type
+		// of the package's own .go files may have one GALA declares.
+		base := receiverBase(typ)
+		if key, _ := t.goTypeDataFor(base); t.goTypeInfo.GetMethodSignature(key, "Size") != nil {
+			return typ
+		}
+		if t.galaDeclaresOwnGoTypeMethod(base, "Size") {
 			return typ
 		}
 		return u
 	}
 	return typ
+}
+
+// galaDeclaresOwnGoTypeMethod reports whether GALA declares method on typ, a
+// type of the package's own .go files, written bare or qualified by the
+// package. Its metadata holds only the methods GALA gives it, filed under the
+// name the analyzer records the receiver by: bare in main and test, qualified
+// by the package elsewhere.
+func (t *galaASTTransformer) galaDeclaresOwnGoTypeMethod(typ transpiler.Type, method string) bool {
+	name, bare := bareTypeName(typ)
+	if nt, isNamed := typ.(transpiler.NamedType); isNamed && nt.Package == t.packageName {
+		name, bare = nt.Name, true
+	}
+	if !bare || !t.isOwnGoType(name) || t.richAST == nil {
+		return false
+	}
+	for _, key := range []string{name, t.packageName + "." + name} {
+		if meta := t.richAST.Types[key]; meta != nil && meta.Methods[method] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, args argsSrc) (ast.Expr, error) {

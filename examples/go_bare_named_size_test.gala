@@ -1,0 +1,35 @@
+package main
+
+import (
+    . "net/url"
+    . "sort"
+    "martianoff/gala/go_interop"
+    "martianoff/gala/examples/go_bare_named_size"
+)
+
+// A Go named type written bare is read through to its underlying type as one
+// written package-qualified is: a dot-imported one (`StringSlice`, `Values`,
+// `Duration`) and one of a package's own .go files (go_bare_named_size). So
+// .Size() on a slice or map type is its length, unless the type has a Size
+// method of its own, and an untyped constant fills a numeric one (#1399).
+
+func main() {
+    Println(StringSlice(go_interop.SliceOf("b", "a")).Size())
+    val q = Values{}
+    q.Set("k", "v")
+    q.Set("l", "w")
+    Println(q.Size())
+
+    Println(go_bare_named_size.NamesSize())
+    Println(go_bare_named_size.CountsSize())
+    Println(go_bare_named_size.CountsTwice())
+    Println(go_bare_named_size.SizedSize())
+    Println(go_bare_named_size.TaggedSize())
+    Println(go_bare_named_size.RatedScore())
+    Println(go_bare_named_size.WaitNanos())
+
+    // A field of a dot-imported Go type, filled from another package: the
+    // declaration records it as that Go type, not as one of its package's.
+    val w = go_bare_named_size.Wait(D = 6)
+    Println(int64(w.D) + 7)
+}

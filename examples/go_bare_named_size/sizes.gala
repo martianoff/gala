@@ -1,0 +1,50 @@
+package go_bare_named_size
+
+import (
+    . "time"
+    "martianoff/gala/go_interop"
+)
+
+// NamesSize is the .Size() of a Names, a slice type of this package's own
+// names.go, written bare: the length of the slice.
+func NamesSize() int = Names(go_interop.SliceOf("x", "y", "z")).Size()
+
+// CountsSize is the .Size() of a Counts, a map type of names.go: its number
+// of entries.
+func CountsSize() int {
+    val c = Counts{}
+    c["a"] = 1
+    c["b"] = 2
+    c.Size()
+}
+
+// Twice is a method GALA declares on Counts, a Go type: Counts is still read
+// through to its map.
+func (c Counts) Twice() int = c.Size() * 2
+
+// CountsTwice is the Twice of a Counts of three entries.
+func CountsTwice() int {
+    val c = Counts{}
+    c["a"] = 1
+    c["b"] = 2
+    c["c"] = 3
+    c.Twice()
+}
+
+// A Size method GALA declares on Tagged, a Go type, is called too.
+func (g Tagged) Size() int = 42
+
+func TaggedSize() int = NewTagged("t").Size()
+
+// SizedSize calls the Size method Sized declares, not the length.
+func SizedSize() int = Sized(go_interop.SliceOf(1, 2)).Size()
+
+// An untyped constant fills a field of a numeric Go type written bare: one of
+// names.go (Score) and a dot-imported one (Duration).
+struct Rated(S Score)
+
+struct Wait(D Duration)
+
+func RatedScore() Score = Rated(S = 3).S
+
+func WaitNanos() int64 = int64(Wait(D = 5).D)
