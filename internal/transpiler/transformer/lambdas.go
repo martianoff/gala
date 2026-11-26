@@ -1707,7 +1707,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// the two agree: what a nested call takes may depend on the type of a
 	// `_` it is called on. A lowering that failed with more `_` written than
 	// parameters may have failed for that, so the `_` it takes are learnt
-	// from one binding them all to `any`; otherwise its error stands.
+	// from one binding them all to `any`; otherwise its error stands. A
+	// lambda that takes other than one `_` per parameter is rejected below
+	// whatever its `_` are typed by, so it is not lowered again.
 	for range placeholderCount {
 		if byPosition == nil {
 			break
@@ -1716,11 +1718,15 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		if err == nil {
 			taken = takes.taken(body)
 		} else if placeholderCount > len(ft.Params) {
-			if shared, _, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil); sharedErr == nil {
+			shared, sharedResult, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil)
+			if sharedErr == nil {
 				taken = sharedTakes.taken(shared)
+				if len(taken) != len(ft.Params) {
+					body, bodyResultType, takes, err = shared, sharedResult, sharedTakes, nil
+				}
 			}
 		}
-		if taken == nil || typedAsTaken(byPosition, paramTypes, taken) {
+		if len(taken) != len(ft.Params) || typedAsTaken(byPosition, paramTypes, taken) {
 			break
 		}
 		// Restoring hands the snapshot itself back, so take another.
@@ -1733,7 +1739,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		return nil, false, err
 	}
 	line, col := e.at().start()
-	if byPosition != nil && !typedAsTaken(byPosition, paramTypes, takes.taken(body)) {
+	if taken := takes.taken(body); byPosition != nil && len(taken) == len(ft.Params) && !typedAsTaken(byPosition, paramTypes, taken) {
 		return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
 			"cannot tell which parameter each placeholder `_` stands for",
 			"use a lambda with named parameters")
@@ -1854,7 +1860,8 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 
 // placeholderNamePrefix starts the name lowerPlaceholderBody gives each taken
 // `_` it binds to its own parameter's type, until it is renamed to that
-// parameter. No GALA identifier can spell it.
+// parameter. No GALA identifier can spell it; it holds no `.`, which would
+// make a scope lookup take it for a qualified name.
 const placeholderNamePrefix = "_#"
 
 // lowerPlaceholderBody lowers e, a placeholder lambda's argument, in a scope
@@ -1876,9 +1883,17 @@ func (t *galaASTTransformer) lowerPlaceholderBody(
 		// The names shadow nothing; each taken `_` is renamed to its
 		// parameter once lowered. Bound without
 		// addVar, which would record them as locals for the LSP.
+		// Numbered by depth too: a placeholder lambda nested in another's
+		// body does not shadow the outer one's names.
+		depth := 0
+		for s := t.currentScope.parent; s != nil; s = s.parent {
+			if s.placeholder != nil {
+				depth++
+			}
+		}
 		takes.names = make([]string, len(byPosition))
 		for i, typ := range byPosition {
-			takes.names[i] = placeholderNamePrefix + strconv.Itoa(i)
+			takes.names[i] = placeholderNamePrefix + strconv.Itoa(depth) + "#" + strconv.Itoa(i)
 			t.currentScope.vals[takes.names[i]] = false
 			t.currentScope.valTypes[takes.names[i]] = typ
 		}
@@ -1925,13 +1940,17 @@ func hasPlaceholderName(body ast.Node) bool {
 // snapshotTrialLowering records what lowering a placeholder lambda's body
 // adds to the file, and returns what puts it back: a lowering discarded for
 // typing a `_` by another parameter than its own leaves neither the types it
-// could not resolve, which are no gap of the program, nor the imports only it
-// used.
+// could not resolve or warned about, which are no gap of the program, nor
+// the imports only it used, nor the editor hints it recorded.
 func (t *galaASTTransformer) snapshotTrialLowering() func() {
-	unresolved := len(t.unresolvedTypes)
+	unresolved, warnings, hints := len(t.unresolvedTypes), len(t.inferenceWarnings), len(t.lspLambdaParamHints)
+	needsFmt, needsFmtAlias, needsUtf8 := t.needsFmtImport, t.needsFmtAliasImport, t.needsUtf8Import
 	restoreImports := t.snapshotCodecImports()
 	return func() {
 		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
+		t.inferenceWarnings = t.inferenceWarnings[:warnings]
+		t.lspLambdaParamHints = t.lspLambdaParamHints[:hints]
+		t.needsFmtImport, t.needsFmtAliasImport, t.needsUtf8Import = needsFmt, needsFmtAlias, needsUtf8
 		restoreImports()
 	}
 }

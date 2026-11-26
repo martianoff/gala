@@ -8,6 +8,8 @@ import . "martianoff/gala/collection_immutable"
 
 struct R(Lo int, Name string)
 
+struct Group(Items Array[R])
+
 func (r R) Twice() int = r.Lo * 2
 
 func main() {
@@ -29,4 +31,8 @@ func main() {
     // A nested call takes the `_` between them for its own lambda, so the
     // outer lambda's second parameter is the third `_` written.
     Println(rs.FoldLeft(0, _ + nums.Map(_ * 2).Size() + _.Lo))
+
+    // A placeholder lambda of mixed types inside another: each takes its own.
+    val groups = ArrayOf(Group(rs), Group(ArrayOf(R(4, "dd"))))
+    Println(groups.FoldLeft(0, _ + _.Items.FoldLeft("", _ + _.Name).Size()))
 }

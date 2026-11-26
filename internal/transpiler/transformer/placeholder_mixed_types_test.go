@@ -3,6 +3,8 @@ package transformer_test
 import (
 	"testing"
 
+	"martianoff/gala/galaerr"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,4 +55,11 @@ func TestPlaceholderMixedParameterTypes(t *testing.T) {
 			}
 		})
 	}
+
+	// A nested call that takes one of two `_` leaves the outer lambda one
+	// parameter, which is the arity error, whatever the other `_` is typed by.
+	_, err := newForbiddenBuiltinTranspiler().Transpile(header+"    Println(rs.FoldLeft(0, xs.Map(_ * 2).Size() + _.Lo))\n"+footer, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), string(galaerr.CodeUntypedLambdaParam))
+	require.Contains(t, err.Error(), "placeholder lambda has 1 parameters where a function of 2 is expected")
 }
