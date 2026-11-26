@@ -706,6 +706,12 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 			continue
 		}
 		paramType := substitutedParamTypes[pi]
+		// A spread `xs...` fills the variadic parameter, recorded element-wise,
+		// with a whole slice, so it unifies against a slice of it, as the
+		// lowering does (spreadArgType).
+		if hasSpread && methodMeta.Variadic && i == len(args)-1 {
+			paramType = spreadArgType(paramType)
+		}
 
 		// A bare (unapplied) reference to a GENERIC function has no type of its
 		// own: its signature still contains its own type variables, so
@@ -721,13 +727,6 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		argType := t.getExprTypeNameManual(arg)
 		if transpiler.IsUnusable(argType) {
 			continue
-		}
-		// A spread `xs...` fills the variadic parameter, recorded element-wise,
-		// with a whole slice: its element binds, as in argTypeArgs.
-		if hasSpread && methodMeta.Variadic && i == len(args)-1 {
-			if arr, ok := argType.(transpiler.ArrayType); ok {
-				argType = arr.Elem
-			}
 		}
 
 		// Try to unify paramType with argType to find type param substitutions

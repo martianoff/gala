@@ -31,6 +31,14 @@ func (c C) Tag[K any, U any](k K, xs ...U) Tuple[K, U] = (k, ArrayOf(xs...).Last
 
 func halves() []float64 = SliceOf(1.5, 2.5)
 
+type Floats []float64
+
+func floats() Floats = SliceOf(1.5, 6.5)
+
+struct Box[T any](V T)
+
+func (b Box[T]) Pick[U any](t T, xs ...U) Tuple[T, U] = (t, ArrayOf(xs...).Last())
+
 `
 	tests := []struct {
 		name string
@@ -56,6 +64,21 @@ func halves() []float64 = SliceOf(1.5, 2.5)
 			name: "spread argument",
 			main: "val w = () => C(1).Last(halves()...)\n    Println(w())",
 			want: "func() float64",
+		},
+		{
+			name: "spread of a defined slice type",
+			main: "val w = () => C(1).Last(floats()...)\n    Println(w())",
+			want: "func() float64",
+		},
+		{
+			name: "generic receiver, trailing argument",
+			main: "val b = Box(\"s\")\n    val w = () => b.Pick(\"t\", 1, 2.5)\n    Println(w())",
+			want: "func() std.Tuple[string, float64]",
+		},
+		{
+			name: "generic receiver, spread after a leading parameter",
+			main: "val b = Box(\"s\")\n    val w = () => b.Pick(\"u\", halves()...)\n    Println(w())",
+			want: "func() std.Tuple[string, float64]",
 		},
 	}
 	for _, tt := range tests {
