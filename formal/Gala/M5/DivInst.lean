@@ -3,7 +3,7 @@
 
   * `kszOf` of `sw` (step 3c's loop, `sw(a, b, n) = if (n == 0) a - b else sw(b, a, n - 1)`)
     is 15 and of `spin` 7 (`sw_kszOf`, `spin_kszOf`).
-  * `spin(n) = if (false) 0 else spin(n)`, which the transformer loops: galaspec runs out of
+  * `spin(n) = if (false) 0 else spin(n)`, which the lowering loops: galaspec runs out of
     fuel on `spin(0)` with every budget (`spin_spec_diverges`), so GoCore's run of the loop
     never ends normally, at any depth and step budget (`spin_gocore_diverges`, from
     `calls_diverge`).
@@ -11,9 +11,10 @@
     from `calls_stutter`).
   * `sw(1, 2, 2)` with too few steps: galaspec, at depth and budget 20, runs out of fuel
     (it needs 31 steps, `sw_spec_ok`), so GoCore with no step runs out too
-    (`sw_gocore_fuel`, from `calls_fuel` with `Q = 15`). The bound is sound but loose: its
-    factor `Q` is the largest body's size, so a budget below `Q` steps per call is what it
-    can say runs out.
+    (`sw_gocore_fuel`, from `calls_fuel` with `Q = 15`). That conclusion is true by itself (no
+    call is made without a step): `m = 0` is the only budget `calls_fuel` reaches for `sw`,
+    so the instance shows only that its hypotheses can be met. The bound is sound but loose:
+    its factor `Q` is the largest body's size. `spin` is the instance that matters.
 -/
 import Gala.M5.DivMain
 import Gala.M5.LoopInst
@@ -67,7 +68,7 @@ theorem sw_gocore_fuel : ∀ N ≥ 11 * 20,
 
 /-- **`calls_stutter` on `sw(1, 2, 2)`**: galaspec spends 31 steps (40 to 9, `sw_spec_ok`), so
     GoCore spends at least 2 (`31 ≤ 15 * spent + 5`): its run ends with at most 38 of its
-    40 steps left. (It spends 4: one for the call, one per iteration.) -/
+    40 steps left. -/
 theorem sw_gocore_steps (N : Nat) (hN : N ≥ 88) :
     ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧
       VRel (.int (-1)) w ∧ g'.steps ≤ 38 := by
@@ -93,7 +94,8 @@ def spinSg : Sigs := fun f => if f = "spin" then some ([.int], .int) else none
 
 theorem spin_kszOf : kszOf spinDs = 7 := rfl
 
-/-- The loop the transpiler emits for `spin`: `for { if false { return 0 } else
+/-- The reference lowering's loop for `spin` (`lowerFun`, the transformer's shape, not checked
+    against `gala transpile`): `for { if false { return 0 } else
     { _tmp_1 := n; n = _tmp_1; continue } }`. -/
 def spinGo : List Stmt :=
   [.for_ none none none
@@ -279,7 +281,7 @@ theorem spin_spec_diverges : ∀ n, ((Spec.eval spinDs n spinCall).run.run { inc
       simp only
       exact spin_callFunc (d1 + 1) 0 _ (spin_body_fuel (d1 + 1) _ 0 rfl rfl)
 
-/-- **`calls_diverge` on `spin(0)`**: GoCore's run of the loop the transpiler emits never
+/-- **`calls_diverge` on `spin(0)`**: GoCore's run of the lowering's loop never
     ends normally: it runs out of fuel at every depth and with every step budget. -/
 theorem spin_gocore_diverges : ∀ N m,
     ((evalExpr spinCtx N incEnv spinCallG).run.run { incSt with steps := m }).1 = .error .fuel :=
