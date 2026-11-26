@@ -6001,6 +6001,21 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
+	// A `nil` that the thunk could not hold is the function itself: `func()`
+	// cannot evaluate it as a statement, and `func() T` cannot return it
+	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
+	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
+	// returning nil, as before, with the nil typed as T.
+	if isNilIdent(expr) {
+		if len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0]) {
+			t.typeNilAs(expr, expectedType)
+			return expr, false
+		}
+		if len(ft.Results) == 1 {
+			t.typeNilAs(expr, ft.Results[0])
+		}
+	}
+
 	// Already a function value: pass through untouched, handing an existing
 	// thunk (a `func() T` value or a method/eta reference) directly to the
 	// parameter — except Try(f) over a function returning only an error.
@@ -6030,15 +6045,6 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
-	}
-
-	// A `nil` that the thunk could not hold is the function itself: `func()`
-	// cannot evaluate it as a statement, and `func() T` cannot return it
-	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
-	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
-	// returning nil, as before.
-	if isNilIdent(expr) && (len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0])) {
-		return expr, false
 	}
 
 	// Void thunk: `func()` expecting no result. The body is the expression as a
