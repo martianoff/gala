@@ -916,7 +916,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// x64)`). One whose type comes from the slot (`None()`)
 				// is lowered against the binding, as before.
 				bindings := typeSubst
-				if len(weakConst) > 0 && thunksFixable && t.hasOwnByNameType(v.expr, t.substituteTranspilerTypeParams(byNameType, typeSubst)) {
+				if len(weakConst) > 0 && thunksFixable && typeMentionsTypeParam(byNameType, slices.Collect(maps.Keys(weakConst))) && t.hasOwnByNameType(v.expr, t.substituteTranspilerTypeParams(byNameType, typeSubst)) {
 					bindings = withoutKeys(typeSubst, weakConst)
 				}
 				byNameType = t.substituteTranspilerTypeParams(byNameType, bindings)
@@ -7131,7 +7131,7 @@ func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc, weakSlot transpiler.
 	// Against the slot's result, an expression the slot types takes it.
 	ft := t.resolveTranspilerTypeAsFuncType(weakSlot)
 	if ft == nil || len(ft.Results) != 1 {
-		return true
+		return false
 	}
 	want := ft.Results[0]
 	if against, err := t.lowerAgainst(expr, slot{typ: want}, false); err == nil {
