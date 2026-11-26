@@ -804,6 +804,10 @@ def scopeOK (declared : List String) : List Stmt → Bool
   | .block b :: ss => scopeOK [] b && scopeOK declared ss
   | .if_ none c b els :: ss => exprOK c && scopeOK [] b && elseOK els && scopeOK declared ss
   | .ret es :: ss => exprsOK es && scopeOK declared ss
+  | .assign ":=" [.ident x] [e] :: ss => !declared.contains x && exprOK e && scopeOK (x :: declared) ss
+  | .assign "=" _ es :: ss => exprsOK es && scopeOK declared ss
+  | .branch "continue" :: ss => scopeOK declared ss
+  | .for_ none none none b :: ss => scopeOK [] b && scopeOK declared ss
   | _ :: _ => false
 def elseOK : Option Stmt → Bool
   | none => true
@@ -836,6 +840,102 @@ def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) :=
       | none => none
     else none
 
+/-! ## The self-tail-call loop (step 3c) -/
+
+/-- **The transformer's gate** for a self-tail-call loop (`hasTailSelfCall`,
+    internal/transpiler/transformer/tco.go): a leaf of the `if` tree, through nested `if`s
+    used as values only (a parenthesized one, or a block, is a leaf), calls `f` with `n`
+    arguments. -/
+def tailSelf (f : String) (n : Nat) : Spec.Expr → Bool
+  | .ifExpr _ a b => tailSelf f n a || tailSelf f n b
+  | .call (.name g) args => g == f && args.length == n
+  | _ => false
+
+/-- The transformer loops a function `f` of `n` parameters, `n` not zero, whose body is an
+    `if` used as a value with a self-tail-call leaf (`tryTransformSelfTailRecursion`). -/
+def loopGate (f : String) (n : Nat) : Spec.Expr → Bool
+  | e@(.ifExpr ..) => n != 0 && tailSelf f n e
+  | _ => false
+
+/-- A self-tail-call leaf: `f`'s arguments, `n` of them. -/
+def selfArgs (f : String) (n : Nat) : Spec.Expr → Option (List Spec.Expr)
+  | .call (.name g) args => if g = f ∧ args.length = n then some args else none
+  | _ => none
+
+/-- No `if` used as a value, whose lowering is a function literal: the transformer does not
+    loop a tail call with a closure in an argument (`containsFuncLit`, tco.go). -/
+def noIf : Spec.Expr → Bool
+  | .ifExpr .. => false
+  | .paren e | .unary _ e => noIf e
+  | .binary _ l r => noIf l && noIf r
+  | .call _ args => args.attach.all fun ⟨a, _⟩ => noIf a
+  | _ => true
+
+/-- A leaf whose parentheses could hide a self-call or an `if` from the gate: not lowered. -/
+def parenHides : Spec.Expr → Bool
+  | .paren (.call ..) | .paren (.ifExpr ..) | .paren (.paren _) => true
+  | _ => false
+
+/-- A name the transformer gives its temporaries (`_tmp_1`, ...): no GALA name the lowering
+    takes is one (`FunRel`, `lowerFun`). -/
+def isTmp (x : String) : Bool := x.toList.take 5 == ['_', 't', 'm', 'p', '_']
+
+/-- The `i`-th temporary of a loop step, `_tmp_{i+1}`. The transformer numbers its
+    temporaries across the program; the reference numbers them per step from 1, and the
+    renaming between the two is M6's normalization. -/
+def tmpName (i : Nat) : String := "_tmp_" ++ toString (i + 1)
+
+/-- `_tmp_{i+1} := le` for each argument, in order. -/
+def tmpDecls : Nat → List Expr → List Stmt
+  | _, [] => []
+  | i, le :: les => .assign ":=" [.ident (tmpName i)] [le] :: tmpDecls (i + 1) les
+
+/-- **A loop step** (`buildTailCallStep`): each argument into a temporary, the parameters
+    assigned from them at once, `continue`. -/
+def stepOf (xs : List String) (las : List Expr) : List Stmt :=
+  tmpDecls 0 las ++
+    [.assign "=" (xs.map .ident) ((List.range xs.length).map fun i => .ident (tmpName i)), .branch "continue"]
+
+/-- **The lowering of a looped function's `if` tree** (`buildTailIfStmt`): an `if` is
+    `if lc { L(a) } else { L(b) }`; a self-tail-call leaf with no `if` in its arguments is a
+    loop step; any other leaf, call-free or not, is `return` of its value, of the result's
+    kind `ρ`. A leaf the transformer would treat differently (a block or another compound,
+    a step with a closure in an argument, a parenthesized call or `if`) is not lowered. -/
+def lowerLoop (K : Nat) (sg : Sigs) (f : String) (xks : List (String × Kind)) (ρ : Kind)
+    (κ : String → Option Kind) : Spec.Expr → Option (List Stmt)
+  | .ifExpr c a b =>
+    match lowerC K sg κ c, lowerLoop K sg f xks ρ κ a, lowerLoop K sg f xks ρ κ b with
+    | some (.bool, lc), some ta, some tb => some [ifT lc ta tb]
+    | _, _, _ => none
+  | e =>
+    match selfArgs f xks.length e with
+    | some args =>
+      if args.all noIf then (lowerArgs K sg κ (xks.map (·.2)) args).map (stepOf (xks.map (·.1))) else none
+    | none =>
+      if isCompound e || parenHides e then none
+      else match lowerC K sg κ e with
+        | some (k, le) => if k = ρ then some [.ret [le]] else none
+        | none => none
+
+/-- **The lowering of a function**: `for { L(tree) }` where the transformer loops it
+    (`loopGate`), with parameters of distinct names, none `_`, `true`, `false` or a
+    temporary's, no parameter named `f`, `f` a function the lowering calls with this
+    signature, and no Go scope declaring a name twice; where the gate holds and these do
+    not, nothing (never the recursive lowering the transformer did not emit). Elsewhere,
+    `lowerBody`. -/
+def lowerFun (K : Nat) (sg : Sigs) (f : String) (F : Spec.Func) : Option (List Stmt) :=
+  match sigOf F with
+  | none => none
+  | some (xks, ρ) =>
+    if loopGate f xks.length F.body then
+      if ParamsOK (xks.map (·.1)) ∧ xks.all (fun xk => !isTmp xk.1) = true ∧ paramKinds xks f = none ∧
+          sg f = some (xks.map (·.2), ρ) then
+        match lowerLoop K sg f xks ρ (paramKinds xks) F.body with
+        | some ls => if scopeOK (xks.map (·.1)) [.for_ none none none ls] then some [.for_ none none none ls] else none
+        | none => none
+      else none
+    else lowerBody K sg F
+
 /-! ## The relations, with calls -/
 
 /-- **GoCore's state after code ran**: cells, their types and closures only added to; every
@@ -850,10 +950,6 @@ def Spent (s s' : Spec.St) (g g' : St) : Prop := g.steps + s'.steps ≤ g'.steps
 /-- **galaspec's state after an expression**: the heap only added to; locals, package-level
     variables and output as they were. -/
 def SFrame (c c' : Spec.Core) : Prop := Pre c.heap c'.heap ∧ { c' with heap := c.heap } = c
-
-/-- A name the transformer gives its temporaries (`_tmp_1`, ...): no GALA name the lowering
-    takes is one (`FunRel`, `lowerFun`). -/
-def isTmp (x : String) : Bool := x.toList.take 5 == ['_', 't', 'm', 'p', '_']
 
 /-- **The state relation with calls**: step 2b's (`Inv`), and: the code runs in package `P`
     with no type parameters; every local galaspec binds is one the lowering knows of, and so
