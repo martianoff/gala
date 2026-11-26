@@ -842,7 +842,7 @@ func splitSignificantLines(input string) []pLine {
 			out = append(out, pLine{indent: indent, raw: content, lineNum: i + 1})
 			continue
 		}
-		if before, parent, h, ok := blockScalarHeader(content, indent); ok {
+		if before, parent, h, ok := blockScalarHeader(content, indent, i+1); ok {
 			if before == "" {
 				// A header on a line of its own belongs to the key or dash
 				// on the line before it, and so does its body.
@@ -950,7 +950,7 @@ func isHeaderStart(c byte) bool { return c == '|' || c == '>' }
 // or flow value, or inside a quoted key, is never taken for a comment or a
 // block indicator. Only a line that mayHoldBlockHeader can open a block, so
 // the caller asks that first and only such a line pays for the split.
-func blockScalarHeader(content string, indent int) (string, int, blockHeader, bool) {
+func blockScalarHeader(content string, indent, lineNum int) (string, int, blockHeader, bool) {
 	n, lastDash := itemPrefix(content)
 	rest := content[n:]
 	if h, ok := parseBlockHeader(withoutComment(rest)); ok {
@@ -962,8 +962,11 @@ func blockScalarHeader(content string, indent int) (string, int, blockHeader, bo
 		}
 		return content[:n], indent + lastDash, h, true
 	}
-	if key, value, isPair := tryParseKeyValue(rest); isPair && spaceAfterQuotedKey(rest) {
+	if key, value, isPair := tryParseKeyValue(rest); isPair {
 		if h, ok := parseBlockHeader(value); ok {
+			if !spaceAfterQuotedKey(rest) {
+				panic(fmt.Sprintf("yaml: block scalar header %q at line %d needs white space after the colon of its quoted key", value, lineNum))
+			}
 			// The key is written back double-quoted, which reads back as
 			// the same key whatever it holds.
 			return content[:n] + doubleQuoted(key) + ": ", indent + n, h, true
@@ -1000,7 +1003,7 @@ func ownerIndent(out []pLine, indent int) int {
 
 // spaceAfterQuotedKey reports whether, in a pair whose key is quoted, white
 // space separates the colon from the value, as a block indicator needs: in
-// "k":| the "|" is plain text. A plain key's colon is always followed by
+// "k":| the "|" cannot open a block. A plain key's colon is always followed by
 // white space, so any other pair passes.
 func spaceAfterQuotedKey(pair string) bool {
 	if pair[0] != '"' && pair[0] != '\'' {

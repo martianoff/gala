@@ -1017,9 +1017,10 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body\n, c: 1}]"},
 		{"- - 'k # x': |\n      body\n", "[[{k # x: body\n}]]"},
 		{"\"a|b\": | # note\n  body\n", "{a|b: body\n}"},
-		// With no space after a quoted key's colon, "|" opens no block. It
-		// is then plain text, which YAML does not let start with '|'.
-		{"\"k\":|\n  body", `error: yaml: "|" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
+		// With no space after a quoted key's colon, "|" opens no block, and
+		// the error says the space is missing.
+		{"\"k\":|\n  body", `error: yaml: block scalar header "|" at line 1 needs white space after the colon of its quoted key`},
+		{"'k':>-", `error: yaml: block scalar header ">-" at line 1 needs white space after the colon of its quoted key`},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
