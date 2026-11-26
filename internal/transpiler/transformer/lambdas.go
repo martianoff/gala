@@ -1718,6 +1718,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 			break
 		}
 		var taken []int
+		failed := err
 		if err == nil {
 			taken = takes.taken(body)
 		} else if shared, sharedResult, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil); sharedErr == nil {
@@ -1733,6 +1734,11 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		}
 		taken = taken[:len(ft.Params)]
 		if typedAsTaken(byPosition, paramTypes, taken) {
+			// A lowering that failed with each `_` typed by its own
+			// parameter failed for the program.
+			if failed != nil {
+				err = failed
+			}
 			break
 		}
 		// Restoring hands the snapshot itself back, so take another.
@@ -1946,16 +1952,19 @@ func hasPlaceholderName(body ast.Node) bool {
 // snapshotTrialLowering records what lowering a placeholder lambda's body
 // adds to the file, and returns what puts it back: a lowering discarded for
 // typing a `_` by another parameter than its own leaves neither the types it
-// could not resolve or warned about, which are no gap of the program, nor
-// the imports only it used, nor the editor hints it recorded.
+// could not resolve, warned about or counted as mixed operands, which are no
+// gap of the program, nor the imports only it used, nor the editor hints it
+// recorded.
 func (t *galaASTTransformer) snapshotTrialLowering() func() {
 	unresolved, warnings, hints := len(t.unresolvedTypes), len(t.inferenceWarnings), len(t.lspLambdaParamHints)
+	mismatches := t.operandMismatches
 	needsFmt, needsFmtAlias, needsUtf8 := t.needsFmtImport, t.needsFmtAliasImport, t.needsUtf8Import
 	restoreImports := t.snapshotCodecImports()
 	return func() {
 		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
 		t.inferenceWarnings = t.inferenceWarnings[:warnings]
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:hints]
+		t.operandMismatches = mismatches
 		t.needsFmtImport, t.needsFmtAliasImport, t.needsUtf8Import = needsFmt, needsFmtAlias, needsUtf8
 		restoreImports()
 	}

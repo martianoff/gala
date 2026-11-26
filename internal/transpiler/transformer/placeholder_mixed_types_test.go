@@ -62,4 +62,17 @@ func TestPlaceholderMixedParameterTypes(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), string(galaerr.CodeUntypedLambdaParam))
 	require.Contains(t, err.Error(), "placeholder lambda has 1 parameters where a function of 2 is expected")
+
+	// A body that fails with each `_` typed by its own parameter reports
+	// that failure, not the arity a lowering with every `_` typed `any` sees.
+	// Here Items.Map takes the third `_`, whose R has no field Lox; with
+	// the second `_` typed `any`, the outer lambda would take all three.
+	const typo = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\n" +
+		"struct R(Lo int)\n\nstruct Group(Items Array[R])\n\n" +
+		"func main() {\n    val gs = ArrayOf(Group(ArrayOf(R(1))))\n" +
+		"    Println(gs.FoldLeft(0, _ + _.Items.Map(_.Lox).Size()))\n}\n"
+	_, err = newForbiddenBuiltinTranspiler().Transpile(typo, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), string(galaerr.CodeUnknownMethod))
+	require.Contains(t, err.Error(), "Lox")
 }
