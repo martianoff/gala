@@ -228,7 +228,7 @@ func main() {
 `
 	out, err = transpileBareVariant(t, counter+"    Println(mkBox().h(3), mkCounter()(3), mkBox().h.Apply(3))\n}\n")
 	require.NoError(t, err)
-	require.Equal(t, 3, strings.Count(out, "std.AddrOfCopy("))
+	require.Equal(t, 2, strings.Count(out, "std.AddrOfCopy(mkBox().h).Apply(3)"))
 	require.Contains(t, out, "std.AddrOfCopy(mkCounter()).Apply(3)")
 	_, err = transpileBareVariant(t, strings.Replace(counter, "= c.n + x", "{\n    c.n = c.n + x\n    c.n\n}", 1)+"    Println(mkCounter()(3))\n}\n")
 	require.ErrorContains(t, err, "GALA-E0110")
