@@ -89,6 +89,8 @@ type Mixed interface{ ~int | ~int64 }
 type Tilde interface{ ~int64 }
 type Chans interface{ chan int | <-chan int }
 type Unresolved interface{ ~int | missing.ID }
+type NestedUnresolved interface{ ~[]missing.ID | ~[]int }
+type Elems[E any] interface{ ~[]E | ~[]int }
 `
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -99,6 +101,9 @@ type Unresolved interface{ ~int | missing.ID }
 	for name, want := range map[string]bool{
 		"Any": true, "Methods": true, "Mixed": true,
 		"Tilde": false, "Chans": false, "Unresolved": false,
+		"NestedUnresolved": false,
+		// Elems[int] is {[]int}: a type parameter can make the types one.
+		"Elems": false,
 	} {
 		iface := pkg.Scope().Lookup(name).Type().Underlying().(*types.Interface)
 		assert.Equal(t, want, interfaceHasNoCoreType(iface), name)

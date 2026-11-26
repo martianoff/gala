@@ -46,7 +46,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0142]: cannot range over `n`: its type T is constrained by Number, whose types do not share one underlying type
+error[GALA-E0142]: cannot range over `n`: its type T is constrained by Number, which has no core type: the types it allows do not share one underlying type
   --> main.gala:4:20
   |
 4 |     for i := range n {

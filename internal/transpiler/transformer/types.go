@@ -863,10 +863,13 @@ func (t *galaASTTransformer) inferRangeTypes(exprType transpiler.Type) (keyType 
 	// A type parameter whose constraint has an integer core type (a Go
 	// `interface{ ~int64 }`) binds i to itself (#1378); one with no core
 	// type is GALA-E0142 before this runs.
-	if _, c, ok := t.constrainedTypeParam(exprType); ok {
-		core, _ := t.coreTypeOfConstraint(c)
-		if basic, isBasic := core.(transpiler.BasicType); isBasic && isIntegerName(basic.Name) {
-			return exprType, transpiler.NilType{}
+	// Sendable[T] and Immutable[T] range as T.
+	if param := unwrapValueMarkers(exprType); param != nil {
+		if _, c, ok := t.constrainedTypeParam(param); ok {
+			core, _ := t.coreTypeOfConstraint(c)
+			if basic, isBasic := core.(transpiler.BasicType); isBasic && isIntegerName(basic.Name) {
+				return param, transpiler.NilType{}
+			}
 		}
 	}
 

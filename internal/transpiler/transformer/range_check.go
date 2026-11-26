@@ -60,7 +60,7 @@ func (t *galaASTTransformer) rangeOverTypeParamError(e exprSrc, xType transpiler
 	x := oneLine(e.at().sourceText())
 	at := e.at().rng()
 	return spanErrorAt(galaerr.CodeRangeOverTypeParamNoCore, at, at,
-		fmt.Sprintf("cannot range over `%s`: its type %s is constrained by %s, whose types do not share one underlying type", x, name, constraint),
+		fmt.Sprintf("cannot range over `%s`: its type %s is constrained by %s, which has no core type: the types it allows do not share one underlying type", x, name, constraint),
 		"use a constraint whose types share one underlying type (`interface{ ~int64 }`), or range over a value of a concrete type")
 }
 
