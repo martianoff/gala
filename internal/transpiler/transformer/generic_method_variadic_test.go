@@ -20,6 +20,7 @@ import (
 func TestGenericMethodVariadicResultType(t *testing.T) {
 	const decls = `package main
 
+import "net"
 import . "martianoff/gala/collection_immutable"
 import . "martianoff/gala/go_interop"
 
@@ -34,6 +35,10 @@ func halves() []float64 = SliceOf(1.5, 2.5)
 type Floats []float64
 
 func floats() Floats = SliceOf(1.5, 6.5)
+
+func ip() net.IP = net.ParseIP("1.2.3.4")
+
+func lastOf[T any](xs ...T) T = ArrayOf(xs...).Last()
 
 struct Box[T any](V T)
 
@@ -69,6 +74,21 @@ func (b Box[T]) Pick[U any](t T, xs ...U) Tuple[T, U] = (t, ArrayOf(xs...).Last(
 			name: "spread of a defined slice type",
 			main: "val w = () => C(1).Last(floats()...)\n    Println(w())",
 			want: "func() float64",
+		},
+		{
+			name: "spread of a Go defined slice type",
+			main: "val w = () => C(1).Last(ip()...)\n    Println(w())",
+			want: "func() byte",
+		},
+		{
+			name: "generic function, spread of a defined slice type",
+			main: "val w = () => lastOf(floats()...)\n    Println(w())",
+			want: "func() float64",
+		},
+		{
+			name: "generic function, spread of a Go defined slice type",
+			main: "val w = () => lastOf(ip()...)\n    Println(w())",
+			want: "func() byte",
 		},
 		{
 			name: "generic receiver, trailing argument",

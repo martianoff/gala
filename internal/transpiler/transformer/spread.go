@@ -29,6 +29,19 @@ func spreadArgType(elem transpiler.Type) transpiler.Type {
 	return transpiler.ArrayType{Elem: elem}
 }
 
+// spreadElemType is the element type of argType, the type of a spread
+// argument `xs...`, for binding the type parameters of the variadic
+// parameter it fills: the element of its underlying slice, whatever slice
+// type it is (`[]float64`, a GALA `type Floats []float64`, Go's `net.IP`).
+// argType itself when it is no slice.
+func (t *galaASTTransformer) spreadElemType(argType transpiler.Type) transpiler.Type {
+	under, _ := t.goUnderlying(unwrapValueMarkers(argType))
+	if arr, ok := under.(transpiler.ArrayType); ok {
+		return arr.Elem
+	}
+	return argType
+}
+
 // namedSpreadType is the type a spread passed by name as parameter i (-1 for
 // none) of a callee with n parameters is lowered against: a slice of param,
 // that parameter's type, when it is the variadic last one; unknown for any
