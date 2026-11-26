@@ -59,22 +59,45 @@ func (t T) Fatal(msg string) {
 // Panics in subtests are recovered and reported as failures.
 func (t T) Run(name string, f func(T) T) T {
     val subT = newT(t.name + "/" + name)
-    Println(s"=== RUN   ${subT.name}")
+    frame(s"=== RUN   ${subT.name}")
 
     val start = time.Now()
     val result = runTest(subT, f)
     val elapsed = time.Since(start)
 
     if result.failed {
-        Println(f"--- FAIL: ${subT.name} (${elapsed.Seconds()}%.3fs)")
+        frame(f"--- FAIL: ${subT.name} (${elapsed.Seconds()}%.3fs)")
         return T(name = t.name, failed = true, skipped = t.skipped)
     } else if result.skipped {
-        Println(f"--- SKIP: ${subT.name} (${elapsed.Seconds()}%.3fs)")
+        frame(f"--- SKIP: ${subT.name} (${elapsed.Seconds()}%.3fs)")
         return t
     } else {
-        Println(f"--- PASS: ${subT.name} (${elapsed.Seconds()}%.3fs)")
+        frame(f"--- PASS: ${subT.name} (${elapsed.Seconds()}%.3fs)")
         return t
     }
+}
+
+// frame prints line, a line the runner frames tests with ("=== RUN",
+// "--- PASS" and the rest, and the final PASS or FAIL), led by framing.
+func frame(line string) {
+    Println(framing + line)
+}
+
+// framing leads each framing line: ^V (0x16) when the test binary runs with
+// -test.v=test2json, as `go test -json` and `gala test` run it, and nothing
+// otherwise, so a run of the binary by hand prints what it always did.
+// test2json takes what ^V starts as framing even inside a line, where it
+// lands when a test's output has no trailing newline, and drops the ^V; Go's
+// testing package marks its framing the same way.
+val framing = test2jsonFraming()
+
+func test2jsonFraming() string {
+    for i := 1; i < os.Args.Size(); i++ {
+        if os.Args[i] == "-test.v=test2json" {
+            return "\x16"
+        }
+    }
+    ""
 }
 
 // runTest runs a test function with panic recovery.
@@ -100,7 +123,7 @@ type TestFunc struct {
 // Run executes the test function and returns the result.
 func (tf TestFunc) Run() T {
     val t = newT(tf.Name)
-    Println(s"=== RUN   ${t.name}")
+    frame(s"=== RUN   ${t.name}")
 
     val start = time.Now()
     val result = runTest(t, tf.F)
@@ -108,11 +131,11 @@ func (tf TestFunc) Run() T {
 
     // Print result
     if result.failed {
-        Println(f"--- FAIL: ${t.name} (${elapsed.Seconds()}%.3fs)")
+        frame(f"--- FAIL: ${t.name} (${elapsed.Seconds()}%.3fs)")
     } else if result.skipped {
-        Println(f"--- SKIP: ${t.name} (${elapsed.Seconds()}%.3fs)")
+        frame(f"--- SKIP: ${t.name} (${elapsed.Seconds()}%.3fs)")
     } else {
-        Println(f"--- PASS: ${t.name} (${elapsed.Seconds()}%.3fs)")
+        frame(f"--- PASS: ${t.name} (${elapsed.Seconds()}%.3fs)")
     }
     return result
 }
@@ -142,8 +165,8 @@ func RunTests(tests ...TestFunc) {
     Println(s"Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}")
 
     if failed > 0 {
-        Println("FAIL")
+        frame("FAIL")
         os.Exit(1)
     }
-    Println("PASS")
+    frame("PASS")
 }

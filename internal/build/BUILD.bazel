@@ -88,6 +88,7 @@ go_test(
         "transpile_batch_static_test.go",
         "test_build_cache_reuse_test.go",
         "test_decls_scope_test.go",
+        "test_framing_marker_test.go",
         "testmangle_test.go",
         "testreport_test.go",
         "transpile_perf_test.go",
