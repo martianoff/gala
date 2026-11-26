@@ -6003,12 +6003,13 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 
 	// A `nil` that the thunk could not hold is the function itself: `func()`
 	// cannot evaluate it as a statement, and `func() T` cannot return it
-	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
-	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
-	// returning nil, as before.
-	if isNilIdent(expr) {
+	// when T is known to hold no nil (nilCannotBe: a scalar, a fixed array,
+	// a GALA struct or sealed type, a Go struct, or a Go type declared over
+	// one) (#1448, #1466). Any other T keeps the thunk returning nil, as
+	// before. A parenthesized `(nil)` is the same nil.
+	if bare := ast.Unparen(expr); isNilIdent(bare) {
 		if len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0]) {
-			t.typeNilAs(expr, expectedType)
+			t.typeNilAs(bare, expectedType)
 			return expr, false
 		}
 		// A concrete result other than a function type: typing the nil as it
@@ -6016,7 +6017,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		// function value, a type-parameter one as an inferable result).
 		if r := ft.Results; len(r) == 1 && !t.hasTypeParams(r[0]) && !t.mentionsUnboundTypeParam(r[0]) &&
 			t.resolveTranspilerTypeAsFuncType(r[0]) == nil {
-			t.typeNilAs(expr, r[0])
+			t.typeNilAs(bare, r[0])
 		}
 	}
 
@@ -6045,7 +6046,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
 	// left untyped (an open one) is the function itself: no Try or Tuple is.
 	if len(ft.Results) > 1 {
-		if isNilIdent(expr) {
+		if isNilIdent(ast.Unparen(expr)) {
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
@@ -6111,10 +6112,11 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 }
 
 // nilCannotBe reports whether typ is known to be a type no `nil` can have: a
-// scalar (a predeclared number, string or bool, or a Go or opaque type over
-// one), a GALA struct or sealed type, or a Go struct type, generic ones with
-// any type arguments included (`Option[T]`). Anything else, including a Go
-// type whose type information is missing, may hold nil.
+// scalar (a predeclared number, complex number, string or bool, or a Go or
+// opaque type over one), a fixed-length array, a GALA struct or sealed type,
+// or a Go struct type, generic ones with any type arguments included
+// (`Option[T]`), or a Go defined type or alias over one of these. Anything
+// else, including a Go type whose type information is missing, may hold nil.
 func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() {
 		return false
@@ -6127,8 +6129,22 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if t.hasTypeParams(base) || t.mentionsUnboundTypeParam(base) {
 		return false
 	}
-	if _, kind, via := t.resolveScalar(base); kind != scalarNone || via != nil {
+	end, kind, via := t.resolveScalar(base)
+	if kind != scalarNone || via != nil {
 		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
+	}
+	// What a Go defined type or alias is declared over: a fixed-length array
+	// (`type ID [16]byte`, as uuid.UUID is) or a complex number, which
+	// resolveScalar does not count as scalars.
+	switch e := end.(type) {
+	case transpiler.ArrayType:
+		if e.Fixed {
+			return true
+		}
+	case transpiler.BasicType:
+		if isConstantNumericType(e.Name) {
+			return true
+		}
 	}
 	var nt transpiler.NamedType
 	switch b := base.(type) {
@@ -6139,8 +6155,9 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	default:
 		return false
 	}
-	// A Go type of this or another package: its kind is known from Go.
-	if _, data := t.goTypeDataFor(nt); data != nil && data.Kind != transpiler.GoKindMethodsOnly {
+	// A Go type of this or another package: its kind is known from Go, an
+	// alias's (`type Stamp = time.Time`) from its target's.
+	if data, _ := t.goTypeDataThroughAliases(nt); data != nil && data.Kind != transpiler.GoKindMethodsOnly {
 		return data.Kind == "struct"
 	}
 	if t.isGoTyped(nt) {

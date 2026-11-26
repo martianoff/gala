@@ -5,6 +5,8 @@ import (
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -510,10 +512,32 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go named map result", "func() http.Header", "return nil", ""},
 		{"a Go interface result", "func() io.Reader", "return nil", ""},
 		{"a function result", "func() func() int", "return nil", ""},
+		// #1466: more types nil cannot be, from the package's .go file.
+		{"a complex result", "func() complex128", "b(nil, 2)", "return nil"},
+		{"a Go named array result", "func() ID", "b(nil, 2)", "return nil"},
+		{"a Go alias of a struct result", "func() Stamp", "b(nil, 2)", "return nil"},
+		{"a Go alias of a named map result", "func() Header", "return nil", ""},
+		{"a Go named slice result", "func() Names", "return nil", ""},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			input := `package main
+	const bridge = `package main
+
+import (
+	"net/http"
+	"time"
+)
+
+type ID [16]byte
+
+type Stamp = time.Time
+
+type Header = http.Header
+
+type Names []string
+`
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(bridge), 0o600))
+	body := func(t *testing.T, param, arg string) string {
+		input := `package main
 
 import "io"
 import "net/http"
@@ -539,18 +563,30 @@ type Shower interface {
 var _r io.Reader = nil
 var _h http.Header = nil
 
-func b(f ` + c.param + `, n int) int = if (f == nil) n else 0
+func b(f ` + param + `, n int) int = if (f == nil) n else 0
 
 func main() {
-    Println(b(nil, 2))
+    Println(b(` + arg + `, 2))
 }`
-			out, err := newThunkSugarTranspiler().Transpile(input, "")
-			require.NoError(t, err)
-			body := mainBodyOf(t, out)
-			assert.Contains(t, body, c.want)
+		mainPath := filepath.Join(dir, "main.gala")
+		require.NoError(t, os.WriteFile(mainPath, []byte(input), 0o600))
+		out, err := newThunkSugarTranspiler().Transpile(input, mainPath)
+		require.NoError(t, err)
+		return mainBodyOf(t, out)
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := body(t, c.param, "nil")
+			assert.Contains(t, got, c.want)
 			if c.notWant != "" {
-				assert.NotContains(t, body, c.notWant)
+				assert.NotContains(t, got, c.notWant)
 			}
 		})
 	}
+	// #1466: `(nil)` is the same nil.
+	t.Run("a parenthesized nil", func(t *testing.T) {
+		got := body(t, "func() state", "(nil)")
+		assert.Contains(t, got, "b((nil), 2)")
+		assert.NotContains(t, got, "func() state")
+	})
 }

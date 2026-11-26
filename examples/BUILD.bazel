@@ -2244,6 +2244,15 @@ gala_exec_test(
     expected = "nil_function_argument.out",
 )
 
+# #1466: more results nil cannot be, among them Go types GALA cannot spell.
+# In a directory of its own for the same reason as go_tilde_constraint_lambda.
+gala_exec_test(
+    name = "nil_function_argument_more",
+    src = "nil_function_argument_more/main.gala",
+    expected = "nil_function_argument_more/main.out",
+    deps = ["//examples/nil_function_argument_bridge"],
+)
+
 # #1426: a self tail call passing an untyped constant to a non-int parameter.
 gala_exec_test(
     name = "tail_call_untyped_const",
