@@ -773,8 +773,9 @@ var _ std.FieldDecoder = (*YamlDecoderImpl)(nil)
 // Subset (per DESIGN.md §4.5): block-style mappings, block-style sequences,
 // plain / single-quoted / double-quoted scalars, literal block scalars (`|`,
 // `|-`, `|+`, chomped as YAML 1.2 says), comments, blank lines. Out of
-// scope: anchors, aliases, flow style, custom tags, folded blocks (`>`),
-// indentation indicators (`|2`), explicit document markers (`---`).
+// scope: anchors, aliases, flow-style collections other than `[]` and `{}`,
+// custom tags, folded blocks (`>`), indentation indicators (`|2`), explicit
+// document markers (`---`).
 // ============================================================================
 
 type pLine struct {

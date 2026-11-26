@@ -35,7 +35,8 @@ import (
 // (string/int/float/bool/null), literal block scalars (`|`, `|-`, `|+`, chomped
 // as YAML 1.2 says), comments, nested structures. Out of scope: anchors,
 // aliases, flow-style collections other than [] and {}, custom tags, folded
-// blocks (>) and indentation indicators (|2). See the YAML page of the docs.
+// blocks (>), indentation indicators (|2) and document markers (---). See
+// https://martianov.dev/docs/yaml/.
 type Codec[T any] struct {}
 
 // Apply creates a typed YamlEncoder[T].
