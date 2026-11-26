@@ -1109,6 +1109,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "formal_match_witness",
+    src = "formal_match_witness.gala",
+    expected = "formal_match_witness.out",
+)
+
+gala_exec_test(
     name = "tuple_syntax",
     src = "tuple_syntax.gala",
     expected = "tuple_syntax.out",

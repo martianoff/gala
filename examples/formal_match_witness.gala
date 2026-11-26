@@ -1,0 +1,12 @@
+package main
+
+// The program formal/Gala/MatchLower.lean's lowerMatch_instance is about: a
+// literal, a wildcard under a guard, and a binder whose body reads it. This
+// example keeps it a program the compiler accepts.
+func main() {
+    Println(3 match {
+        case 1 => 10
+        case _ if false => 20
+        case x => x
+    })
+}

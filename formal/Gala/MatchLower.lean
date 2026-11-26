@@ -24,8 +24,10 @@
     `match`.
   * `lowerPat_correct`: the pattern lowering agrees with galaspec's `matchPat`, the core of
     the above; `valEq_enc`: galaspec's `==` is GoCore's on the encoded values.
-  * `part_lit_int`, `part_var`, `part_add`, `part_gt`: `Part` holds of literals, variables
-    and int `+` and `>`, so the hypotheses can be met.
+  * `part_lit_int`, `part_lit_bool`, `keepsLocals_lit_bool`, `part_var`, `part_add`,
+    `part_gt`: `Part` holds of literals, variables and int `+` and `>`, and a bool literal
+    keeps galaspec's locals, so the hypotheses can be met; `lowerMatch_instance` meets
+    them all on one match.
   * `leaky_not_correct`: the lowering #996 reported, which binds the pattern variables
     before the arm's `if`, does not simulate galaspec: on a program with a failing guard,
     galaspec gives 10 and it gives 6 (the scoped lowering gives 10).
@@ -2342,6 +2344,46 @@ theorem part_lit_int (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.G
         injection h with h; subst h
         exact ⟨rfl, FrameS.refl _, FrameL.refl _⟩⟩
 
+/-- One step of galaspec's `eval` on a bool literal. -/
+theorem eval_lit_bool_run (ds : Spec.Decls) (d : Nat) (b : Bool) (s : Spec.St) :
+    (Spec.eval ds (d + 1) (.lit (.bool b))).run.run s =
+      match Spec.tick.run.run s with
+      | (.ok _, s1) => (.ok (.bool b), s1)
+      | (.error e, s1) => (.error e, s1) := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq]
+  rcases Spec.tick.run.run s with ⟨r, s1⟩
+  cases r <;> rfl
+
+/-- **A bool literal** lowers correctly. -/
+theorem part_lit_bool (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
+    (pre : Spec.Core → Prop) (b : Bool) :
+    Part pre (fun v => v = .bool b) (Spec.eval ds d (.lit (.bool b)))
+      (GoCore.geval X (.lit (.bool b))) := by
+  refine ⟨fun s g hR _ hnb => ?_⟩
+  cases d with
+  | zero => rw [eval_zero] at hnb; simp [NotBad] at hnb
+  | succ d =>
+    rw [eval_lit_bool_run, tick_run] at hnb ⊢
+    rcases hst : s.steps with _ | k
+    · rw [hst] at hnb; simp [NotBad] at hnb
+    · exact ⟨rfl, hR, fun v h => by
+        injection h with h; subst h
+        exact ⟨rfl, FrameS.refl _, FrameL.refl _⟩⟩
+
+/-- A bool literal leaves galaspec's locals as it found them, so it meets a guard's
+    `KeepsLocals`. -/
+theorem keepsLocals_lit_bool (ds : Spec.Decls) (d : Nat) (b : Bool) :
+    KeepsLocals (Spec.eval ds d (.lit (.bool b))) := by
+  intro s v h
+  cases d with
+  | zero => rw [eval_zero] at h; nomatch h
+  | succ d =>
+    rw [eval_lit_bool_run, tick_run] at h ⊢
+    rcases hst : s.steps with _ | k
+    · rw [hst] at h
+    · rfl
+
 /-- **A local or package-level variable** lowers correctly to the GoCore variable of its
     name, wherever it is bound. -/
 theorem part_var (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal) (x : String) :
@@ -2496,50 +2538,11 @@ theorem Part.mono_pre {P Q : Spec.Core → Prop} {post : Spec.Val → Prop} {x :
     Part Q post x y :=
   ⟨fun s g hR hq hnb => h.sim s g hR (hqp _ hq) hnb⟩
 
-/-- One step of galaspec's `eval` on a bool literal. -/
-theorem eval_lit_bool_run (ds : Spec.Decls) (d : Nat) (b : Bool) (s : Spec.St) :
-    (Spec.eval ds (d + 1) (.lit (.bool b))).run.run s =
-      match Spec.tick.run.run s with
-      | (.ok _, s1) => (.ok (.bool b), s1)
-      | (.error e, s1) => (.error e, s1) := by
-  rw [Spec.eval.eq_def ds (d + 1) _]
-  simp only [Spec.run_bind_eq]
-  rcases Spec.tick.run.run s with ⟨r, s1⟩
-  cases r <;> rfl
-
-/-- **A bool literal** lowers correctly. -/
-theorem part_lit_bool (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
-    (pre : Spec.Core → Prop) (b : Bool) :
-    Part pre (fun v => v = .bool b) (Spec.eval ds d (.lit (.bool b)))
-      (GoCore.geval X (.lit (.bool b))) := by
-  refine ⟨fun s g hR _ hnb => ?_⟩
-  cases d with
-  | zero => rw [eval_zero] at hnb; simp [NotBad] at hnb
-  | succ d =>
-    rw [eval_lit_bool_run, tick_run] at hnb ⊢
-    rcases hst : s.steps with _ | k
-    · rw [hst] at hnb; simp [NotBad] at hnb
-    · exact ⟨rfl, hR, fun v h => by
-        injection h with h; subst h
-        exact ⟨rfl, FrameS.refl _, FrameL.refl _⟩⟩
-
-/-- A bool literal leaves galaspec's locals as it found them, so it meets a guard's
-    `KeepsLocals`. -/
-theorem keepsLocals_lit_bool (ds : Spec.Decls) (d : Nat) (b : Bool) :
-    KeepsLocals (Spec.eval ds d (.lit (.bool b))) := by
-  intro s v h
-  cases d with
-  | zero => rw [eval_zero] at h; nomatch h
-  | succ d =>
-    rw [eval_lit_bool_run, tick_run] at h ⊢
-    rcases hst : s.steps with _ | k
-    · rw [hst] at h
-    · rfl
-
 /-- The arms of `3 match { case 1 => 10; case _ if false => 20; case x => x }`. The
     wildcard is guarded, so the binder after it is reachable and the compiler accepts the
     program (an unguarded catch-all before another arm is GALA-E0141); the binder's body
-    reads the pattern variable, as the compiler requires of a binder. -/
+    reads the pattern variable, as the compiler requires of a binder. The same program is
+    `examples/formal_match_witness.gala`, which keeps it one the compiler accepts. -/
 def instanceArms : List Arm :=
   [⟨.lit (.int 1), none, (.lit (.int 10), .lit (.int 10))⟩,
    ⟨.wild, some (.lit (.bool false), .lit (.bool false)), (.lit (.int 20), .lit (.int 20))⟩,
