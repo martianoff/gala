@@ -5905,12 +5905,16 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// Plain single-expression thunk. Determine T — prefer the concrete expected
 	// result type, otherwise fall back to the argument expression's own inferred
 	// type so a still-unresolved type parameter (e.g. Future's T) is bound
-	// downstream from the thunk's declared result. Bail out when neither yields a
-	// usable type.
+	// downstream from the thunk's declared result. The expression's type may
+	// name a type parameter of the enclosing declaration (`x` of type T in
+	// `func g[T any](x T)`), which the generated Go names too, but never a
+	// placeholder some callee left unbound, bare or package-qualified
+	// (namesOnlyEnclosingTypeParams). Bail out when neither yields a usable
+	// type.
 	var retTypeExpr ast.Expr
 	if concreteResult {
 		retTypeExpr = t.typeToExpr(resultType)
-	} else if !exprType.IsNil() && !transpiler.IsUnusable(exprType) && !t.hasTypeParams(exprType) && !t.mentionsUnboundTypeParam(exprType) {
+	} else if !exprType.IsNil() && !transpiler.IsUnusable(exprType) && t.namesOnlyEnclosingTypeParams(exprType) {
 		retTypeExpr = t.typeToExpr(exprType)
 	}
 	if retTypeExpr == nil {

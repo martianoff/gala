@@ -371,6 +371,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "byname_type_param",
+    src = "byname_type_param.gala",
+    expected = "byname_type_param.out",
+)
+
+gala_exec_test(
     name = "future_capture_safety",
     src = "future_capture_safety.gala",
     expected = "future_capture_safety.out",

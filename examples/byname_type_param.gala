@@ -1,0 +1,25 @@
+package main
+
+// A by-name argument whose type is a type parameter of the enclosing
+// declaration is lifted to a thunk like any other: it runs only when the
+// callee calls it. `loud` prints a marker when it runs.
+
+struct Box[T any](V T)
+
+func (b Box[T]) OrElse[U any](on bool, d func() U, fallback U) U = if (on) d() else fallback
+
+func orElse[U any](on bool, d func() U, fallback U) U = if (on) d() else fallback
+
+func loud[T any](v T) T {
+    Print(s"[$v]")
+    v
+}
+
+func viaFunction[T any](on bool, v T, fallback T) T = orElse(on, loud(v), fallback)
+
+func viaMethod[T any](on bool, v T, fallback T) T = Box(0).OrElse(on, loud(v), fallback)
+
+func main() {
+    Println(viaFunction(false, 1, 0), viaFunction(true, 2, 0))
+    Println(viaMethod(false, "a", "-"), viaMethod(true, "b", "-"))
+}

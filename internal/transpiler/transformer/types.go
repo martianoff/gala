@@ -732,6 +732,20 @@ func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
 	return typeNameMatches(typ, t.isActiveTypeParam)
 }
 
+// namesOnlyEnclosingTypeParams reports whether every type parameter typ names
+// is one of the enclosing declaration, which the generated Go can name: none
+// a callee left unbound (mentionsUnboundTypeParam), bare or package-qualified.
+func (t *galaASTTransformer) namesOnlyEnclosingTypeParams(typ transpiler.Type) bool {
+	if t.mentionsUnboundTypeParam(typ) {
+		return false
+	}
+	// A package-qualified placeholder (`std.T`) is no parameter of the
+	// enclosing declaration, which is always bare.
+	return !typeNameMatches(typ, func(name string) bool {
+		return t.isActiveTypeParam(name) && !t.activeTypeParams[name]
+	})
+}
+
 // mentionsUnboundTypeParam reports whether typ names a type parameter the code
 // being transformed does not bind (see isUnboundTypeParam), a method's own
 // type parameter that inference left as its sentinel name included. A type of
