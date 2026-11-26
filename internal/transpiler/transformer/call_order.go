@@ -135,8 +135,8 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 // division, not `float64(7.0 / 2)`). A constant read (constant set) is the
 // value of a function literal called at once, `func() T { return c }()`,
 // not a typed constant: Go folds a constant expression and rejects overflow
-// (`-uint8(1)`) the parameter's value wraps. It names nothing a local could
-// capture but the type. Another type (a named one the use site may not be
+// (`-uint8(1)`) the parameter's value wraps; it makes no call that matters
+// to evaluation order (operandConstRead). Another type (a named one the use site may not be
 // able to spell, or a type parameter, whose type Go infers) leaves read as
 // it is.
 func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, constant bool) ast.Expr {
@@ -145,7 +145,9 @@ func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, con
 		return read
 	}
 	if constant {
-		return &ast.CallExpr{Fun: thunkLit(&ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{read}}}}, ast.NewIdent(basic.Name))}
+		call := &ast.CallExpr{Fun: thunkLit(&ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{read}}}}, ast.NewIdent(basic.Name))}
+		t.markOperand(call, operandConstRead)
+		return call
 	}
 	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
 }
@@ -173,8 +175,8 @@ func (t *galaASTTransformer) isConstantArg(arg ast.Expr) bool {
 	return false
 }
 
-// namesSomethingElse reports whether name, a predeclared type or a package
-// the generated read spells, is bound to something else where the default is
+// namesSomethingElse reports whether name, a predeclared type the generated
+// read spells, is bound to something else where the default is
 // read: a local of the use site, or a binding or type of this package.
 func (t *galaASTTransformer) namesSomethingElse(name string) bool {
 	return shadowedAt(t.currentScope, name) || t.isTopLevelBinding(name) || t.packageDeclaresType(name)

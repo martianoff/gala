@@ -10,8 +10,10 @@ import (
 // TestDefaultReadsUntypedArg pins a default that reads an earlier parameter
 // passed an untyped constant (or a constant shifted by a value): the default
 // reads it at the parameter's declared numeric type, so it sees the
-// parameter's value (#1427). A constant goes through std.EvalOperand, a value
-// Go does not fold, so the default wraps and truncates as the parameter does.
+// parameter's value (#1427). A constant is read as the value of a function
+// literal of that type, which Go does not fold, so the default wraps and
+// truncates as the parameter does, and the read stays out of argument
+// ordering.
 // examples/default_reads_untyped_arg.gala runs them.
 func TestDefaultReadsUntypedArg(t *testing.T) {
 	const decls = `package main
@@ -32,6 +34,8 @@ func neg(u uint8, z int = int(-u)) int = z
 func kindC(u complex128, z any = u) string = f"$z%T"
 
 func pick[U any](u U, z U = u) U = z
+
+func three(u uint8, z int = int(u), c int = 0) int = z + c
 
 `
 	tests := []struct {
@@ -88,10 +92,10 @@ func pick[U any](u U, z U = u) U = z
 			contains: "return byte(200) + 50\n\t}()))",
 		},
 		{
-			name: "std local at the call site",
-			main: `val std = 1.5
-    Println(std, neg(1))`,
-			contains: "int(-func() uint8 {",
+			name: "a variable argument after it is not reordered for it",
+			main: `var w = 2
+    Println(three(1, c = w))`,
+			contains: "three(1, int(func() uint8 {",
 		},
 		{
 			name:     "complex parameter",
