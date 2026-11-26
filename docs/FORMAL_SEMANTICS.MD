@@ -798,10 +798,11 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   change, so the body would not fit; the lowering has no assignment, so no lowered body
   does this.
   Step 3c widens `Body3` to the loop's statements: `for { .. }` with no init, condition
-  or post; `:=` and `=` with names on the left (`=` with names on the right too), whose
-  operands are checked like any other; and `continue`, which has no operands. A
-  parameter the loop assigns is assigned outside every function literal, so no call can
-  change it and the body still fits (on the corpus no lowered body is excluded this way).
+  or post; `:=` and `=` with names on the left (so the right side is the top-level
+  operand list, as gc's rewrite reads it), whose operands are checked like any other;
+  and `continue`, which has no operands. A parameter the loop assigns is assigned outside
+  every function literal, so no call can change it and the body still fits (on the corpus
+  no lowered body is excluded this way).
   `swProg_gc` meets `gc_runs3` on `sw`'s loop, the transpiler's own Go.
   Then `EvalOperand` carries weight: without it, some allowed order breaks the theorem,
   which is how a #996-class bug shows. If the parameter proves too heavy, the theorems

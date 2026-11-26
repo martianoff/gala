@@ -248,11 +248,15 @@ end
 theorem blocked_off {evs : List Ev} (h : triggers evs = false) : blocked evs = none := by
   simp [blocked, h]
 
+theorem hOperands_ccs (s : Scope) (top : Bool) : ∀ (es : List Expr), CCs es → LitsQuietArgs s es → ∀ h,
+    (hOperands s false top es).run h = (es, h)
+  | [], _, _, h => rfl
+  | e :: es, ⟨he, hes⟩, ⟨qe, qes⟩, h => by
+    simp only [hOperands, StateT.run_bind, hE_cc s _ e he qe h, idb, hEs_cc s es hes qes h]; rfl
+
 theorem hOperands_cc (s : Scope) (top : Bool) (le : Expr) (hc : CC le) (hq : LitsQuiet s le) (h : HState) :
-    (hOperands s false top [le]).run h = ([le], h) := by
-  simp only [hOperands, hEs, StateT.run_bind, List.isEmpty_nil, Bool.and_true]
-  rw [hE_cc s top le hc hq h]
-  rfl
+    (hOperands s false top [le]).run h = ([le], h) :=
+  hOperands_ccs s top [le] ⟨hc, trivial⟩ ⟨hq, trivial⟩ h
 
 /-- The value of a lowered declaration `var x = e`. -/
 def declExpr? : Decl → Option (String × Expr)
@@ -278,23 +282,18 @@ def isIdentE : Expr → Bool
   | .ident _ => true
   | _ => false
 
-theorem idents_cc (s : Scope) : ∀ (es : List Expr), es.all isIdentE = true → CCs es ∧ LitsQuietArgs s es
-  | [], _ => ⟨trivial, trivial⟩
-  | .ident _ :: es, h => by
-    simp only [List.all_cons, isIdentE, Bool.true_and] at h
-    exact ⟨⟨trivial, (idents_cc s es h).1⟩, ⟨trivial, (idents_cc s es h).2⟩⟩
-  | .intLit _ :: _, h | .strLit _ :: _, h | .charLit _ :: _, h | .floatLit .. :: _, h | .composite .. :: _, h
-  | .keyValue .. :: _, h | .funcLit .. :: _, h | .paren _ :: _, h | .selector .. :: _, h | .index .. :: _, h
-  | .sliceExpr .. :: _, h | .typeAssert .. :: _, h | .call .. :: _, h | .star _ :: _, h | .unary .. :: _, h
-  | .binary .. :: _, h | .structType _ :: _, h | .interfaceType _ :: _, h | .funcType _ :: _, h
-  | .arrayType .. :: _, h | .mapType .. :: _, h | .ellipsis :: _, h | .unsupported _ :: _, h => by
-    simp [isIdentE] at h
+theorem idents_map : ∀ (es : List Expr), es.all isIdentE = true → ∃ xs : List String, es = xs.map .ident
+  | [], _ => ⟨[], rfl⟩
+  | e :: es, h => by
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    obtain ⟨xs, rfl⟩ := idents_map es h.2
+    cases e
+    case ident x => exact ⟨x :: xs, rfl⟩
+    all_goals simp [isIdentE] at h
 
-theorem hOperands_ccs (s : Scope) (top : Bool) : ∀ (es : List Expr), CCs es → LitsQuietArgs s es → ∀ h,
-    (hOperands s false top es).run h = (es, h)
-  | [], _, _, h => rfl
-  | e :: es, ⟨he, hes⟩, ⟨qe, qes⟩, h => by
-    simp only [hOperands, StateT.run_bind, hE_cc s _ e he qe h, idb, hEs_cc s es hes qes h]; rfl
+theorem idents_cc (s : Scope) : ∀ (xs : List String), CCs (xs.map .ident) ∧ LitsQuietArgs s (xs.map .ident)
+  | [] => ⟨trivial, trivial⟩
+  | _ :: xs => ⟨⟨trivial, (idents_cc s xs).1⟩, ⟨trivial, (idents_cc s xs).2⟩⟩
 
 mutual
 /-- **No statement fires gc's trigger**, in scope `s`: each is a lowered declaration,
@@ -307,9 +306,8 @@ def NoTrigS (s : Scope) : Stmt → Prop
   | .block ss => NoTrigSs s ss
   | .if_ init c b els => init = none ∧ CC c ∧ LitsQuiet s c ∧ triggers (scanE s false c) = false ∧
       NoTrigSs s b ∧ NoTrigOS s els
-  | .assign tok lhs rhs => (tok = ":=" ∨ (tok = "=" ∧ rhs.all isIdentE = true)) ∧ lhs.all isIdentE = true ∧
-      CCs rhs ∧ LitsQuietArgs s rhs ∧
-      ∀ top, (tok = ":=" → top = true) → triggers (scanEs s lhs ++ scanOperands s top rhs) = false
+  | .assign tok lhs rhs => (tok = ":=" ∨ tok = "=") ∧ lhs.all isIdentE = true ∧ CCs rhs ∧ LitsQuietArgs s rhs ∧
+      triggers (scanEs s lhs ++ scanOperands s true rhs) = false
   | .branch _ => True
   | .for_ init c p b => init = none ∧ c = none ∧ p = none ∧ NoTrigSs s b
   | .expr _ | .incDec .. | .switch .. | .typeSwitch .. | .range ..
@@ -353,26 +351,24 @@ theorem hS_noTrig (s : Scope) : ∀ (st : Stmt), NoTrigS s st → ∀ h, (hS s s
   | .assign tok lhs rhs, hst, h => by
     simp only [NoTrigS] at hst
     obtain ⟨htok, hl, hc, hq, ht⟩ := hst
-    have hlc := idents_cc s lhs hl
-    have hall : ∀ top, (tok = ":=" → top = true) → blocked (scanEs s lhs ++ scanOperands s top rhs) = none :=
-      fun top h => blocked_off (ht top h)
-    rcases htok with rfl | ⟨rfl, -⟩
-    · rw [hS]
-      simp only [show ((":=" : String) == ":=") = true from rfl, Bool.true_or, hall true (fun _ => rfl),
-        ht true (fun _ => rfl), ite_true, StateT.run_bind]
-      rw [isolated_run _ (lhs, rhs) ?iso h]
-      · simp only [afterS]; rfl
-      · intro h'
-        simp only [StateT.run_bind, StateT.run_pure, pure_bind, idb, hOperands_ccs s true rhs hc hq h']; rfl
-    · have hne : ("=" : String) = ":=" → ∀ top : Bool, top = true := fun h => absurd h (by decide)
-      rw [hS]
-      simp only [show ((("=" : String) == ":=") = false) from rfl, Bool.false_or, Bool.false_eq_true, ite_false,
-        hall _ (fun h => hne h _), ht _ (fun h => hne h _), StateT.run_bind]
-      rw [isolated_run _ (lhs, rhs) ?iso2 h]
-      · simp only [afterS]; rfl
-      · intro h'
-        simp only [StateT.run_bind, StateT.run_pure, hEs_cc s lhs hlc.1 hlc.2 h', idb,
-          hOperands_ccs s _ rhs hc hq h']; rfl
+    obtain ⟨xs, rfl⟩ := idents_map lhs hl
+    have hlc := idents_cc s xs
+    -- Names on the left: the right side is the top-level operand for `:=` and `=` alike.
+    have hall : (xs.all fun _ => true) = true := List.all_eq_true.2 fun _ _ => rfl
+    rw [hS]
+    rcases htok with rfl | rfl
+    · simp only [show ((":=" : String) == ":=") = true from rfl, Bool.true_or, blocked_off ht, ht, ite_true,
+        StateT.run_bind]
+      rw [isolated_run _ (xs.map .ident, rhs) (fun h' => by
+        simp only [StateT.run_bind, StateT.run_pure, pure_bind, idb, hOperands_ccs s true rhs hc hq h']; rfl) h]
+      rfl
+    · simp only [show (("=" : String) == ":=") = false from rfl, show (("=" : String) == "=") = true from rfl,
+        Bool.and_true, List.all_map, Function.comp_def, hall,
+        Bool.or_true, Bool.false_eq_true, ite_false, blocked_off ht, ht, StateT.run_bind]
+      rw [isolated_run _ (xs.map .ident, rhs) (fun h' => by
+        simp only [StateT.run_bind, StateT.run_pure, hEs_cc s _ hlc.1 hlc.2 h', idb,
+          hOperands_ccs s true rhs hc hq h']; rfl) h]
+      rfl
   | .branch _, _, h => rfl
   | .for_ init c p b, hst, h => by
     simp only [NoTrigS] at hst
@@ -587,14 +583,6 @@ theorem scanOperands_eq (s : Scope) (top : Bool) (es : List Expr) (hc : CCs es) 
   | [], _, _ => rfl
   | a :: b :: es, hc, hf => simp only [scanOperands, canonOps]; exact scanSlots_eq s _ hc hf
 
-/-- Names read alone: their events do not depend on being the top-level operand. -/
-theorem canonOps_idents (t t' : Bool) (es : List Expr) (h : es.all isIdentE = true) :
-    canonOps t es = canonOps t' es := by
-  match es, h with
-  | [.ident _], _ => rfl
-  | [], _ => rfl
-  | _ :: _ :: _, _ => rfl
-
 /-! ## The orders step 3a allows -/
 
 mutual
@@ -616,8 +604,8 @@ def body3S : Stmt → Bool
   | .ret [e] => ccB e && !triggers (canon true e)
   | .block ss => body3Ss ss
   | .if_ init c b els => init.isNone && (ccB c && !triggers (canon false c)) && body3Ss b && body3OS els
-  | .assign tok lhs rhs => (tok == ":=" || (tok == "=" && rhs.all isIdentE)) && lhs.all isIdentE && ccBs rhs &&
-      !triggers (canonArgs lhs ++ canonOps (tok == ":=") rhs)
+  | .assign tok lhs rhs => (tok == ":=" || tok == "=") && lhs.all isIdentE && ccBs rhs &&
+      !triggers (canonArgs lhs ++ canonOps true rhs)
   | .branch b => b == "continue"
   | .for_ init c p b => init.isNone && c.isNone && p.isNone && body3Ss b
   | _ => false
@@ -747,22 +735,13 @@ theorem noTrigS_of (s : Scope) : ∀ (st : Stmt), body3S st = true → FitsS s s
     by obtain ⟨_, _, hd, -⟩ := body3S_decl_shape hb; cases hd
   | .ret [], hb, _ | .ret (_ :: _ :: _), hb, _ => by obtain ⟨_, hd, -⟩ := body3S_ret_shape hb; cases hd
   | .assign tok lhs rhs, hb, hf => by
-    simp only [body3S, Bool.and_eq_true, Bool.not_eq_true'] at hb
+    simp only [body3S, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true, beq_iff_eq] at hb
     obtain ⟨⟨⟨htok, hl⟩, hrb⟩, ht⟩ := hb
-    have hlc := idents_cc s lhs hl
+    obtain ⟨xs, rfl⟩ := idents_map lhs hl
     have hrc := ccBs_sound rhs hrb
-    refine ⟨?_, hl, hrc, litsQuietArgs_of s rhs hrb hf.2, fun top htop => ?_⟩
-    · simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at htok
-      exact htok
-    · rw [scanEs_eq s lhs hlc.1 hf.1, scanOperands_eq s top rhs hrc hf.2]
-      by_cases hd : tok = ":="
-      · rw [htop hd]; subst hd; exact ht
-      · have hr : rhs.all isIdentE = true := by
-          simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at htok
-          rcases htok with h | ⟨-, h⟩
-          · exact absurd h hd
-          · exact h
-        rw [canonOps_idents top (tok == ":=") rhs hr]; exact ht
+    refine ⟨htok, hl, hrc, litsQuietArgs_of s rhs hrb hf.2, ?_⟩
+    rw [scanEs_eq s _ (idents_cc s xs).1 hf.1, scanOperands_eq s true rhs hrc hf.2]
+    exact ht
   | .branch _, _, _ => trivial
   | .for_ init c p b, hb, hf => by
     simp only [body3S, Bool.and_eq_true, Option.isNone_iff_eq_none] at hb
