@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,9 +14,11 @@ import (
 // argument, as the bare lambda does (#1297).
 func TestBranchLambdasBindCalleeTypeParams(t *testing.T) {
 	trans := newDefaultsTranspiler()
+	// contains maps each expected text to the times it occurs: once per
+	// lambda, so every branch is checked.
 	cases := []struct {
 		name, input string
-		contains    []string
+		contains    map[string]int
 	}{
 		{"parenthesized block lambda", `package main
 
@@ -27,7 +30,7 @@ func main() {
         q * q
     }))
     Println(b(3))
-}`, []string{"func(k int) int {", "return q * q"}},
+}`, map[string]int{"func(k int) int {": 1, "return q * q": 1}},
 		{"if-expression of block lambdas", `package main
 
 func run[A any, B any](f func(A) B) func(A) B = f
@@ -42,7 +45,25 @@ func main() {
         q * q
     })
     Println(b(3))
-}`, []string{"func(k int) int {", "return q * q"}},
+}`, map[string]int{"func(k int) int {": 2, "return q * q": 2}},
+		{"if-expression whose branch is a block ending in the lambda", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val c = true
+    val b = run(if (c) {
+        Println("then")
+        (k int) => {
+            val q = k + 1
+            q * q
+        }
+    } else (k int) => {
+        val q = k - 1
+        q * q
+    })
+    Println(b(3))
+}`, map[string]int{"func(k int) int {": 2, "return q * q": 2}},
 		{"match of block lambdas", `package main
 
 func run[A any, B any](f func(A) B) func(A) B = f
@@ -54,13 +75,16 @@ func main() {
             val q = k + 1
             q * q
         }
-        case _ => (k int) => {
-            val q = k + n
-            q * q
+        case _ => {
+            Println("other")
+            (k int) => {
+                val q = k + n
+                q * q
+            }
         }
     })
     Println(b(3))
-}`, []string{"func(k int) int {", "return q * q"}},
+}`, map[string]int{"func(k int) int {": 2, "return q * q": 2}},
 		{"declared result through an if-expression", `package main
 
 func run[A any](f func(A) int64) func(A) int64 = f
@@ -75,14 +99,14 @@ func main() {
         2
     })
     Println(b(3))
-}`, []string{"func(k int) int64 {", "return 2"}},
+}`, map[string]int{"func(k int) int64 {": 2, "return 1\n": 1, "return 2\n": 1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := trans.Transpile(tc.input, "branch_lambda_test.gala")
 			require.NoError(t, err)
-			for _, want := range tc.contains {
-				assert.Contains(t, out, want)
+			for want, n := range tc.contains {
+				assert.Equal(t, n, strings.Count(out, want), "occurrences of %q in\n%s", want, out)
 			}
 		})
 	}
