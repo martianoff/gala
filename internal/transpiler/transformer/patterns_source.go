@@ -50,7 +50,7 @@ func nativePat(n native.GalaNodeRef) patSrc {
 	}
 	p := patSrc{node: n}
 	if n.Kind() == native.GalaKIND_expressionPattern {
-		if e := p.expr(); e.ok() {
+		if e := p.rawExpr(); e.ok() {
 			if inner := unparenPattern(e); inner.node != e.node {
 				p.inner = inner
 			}
@@ -111,6 +111,12 @@ func (p patSrc) expr() patExpr {
 	if p.inner.ok() {
 		return p.inner
 	}
+	return p.rawExpr()
+}
+
+// rawExpr is the expression of p as written, parentheses included: an
+// argument of a call passes it as it is.
+func (p patSrc) rawExpr() patExpr {
 	if !p.node.Ok() {
 		return patExpr{}
 	}

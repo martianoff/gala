@@ -41,9 +41,9 @@ func (t *galaASTTransformer) argContent(a argSrc) (argValue, error) {
 	p := a.pattern()
 	switch p.kind() {
 	case patKindExpr:
-		return argValue{expr: nativeExpr(p.expr().node)}, nil
+		return argValue{expr: nativeExpr(p.rawExpr().node)}, nil
 	case patKindRest:
-		return argValue{expr: nativeExpr(p.expr().node), spread: true}, nil
+		return argValue{expr: nativeExpr(p.rawExpr().node), spread: true}, nil
 	case patKindNone:
 		return argValue{}, semanticErrorAtStart(a.at(), "only expressions allowed as function arguments")
 	}

@@ -313,7 +313,18 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		// Offsets are taken on the untrimmed line, so they are columns.
 		line := lines[i]
 		parenOpen := strings.Index(line, "(")
+		// The pattern's slots run to its last `)` before its guard or `=>`,
+		// so a binder after a parenthesized one, `case ((a), (b))`, is
+		// reached too.
 		parenClose := strings.Index(line, ")")
+		if end := strings.Index(line, "=>"); end > 0 {
+			if guard := strings.Index(line[:end], " if "); guard > 0 {
+				end = guard
+			}
+			if last := strings.LastIndex(line[:end], ")"); last > parenClose {
+				parenClose = last
+			}
+		}
 		if parenOpen < 0 || parenClose < 0 || parenClose <= parenOpen {
 			continue
 		}

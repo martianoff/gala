@@ -365,6 +365,31 @@ func TestDefinition_ParenthesizedPatternBinding(t *testing.T) {
 	assert.Equal(t, strings.Index(line, "((x))")+2, locs[0].Range.Start.Character)
 }
 
+// A binder after a parenthesized one is found too: the slots run to the
+// pattern's last `)`, not its first.
+func TestDefinition_BindingAfterParenthesizedOne(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"val b = 1\n" +
+		"\n" +
+		"func sum(t Tuple[int, int]) int = t match {\n" +
+		"\tcase ((a), (b)) => a + b\n" +
+		"}\n" +
+		"\n" +
+		"func main() {\n" +
+		"\tPrintln(sum((4, 5)), b)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+
+	line := strings.Split(src, "\n")[5]
+	locs, err := h.Definition(uri, 5, strings.LastIndex(line, "b"))
+	require.NoError(t, err)
+	require.NotEmpty(t, locs)
+	assert.Equal(t, 5, locs[0].Range.Start.Line)
+	assert.Equal(t, strings.Index(line, "(b)")+1, locs[0].Range.Start.Character)
+}
+
 // TestNoHandlerReadsWireColumns keeps the conversion layer the only reader of
 // Position.Character. A wire column is in the negotiated encoding, so a handler
 // that reads one directly and indexes the document with it is wrong on any line
