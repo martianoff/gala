@@ -263,9 +263,9 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 		if ft, ok := paramType.(transpiler.FuncType); ok &&
 			!funcTypeParamsMentionTypeParams(ft.Params, ctx.applyTypeParams) {
 			return transpiler.FuncType{
-				Params:  ft.Params,
-				Results: maskTypeParamResults(ft.Results, ctx.applyTypeParams),
-				Inout:   ft.Inout,
+				Params:   ft.Params,
+				Results:  maskTypeParamResults(ft.Results, ctx.applyTypeParams),
+				Inout:    ft.Inout,
 				Variadic: ft.Variadic,
 			}
 		}

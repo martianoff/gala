@@ -1781,7 +1781,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	for i, name := range paramNames {
 		typeExpr := t.typeToExpr(paramTypes[i])
 		if ft.IsVariadicParam(i) {
-			typeExpr = &ast.Ellipsis{Elt: t.typeToExpr(ft.Params[i])}
+			if elem := t.typeToExpr(ft.Params[i]); elem != nil {
+				typeExpr = &ast.Ellipsis{Elt: elem}
+			}
 		}
 		if typeExpr == nil {
 			typeExpr = ast.NewIdent("any")

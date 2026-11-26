@@ -6761,9 +6761,9 @@ func (t *galaASTTransformer) genericCtorLambdaExpectation(expected transpiler.Ty
 		return expected, false
 	}
 	return transpiler.FuncType{
-		Params:  maskTypeParamResults(ft.Params, unbound),
-		Results: maskTypeParamResults(ft.Results, unbound),
-		Inout:   ft.Inout,
+		Params:   maskTypeParamResults(ft.Params, unbound),
+		Results:  maskTypeParamResults(ft.Results, unbound),
+		Inout:    ft.Inout,
 		Variadic: ft.Variadic,
 	}, funcTypeParamsMentionTypeParams(ft.Params, unbound)
 }

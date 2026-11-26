@@ -756,7 +756,7 @@ func parseFuncType(s string) (FuncType, bool) {
 		return FuncType{}, false
 	}
 	var ft FuncType
-	params := splitTopLevel(s[len("func(") : closeParen])
+	params := splitTopLevel(s[len("func("):closeParen])
 	for i, p := range params {
 		if rest, inout := strings.CutPrefix(strings.TrimSpace(p), InoutPrefix); inout {
 			p = rest
