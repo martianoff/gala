@@ -30,33 +30,39 @@ func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
 		contains string
 	}{
 		{
-			name:     "generic function, int64 slot",
-			main:     "val p Option[int64] = lazy(5, true)\n    Println(p)",
+			name: "generic function, int64 slot",
+			main: `val p Option[int64] = lazy(5, true)
+    Println(p)`,
 			contains: "lazy[int64](func() int64 {\n\t\treturn 5\n\t}, true)",
 		},
 		{
-			name:     "shift constant, float64 slot",
-			main:     "val p Option[float64] = lazy(1 << 3, true)\n    Println(p)",
+			name: "shift constant, float64 slot",
+			main: `val p Option[float64] = lazy(1 << 3, true)
+    Println(p)`,
 			contains: "lazy[float64](func() float64 {\n\t\treturn 1 << 3\n\t}, true)",
 		},
 		{
-			name:     "Sendable thunk",
-			main:     "val s Option[int64] = runS(5)\n    Println(s)",
+			name: "Sendable thunk",
+			main: `val s Option[int64] = runS(5)
+    Println(s)`,
 			contains: "runS[int64](func() int64 {\n\t\treturn 5\n\t})",
 		},
 		{
-			name:     "companion Apply",
-			main:     "val tr Try[int64] = Try(5)\n    Println(tr)",
+			name: "companion Apply",
+			main: `val tr Try[int64] = Try(5)
+    Println(tr)`,
 			contains: "std.Try[int64]{}.Apply(func() int64 {\n\t\treturn 5\n\t})",
 		},
 		{
-			name:     "no slot keeps the default type",
-			main:     "val p = lazy(5, true)\n    Println(p)",
+			name: "no slot keeps the default type",
+			main: `val p = lazy(5, true)
+    Println(p)`,
 			contains: "lazy(func() int {\n\t\treturn 5\n\t}, true)",
 		},
 		{
-			name:     "method with type parameters of its own",
-			main:     "val m Option[int64] = Box(0).Lazy(5, true)\n    Println(m)",
+			name: "method with type parameters of its own",
+			main: `val m Option[int64] = Box(0).Lazy(5, true)
+    Println(m)`,
 			contains: "Box_Lazy[int64, int](Box[int]{V: std.NewImmutable(0)}, func() int64 {\n\t\treturn 5\n\t}, true)",
 		},
 	}

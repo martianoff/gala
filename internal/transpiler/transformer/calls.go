@@ -794,7 +794,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		return typeMentionsTypeParam(arg, methodMeta.TypeParams)
 	})
 	weakArg := func(expr ast.Expr) bool {
-		return t.isUntypedConstArg(expr) || (thunksFixable && t.constThunkArg(expr) != nil)
+		return t.isUntypedConstArg(expr) || (thunksFixable && t.isWeakConstArg(expr))
 	}
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
 		for i, arg := range slots {
@@ -2277,7 +2277,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// A by-name constant takes the type the instance's type arguments give
 	// it (`Try(5)` in a `Try[int64]` slot).
 	// Not through an alias, whose type arguments are its own, not the type's.
-	if _, viaAlias := t.lookupTypeAlias(origTypeName); methodMeta != nil && !viaAlias {
+	if !viaAlias {
 		subst := map[string]transpiler.Type{}
 		recvArgs := t.getReceiverTypeArgTypes(t.astTypeToTranspilerType(fun))
 		for i, tp := range typeMeta.TypeParams {
@@ -6067,9 +6067,9 @@ func (t *galaASTTransformer) constThunkArg(expr ast.Expr) *ast.FuncLit {
 // parameters it fills only as an untyped constant does: it is one
 // (isUntypedConstArg), or a by-name thunk of one (constThunkArg). It is what
 // decides whether the slot's type arguments are spelled over the constant's
-// default, and records a generic method's binding as one only constants make
-// (weakConst); places that look at the constant itself (the order constants
-// are unified in) keep isUntypedConstArg.
+// default (and, where its thunk can be retyped, a generic method's weakArg);
+// places that look at the constant itself (the order constants are unified
+// in) keep isUntypedConstArg.
 func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
 	return t.isUntypedConstArg(expr) || t.constThunkArg(expr) != nil
 }
