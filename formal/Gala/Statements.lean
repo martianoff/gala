@@ -25,6 +25,7 @@ import Gala.AlphaProg
 import Gala.M5.Expr
 import Gala.M5.StmtOrder
 import Gala.M5.IifeInst
+import Gala.M5.LoopInst
 
 namespace Gala.Statements
 
@@ -730,5 +731,25 @@ theorem scopeOK_sibling_arms :
     scopeOK ["t"] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]), .ret [.ident "t"]]
       [.decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]]] = true :=
   Gala.M5.scopeOK_sibling_arms
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_lowerFun : lowerFun 11 swSg "sw" swF = some swGo :=
+  Gala.M5.sw_lowerFun
+
+open Gala Gala.M5 GoCore.Full in
+theorem tmpParam_not_lowered :
+    lowerFun 11 swSg "sw" { swF with params := [iParam "_tmp_1", iParam "b", iParam "n"] } = none :=
+  Gala.M5.tmpParam_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem tmpCall_no_funRel : ∀ (K : Nat) (ds : Spec.Decls) (cx : Ctx) (P : String), ¬ FunRel K tmpCallSg ds cx P :=
+  Gala.M5.tmpCall_no_funRel
+
+open Gala Gala.M5 GoCore.Full in
+theorem loop_calls_instance : ∀ (steps d : Nat), steps ≤ 40 →
+    ∀ N ≥ 11 * d, ERes3 .int (isLitE swCall) { incCore with steps } { incSt with steps := 40 }
+      ((Spec.eval swDs d swCall).run.run { incCore with steps })
+      ((evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 }) :=
+  Gala.M5.loop_calls_instance
 
 end Gala.Statements
