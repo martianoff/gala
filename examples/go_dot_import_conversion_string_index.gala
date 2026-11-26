@@ -1,0 +1,29 @@
+package main
+
+import (
+    . "net/url"
+    . "sort"
+    "slices"
+    "martianoff/gala/go_interop"
+)
+
+// A conversion to a dot-imported Go type (`StringSlice(xs)`), parenthesized
+// or not, has that type; indexing a value of a dot-imported Go map type
+// (`Values`) has its element type; and indexing a string has type byte
+// (#1347).
+
+func main() {
+    val ss = StringSlice(go_interop.SliceOf("b", "a"))
+    Println(slices.IndexFunc(ss, (x) => x == "a"))
+    val tt = (StringSlice)(go_interop.SliceOf("c"))
+    Println(tt[0] + "!")
+
+    val q = Values{}
+    q.Set("k", "v")
+    val vs = q["k"]
+    Println(slices.IndexFunc(vs, (x) => x == "v"))
+
+    val s = "hey"
+    val first = () => s[0]
+    Println(first(), s[1] == 'e')
+}

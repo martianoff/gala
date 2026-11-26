@@ -2076,6 +2076,15 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# #1347: conversions to and indexing of dot-imported Go types, and indexing
+# a string.
+gala_exec_test(
+    name = "go_dot_import_conversion_string_index",
+    src = "go_dot_import_conversion_string_index.gala",
+    expected = "go_dot_import_conversion_string_index.out",
+    deps = ["//go_interop"],
+)
+
 # #1322: the strings iterators (SplitSeq, Lines, FieldsSeq) range over strings.
 # Bazel reads its own Go SDK, so this covers the range typing only; the
 # decision to follow the toolchain switch a go on PATH older than 1.25 makes

@@ -1370,7 +1370,8 @@ func (t *galaASTTransformer) dotImportedFunction(name string) *ImportEntry {
 
 // dotImportedGoTypeKey returns the Go type info key of the type named name
 // that the hand-written .go files of a dot-imported GALA package declare
-// (`ExecutionContext` under `import . "martianoff/gala/concurrent"`), "" when
+// (`ExecutionContext` under `import . "martianoff/gala/concurrent"`), or a
+// dot-imported Go package (`StringSlice` under `import . "sort"`), "" when
 // none does. Such a type has no GALA metadata, so a bare reference to it
 // resolves to no package. A name a GALA type answers to (the package's own,
 // std's, a dot import's) is that type instead.
@@ -1378,15 +1379,36 @@ func (t *galaASTTransformer) dotImportedGoTypeKey(name string) string {
 	if t.goTypeInfo == nil || name == "" || strings.Contains(name, ".") || t.isActiveTypeParam(name) {
 		return ""
 	}
+	key := t.dotImportedGoTypeKeyOf(name)
+	// A GALA type of the name wins. Asked only on a hit, which is rare, so a
+	// miss stays a few map lookups.
+	if key != "" && t.resolveTypeMetaName(name) != "" {
+		return ""
+	}
+	return key
+}
+
+// dotImportedGoTypeKeyOf is dotImportedGoTypeKey before a GALA type of the
+// name is ruled out.
+func (t *galaASTTransformer) dotImportedGoTypeKeyOf(name string) string {
 	// Keyed by import path only: a Go package sharing the GALA package's name
 	// (io/fs beside GALA's fs) files its types under the same `pkg.Name`.
 	for _, entry := range t.galaDotImports {
 		if key := entry.Path + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
-			// A GALA type of the name wins. Asked only on a hit, which is
-			// rare, so a miss stays a few map lookups.
-			if t.resolveTypeMetaName(name) != "" {
-				return ""
-			}
+			return key
+		}
+	}
+	if t.importManager == nil {
+		return ""
+	}
+	for _, entry := range t.importManager.dotImports {
+		if t.galaPkgPaths[entry.Path] {
+			continue // a GALA package's .go files: the loop above
+		}
+		if key := entry.Path + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
+			return key
+		}
+		if key := entry.PkgName + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
 			return key
 		}
 	}

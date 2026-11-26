@@ -191,15 +191,24 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 	return t.substituteConcreteTypes(ft, meta.TypeParams, gen.Params), true
 }
 
-// namesGoType reports whether fun, a callee spelled `pkg.T` or `pkg.T[...]`,
+// namesGoType reports whether fun, a callee spelled `pkg.T`, `pkg.T[...]`,
+// a dot-imported `T` (parenthesized or not),
 // names a Go type of a package the file imports (a Go package, or the .go
 // files of a GALA one, where no GALA type of the name hides it): a call of it is
 // a conversion to that type. A qualifier a local binding shadows is no
 // package here (`x.T(...)` is a method call).
 func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
-	base, _ := splitCallFunTypeArgs(fun)
+	base, _ := splitCallFunTypeArgs(ast.Unparen(fun))
+	if t.goTypeInfo == nil || t.importManager == nil {
+		return false
+	}
+	// A bare name: a type of a dot-imported Go package (`StringSlice` under
+	// `import . "sort"`) that no binding, type parameter or GALA type hides.
+	if id, isIdent := base.(*ast.Ident); isIdent {
+		return t.dotImportedGoTypeKey(id.Name) != "" && t.shadowingScope(id.Name) == nil
+	}
 	sel, ok := base.(*ast.SelectorExpr)
-	if !ok || t.goTypeInfo == nil || t.importManager == nil {
+	if !ok {
 		return false
 	}
 	pkg, ok := sel.X.(*ast.Ident)
@@ -237,7 +246,7 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	// So has a conversion to a Go type, `sort.StringSlice(xs)` or
 	// `pkg.Bag[string](xs)`.
 	if len(e.Args) == 1 && t.namesGoType(e.Fun) {
-		return t.astTypeToTranspilerType(e.Fun)
+		return t.astTypeToTranspilerType(ast.Unparen(e.Fun))
 	}
 	// So has a conversion to a type parameter of the enclosing declaration,
 	// `T(v)`.

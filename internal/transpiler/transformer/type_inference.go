@@ -86,6 +86,21 @@ func isUntypedStringConst(expr ast.Expr) bool {
 	return false
 }
 
+// goOperandUnderlying is the underlying type of typ, a Go type an index or
+// a receive reads through: a package-qualified one (goNamedUnderlying) or
+// the bare name of a dot-imported one (`Values` under `import . "net/url"`).
+func (t *galaASTTransformer) goOperandUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
+	if u, ok := t.goNamedUnderlying(typ); ok {
+		return u, true
+	}
+	if name, bare := bareTypeName(typ); bare && t.goTypeInfo != nil {
+		if td := t.goTypeInfo.GetTypeData(t.dotImportedGoTypeKey(name)); td != nil && td.Kind == "named" && td.Underlying != nil {
+			return td.Underlying, true
+		}
+	}
+	return nil, false
+}
+
 func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Type {
 	if expr == nil {
 		return transpiler.NilType{}
@@ -166,7 +181,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// underlying type. A generic one named without type arguments is
 		// the type being instantiated (`pkg.Bag[string]`), not a value.
 		if _, td := t.goTypeDataFor(xType); td == nil || len(td.TypeParams) == 0 {
-			if u, named := t.goNamedUnderlying(xType); named {
+			if u, ok := t.goOperandUnderlying(xType); ok {
 				xType = u
 			}
 		}
@@ -175,6 +190,11 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			return v.Elem
 		case transpiler.MapType:
 			return v.Elem
+		case transpiler.BasicType:
+			// A string, or a Go type defined over one, indexes to a byte.
+			if v.Name == "string" {
+				return transpiler.BasicType{Name: "byte"}
+			}
 		}
 		// Handle generic type expression like Option[int]
 		return t.astTypeToTranspilerType(e)
@@ -226,7 +246,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			// A receive yields the channel's element type, also through a
 			// GALA alias of a channel or a Go type defined over one.
 			xType := t.followAliasChain(t.getExprTypeNameManual(e.X))
-			if u, ok := t.goNamedUnderlying(xType); ok {
+			if u, ok := t.goOperandUnderlying(xType); ok {
 				xType = u
 			}
 			if ch, ok := xType.(transpiler.ChanType); ok {
