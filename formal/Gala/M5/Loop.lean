@@ -957,4 +957,333 @@ theorem inv3_next {cx : Ctx} {P : String} {sg : Sigs} {xks : List (String × Kin
 
 end LoopNext
 
+section LoopSim
+open Gala.GoCore.Full
+
+theorem execStmts_single (cx : Ctx) (m : Nat) (env : Env) (s : Stmt) (g : St) :
+    (execStmts cx (m + 1) env [s]).run.run g = (execStmt cx m env s).run.run g := by
+  rw [execStmts_cons]
+  rcases (execStmt cx m env s).run.run g with ⟨r, g'⟩
+  cases r with
+  | error => rfl
+  | ok => exact execStmts_nil cx m _ g'
+
+theorem paramCells_mono {n : Nat} {xks : List (String × Kind)} {env : Env} {g g' : St} (h : ParamCells n xks env g)
+    (ht : Pre g.types g'.types) : ParamCells n xks env g' := by
+  refine ⟨fun x k hk => ?_, h.2⟩
+  obtain ⟨c, hc, hn, hty⟩ := h.1 x k hk
+  exact ⟨c, hc, hn, pre_get ht hty⟩
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+variable (f : String) (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (st : Stmt) (env0 : Env) (n : Nat)
+
+/-- **A function the transformer loops**, lowered: `for { st }`. -/
+structure LoopFn : Prop where
+  lookup : ds.funcs.lookup f = some F
+  sig : sigOf F = some (xks, ρ)
+  sgf : sg f = some (xks.map (·.2), ρ)
+  kf : paramKinds xks f = none
+  names : ParamsOK (xks.map (·.1))
+  notTmp : ∀ x ∈ xks.map (·.1), isTmp x = false
+  low : lowerLoop K sg f xks ρ (paramKinds xks) F.body = some [st]
+
+/-- What the loop's environment (`callBody`'s, after the parameters) says of names. -/
+structure EnvOK : Prop where
+  pkg : env0.pkg = P
+  tenv : env0.tenv = []
+  pre : Predeclared cx env0
+  closed : ∀ x, paramKinds xks x = none → isTmp x = false → env0.lookup x = none
+
+/-- **The loop**, from an iteration's start, against galaspec's body at depth `d`: GoCore's
+    iterations at depth `j` from `K * d` on, as many as its budget `k` allows. -/
+def LoopIH (d : Nat) : Prop :=
+  ∀ j, K * d ≤ j → ∀ (s : Spec.St) (g : St) (k : Nat), Inv3 cx P sg (paramKinds xks) s.toCore g env0 →
+    s.steps ≤ g.steps → ParamCells n xks env0 g → g.steps < k →
+    ResBP n ρ s g ((Spec.eval ds d F.body).run.run s) ((loopM k env0.push (iterF cx j [st])).run.run g)
+
+/-- **A part of the loop's `if` tree** at galaspec depth `d`, its statements and then the
+    rest of the loop. -/
+def TreeSim (d j : Nat) : Prop :=
+  ∀ e ls, lowerLoop K sg f xks ρ (paramKinds xks) e = some ls → ∀ (s : Spec.St) (g : St) (envA : Env) (k : Nat),
+    Inv3 cx P sg (paramKinds xks) s.toCore g envA → s.steps ≤ g.steps → (∀ x, envA.lookup x = env0.lookup x) →
+    TmpsFree envA 0 → ParamCells n xks env0 g → g.steps < k → ∀ M, K * d + 5 ≤ M →
+      ResBP n ρ s g ((Spec.eval ds d e).run.run s)
+        (afterIter k env0.push (iterF cx j [st]) ((execStmts cx M envA ls).run.run g))
+
+/-- An `if` of the tree at galaspec depth `d + 1`, its step taken. -/
+def IfLSim (d j : Nat) : Prop :=
+  ∀ c a b lc ta tb, lowerC K sg (paramKinds xks) c = some (.bool, lc) →
+    lowerLoop K sg f xks ρ (paramKinds xks) a = some ta → lowerLoop K sg f xks ρ (paramKinds xks) b = some tb →
+    ∀ (s : Spec.St) (kk : Nat) (g : St) (envA : Env) (k : Nat), s.steps = kk + 1 →
+    Inv3 cx P sg (paramKinds xks) s.toCore g envA → kk ≤ g.steps → (∀ x, envA.lookup x = env0.lookup x) →
+    ParamCells n xks env0 g → g.steps < k → ∀ M, K * d + 9 ≤ M →
+      ResBP n ρ { s with steps := kk } g ((Spec.eval ds (d + 1) (.ifExpr c a b)).run.run s)
+        (afterIter k env0.push (iterF cx j [st]) ((execStmts cx M envA [ifT lc ta tb]).run.run g))
+
+theorem afterIter_withEnv (k : Nat) (E : Env) (Fi : Env → GM (Option Env)) (env : Env) (r : Except Stop α × St)
+    (X : Except Stop Env × St) (h : ∀ g', (r.1 matches .ok _) → r.2 = g' → X = (.ok env, g'))
+    (h2 : ∀ e g', r = (.error e, g') → X = (.error e, g')) :
+    afterIter k E Fi (withEnv env r) = afterIter k E Fi X := by
+  rcases r with ⟨r, g'⟩
+  cases r with
+  | ok => rw [h g' rfl rfl]; rfl
+  | error e => rw [h2 e g' rfl]; rfl
+
+theorem ifL_of (d j : Nat) (ihE : ExprSim ds cx P K sg d) (ihT : TreeSim ds cx P K sg f xks ρ st env0 n d j) :
+    IfLSim ds cx P K sg f xks ρ st env0 n d j := by
+  intro c a b lc ta tb hc ha hb s kk g envA k hs hi hsg henv hpc hk M hM
+  obtain ⟨m, rfl⟩ : ∃ m, M = m + 5 := ⟨M - 5, by omega⟩
+  rw [execStmts_single]
+  have hip := inv3_push cx P sg hi
+  have hE := ihE (paramKinds xks) c .bool lc hc { s with steps := kk } g envA.push hip hsg (m + 3) (by omega)
+  rcases hr : (Spec.eval ds d c).run.run { s with steps := kk } with ⟨rc, t⟩
+  rw [hr] at hE
+  cases rc with
+  | error er =>
+    rw [eval_ifE_err ds d kk c a b _ (Or.inl rfl) s t er hs hr]
+    cases er with
+    | panic pc msg =>
+      obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE
+      rw [ifT, execStmt_if_err cx (m + 2) envA lc ta _ g g' _ hg]
+      exact ⟨pv, g', rfl, hp, ho, gframeP_of hgf⟩
+    | ret => exact hE.elim
+    | _ => trivial
+  | ok v =>
+  obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+  obtain ⟨bv, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+  rw [eval_ifE_ok ds d kk c a b _ (Or.inl rfl) bv s t hs hr]
+  have hit : Inv3 cx P sg (paramKinds xks) t.toCore g' envA.push.push := inv3_push cx P sg (inv3_frame hip hsf hgf)
+  have hstg : t.steps ≤ g'.steps := spent_le hsp hsg
+  have henv' : ∀ x, envA.push.push.lookup x = env0.lookup x := fun x => by simp [Env.lookup_push, henv]
+  have hpc' := paramCells_mono hpc hgf.2.2.1
+  have hk' : g'.steps < k := Nat.lt_of_le_of_lt hgf.2.2.2.2.1 hk
+  obtain ⟨hl, hgl, ho⟩ := sframe_parts hsf
+  refine resBP_after hsf.1 hgl ho (gframeP_of hgf) hsp ?_
+  cases bv with
+  | true =>
+    rw [ifT, execStmt_if_true cx (m + 2) envA lc ta _ g g' ty hg, execBlock_run]
+    have h := ihT a ta ha t g' envA.push.push k hit hstg henv' (tmpsFree_push _ 0) hpc' hk' (m + 2) (by omega)
+    rcases hx : (execStmts cx (m + 2) envA.push.push ta).run.run g' with ⟨rx, gx⟩
+    rw [hx] at h
+    cases rx with
+    | ok => exact h
+    | error e => exact h
+  | false =>
+    rw [ifT, execStmt_if_false cx (m + 2) envA lc ta _ g g' ty hg]
+    simp only
+    rw [execStmt_block, execBlock_run]
+    have h := ihT b tb hb t g' envA.push.push k hit hstg henv' (tmpsFree_push _ 0) hpc' hk' (m + 1) (by omega)
+    rcases hx : (execStmts cx (m + 1) envA.push.push tb).run.run g' with ⟨rx, gx⟩
+    rw [hx] at h
+    cases rx with
+    | ok => exact h
+    | error e => exact h
+
+end LoopSim
+
+section LoopTree
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
+variable (f : String) (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (st : Stmt) (env0 : Env) (n : Nat)
+
+/-- **A part of the tree**, from its parts one level down: an `if` as `IfLSim`, a step's
+    arguments as `tmps_sim`, its parameters assigned and the next iteration as the loop one
+    level down (`LoopIH`), a `return` as `ExprSim`. -/
+theorem treeL_of (d j : Nat) (hL : LoopFn ds K sg f F xks ρ st) (hE0 : EnvOK cx P xks env0) (hK : 11 ≤ K)
+    (hKj : K * d ≤ j) (ihE : ExprSim ds cx P K sg d) (ihE' : ∀ d', d = d' + 1 → ExprSim ds cx P K sg d')
+    (ihI : ∀ d', d = d' + 1 → IfLSim ds cx P K sg f xks ρ st env0 n d' j)
+    (ihL : ∀ d', d = d' + 1 → LoopIH ds cx P K sg F xks ρ st env0 n d') :
+    TreeSim ds cx P K sg f xks ρ st env0 n d j := by
+  intro e ls hl s g envA k hi hsg henv hfree hpc hk M hM
+  have hnt : ∀ x, (paramKinds xks x).isSome → isTmp x = false := by
+    intro x hx
+    obtain ⟨k', hk'⟩ := Option.isSome_iff_exists.mp hx
+    obtain ⟨m, hm⟩ := paramKinds_some hk'
+    exact hL.notTmp x (List.mem_map.mpr ⟨(x, k'), List.mem_of_getElem? hm, rfl⟩)
+  rcases lowerLoop_cases hl with ⟨c, a, b, lc, ta, tb, rfl, hc, ha, hb, rfl⟩ | ⟨args, las, rfl, hlen, hlas, rfl⟩ |
+    ⟨le, hle, rfl⟩
+  · -- An `if`.
+    cases d with
+    | zero => rw [eval_zero]; trivial
+    | succ d1 =>
+    cases hs : s.steps with
+    | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+    | succ kk =>
+    exact resBP_tick (ticked_of s kk hs) (ihI d1 rfl c a b lc ta tb hc ha hb s kk g envA k hs hi (by omega) henv hpc hk M
+      (by rw [Nat.mul_succ] at hM; omega))
+  · -- A loop step.
+    cases d with
+    | zero => rw [eval_zero]; trivial
+    | succ d1 =>
+    cases hs : s.steps with
+    | zero => rw [eval_fuel _ _ _ _ hs]; trivial
+    | succ k1 =>
+    obtain ⟨hlocf, -⟩ := hi.closed f hL.kf
+    have hglob := hi.globals f (by rw [hL.sgf]; rfl)
+    have hres : Spec.resolve ds s.locals s.globals f = .func F := by
+      simp [Spec.resolve, Spec.lookupVar, hlocf, hglob, hL.lookup]
+    rw [eval_call_run ds d1 k1 f args F s hs hres, Spec.run_bind_eq]
+    obtain ⟨hnames, htys, hresT⟩ := sigOf_facts hL.sig
+    obtain ⟨hargsU, hargsL⟩ := lowerArgs_facts K sg (paramKinds xks) _ args las hlas
+    have hlenP : F.params.length = xks.length := by
+      have := congrArg List.length hnames; simpa using this
+    have hfa : ∀ s', (Spec.funcArgs ds d1 F args).run.run s' = (Spec.evalList ds d1 args).run.run s' := by
+      intro s'
+      rw [Spec.funcArgs.eq_def]
+      refine bindArgs_pos ds d1 _ _ _ args hargsU (by simp [hargsL, hlenP]) (fun j' hj => ?_) s'
+      rw [htys]
+      simp only [List.length_map] at hj
+      exact ⟨kindName xks[j'].2, by simp [List.getD_eq_getElem?_getD, hlenP ▸ hj]⟩
+    rw [hfa]
+    obtain ⟨m, rfl⟩ : ∃ m, M = m + 6 := ⟨M - 6, by rw [Nat.mul_succ] at hM; omega⟩
+    have hT := tmps_sim ds cx P K sg d1 (ihE' d1 rfl) (paramKinds xks) hnt (xks.map (·.2)) args las 0 hlas
+      { s with steps := k1 } g envA hi (by show k1 ≤ g.steps; omega) hfree (m + 6) (by rw [Nat.mul_succ] at hM; omega)
+      [.assign "=" ((xks.map (·.1)).map .ident) (tmpIdents 0 (xks.map (·.1)).length), .branch "continue"]
+    simp only [stepOf]
+    rcases hr : (Spec.evalList ds d1 args).run.run { s with steps := k1 } with ⟨ra, t⟩
+    rw [hr] at hT
+    cases ra with
+    | error er =>
+      cases er with
+      | panic pc msg =>
+        obtain ⟨pv, g', hg', hp, ho, hgf⟩ := hT
+        rw [hg']
+        exact ⟨pv, g', rfl, hp, ho, gframeP_of hgf⟩
+      | ret => exact hT.elim
+      | _ => trivial
+    | ok vs =>
+    obtain ⟨ws, g', envT', hg', hkr, hsf, hgf, hsp, hi', hlk, htm⟩ := hT
+    rw [hg']
+    obtain ⟨hlv, hlw⟩ := krel_len hkr
+    simp only [List.length_map] at hlv hlw
+    -- The parameters, from the temporaries.
+    have hcell : ∀ x k', paramKinds xks x = some k' → ∃ c, env0.lookup x = some c ∧ envT'.lookup x = some c ∧
+        n ≤ c ∧ g'.types[c]? = some (kindTy k') ∧ c < g'.cells.size := by
+      intro x k' hk'
+      obtain ⟨c, hc, hnc, hty⟩ := hpc.1 x k' hk'
+      have hxt : ∀ m', x ≠ tmpName (0 + m') := by
+        intro m' he
+        have := hnt x (by rw [hk']; rfl)
+        rw [he, isTmp_tmpName] at this; cases this
+      have hT' : envT'.lookup x = some c := by rw [hlk x hxt, henv, hc]
+      obtain ⟨b', c', v', w', -, -, hc', hw', -⟩ := hi'.inv.loc x k' hk'
+      rw [hT'] at hc'; cases hc'
+      exact ⟨c, hc, hT', hnc, pre_get hgf.2.2.1 hty, (Array.getElem?_eq_some_iff.mp hw').1⟩
+    obtain ⟨m1, rfl⟩ : ∃ m1, m = m1 + 1 := ⟨m - 1, by rw [Nat.mul_succ] at hM; omega⟩
+    have hasg := execStmt_assign_params cx (m1 + 2) envT' g' (mkAsg env0 0 xks ws)
+      (fun a ha => by
+        obtain ⟨m', x, k', w, hx, hw, rfl⟩ := mem_mkAsg env0 0 xks ws a ha
+        have hk' : paramKinds xks x = some k' := paramKinds_get xks (fun _ => none) hL.names.1 m' x k' hx
+        obtain ⟨c, hc, hT', -, hty, -⟩ := hcell x k' hk'
+        exact ⟨(hL.names.2 x (List.mem_map.mpr ⟨(x, k'), List.mem_of_getElem? hx, rfl⟩)).1, by simp [hc, hT'],
+          by simpa [hc] using hty⟩)
+      (fun a ha => by
+        obtain ⟨m', x, k', w, hx, hw, rfl⟩ := mem_mkAsg env0 0 xks ws a ha
+        obtain ⟨v, w2, hv, hw2, hvw, hkv⟩ := krel_get hkr m' k' (by simp [hx])
+        rw [hw] at hw2; cases hw2
+        have hm' : m' < ws.length := (List.getElem?_eq_some_iff.mp hw).1
+        obtain ⟨c, hcT, hcv⟩ := htm m' hm'
+        have hws : ws[m'] = w := (List.getElem?_eq_some_iff.mp hw).2
+        rw [hws] at hcv
+        have hvd := (vrel_default hvw).1
+        exact ⟨evalExpr_local cx (m1 + 2) envT' _ c _ g' hcT hcv (vrel_ne_poison hvd) (tmpName_ne_us _),
+          results_of_vrel hvd⟩)
+      (fun a ha g'' => by
+        obtain ⟨m', x, k', w, hx, hw, rfl⟩ := mem_mkAsg env0 0 xks ws a ha
+        obtain ⟨v, w2, hv, hw2, hvw, hkv⟩ := krel_get hkr m' k' (by simp [hx])
+        rw [hw] at hw2; cases hw2
+        exact convert_kind cx (m1 + 1) v (defaultVal w) k' g'' (vrel_default hvw).1 hkv)
+      (fun a ha => by
+        obtain ⟨m', x, k', w, hx, hw, rfl⟩ := mem_mkAsg env0 0 xks ws a ha
+        have hk' : paramKinds xks x = some k' := paramKinds_get xks (fun _ => none) hL.names.1 m' x k' hx
+        obtain ⟨c, hc, -, -, -, hsz⟩ := hcell x k' hk'
+        simpa [hc] using hsz)
+    rw [mkAsg_x env0 0 xks ws (by omega), mkAsg_t env0 0 xks ws (by omega)] at hasg
+    rw [execStmts_cons, show (xks.map (·.1)).map Expr.ident = xks.map (fun xk => Expr.ident xk.1) by simp,
+      List.length_map, hasg]
+    simp only
+    rw [execStmts_cons, execStmt_continue]
+    show ResBP n ρ s g _ ((loopM k env0.push (iterF cx j [st])).run.run (storeAll g' (mkAsg env0 0 xks ws)))
+    -- The next iteration, one level down.
+    have hrest := storeAll_rest g' (mkAsg env0 0 xks ws)
+    have hty' : (storeAll g' (mkAsg env0 0 xks ws)).types = g'.types := by
+      have e := congrArg St.types hrest.1; simpa using e
+    have hsteps' : (storeAll g' (mkAsg env0 0 xks ws)).steps = g'.steps := by
+      have e := congrArg St.steps hrest.1; simpa using e
+    have hout' : (storeAll g' (mkAsg env0 0 xks ws)).out = g'.out := by
+      have e := congrArg St.out hrest.1; simpa using e
+    obtain ⟨hl1, hgl1, ho1⟩ := sframe_parts hsf
+    have hinv := inv3_next (cx := cx) (sg := sg) (n := n) hL.sig hL.names hE0.pre hE0.pkg hE0.tenv hE0.closed hkr
+      (paramCells_mono hpc hgf.2.2.1)
+      (fun x k' c hk' hc => by obtain ⟨c', hc', -, -, -, hsz⟩ := hcell x k' hk'; rw [hc] at hc'; cases hc'; exact hsz)
+      (fun f' hf' => by rw [hgl1]; exact hi.globals f' hf') (by rw [ho1]; exact hi.inv.out.trans (gframe_out hgf).symm)
+      hi'.sync
+    have hIH := ihL d1 rfl j (by rw [Nat.mul_succ] at hKj; omega) { t with locals := specFrame F.params vs }
+      (storeAll g' (mkAsg env0 0 xks ws)) k hinv
+      (by show t.steps ≤ _; rw [hsteps']; exact spent_le hsp (by show k1 ≤ g.steps; omega))
+      (paramCells_mono (paramCells_mono hpc hgf.2.2.1) (by rw [hty']; exact pre_refl _))
+      (by rw [hsteps']; exact Nat.lt_of_le_of_lt hgf.2.2.2.2.1 hk)
+    -- From galaspec's body to its call, and back to the step.
+    have hgP : GFrameP n g (storeAll g' (mkAsg env0 0 xks ws)) := gframeP_trans (gframeP_of hgf)
+      (gframeP_storeAll g' _ (fun a ha => by
+        obtain ⟨m', x, k', w, hx, hw, rfl⟩ := mem_mkAsg env0 0 xks ws a ha
+        have hk' : paramKinds xks x = some k' := paramKinds_get xks (fun _ => none) hL.names.1 m' x k' hx
+        obtain ⟨c, hc, -, hnc, -⟩ := hcell x k' hk'
+        simpa [hc] using hnc))
+    have hspP : Spent s { t with locals := specFrame F.params vs } g (storeAll g' (mkAsg env0 0 xks ws)) := by
+      unfold Spent at hsp ⊢; simp only [hsteps'] at ⊢; simp only at hsp; omega
+    have hcall : ∀ r t', r ≠ .ok .unit →
+        (Spec.runIn ds d1 (specFrame F.params vs) F.body).run.run t = (r, t') →
+        (Spec.callFunc ds d1 F vs).run.run t = (r, t') := fun r t' hr hrun =>
+      callFunc_run ds d1 F vs t (params_typed htys) ρ hresT (by rw [hlv, hlenP]) r t' hrun hr
+    rcases hb : (Spec.eval ds d1 F.body).run.run { t with locals := specFrame F.params vs } with ⟨rb, t2⟩
+    rw [hb] at hIH
+    have hrun := runIn_res ds d1 (specFrame F.params vs) F.body t
+    rw [hb] at hrun
+    refine resBP_after (s := s) (t := { t with locals := specFrame F.params vs }) (hh := hsf.1) (hgl := hgl1) (ho := ho1) (hg := hgP) (hsp := hspP) ?_
+    cases rb with
+    | ok v =>
+      obtain ⟨w, gx, hgx, hvw, hkv, hh, hgl, ho, hgf2, hsp2⟩ := hIH
+      have hv1 : v ≠ .unit := by intro h; subst h; cases hvw
+      rw [hcall _ _ (fun h => hv1 (by cases h; rfl)) hrun, hgx]
+      exact ⟨w, gx, rfl, hvw, hkv, hh, hgl, ho, hgf2, by unfold Spent at hsp2 ⊢; simpa using hsp2⟩
+    | error e =>
+      cases e with
+      | ret v =>
+        obtain ⟨w, gx, hgx, hvw, hkv, hh, hgl, ho, hgf2, hsp2⟩ := hIH
+        have hv1 : v ≠ .unit := by intro h; subst h; cases hvw
+        rw [hcall _ _ (fun h => hv1 (by cases h; rfl)) hrun, hgx]
+        exact ⟨w, gx, rfl, hvw, hkv, hh, hgl, ho, hgf2, by unfold Spent at hsp2 ⊢; simpa using hsp2⟩
+      | panic pc msg =>
+        simp only at hrun
+        rw [hcall (.error (.panic pc msg)) t2 (fun h => nomatch h) hrun]
+        exact hIH
+      | fuel => simp only at hrun; rw [hcall (.error .fuel) t2 (fun h => nomatch h) hrun]; trivial
+      | stuck m' => simp only at hrun; rw [hcall (.error (.stuck m')) t2 (fun h => nomatch h) hrun]; trivial
+      | unsupported a b =>
+        simp only at hrun; rw [hcall (.error (.unsupported a b)) t2 (fun h => nomatch h) hrun]; trivial
+  · -- `return` of a value.
+    obtain ⟨m, rfl⟩ : ∃ m, M = m + 4 := ⟨M - 4, by omega⟩
+    have hE := ihE (paramKinds xks) e ρ le hle s g envA hi hsg (m + 1) (by omega)
+    rw [execStmts_ret1 cx m envA le g]
+    rcases hr : (Spec.eval ds d e).run.run s with ⟨re, s'⟩
+    rw [hr] at hE
+    cases re with
+    | ok v =>
+      obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+      rw [hg]
+      obtain ⟨-, hgl, ho⟩ := sframe_parts hsf
+      exact ⟨w, g', by simp [results_of_vrel hvw]; rfl, hvw, hkv, hsf.1, hgl, ho, gframeP_of hgf, hsp⟩
+    | error er =>
+      cases er with
+      | panic pc msg =>
+        obtain ⟨pv, g', hg, hp, ho, hgf⟩ := hE
+        rw [hg]
+        exact ⟨pv, g', rfl, hp, ho, gframeP_of hgf⟩
+      | ret => exact hE.elim
+      | _ => trivial
+
+end LoopTree
+
 end Gala.M5
