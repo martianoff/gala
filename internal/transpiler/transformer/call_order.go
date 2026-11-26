@@ -100,9 +100,11 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) ast.Expr {
 	if t.inert(arg) {
 		// An untyped constant read again is the parameter's value only at
-		// the parameter's type (`uint8(1 << n)` is 0 for n = 8).
+		// the parameter's type (`uint8(1 << n)` is 0 for n = 8), and only
+		// as a value, not a constant Go would fold: `int(-u)` for a uint8
+		// u passed 1 is 255, not the constant -1.
 		if t.isUntypedConstArg(arg) {
-			return t.atParamType(arg, typ)
+			return t.atParamType(arg, typ, true)
 		}
 		return arg
 	}
@@ -113,7 +115,7 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 	// A shift count is never itself such an expression, so boundArgValue
 	// gives it the inert check and a temporary.
 	if read, ok := t.withShiftCountsMapped(arg, func(c ast.Expr) ast.Expr { return t.boundArgValue(c, nil) }); ok {
-		return t.atParamType(read, typ)
+		return t.atParamType(read, typ, false)
 	}
 	for _, tmp := range frame.temps {
 		if tmp.expr == arg {
@@ -126,18 +128,30 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 }
 
 // atParamType is read, an untyped constant expression a default reads for a
-// parameter of type typ, converted to typ when the parameter is declared with
-// a predeclared numeric type the use site does not shadow: there it has the
-// parameter's value wherever the default uses it (`float64(u)` reads
-// `float64(int64(7) / 2)`, not `float64(7.0 / 2)`). Another type (a named one
-// the use site may not be able to spell, or a type parameter, whose type Go
-// infers) leaves read as it is.
-func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type) ast.Expr {
+// parameter of type typ, at typ when the parameter is declared with a
+// predeclared numeric type the use site does not shadow: there it has the
+// parameter's value wherever the default uses it (`float64(u / 2)` reads
+// `int64` division, not `float64(7.0 / 2)`). A constant read (constant set)
+// goes through std.EvalOperand[typ], a value rather than a typed constant, so
+// that the default computes with it as with the parameter: Go folds a typed
+// constant expression and rejects overflow (`-uint8(1)`) the parameter's
+// value would wrap. Another type (a named one the use site may not be able
+// to spell, or a type parameter, whose type Go infers) leaves read as it is.
+func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, constant bool) ast.Expr {
 	basic, ok := typ.(transpiler.BasicType)
-	if !ok || !isNumericPrimitive(basic.Name) || shadowedAt(t.currentScope, basic.Name) {
+	if !ok || !isConstantNumericType(basic.Name) || shadowedAt(t.currentScope, basic.Name) {
 		return read
 	}
+	if constant {
+		return &ast.CallExpr{Fun: &ast.IndexExpr{X: t.stdIdent("EvalOperand"), Index: ast.NewIdent(basic.Name)}, Args: []ast.Expr{read}}
+	}
 	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
+}
+
+// isConstantNumericType reports whether name is a predeclared type an untyped
+// numeric constant converts to: an integer, floating-point or complex one.
+func isConstantNumericType(name string) bool {
+	return isNumericPrimitive(name) || name == "complex64" || name == "complex128"
 }
 
 // changeableInScope reports whether name is bound to a variable a call could

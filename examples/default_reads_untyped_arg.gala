@@ -12,6 +12,10 @@ func kind(u int64, z any = u) string = f"$z%T"
 
 func scaled(u int64, z float64 = float64(u) / 2) float64 = z
 
+func neg(u uint8, z int = int(-u)) int = z
+
+func kindC(u complex128, z any = u) string = f"$z%T"
+
 func main() {
     val n = 8
     // uint8(1) << 8 is 0.
@@ -21,6 +25,9 @@ func main() {
     Println(kind(5))
     // The shift is computed in int64, then converted.
     Println(scaled(u = 1 << n))
+    // -uint8(1) wraps to 255 as the parameter's value does.
+    Println(neg(1))
+    Println(kindC(5))
     // Written as the parameter's type already.
     Println(narrow(200), half(9), kind(int64(1)))
 }
