@@ -661,4 +661,102 @@ theorem treeLSF_of (d j : Nat) (hL : LoopFn ds K sg f F xks ρ st) (hE0 : EnvOK 
 
 end TreeSF
 
+section LoopAllSF
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+variable (f : String) (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (st : Stmt) (env0 : Env) (n : Nat)
+
+/-- An iteration's step pays for the body's nodes: the bound from after both steps, to
+    before them with nothing left over. -/
+theorem stut_iter {E : Nat} {s : Spec.St} {kk : Nat} {g : St} {gk : Nat} (hs : s.steps = kk + 1)
+    (hg : g.steps = gk + 1) (hE : E + 2 ≤ Q) {sr : Except Spec.Stop Spec.Val × Spec.St}
+    {r : Except Stop α × St} (h : Stut Q E { s with steps := kk } { g with steps := gk } sr r) :
+    Stut Q 0 s g sr r := by
+  rcases sr with ⟨e | v, s'⟩ <;> rcases r with ⟨x, g'⟩
+  · cases e <;> first | trivial | (simp only [Stut] at h ⊢; rw [hs, hg, Nat.mul_succ]; omega)
+  · simp only [Stut] at h ⊢; rw [hs, hg, Nat.mul_succ]; omega
+
+theorem loop_iter_zero (k j : Nat) (e : Env) (body : List Stmt) (g : St) (hk : g.steps = 0) :
+    ((loopM (k + 1) e.push (iterF cx (j + 1) body)).run.run g).1 = .error .fuel := by
+  rw [loopM_succ]
+  have h : ((iterF cx (j + 1) body e.push).run.run g).1 = .error .fuel := by
+    unfold iterF; exact grun_bind_fuel (gtick_zero g hk)
+  rcases hr : (iterF cx (j + 1) body e.push).run.run g with ⟨r, g'⟩
+  rw [hr] at h
+  simp only at h
+  subst h
+  rfl
+
+/-- **The loop at galaspec depth `d`**: an iteration's step, the body's `if` as `IfLSF`
+    one level down. -/
+theorem loopSF_of (d : Nat) (hL : LoopFn ds K sg f F xks ρ st) (hK : 11 ≤ K) (hQ : KszOK ds Q)
+    (ihI : ∀ d', d = d' + 1 → ∀ j, K * d ≤ j → IfLSF ds cx P K sg Q f xks ρ st env0 n d' j) :
+    LoopSF ds cx P K sg Q F xks st env0 n d := by
+  intro j hj s g k hi hpc hk
+  obtain ⟨c, a, b, hbody⟩ := hL.body
+  have hlow := hL.low
+  have hszb := hQ.2 f F hL.lookup
+  rw [hbody] at hlow hszb ⊢
+  simp only [esz] at hszb
+  rcases lowerLoop_cases hlow with ⟨c', a', b', lc, ta, tb, he, hc, ha, hb, hst⟩ | ⟨args, las, he, -⟩ | ⟨le, hne, -⟩
+  · cases he
+    simp only [List.cons.injEq, and_true] at hst
+    subst hst
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    cases d with
+    | zero => rw [eval_zero]; exact ⟨fun _ => trivial, fun h1 h2 _ => by rw [Nat.mul_succ] at h2; omega⟩
+    | succ d1 =>
+    cases hs : s.steps with
+    | zero => rw [eval_fuel _ _ _ _ hs]; exact ⟨fun _ => trivial, fun h1 h2 _ => by rw [Nat.mul_succ] at h2; omega⟩
+    | succ kk =>
+    obtain ⟨j', rfl⟩ : ∃ j', j = j' + 1 := ⟨j - 1, by rw [Nat.mul_succ] at hj; omega⟩
+    have hi1 : ∀ gk, Inv3 cx P sg (paramKinds xks) s.toCore { g with steps := gk } env0.push.push := fun gk =>
+      inv3_push cx P sg (inv3_push cx P sg (inv3_same cx P sg hi rfl rfl rfl))
+    have hIF := fun gk (hgk : g.steps = gk + 1) => ihI d1 rfl (j' + 1) hj c a b lc ta tb hc ha hb s kk
+      { g with steps := gk } env0.push.push k' hs (hi1 gk) (fun x => by simp [Env.lookup_push]) hpc
+      (by show gk < k'; omega) j' (by rw [Nat.mul_succ] at hj; omega)
+    refine ⟨fun hsg => ?_, fun hd hq hf => ?_⟩
+    · obtain ⟨gk, hgk⟩ : ∃ gk, g.steps = gk + 1 := ⟨g.steps - 1, by omega⟩
+      rw [loop_iter cx k' j' env0 _ g gk hgk]
+      exact stut_iter Q hs hgk (by omega) ((hIF gk hgk).1 (by show kk ≤ gk; omega))
+    · rcases Nat.eq_zero_or_pos g.steps with hg0 | hg0
+      · exact loop_iter_zero cx k' j' env0 _ g hg0
+      obtain ⟨gk, hgk⟩ : ∃ gk, g.steps = gk + 1 := ⟨g.steps - 1, by omega⟩
+      rw [loop_iter cx k' j' env0 _ g gk hgk]
+      rw [hgk] at hq
+      exact (hIF gk hgk).2 (by show kk ≤ d1; omega)
+        (by show _ ≤ kk; simp only [Nat.mul_succ] at hq ⊢; omega) hf
+  · cases he
+  · exact absurd rfl (hne c a b)
+
+/-- **The loop, at every galaspec depth up to `D`.** -/
+theorem loopSF_all (D : Nat) (hL : LoopFn ds K sg f F xks ρ st) (hE0 : EnvOK cx P xks env0) (hK : 11 ≤ K)
+    (hQ : KszOK ds Q) (hE : ∀ d, d ≤ D → ExprSim ds cx P K sg d) (hEF : ∀ d, d ≤ D → ExprSF ds cx P K sg Q d) :
+    ∀ d, d ≤ D →
+    (∀ j, K * d ≤ j → TreeSF ds cx P K sg Q f xks ρ st env0 n d j ∧ IfLSF ds cx P K sg Q f xks ρ st env0 n d j) ∧
+      LoopSF ds cx P K sg Q F xks st env0 n d
+  | 0, h0 => by
+    have hT : ∀ j, K * 0 ≤ j → TreeSF ds cx P K sg Q f xks ρ st env0 n 0 j := fun j hj =>
+      treeLSF_of ds cx P K sg Q f F xks ρ st env0 n 0 j hL hE0 hK hQ hj (hE 0 h0) (hEF 0 h0) (fun _ h => by cases h)
+        (fun _ h => by cases h) (fun _ h => by cases h) (fun _ h => by cases h) (fun _ h => by cases h)
+    exact ⟨fun j hj => ⟨hT j hj, ifLSF_of ds cx P K sg Q f xks ρ st env0 n 0 j (hE 0 h0) (hEF 0 h0) (hT j hj)⟩,
+      loopSF_of ds cx P K sg Q f F xks ρ st env0 n 0 hL hK hQ (fun _ h => by cases h)⟩
+  | d + 1, hd => by
+    obtain ⟨ihTI, ihL⟩ := loopSF_all D hL hE0 hK hQ hE hEF d (by omega)
+    have ihLo := (loop_all ds cx P K sg f F xks ρ st env0 n D hL hE0 hK hE d (by omega)).2
+    have hT : ∀ j, K * (d + 1) ≤ j → TreeSF ds cx P K sg Q f xks ρ st env0 n (d + 1) j := fun j hj =>
+      treeLSF_of ds cx P K sg Q f F xks ρ st env0 n (d + 1) j hL hE0 hK hQ hj (hE (d + 1) hd) (hEF (d + 1) hd)
+        (fun d' h => by cases h; exact hE d (by omega))
+        (fun d' h => by cases h; exact hEF d (by omega))
+        (fun d' h => by cases h; exact (ihTI j (by rw [Nat.mul_succ] at hj; omega)).2)
+        (fun d' h => by cases h; exact ihLo)
+        (fun d' h => by cases h; exact ihL)
+    exact ⟨fun j hj => ⟨hT j hj, ifLSF_of ds cx P K sg Q f xks ρ st env0 n (d + 1) j (hE (d + 1) hd) (hEF (d + 1) hd)
+        (hT j hj)⟩,
+      loopSF_of ds cx P K sg Q f F xks ρ st env0 n (d + 1) hL hK hQ
+        (fun d' h j hj => by cases h; exact (ihTI j (by rw [Nat.mul_succ] at hj; omega)).2)⟩
+
+end LoopAllSF
+
 end Gala.M5
