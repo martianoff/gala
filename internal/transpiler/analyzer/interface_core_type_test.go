@@ -91,6 +91,9 @@ type Chans interface{ chan int | <-chan int }
 type Unresolved interface{ ~int | missing.ID }
 type NestedUnresolved interface{ ~[]missing.ID | ~[]int }
 type Elems[E any] interface{ ~[]E | ~[]int }
+type Getters[E any] interface {
+	~[]interface{ Get() E } | ~[]interface{ Get() int }
+}
 `
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -104,6 +107,7 @@ type Elems[E any] interface{ ~[]E | ~[]int }
 		"NestedUnresolved": false,
 		// Elems[int] is {[]int}: a type parameter can make the types one.
 		"Elems": false,
+		"Getters": false, // the type parameter is inside an interface
 	} {
 		iface := pkg.Scope().Lookup(name).Type().Underlying().(*types.Interface)
 		assert.Equal(t, want, interfaceHasNoCoreType(iface), name)

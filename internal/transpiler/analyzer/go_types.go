@@ -1693,6 +1693,25 @@ func settledType(t types.Type) bool {
 		return true
 	case *types.Alias:
 		return settledType(types.Unalias(t))
+	case *types.Interface:
+		for i := range t.NumExplicitMethods() {
+			if !settledType(t.ExplicitMethod(i).Type()) {
+				return false
+			}
+		}
+		for i := range t.NumEmbeddeds() {
+			if !settledType(t.EmbeddedType(i)) {
+				return false
+			}
+		}
+		return true
+	case *types.Union:
+		for i := range t.Len() {
+			if !settledType(t.Term(i).Type()) {
+				return false
+			}
+		}
+		return true
 	}
 	return true
 }
