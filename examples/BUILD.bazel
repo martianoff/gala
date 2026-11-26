@@ -5036,6 +5036,16 @@ gala_exec_test(
     expected = "untyped_const_immutable_slots.out",
 )
 
+gala_exec_test(
+    name = "untyped_shift_arg_order",
+    src = "untyped_shift_arg_order.gala",
+    expected = "untyped_shift_arg_order.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
 # Gap #10 regression: tuple literal passed to Append on Array[Tuple[A,B]]
 # infers A,B from the receiver, not falling back to any.
 gala_exec_test(

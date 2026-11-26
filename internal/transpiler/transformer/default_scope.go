@@ -148,8 +148,11 @@ func bindsNames(e exprSrc) bool {
 // whose scope is useScope (see above).
 func (t *galaASTTransformer) bindDefaultNames(expr ast.Expr, src defaultSource, useScope *scope, useLine, useCol int) (ast.Expr, error) {
 	bound := map[string]ast.Expr{}
+	types := map[string]transpiler.Type{}
 	for _, p := range src.params {
 		bound[p.name] = p.arg
+		// As declared: a type parameter is left to the type Go infers.
+		types[p.name] = p.typ
 	}
 	if src.recv != "" {
 		bound[src.recv] = src.recvExpr
@@ -168,7 +171,7 @@ func (t *galaASTTransformer) bindDefaultNames(expr ast.Expr, src defaultSource, 
 			// A receiver that makes no call is read where it is: a
 			// pointer-receiver method must see the variable itself.
 			if name != src.recv || t.makesEffectfulCall(arg) {
-				v = t.boundArgValue(arg)
+				v = t.boundArgValue(arg, types[name])
 			}
 			t.loweringDefault, t.currentScope = saved, savedScope
 			values[name] = v

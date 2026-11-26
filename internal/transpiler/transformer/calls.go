@@ -1099,15 +1099,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		// Reuse pre-transformed expression if available, recorded where
 		// it is written as lowerArg records the others, so the call
-		// evaluates its arguments in written order (call_order.go). An
-		// untyped constant expression stays in place: lowered with no
-		// slot, a temporary would give it its default type, not the
-		// parameter's (`1 << n` for an int64 U). Nor is a call of a
-		// method declaring Go results reordered: its lift to one GALA
-		// value does not see through the function literal sequencing
-		// wraps it in, as for any method (#1365).
+		// evaluates its arguments in written order (call_order.go). Nor
+		// is a call of a method declaring Go results reordered: its lift
+		// to one GALA value does not see through the function literal
+		// sequencing wraps it in, as for any method (#1365).
 		if expr, ok := preTransformed[i]; ok {
-			if methodMeta.GoResults == nil && !t.isUntypedConstArg(expr) {
+			if methodMeta.GoResults == nil {
 				t.recordCallArg(v, expr)
 			}
 			mArgs = append(mArgs, expr)
