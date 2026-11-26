@@ -1,0 +1,56 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// An untyped constant shifted by a value (`1 << n`) takes its type where it is
+// used. As an argument it keeps that type when the call evaluates its
+// arguments in the order they are written, and when a default reads it again.
+// Each argument prints its name when it is evaluated.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Pick[U any](u U, w int, z U = u) U = z
+
+func t(name string, v int) int {
+    Print(name)
+    v
+}
+
+func mk64() func(int64, int) int64 {
+    Print("f")
+    (acc, x) => acc + int64(x)
+}
+
+var shift = 2
+
+func bump() func(int64, int) int64 {
+    Print("f")
+    shift = 5
+    (acc, x) => acc + int64(x)
+}
+
+func bumpInt() int {
+    shift = 5
+    1
+}
+
+func sum(a int64, b int) int64 = a + int64(b)
+
+func main() {
+    // U is the int64 of mk64's accumulator, which the shift takes in place.
+    Println(" ", ListOf(1, 2).FoldLeft(f = mk64(), initial = 1 << t("s", 3)))
+    val w int64 = ListOf(1, 2).FoldLeft(f = mk64(), initial = 1 << t("s", 3))
+    Println(" ", w)
+    // The shift reads its count after f has run.
+    Println(" ", ListOf(1, 2).FoldLeft(f = bump(), initial = 1 << shift))
+    shift = 2
+    Println(" ", sum(1 << shift, bumpInt()))
+    shift = 2
+    // A default reading the argument reads the same value, of U's type.
+    val bx = Box(0)
+    var n = 2
+    val r int64 = bx.Pick(w = t("w", 1), u = 1 << n)
+    Println(" ", r)
+    val r2 int64 = bx.Pick(w = t("w", 1), u = (1 << t("s", 2)) + 1)
+    Println(" ", r2)
+}

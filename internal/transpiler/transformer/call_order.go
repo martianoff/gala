@@ -89,7 +89,9 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 // boundArgValue is what a default reads for the earlier parameter whose
 // argument is arg: arg itself when reading it again is the same as reading it
 // once (it is inert), or else a temporary the innermost call evaluates arg
-// into.
+// into. An untyped constant expression with shifts by values (`1 << n`) is
+// read again as itself over its shift counts' bound values: it takes its
+// type where it is used, as the argument does, which a temporary would not.
 func (t *galaASTTransformer) boundArgValue(arg ast.Expr) ast.Expr {
 	if t.inert(arg) {
 		return arg
@@ -97,6 +99,13 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr) ast.Expr {
 	frame := t.topCallFrame()
 	if frame == nil {
 		return arg
+	}
+	if counts := t.untypedShiftCounts(arg); counts != nil {
+		with := make(map[ast.Expr]ast.Expr, len(counts))
+		for _, c := range counts {
+			with[c] = t.boundArgValue(c)
+		}
+		return copyUntypedReplacing(arg, with)
 	}
 	for _, tmp := range frame.temps {
 		if tmp.expr == arg {
@@ -259,8 +268,27 @@ func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, a
 			throughP, method = sel.X, call.Fun
 		}
 	}
+	tempOf := make(map[ast.Expr]string, len(temps))
+	for _, tmp := range temps {
+		tempOf[tmp.expr] = tmp.name
+	}
 	for _, op := range ops {
 		if _, placed := at[op.expr]; !placed {
+			continue
+		}
+		if counts := t.untypedShiftCounts(op.expr); counts != nil {
+			// An untyped constant expression with shifts by values
+			// (`1 << n`) takes its type where it is used, as Go types it
+			// in place; a temporary would give it its default type. It
+			// stays where it is, and its shift counts, which have types
+			// of their own and are all it evaluates, are evaluated here.
+			for _, c := range counts {
+				if name := tempOf[c]; name != "" {
+					bind(name, c)
+				} else if !t.inert(c) {
+					bind(t.nextTempVar(), c)
+				}
+			}
 			continue
 		}
 		switch {
@@ -291,6 +319,54 @@ func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, a
 		fn.Body.List = append(fn.Body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 	}
 	return &ast.CallExpr{Fun: fn}, nil
+}
+
+// untypedShiftCounts returns the shift counts of expr, in the order Go
+// evaluates them, when expr is an untyped constant expression whose only
+// parts that are not constant are the counts of its shifts (`1 << n`,
+// `(1 << n) + 1`); nil otherwise. A count that is itself such an expression
+// contributes its own counts.
+func (t *galaASTTransformer) untypedShiftCounts(expr ast.Expr) []ast.Expr {
+	if !t.isUntypedConstArg(expr) {
+		return nil
+	}
+	var counts []ast.Expr
+	var walk func(e ast.Expr)
+	walk = func(e ast.Expr) {
+		switch e := e.(type) {
+		case *ast.ParenExpr:
+			walk(e.X)
+		case *ast.UnaryExpr:
+			walk(e.X)
+		case *ast.BinaryExpr:
+			walk(e.X)
+			if (e.Op == token.SHL || e.Op == token.SHR) && !t.isUntypedConstArg(e.Y) {
+				counts = append(counts, e.Y)
+			} else {
+				walk(e.Y)
+			}
+		}
+	}
+	walk(expr)
+	return counts
+}
+
+// copyUntypedReplacing copies expr, an untyped constant expression (see
+// untypedShiftCounts), with every node that is a key of with replaced by its
+// value; expr itself is left as it is.
+func copyUntypedReplacing(expr ast.Expr, with map[ast.Expr]ast.Expr) ast.Expr {
+	if r, ok := with[expr]; ok {
+		return r
+	}
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		return &ast.ParenExpr{X: copyUntypedReplacing(e.X, with)}
+	case *ast.UnaryExpr:
+		return &ast.UnaryExpr{Op: e.Op, X: copyUntypedReplacing(e.X, with)}
+	case *ast.BinaryExpr:
+		return &ast.BinaryExpr{X: copyUntypedReplacing(e.X, with), Op: e.Op, Y: copyUntypedReplacing(e.Y, with)}
+	}
+	return expr
 }
 
 // replaceExprs returns expr with every node that is a key of with replaced by

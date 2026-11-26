@@ -77,9 +77,11 @@ func bumpAt(p *Box[int], n int) int {
 			contains: "_tmp_1 := *p\n\t\t_tmp_2 := bumpAt(p, 7)",
 		},
 		{
+			// Only the shift's count is read into a temporary, after f
+			// (#1361).
 			name:     "untyped shift keeps its place and the parameter's type",
 			main:     "var n = 2\n    val w int64 = nums().FoldLeft(f = mk64(), initial = 1 << n)\n    Println(w)",
-			contains: "List_FoldLeft[int64, int](nums(), 1<<n, mk64())",
+			contains: "_tmp_2 := mk64()\n\t\t_tmp_3 := n\n\t\treturn List_FoldLeft[int64, int](_tmp_1, 1<<_tmp_3, _tmp_2)",
 		},
 	}
 	for _, tt := range tests {
