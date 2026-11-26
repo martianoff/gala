@@ -7,6 +7,7 @@ import (
 	"hash"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -169,7 +170,18 @@ func computeDepsHash(requires []mod.Require, replaces []mod.Replace, tc toolchai
 	}
 	sorted := make([]depInput, len(deps))
 	copy(sorted, deps)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Require.Path < sorted[j].Require.Path })
+	// A total order: two inputs can share a path (a replace for every version
+	// of a module and one for a single version).
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.Require.Path != b.Require.Path {
+			return a.Require.Path < b.Require.Path
+		}
+		if a.Require.Version != b.Require.Version {
+			return a.Require.Version < b.Require.Version
+		}
+		return a.Dir < b.Dir
+	})
 	for _, dep := range sorted {
 		fmt.Fprintf(h, "dep %s@%s at %s\n", dep.Require.Path, dep.Require.Version, filepath.ToSlash(dep.Dir))
 		files, err := dependencyInputs(dep.Dir)
@@ -464,24 +476,23 @@ func (b *Builder) galaDependencies() []depInput {
 	return deps
 }
 
-// goReplacementDirs lists the directory replacements of gala.mod for modules
-// other than its GALA dependencies (galaDependencies covers those), each with
-// its directory. Unlike a module version, a directory can change, and the
+// goReplacementDirs lists the directory replacements of gala.mod that the
+// build workspace applies to Go modules (GoModGenerator.GoReplaces: not those
+// of the standard library or the GALA modules, which galaDependencies covers),
+// each with its directory. Unlike a module version, a directory can change, and the
 // analyzer reads the Go types the transpiles depend on from it, for a module
 // the project requires or one deeper in its Go modules' requirements alike, so
 // every such replacement counts. One whose directory is missing is left out:
 // no build reads it, and a build that needs it fails.
 func (b *Builder) goReplacementDirs() []depInput {
-	if b.galaMod == nil {
-		return nil
+	if b.galaMod == nil || !slices.ContainsFunc(b.galaMod.Replace, func(r mod.Replace) bool { return r.New.IsLocal() }) {
+		return nil // only a directory replacement adds one
 	}
-	galaReqs := make(map[string]bool)
-	for _, r := range b.galaMod.GalaRequires() {
-		galaReqs[r.Path] = true
-	}
+	gen := NewGoModGenerator(b.config)
+	gen.SetProjectDir(b.workspace.ProjectDir)
 	var deps []depInput
-	for _, rep := range b.galaMod.Replace {
-		if !rep.New.IsLocal() || galaReqs[rep.Old.Path] {
+	for _, rep := range gen.GoReplaces(b.galaMod) {
+		if !rep.New.IsLocal() {
 			continue
 		}
 		dir := replacementDir(b.workspace.ProjectDir, rep.New.Path)

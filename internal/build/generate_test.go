@@ -41,8 +41,8 @@ replace golang.org/x/term => golang.org/x/term v0.25.1
 // The Go modules gala export refuses are those the build needs, as the tidied
 // workspace go.mod lists them, that gala.mod replaces as Go modules: a module
 // replaced by a directory or a version, indirect or not, each once. A replace
-// of a GALA module or the standard library, or of a module the build does not
-// need, is not one.
+// of a GALA module or the standard library, of a module the build does not
+// need, or limited to a version the build does not select, is not one.
 func TestReplacedGoModules(t *testing.T) {
 	galaMod := &mod.File{
 		Module: mod.Module{Path: "example.com/app"},
@@ -58,6 +58,8 @@ func TestReplacedGoModules(t *testing.T) {
 			{Old: mod.ModuleVersion{Path: "example.com/greet"}, New: mod.ModuleVersion{Path: "./greet"}},
 			{Old: mod.ModuleVersion{Path: "golang.org/x/text"}, New: mod.ModuleVersion{Path: "golang.org/x/text", Version: "v0.3.0"}},
 			{Old: mod.ModuleVersion{Path: "golang.org/x/unused"}, New: mod.ModuleVersion{Path: "../unused"}},
+			// Limited to a version the build does not select: Go ignores it.
+			{Old: mod.ModuleVersion{Path: "golang.org/x/stale", Version: "v1.0.0"}, New: mod.ModuleVersion{Path: "../stale"}},
 			{Old: mod.ModuleVersion{Path: "martianoff/gala/std"}, New: mod.ModuleVersion{Path: "../gala/std"}},
 		},
 	}
@@ -72,7 +74,10 @@ require (
 	example.com/greet v0.0.0
 )
 
-require golang.org/x/text v0.20.0 // indirect
+require (
+	golang.org/x/text v0.20.0 // indirect
+	golang.org/x/stale v1.2.0 // indirect
+)
 `), nil)
 	require.NoError(t, err)
 	b := &Builder{

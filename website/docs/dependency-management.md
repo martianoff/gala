@@ -353,7 +353,7 @@ Creates:
 - Empty `gala.sum` file
 - A `.gala/` line in `.gitignore` (the file is created if there is none)
 
-In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The `replace` directives of `go.mod` are copied too: `gala build` applies those of `gala.mod`, to Go dependencies as to GALA ones. The command prints each requirement and replace it copied. A GALA standard library package is not copied; the command lists it with the reason. The copy is made once: after changing a version in `go.mod`, run `gala mod add path@version --go` to change it in `gala.mod`.
+In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The `replace` directives of `go.mod` are copied too: `gala build` applies those of `gala.mod`, to Go dependencies as to GALA ones. The command prints each requirement and replace it copied. A GALA standard library package is not copied, nor is a `replace` whose path has a space in it (which `gala.mod` cannot hold), with the requirement it applies to; the command lists them with the reason, and `gala.mod` needs that replace with another path. The copy is made once: after changing a version in `go.mod`, run `gala mod add path@version --go` to change it in `gala.mod`.
 
 ### gala mod add
 

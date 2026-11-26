@@ -6,6 +6,8 @@ import (
 	"slices"
 
 	"golang.org/x/mod/modfile"
+
+	"martianoff/gala/internal/depman/mod"
 )
 
 // WorkspaceModule is the module path of a build workspace's generated go.mod.
@@ -74,18 +76,16 @@ func (b *Builder) Generate(visit func(Generated) error) error {
 }
 
 // replacedGoModules returns the modules a tidied workspace go.mod requires
-// that gala.mod replaces as Go modules (GoModGenerator.GoReplaces), each once.
+// that gala.mod replaces as Go modules (GoModGenerator.GoReplaces) at the
+// version required, as Go applies them, each once.
 func (b *Builder) replacedGoModules(workspaceGoMod *modfile.File) []string {
-	inBuild := make(map[string]bool, len(workspaceGoMod.Require))
-	for _, r := range workspaceGoMod.Require {
-		inBuild[r.Mod.Path] = true
-	}
 	gen := NewGoModGenerator(b.config)
 	gen.SetProjectDir(b.workspace.ProjectDir)
+	goReplaces := &mod.File{Replace: gen.GoReplaces(b.galaMod)}
 	var replaced []string
-	for _, r := range gen.GoReplaces(b.galaMod) {
-		if inBuild[r.Old.Path] && !slices.Contains(replaced, r.Old.Path) {
-			replaced = append(replaced, r.Old.Path)
+	for _, r := range workspaceGoMod.Require {
+		if _, ok := goReplaces.ReplaceFor(r.Mod.Path, r.Mod.Version); ok && !slices.Contains(replaced, r.Mod.Path) {
+			replaced = append(replaced, r.Mod.Path)
 		}
 	}
 	return replaced

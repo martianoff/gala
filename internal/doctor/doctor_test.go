@@ -433,6 +433,15 @@ func TestModDrift(t *testing.T) {
 			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
 		},
 		{
+			name:    "a go.mod replace gala.mod cannot hold, missing from gala.mod with its requirement",
+			galaMod: "",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
+			want: []string{
+				"a.com/x v0.0.0 (go.mod only)",
+				"replace a.com/x (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)",
+			},
+		},
+		{
 			name:    "gala.mod Go dependency missing from go.mod",
 			galaMod: "require a.com/x v1.0.0 // go",
 			goMod:   "",

@@ -123,7 +123,7 @@ A project with both files has two lists of Go dependencies: `gala build` takes G
 - a Go dependency in `gala.mod` that `go.mod` does not require;
 - a direct requirement of `go.mod` that `gala.mod` does not have. An indirect one (`// indirect`) missing from `gala.mod` is not counted: `go mod tidy` adds one for every module the build reaches.
 
-A `replace` directive `go.mod` has and `gala.mod` lacks is drift too, and so is a `replace` of a Go dependency that only `gala.mod` has. The packages of GALA itself, which `gala mod init` leaves out, are left out here too.
+A `replace` directive `go.mod` has and `gala.mod` lacks is drift too, and so is a `replace` of a Go dependency that only `gala.mod` has. The packages of GALA itself, which `gala mod init` leaves out, are left out here too. A `go.mod` replace whose path has a space in it, which `gala.mod` cannot hold, is drift only while `gala.mod` has no replace of that module (with another path) or lacks its requirement.
 
 To fix one, record the version `go.mod` requires in `gala.mod`:
 

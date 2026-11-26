@@ -27,7 +27,9 @@ In a Go module (a directory with a go.mod), every requirement of go.mod is
 copied into gala.mod as a Go dependency (marked // go), at the version go.mod
 names, so gala build uses the same versions as go build. Indirect requirements
 stay marked // indirect. go.mod's replace directives are copied too. A GALA
-standard library package is not copied, and is listed. The copy is made once:
+standard library package is not copied, nor is a replace whose path has a
+space in it (which gala.mod cannot hold) with the requirement it applies to;
+both are listed. The copy is made once:
 after changing a version in go.mod, run gala mod add <path>@<version> --go.
 
 gala mod init also adds .gala/, the directory gala build keeps its cache in,

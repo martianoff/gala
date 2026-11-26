@@ -366,7 +366,9 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 	}
 	var drift []string
 	wanted, wantedReplaces, _ := build.GoRequirementsOf(goMod)
-	drift = append(drift, replaceDrift(galaMod, wantedReplaces, build.UnwritableGoModReplaces(goMod))...)
+	unwritable := build.UnwritableGoModReplaces(goMod)
+	drift = append(drift, replaceDrift(galaMod, wantedReplaces, unwritable)...)
+	drift = append(drift, unwritableDrift(galaMod, goMod, unwritable)...)
 	for _, r := range wanted {
 		switch galaVer, found := inGala[r.Path]; {
 		case !found && !r.Indirect:
@@ -409,6 +411,40 @@ func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable map[mo
 	for _, r := range galaMod.GoReplaces() {
 		if !inGo[r] && !unwritable[r.Old] {
 			drift = append(drift, fmt.Sprintf("replace %s (gala.mod only)", mod.FormatReplaceEntry(r)))
+		}
+	}
+	return drift
+}
+
+// unwritableDrift lists, for each module go.mod replaces with a path gala.mod
+// cannot hold (unwritable), what gala.mod lacks of it: a replace of its own,
+// and the requirement go.mod has, at go.mod's version. GoRequirementsOf leaves
+// both out, so modDrift's other comparisons do not see them.
+func unwritableDrift(galaMod *mod.File, goMod *modfile.File, unwritable map[mod.ModuleVersion]bool) []string {
+	var drift []string
+	for old := range unwritable {
+		if !slices.ContainsFunc(galaMod.Replace, func(r mod.Replace) bool { return r.Old.Path == old.Path }) {
+			drift = append(drift, fmt.Sprintf("replace %s (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)", old.Path))
+		}
+	}
+	covered := func(path, ver string) bool {
+		for old := range unwritable {
+			if old.Path == path && (old.Version == "" || old.Version == ver) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, r := range goMod.Require {
+		path, ver := r.Mod.Path, r.Mod.Version
+		if !covered(path, ver) {
+			continue
+		}
+		switch galaReq := galaMod.GetRequire(path); {
+		case galaReq == nil:
+			drift = append(drift, fmt.Sprintf("%s %s (go.mod only)", path, ver))
+		case galaReq.Version != ver:
+			drift = append(drift, fmt.Sprintf("%s (gala.mod %s, go.mod %s)", path, galaReq.Version, ver))
 		}
 	}
 	return drift
