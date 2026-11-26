@@ -27,6 +27,7 @@ import Gala.M5.Expr
 import Gala.M5.Stmt
 import Gala.M5.StmtOrder
 import Gala.M5.Call
+import Gala.M5.Loop
 import Gala.M5.CallOrder
 import Gala.M5.CallInst
 import Gala.M5.IifeInst

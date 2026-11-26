@@ -6,6 +6,7 @@
   `6`, so the theorem's conclusion speaks of a run that ends.
 -/
 import Gala.M5.CallOrder
+import Gala.M5.Loop
 
 namespace Gala.M5
 

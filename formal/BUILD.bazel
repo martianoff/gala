@@ -186,6 +186,7 @@ GALA_SRCS = [
     "Gala/M5/Stmt.lean",
     "Gala/M5/StmtOrder.lean",
     "Gala/M5/Call.lean",
+    "Gala/M5/Loop.lean",
     "Gala/M5/CallOrder.lean",
     "Gala/M5/CallInst.lean",
     "Gala/M5/IifeInst.lean",
