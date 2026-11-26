@@ -64,6 +64,28 @@ func main() {
     })
     Println(b(3))
 }`, map[string]int{"func(k int) int {": 2, "return q * q": 2}},
+		{"if/else ending a branch block, and a parenthesized lambda branch", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val c = true
+    val d = false
+    val b = run(if (c) {
+        Println("then")
+        if (d) (k int) => {
+            val q = k
+            q * q
+        } else (k int) => {
+            val q = 0 - k
+            q * q
+        }
+    } else ((k int) => {
+        val q = k + 1
+        q * q
+    }))
+    Println(b(3))
+}`, map[string]int{"func(k int) int {": 3, "return q * q": 3}},
 		{"match of block lambdas", `package main
 
 func run[A any, B any](f func(A) B) func(A) B = f

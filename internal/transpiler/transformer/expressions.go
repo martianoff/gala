@@ -763,9 +763,11 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 	return f.partial.ok() || t.carriesLambda(f)
 }
 
-// carriesLambda reports whether a value of form f can hold the lambda a slot
-// with a function result (slot.funcResult) is filled by: a lambda, or a
-// parenthesized, if or match value, whose lambdas lowerAgainst reaches.
+// carriesLambda reports whether a value of form f is one whose lambdas
+// lowerAgainst reaches with a slot that has a function result
+// (slot.funcResult): a lambda, or a parenthesized, if or match value. It
+// reads the form only: an if or match whose branches are plain values counts
+// too, and those branches lower as before.
 func (t *galaASTTransformer) carriesLambda(f exprForm) bool {
 	if f.grouped.ok() {
 		return t.carriesLambda(t.classifyExpr(f.grouped))
