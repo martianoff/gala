@@ -5532,10 +5532,31 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 	if err != nil {
 		return nil, err
 	}
+	if !isFunc && s.funcResult != nil && (lit.Type.Results == nil || len(lit.Type.Results.List) == 0) {
+		return nil, t.valuelessLambdaError(l)
+	}
 	if err := t.checkInoutFuncSlot(lit, s.typ, l.at()); err != nil {
 		return nil, err
 	}
 	return t.finishLambda(lit, checks, s.typ, l.at(), l.expression(), b)
+}
+
+// valuelessLambdaError reports l, a lambda filling a parameter that takes a
+// function with a result (slot.funcResult), when its body has no value: a
+// void call, an assignment, or a block ending in a statement. No function
+// without a result fits the parameter, so Go would reject the call.
+func (t *galaASTTransformer) valuelessLambdaError(l lambdaSrc) error {
+	callee := t.lambdaArgCallee(l)
+	if callee == "" {
+		callee = "the function it is passed to"
+	}
+	msg := fmt.Sprintf("this lambda has no value, but %s takes a function with a result here; end the lambda in the value to return", callee)
+	if block := l.block(); block.ok() {
+		if last, ok := block.lastStatement(); ok {
+			return t.semanticErrorAtNode(last.at, msg)
+		}
+	}
+	return t.semanticErrorAtNode(l.at(), msg)
 }
 
 // declaresAnyResult reports whether slot s is a function type whose results the
