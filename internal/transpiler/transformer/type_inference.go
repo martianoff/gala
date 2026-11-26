@@ -821,12 +821,12 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 			resolved[tp] = typ
 		}
 	}
-	t.fixConstThunks(args, func(i int) transpiler.Type {
+	t.fixConstThunks(args, funcMeta.TypeParams, func(i int) transpiler.Type {
 		if pi := funcParamIndex(funcMeta, i); pi >= 0 {
 			return funcMeta.ParamTypes[pi]
 		}
 		return nil
-	}, resolved)
+	}, resolved, false)
 	instantiated, missing := t.completeTypeArgs(fun, spelled, nil, resolved)
 	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
 		// No slot fixes an argument whose type is unknown.

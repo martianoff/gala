@@ -28,6 +28,8 @@ func main() {
     // A companion Apply taking its argument by name: Try's.
     val tr Try[int64] = Try(5)
     Println(tr, f"$tr%T")
+    val anyTry Try[any] = Try(5)
+    Println(anyTry, f"$anyTry%T")
     val b = Box(0)
     val m Option[int64] = b.Lazy(5, true)
     Println(m, typeOf(m))

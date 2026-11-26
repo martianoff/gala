@@ -1201,12 +1201,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if typeArgs, err = t.resultOnlyMethodTypeArgs(c, methodMeta, typeArgs, typeSubst, slotTyped, yields, mArgs); err != nil {
 			return true, nil, err
 		}
-		t.fixConstThunks(mArgs, func(i int) transpiler.Type {
-			if pi := methodParamIndex(methodMeta, i); pi >= 0 {
-				return t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
-			}
-			return nil
-		}, typeSubst)
+		// A receiver type argument spelled like one of the method's own
+		// type parameters (`U` of an enclosing `Box[U]`) would be taken
+		// for it below: such a call keeps its thunks as lowered.
+		if !slices.ContainsFunc(recvTypeArgTypes, func(arg transpiler.Type) bool {
+			return typeMentionsTypeParam(arg, methodMeta.TypeParams)
+		}) {
+			t.fixConstThunks(mArgs, methodMeta.TypeParams, func(i int) transpiler.Type {
+				if pi := methodParamIndex(methodMeta, i); pi >= 0 {
+					return t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
+				}
+				return nil
+			}, typeSubst, false)
+		}
 		// The type arguments spelled from the slot (those the arguments
 		// bind were checked with them).
 		if hasPtrConstrained {
@@ -2272,12 +2279,12 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				subst[tp] = recvArgs[i]
 			}
 		}
-		t.fixConstThunks(args, func(i int) transpiler.Type {
+		t.fixConstThunks(args, typeMeta.TypeParams, func(i int) transpiler.Type {
 			if pi := paramIndex(i, methodMeta.ParamTypes, methodMeta.Variadic); pi >= 0 {
 				return methodMeta.ParamTypes[pi]
 			}
 			return nil
-		}, subst)
+		}, subst, true)
 	}
 	receiver := &ast.CompositeLit{Type: fun}
 	return true, &ast.CallExpr{
@@ -6063,9 +6070,13 @@ func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
 
 // fixConstThunks gives each by-name thunk of an untyped constant among args
 // (constThunkArg) the result type its parameter has once the type arguments
-// resolved are known: `func() int64 { return 5 }` for `func() U`, U int64.
-// paramType is the type of the parameter argument i fills, nil when none.
-func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, paramType func(i int) transpiler.Type, resolved map[string]transpiler.Type) {
+// resolved, for the callee's typeParams, are known: `func() int64 { return 5 }`
+// for `func() U`, U int64. paramType is the type of the parameter argument i
+// fills, nil when none. A parameter naming one of typeParams that resolved
+// leaves out is skipped: the name may be the caller's own. writtenAny is set
+// where an `any` in resolved is a type argument as written, not a placeholder
+// for one nothing determines.
+func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, typeParams []string, paramType func(i int) transpiler.Type, resolved map[string]transpiler.Type, writtenAny bool) {
 	if len(t.constThunks) == 0 {
 		return
 	}
@@ -6078,6 +6089,17 @@ func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, paramType func(i in
 		if pt == nil {
 			continue
 		}
+		named := map[string]bool{}
+		t.collectReferencedParams(pt, typeParams, named)
+		unresolved := false
+		for tp := range named {
+			if typ, ok := resolved[tp]; !ok || transpiler.IsUnusable(typ) {
+				unresolved = true
+			}
+		}
+		if unresolved {
+			continue
+		}
 		// A Sendable[func() U] parameter takes the thunk itself.
 		unwrapped, _ := transpiler.UnwrapSendable(t.substituteInType(pt, resolved))
 		ft, ok := unwrapped.(transpiler.FuncType)
@@ -6087,7 +6109,7 @@ func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, paramType func(i in
 		// A type parameter in scope here (the caller's, spelled from the
 		// slot) can be named; one nothing binds cannot.
 		res := ft.Results[0]
-		if transpiler.IsUnusableOrAny(res) || t.mentionsUnboundTypeParam(res) {
+		if transpiler.IsUnusable(res) || (res.IsAny() && !writtenAny) || t.mentionsUnboundTypeParam(res) {
 			continue
 		}
 		lit.Type.Results.List[0].Type = t.typeToExpr(res)
