@@ -348,12 +348,10 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			// So is one given type arguments for its generic Apply.
 			if sel, ok := inner.(*ast.SelectorExpr); ok && !t.isImportIdent(sel.X) {
 				recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
+				// A generic Apply lowers to a free function, which addresses
+				// its receiver itself (loweredMethodReceiver).
 				if callee, ok := t.fieldApplyCallee(base, recvType, lookupBaseName, sel.Sel.Name); ok {
-					addressed, err := t.addressedApplyCallee(callee, bl, bc)
-					if err != nil {
-						return nil, err
-					}
-					base = addressed
+					base = callee
 				}
 			}
 		}

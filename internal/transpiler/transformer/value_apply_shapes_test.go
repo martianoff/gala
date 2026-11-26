@@ -230,6 +230,24 @@ func main() {
 	require.NoError(t, err)
 	require.Equal(t, 2, strings.Count(out, "std.AddrOfCopy(mkBox().h).Apply(3)"))
 	require.Contains(t, out, "std.AddrOfCopy(mkCounter()).Apply(3)")
+	// A lambda argument still takes Apply's parameter type through the copy.
+	out, err = transpileBareVariant(t, `package main
+
+struct Gen[T any](var v T)
+
+func (g *Gen[T]) Apply(f func(T) T) T = f(g.v)
+
+func mk() Gen[int] = Gen(1)
+
+struct Shelf(var g Gen[int])
+
+func main() {
+    Println(mk()((x) => x + 1), Shelf(mk()).g((x) => x * 2))
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "std.AddrOfCopy(mk()).Apply(func(x int) int")
+	require.Contains(t, out, ".g).Apply(func(x int) int")
 	_, err = transpileBareVariant(t, strings.Replace(counter, "= c.n + x", "{\n    c.n = c.n + x\n    c.n\n}", 1)+"    Println(mkCounter()(3))\n}\n")
 	require.ErrorContains(t, err, "GALA-E0110")
 
