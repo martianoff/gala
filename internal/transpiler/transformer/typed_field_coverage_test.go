@@ -40,6 +40,38 @@ func f(r R) string = r match {
 `,
 		},
 		{
+			name: "a GALA interface field",
+			src: `type Named interface {
+    Name() string
+}
+
+sealed type H {
+    case Holder(N Named)
+    case Empty()
+}
+
+func f(h H) string = h match {
+    case Holder(n: Named) => n.Name()
+    case Empty() => ""
+}
+`,
+		},
+		{
+			name: "a Go interface field",
+			src: `import "fmt"
+
+sealed type H {
+    case Holder(S fmt.Stringer)
+    case Empty()
+}
+
+func f(h H) string = h match {
+    case Holder(s: fmt.Stringer) => s.String()
+    case Empty() => ""
+}
+`,
+		},
+		{
 			name: "a type-parameter field",
 			src: `func f[T any](o Option[T]) int = o match {
     case Some(x: T) => s"$x".Size()
@@ -71,6 +103,16 @@ func f(r R) string = r match {
 
 func f(o Option[time.Duration]) int = o match {
     case Some(d: time.Duration) => int(d)
+    case None() => 0
+}
+`,
+		},
+		{
+			name: "a Go struct field",
+			src: `import "time"
+
+func f(o Option[time.Time]) int = o match {
+    case Some(t: time.Time) => t.Year()
     case None() => 0
 }
 `,
