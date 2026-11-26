@@ -40,6 +40,8 @@ func ip() net.IP = net.ParseIP("1.2.3.4")
 
 func lastOf[T any](xs ...T) T = ArrayOf(xs...).Last()
 
+func tagOf[K any, T any](k K, xs ...T) Tuple[K, T] = (k, ArrayOf(xs...).Last())
+
 struct Box[T any](V T)
 
 func (b Box[T]) Pick[U any](t T, xs ...U) Tuple[T, U] = (t, ArrayOf(xs...).Last())
@@ -89,6 +91,12 @@ func (b Box[T]) Pick[U any](t T, xs ...U) Tuple[T, U] = (t, ArrayOf(xs...).Last(
 			name: "generic function, spread of a Go defined slice type",
 			main: "val w = () => lastOf(ip()...)\n    Println(w())",
 			want: "func() byte",
+		},
+		{
+			// Only the spread argument is unwrapped to its element.
+			name: "generic function, defined slice before a spread",
+			main: "val w = () => tagOf(floats(), halves()...)\n    Println(w())",
+			want: "func() std.Tuple[Floats, float64]",
 		},
 		{
 			name: "generic receiver, trailing argument",

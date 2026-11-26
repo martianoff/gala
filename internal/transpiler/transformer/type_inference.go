@@ -725,7 +725,11 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		// A spread `xs...` fills the variadic parameter, recorded element-wise,
 		// with a whole slice: its element binds.
 		if hasSpread && methodMeta.Variadic && i == len(args)-1 {
-			argType = t.spreadElemType(argType)
+			elem, ok := t.spreadElemType(argType)
+			if !ok {
+				continue
+			}
+			argType = elem
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
@@ -1130,11 +1134,15 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 			continue
 		}
 
-		// When spread operator is used (e.g., ArrayOf(keys...)), the arg type is []T
-		// but the variadic param type has already been unwrapped to T, so we need to
-		// unwrap the arg type as well to get the element type.
-		if hasEllipsis {
-			argType = t.spreadElemType(argType)
+		// When spread operator is used (e.g., ArrayOf(keys...)), the last arg's
+		// type is []T but the variadic param type has already been unwrapped
+		// to T, so we need to unwrap the arg type as well to get the element type.
+		if hasEllipsis && i == len(args)-1 {
+			elem, ok := t.spreadElemType(argType)
+			if !ok {
+				continue
+			}
+			argType = elem
 		}
 
 		// Try to unify paramType with argType to find type param substitutions
