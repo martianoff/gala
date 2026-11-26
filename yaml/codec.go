@@ -1224,6 +1224,11 @@ func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
 		// on its line reports that.
 		node := parseInlineScalar(withoutComment(first.raw))
 		if start+1 < len(lines) && lines[start+1].indent >= expectedIndent {
+			if node.kind != yScalar {
+				// A flow collection is a whole value, so the next line is
+				// what does not belong.
+				panic(fmt.Sprintf("yaml: unexpected content at line %d after a flow collection", lines[start+1].lineNum))
+			}
 			splitKeyValue(first.raw, first.lineNum)
 		}
 		return node, start + 1
@@ -1613,8 +1618,8 @@ func (p *flowParser) collection(depth int) *yNode {
 	p.i++
 	for {
 		p.skipWhite()
-		if p.i >= len(p.s) {
-			panic(fmt.Sprintf("yaml: flow collection %q is not closed on its line; flow collections that span lines are not supported", p.s))
+		if p.i >= len(p.s) || p.atComment() {
+			p.notClosed()
 		}
 		if p.s[p.i] == end {
 			p.i++
@@ -1629,8 +1634,8 @@ func (p *flowParser) collection(depth int) *yNode {
 		}
 		p.skipWhite()
 		switch {
-		case p.i >= len(p.s):
-			// Reported as not closed on the next pass.
+		case p.i >= len(p.s) || p.atComment():
+			p.notClosed()
 		case p.s[p.i] == ',':
 			p.i++
 		case p.s[p.i] != end:
@@ -1686,8 +1691,8 @@ func (p *flowParser) pairValue(depth int) *yNode {
 	}
 	p.i++
 	p.skipWhite()
-	if p.i >= len(p.s) {
-		return newScalarNode("", true)
+	if p.i >= len(p.s) || p.atComment() {
+		return newScalarNode("", true) // the collection reports it is not closed
 	}
 	switch p.s[p.i] {
 	case ',', ']', '}':
@@ -1738,7 +1743,33 @@ scan:
 		p.i = start
 		p.fail("expected a value")
 	}
+	// YAML 1.2 (ns-plain-first): a plain scalar cannot start with a
+	// reserved indicator, nor with '?', '-' or ':' that white space or a
+	// flow indicator follows ("? a" is an explicit key, "- a" a block
+	// sequence entry, neither allowed here).
+	switch c := text[0]; c {
+	case '@', '`', '%':
+		p.i = start
+		p.fail(fmt.Sprintf("a plain scalar cannot start with '%c'", c))
+	case '?', '-', ':':
+		if len(text) == 1 || isFlowBreak(text[1]) {
+			p.i = start
+			p.fail(fmt.Sprintf("a plain scalar cannot start with %q", text[:min(2, len(text))]))
+		}
+	}
 	return text
+}
+
+// atComment reports whether p.i is at a '#' that white space comes before:
+// a comment, which inside a collection means the collection goes on to the
+// next line.
+func (p *flowParser) atComment() bool {
+	return p.i < len(p.s) && p.s[p.i] == '#' && p.i > 0 && (p.s[p.i-1] == ' ' || p.s[p.i-1] == '\t')
+}
+
+// notClosed fails on a collection that does not end on its line.
+func (p *flowParser) notClosed() {
+	panic(fmt.Sprintf("yaml: flow collection %q is not closed on its line; flow collections that span lines are not supported", p.s))
 }
 
 // isFlowBreak reports whether c, after a ':', ends a plain scalar in a flow

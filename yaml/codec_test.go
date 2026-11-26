@@ -1215,6 +1215,10 @@ func TestDecoder_FlowCollections(t *testing.T) {
 		{"quoted key on the line", `"k": [a, "b # c"]`, `{"k": ["a", "b # c"]}`},
 		{"quoted key with no space", `"k":{"a": "b"} # note`, `{"k": {"a": "b"}}`},
 		{"compact mapping item", "- k: [a]\n  j: {b: 1}", `[{"k": ["a"], "j": {"b": "1"}}]`},
+		{"item keeps a quoted # and drops its comment", `- [a, "b # c"] # d`, `[["a", "b # c"]]`},
+		{"item with a quoted colon", `- ["x: y"]`, `[["x: y"]]`},
+		{"item with an escaped apostrophe", `- ['it''s: x']`, `[["it's: x"]]`},
+		{"quoted key, no space, comment", `"k":{"a": "b # c"} # note`, `{"k": {"a": "b # c"}}`},
 		{"block scalar header inside", "k: [a, \"b: | # c\"]\nm: 1", `{"k": ["a", "b: | # c"], "m": "1"}`},
 	}
 	for _, tt := range tests {
@@ -1241,6 +1245,15 @@ func TestDecoder_FlowCollectionErrors(t *testing.T) {
 		{"wrong closer", "k: [a}", `yaml: expected ',' or ']' in flow collection "[a}" at "}"`},
 		{"collection as a key", "k: {[a]: 1}", `yaml: a flow collection as a key is not supported in flow collection "{[a]: 1}" at "[a]: 1}"`},
 		{"unterminated quote", `k: ["a, b]`, `yaml: unterminated quoted scalar "\"a, b]"`},
+		{"comment inside", "k: [ # list\n  a, b ]", `yaml: flow collection "[ # list" is not closed on its line; flow collections that span lines are not supported`},
+		{"comment after an item", "k: {a: 1, # c\n b: 2}", `yaml: flow collection "{a: 1, # c" is not closed on its line; flow collections that span lines are not supported`},
+		{"comment after a colon", "k: {a: # c\n 1}", `yaml: flow collection "{a: # c" is not closed on its line; flow collections that span lines are not supported`},
+		{"explicit key", "k: {? a : b}", `yaml: a plain scalar cannot start with "? " in flow collection "{? a : b}" at "? a : b}"`},
+		{"block entry inside", "k: [- a]", `yaml: a plain scalar cannot start with "- " in flow collection "[- a]" at "- a]"`},
+		{"lone dash", "k: [a, -]", `yaml: a plain scalar cannot start with "-" in flow collection "[a, -]" at "-]"`},
+		{"reserved indicator", "k: [@a]", "yaml: a plain scalar cannot start with '@' in flow collection \"[@a]\" at \"@a]\""},
+		{"block key that is a flow collection", "[a]: 1", `yaml: unexpected text ": 1" after flow collection "[a]"`},
+		{"lines after a flow document", "{a: 1}\nb: 2", "yaml: unexpected content at line 2 after a flow collection"},
 		{"text after a quoted item", `k: ["a"x]`, `yaml: expected ',' or ']' in flow collection "[\"a\"x]" at "x]"`},
 	}
 	for _, tt := range tests {
