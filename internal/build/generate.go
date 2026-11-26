@@ -3,8 +3,11 @@ package build
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"golang.org/x/mod/modfile"
+
+	"martianoff/gala/internal/depman/mod"
 )
 
 // WorkspaceModule is the module path of a build workspace's generated go.mod.
@@ -26,6 +29,11 @@ type Generated struct {
 	// alike, leaving out the modules the workspace serves from local
 	// directories (the standard library and GALA dependencies).
 	GoRequires []GoRequire
+	// ReplacedGoModules are the Go modules of the build that gala.mod
+	// replaces, each once: the workspace's go.mod applies those replaces,
+	// which do not reach a program importing the code. A replace of a module
+	// the build does not need is not listed.
+	ReplacedGoModules []string
 }
 
 // GoRequire is one Go module requirement.
@@ -60,33 +68,47 @@ func (b *Builder) Generate(visit func(Generated) error) error {
 	if err != nil {
 		return err
 	}
-	reqs, err := resolvedGoRequires(data)
+	f, err := modfile.Parse("go.mod", data, nil)
 	if err != nil {
 		return fmt.Errorf("reading the workspace go.mod: %w", err)
 	}
-	return visit(Generated{GenDir: b.workspace.GenDir, GoRequires: reqs})
+	return visit(Generated{GenDir: b.workspace.GenDir, GoRequires: resolvedGoRequires(f), ReplacedGoModules: b.replacedGoModules(f)})
+}
+
+// replacedGoModules returns the modules a tidied workspace go.mod requires
+// that gala.mod replaces as Go modules (GoModGenerator.GoReplaces) at the
+// version required, as Go applies them, each once.
+func (b *Builder) replacedGoModules(workspaceGoMod *modfile.File) []string {
+	gen := NewGoModGenerator(b.config)
+	gen.SetProjectDir(b.workspace.ProjectDir)
+	goReplaces := &mod.File{Replace: gen.GoReplaces(b.galaMod)}
+	var replaced []string
+	for _, r := range workspaceGoMod.Require {
+		if _, ok := goReplaces.ReplaceFor(r.Mod.Path, r.Mod.Version); ok && !slices.Contains(replaced, r.Mod.Path) {
+			replaced = append(replaced, r.Mod.Path)
+		}
+	}
+	return replaced
 }
 
 // resolvedGoRequires returns a tidied workspace go.mod's requirements,
-// leaving out modules replaced by a local directory.
-func resolvedGoRequires(goMod []byte) ([]GoRequire, error) {
-	f, err := modfile.Parse("go.mod", goMod, nil)
-	if err != nil {
-		return nil, err
-	}
-	local := map[string]bool{}
+// leaving out modules replaced by a local directory at the version required.
+func resolvedGoRequires(f *modfile.File) []GoRequire {
+	replaces := &mod.File{}
 	for _, r := range f.Replace {
-		if r.New.Version == "" { // a directory replacement
-			local[r.Old.Path] = true
-		}
+		replaces.Replace = append(replaces.Replace, mod.Replace{
+			Old: mod.ModuleVersion{Path: r.Old.Path, Version: r.Old.Version},
+			New: mod.ModuleVersion{Path: r.New.Path, Version: r.New.Version},
+		})
 	}
 	var reqs []GoRequire
 	for _, r := range f.Require {
-		if !local[r.Mod.Path] {
+		// A replacement without a version is a directory.
+		if rep, ok := replaces.ReplaceFor(r.Mod.Path, r.Mod.Version); !ok || rep.New.Version != "" {
 			reqs = append(reqs, GoRequire{Path: r.Mod.Path, Version: r.Mod.Version, Indirect: r.Indirect})
 		}
 	}
-	return reqs, nil
+	return reqs
 }
 
 // GalaImportPaths returns the module paths the project's GALA dependencies
@@ -101,22 +123,6 @@ func (b *Builder) GalaImportPaths() []string {
 		}
 	}
 	return paths
-}
-
-// ReplacedGoModules returns the Go modules gala.mod requires and also
-// replaces.
-func (b *Builder) ReplacedGoModules() []string {
-	goReqs := map[string]bool{}
-	for _, r := range b.galaMod.GoRequires() {
-		goReqs[r.Path] = true
-	}
-	var replaced []string
-	for _, r := range b.galaMod.Replace {
-		if goReqs[r.Old.Path] {
-			replaced = append(replaced, r.Old.Path)
-		}
-	}
-	return replaced
 }
 
 // ModulePath returns the project's module path: go.mod's when the project has

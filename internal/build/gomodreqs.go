@@ -5,9 +5,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/mod/modfile"
-	"golang.org/x/mod/module"
 
 	"martianoff/gala/internal/depman/mod"
 )
@@ -31,12 +31,13 @@ func ReadGoMod(path string) (*modfile.File, error) {
 	return f, nil
 }
 
-// GoRequirementsOf returns the requirements of goMod as gala.mod Go
-// requirements, in go.mod's order and at its versions: what `gala mod init`
-// copies, and what `gala doctor` expects gala.mod to agree with. `gala build`
-// takes the version of a Go module from gala.mod, never from go.mod, so a
-// module left out would build at whatever version the build workspace's `go
-// mod tidy` picks: its latest when nothing else requires it.
+// GoRequirementsOf returns the requirements and replace directives of goMod
+// as gala.mod Go requirements and replaces, in go.mod's order and at its
+// versions: what `gala mod init` copies, and what `gala doctor` expects
+// gala.mod to agree with. `gala build` takes the version of a Go module, and
+// what replaces it, from gala.mod, never from go.mod, so a module left out
+// would build at whatever version the build workspace's `go mod tidy` picks:
+// its latest when nothing else requires it.
 //
 // Indirect requirements are included too, marked indirect. Since Go 1.17
 // go.mod lists every module the build needs, and an indirect requirement is
@@ -44,56 +45,94 @@ func ReadGoMod(path string) (*modfile.File, error) {
 // asks for; without it, the build would select the lower version go build
 // does not.
 //
-// Two kinds are left out, and are returned in skipped with the reason:
-// a module go.mod replaces at the version it requires, whose version (often a
-// v0.0.0 placeholder for a local directory) means nothing without the replace
-// directive, which gala build does not apply to Go dependencies; and a GALA
-// standard library package, which gala build always provides itself.
-func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, skipped []string) {
-	replaces := goModReplaces(goMod)
-	replaced := func(path, ver string) bool {
-		for _, old := range replaces {
-			if old.Path == path && (old.Version == "" || old.Version == ver) {
-				return true
-			}
-		}
-		return false
-	}
-	reqs = make([]mod.Require, 0, len(goMod.Require))
-	for _, r := range goMod.Require {
-		path, ver := r.Mod.Path, r.Mod.Version
-		switch {
-		case replaced(path, ver):
-			skipped = append(skipped, fmt.Sprintf("%s %s (go.mod replaces it; gala build does not apply replace directives to Go dependencies)", path, ver))
-		// The build workspace's go.mod generator leaves these out of Go
-		// requirements: it requires the GALA module's packages itself.
-		case strings.HasPrefix(path, GalaModulePrefix):
-			skipped = append(skipped, fmt.Sprintf("%s %s (a package of the GALA module, which gala build provides itself)", path, ver))
-		default:
-			reqs = append(reqs, mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true})
-		}
-	}
-	return reqs, skipped
+// A requirement or replace of a GALA standard library package is left out,
+// and returned in skipped with the reason: gala build always provides those
+// packages itself. So is a replace whose path has a space in it, which
+// gala.mod has no way to write, with the requirement it applies to: its
+// version, often a placeholder for a directory, means nothing without it.
+func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, replaces []mod.Replace, skipped []string) {
+	c := copyGoMod(goMod)
+	return c.reqs, c.replaces, c.skipped
 }
 
-// goModReplaces returns the left-hand side of each replace directive of f:
-// the module path, and the version the directive is limited to ("" for every
-// version). It reads f's syntax tree, since a lax parse leaves f.Replace
-// empty.
-func goModReplaces(f *modfile.File) []module.Version {
-	var olds []module.Version
-	add := func(tokens []string) {
-		if len(tokens) == 0 {
-			return
+// UnwritableGoModReplaces returns what GoRequirementsOf leaves out of goMod
+// because gala.mod cannot hold a replace of it (a path with a space): the
+// modules (path and version limit) such a replace replaces, and the
+// requirements to which such a replace is the one Go applies. gala.mod has to
+// replace those with another path. GALA's own packages are not among them.
+func UnwritableGoModReplaces(goMod *modfile.File) (olds []mod.ModuleVersion, reqs []mod.Require) {
+	c := copyGoMod(goMod)
+	return c.unwritableOlds, c.unwritableReqs
+}
+
+// goModCopy is what gala mod init copies from a go.mod, and what it does not.
+type goModCopy struct {
+	reqs           []mod.Require
+	replaces       []mod.Replace
+	skipped        []string
+	unwritableOlds []mod.ModuleVersion
+	unwritableReqs []mod.Require
+}
+
+func copyGoMod(goMod *modfile.File) goModCopy {
+	var c goModCopy
+	all := &mod.File{}
+	var replacesSkipped []string
+	for _, rep := range goModReplaces(goMod) {
+		switch {
+		case strings.HasPrefix(rep.Old.Path, GalaModulePrefix):
+			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (a package of the GALA module, which gala build provides itself)", rep.Old.Path))
+			continue
+		case unwritableReplace(rep):
+			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)", strings.TrimSpace(rep.Old.Path+" "+rep.Old.Version)))
+			c.unwritableOlds = append(c.unwritableOlds, rep.Old)
+		default:
+			c.replaces = append(c.replaces, rep)
 		}
-		old := module.Version{Path: unquoteGoModToken(tokens[0])}
-		if len(tokens) > 1 && tokens[1] != "=>" {
-			old.Version = unquoteGoModToken(tokens[1])
-		}
-		olds = append(olds, old)
+		all.Replace = append(all.Replace, rep)
 	}
+	c.reqs = make([]mod.Require, 0, len(goMod.Require))
+	for _, r := range goMod.Require {
+		path, ver := r.Mod.Path, r.Mod.Version
+		req := mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true}
+		// The build workspace's go.mod generator leaves these out of Go
+		// requirements: it requires the GALA module's packages itself.
+		if strings.HasPrefix(path, GalaModulePrefix) {
+			c.skipped = append(c.skipped, fmt.Sprintf("%s %s (a package of the GALA module, which gala build provides itself)", path, ver))
+			continue
+		}
+		if rep, ok := all.ReplaceFor(path, ver); ok && unwritableReplace(rep) {
+			c.skipped = append(c.skipped, fmt.Sprintf("%s %s (go.mod replaces it with a path gala.mod cannot hold)", path, ver))
+			c.unwritableReqs = append(c.unwritableReqs, req)
+			continue
+		}
+		c.reqs = append(c.reqs, req)
+	}
+	c.skipped = append(c.skipped, replacesSkipped...)
+	return c
+}
+
+// unwritableReplace reports whether gala.mod cannot hold rep: its replacement
+// path has a space in it.
+func unwritableReplace(rep mod.Replace) bool {
+	return strings.ContainsFunc(rep.New.Path, unicode.IsSpace)
+}
+
+// goModReplaces returns the replace directives of f. It reads f's syntax
+// tree, since a lax parse leaves f.Replace empty.
+func goModReplaces(f *modfile.File) []mod.Replace {
 	if f.Syntax == nil {
 		return nil
+	}
+	var reps []mod.Replace
+	add := func(tokens []string) {
+		unquoted := make([]string, len(tokens))
+		for i, tok := range tokens {
+			unquoted[i] = unquoteGoModToken(tok)
+		}
+		if rep, err := mod.ParseReplaceEntry(unquoted); err == nil {
+			reps = append(reps, rep)
+		}
 	}
 	for _, stmt := range f.Syntax.Stmt {
 		switch s := stmt.(type) {
@@ -109,7 +148,7 @@ func goModReplaces(f *modfile.File) []module.Version {
 			}
 		}
 	}
-	return olds
+	return reps
 }
 
 // unquoteGoModToken returns a go.mod token without its quotes, when it has

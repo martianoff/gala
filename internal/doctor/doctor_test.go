@@ -418,9 +418,77 @@ func TestModDrift(t *testing.T) {
 			goMod:   "require a.com/galalib v1.0.0",
 		},
 		{
-			name:    "a module go.mod replaces is not copied, so not drift",
-			galaMod: "",
+			name:    "a replaced module, replaced in both",
+			galaMod: "require a.com/x v0.0.0 // go\n\nreplace a.com/x => ../x",
 			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => ../x",
+		},
+		{
+			name:    "a go.mod replace missing from gala.mod",
+			galaMod: "require a.com/x v0.0.0 // go",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => ../x",
+			want:    []string{"replace a.com/x => ../x (go.mod only)"},
+		},
+		{
+			name:    "replaced with a different version",
+			galaMod: "require a.com/x v1.0.0 // go\n\nreplace a.com/x => a.com/x v1.1.0",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x => a.com/x v1.2.0",
+			want:    []string{"replace a.com/x => a.com/x v1.1.0 (gala.mod only)", "replace a.com/x => a.com/x v1.2.0 (go.mod only)"},
+		},
+		{
+			name:    "a gala.mod replace of a GALA dependency is not drift",
+			galaMod: "require a.com/galalib v1.0.0\n\nreplace a.com/galalib => ../galalib",
+			goMod:   "",
+		},
+		{
+			name:    "a go.mod replace gala.mod cannot hold, replaced in gala.mod with another path",
+			galaMod: "require a.com/x v0.0.0 // go\n\nreplace a.com/x => ../mydir",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
+		},
+		{
+			name:    "a go.mod replace gala.mod cannot hold, missing from gala.mod with its requirement",
+			galaMod: "",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
+			want: []string{
+				"a.com/x v0.0.0 (go.mod only)",
+				"replace a.com/x v0.0.0 (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)",
+			},
+		},
+		{
+			name:    "an unwritable exact-version replace is not stood in for by a replace copied from go.mod",
+			galaMod: "require a.com/x v1.0.0 // go\n\nreplace a.com/x => ../ok",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x v1.0.0 => \"../a b\"\n\nreplace a.com/x => ../ok",
+			want:    []string{"replace a.com/x v1.0.0 (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)"},
+		},
+		{
+			name:    "an unwritable replace limited to a version go.mod does not require is not drift",
+			galaMod: "require a.com/x v1.2.0 // go",
+			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
+		},
+		{
+			name:    "gala.mod standing in for an unwritable exact-version replace for every version is not drift",
+			galaMod: "require a.com/x v1.0.0 // go\n\nreplace a.com/x => ../ab",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
+		},
+		{
+			name:    "gala.mod standing in for an unwritable replace for every version at the required one is not drift",
+			galaMod: "require a.com/x v0.0.0 // go\n\nreplace a.com/x v0.0.0 => ../mydir",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
+		},
+		{
+			name:    "gala.mod standing in for an unwritable replace no requirement uses is not drift",
+			galaMod: "require a.com/x v1.2.0 // go\n\nreplace a.com/x v1.0.0 => ../ab",
+			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
+		},
+		{
+			name:    "a GALA package go.mod replaces with a path with a space is not drift",
+			galaMod: "",
+			goMod:   "require martianoff/gala/std v0.0.0\n\nreplace martianoff/gala/std => \"../gala std\"",
+		},
+		{
+			name:    "a requirement a writable exact-version replace applies to, beside an unwritable one, is listed once",
+			galaMod: "replace a.com/x v1.0.0 => ../ok",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x => \"../a b\"\n\nreplace a.com/x v1.0.0 => ../ok",
+			want:    []string{"a.com/x v1.0.0 (go.mod only)"},
 		},
 		{
 			name:    "gala.mod Go dependency missing from go.mod",

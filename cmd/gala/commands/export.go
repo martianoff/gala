@@ -118,9 +118,6 @@ func runExport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%w; pass --go-module with a path the go command can download", err)
 	}
 
-	if replaced := builder.ReplacedGoModules(); len(replaced) > 0 {
-		return fmt.Errorf("gala.mod replaces the Go modules %s; a Go module's replace directives do not apply to the programs that import it, so the export would build against different code", strings.Join(replaced, ", "))
-	}
 	unsupported := map[string]string{}
 	for _, p := range builder.GalaImportPaths() {
 		unsupported[p] = "it is a GALA module, and exporting packages that import another GALA module is not supported yet"
@@ -136,6 +133,9 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	var files []goexport.File
 	err = builder.Generate(func(gen build.Generated) error {
+		if replaced := gen.ReplacedGoModules; len(replaced) > 0 {
+			return fmt.Errorf("gala.mod replaces the Go modules %s; a Go module's replace directives do not apply to the programs that import it, so the export would build against different code", strings.Join(replaced, ", "))
+		}
 		// The workspace's tidied go.mod has every Go module the code needs,
 		// including those only hand-written Go imports through a dependency.
 		requires := []module.Version{{Path: exStdlibModule, Version: stdlibVersion}}

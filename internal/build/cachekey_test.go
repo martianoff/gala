@@ -45,9 +45,7 @@ func newCacheFixture(t *testing.T) *cacheFixture {
 	}
 	files := map[string]string{
 		// Project inputs.
-		"app/gala.mod": "module example.com/app\n\ngala 0.0.0\n\n" +
-			"require example.com/localdep v0.0.0\n\n" +
-			"replace example.com/localdep => ../localdep\n",
+		"app/gala.mod":          fixtureGalaMod("0.0.0", "v0.0.0"),
 		"app/go.mod":            "module example.com/app\n",
 		"app/main.gala":         "package main\n\nfunc main() {\n    Println(\"hi\")\n}\n",
 		"app/util/util.gala":    "package util\n\nfunc One() int = 1\n",
@@ -70,11 +68,26 @@ func newCacheFixture(t *testing.T) *cacheFixture {
 		"localdep/gala.mod":  "module example.com/localdep\n\ngala 0.0.0\n",
 		"localdep/lib.gala":  "package localdep\n\nfunc Message() string = \"v1\"\n",
 		"localdep/asset.txt": "dep asset",
+		// Go module behind a local replace.
+		"gogreet/go.mod":   "module example.com/gogreet\n\ngo 1.21\n",
+		"gogreet/greet.go": "package gogreet\n\nfunc Hello() string { return \"v1\" }\n",
+		// Go module behind a local replace that the project does not require
+		// itself: one of its Go modules' go.mod files may.
+		"godeep/go.mod":  "module example.com/godeep\n\ngo 1.21\n",
+		"godeep/deep.go": "package godeep\n\nfunc Deep() string { return \"v1\" }\n",
 	}
 	for rel, content := range files {
 		writeFixtureFile(t, filepath.Join(root, filepath.FromSlash(rel)), content)
 	}
 	return fx
+}
+
+// fixtureGalaMod is the fixture's gala.mod at the given gala version and
+// version of its GALA requirement.
+func fixtureGalaMod(gala, depVersion string) string {
+	return "module example.com/app\n\ngala " + gala + "\n\n" +
+		"require (\n\texample.com/localdep " + depVersion + "\n\texample.com/gogreet v0.0.0 // go\n)\n\n" +
+		"replace (\n\texample.com/localdep => ../localdep\n\texample.com/gogreet => ../gogreet\n\texample.com/godeep => ../godeep\n)\n"
 }
 
 func writeFixtureFile(t *testing.T, path, content string) {
@@ -170,14 +183,10 @@ func TestCacheKeyMutationMatrix(t *testing.T) {
 
 		// Inputs of both keys.
 		{"gala.mod edited without touching requirements", func(t *testing.T, fx *cacheFixture) {
-			fx.write(t, "gala.mod", "module example.com/app\n\ngala 0.0.1\n\n"+
-				"require example.com/localdep v0.0.0\n\n"+
-				"replace example.com/localdep => ../localdep\n")
+			fx.write(t, "gala.mod", fixtureGalaMod("0.0.1", "v0.0.0"))
 		}, miss, hit},
 		{"gala.mod requirement changed", func(t *testing.T, fx *cacheFixture) {
-			fx.write(t, "gala.mod", "module example.com/app\n\ngala 0.0.0\n\n"+
-				"require example.com/localdep v0.0.1\n\n"+
-				"replace example.com/localdep => ../localdep\n")
+			fx.write(t, "gala.mod", fixtureGalaMod("0.0.0", "v0.0.1"))
 		}, miss, miss},
 		{"local-replace dependency source edited", func(t *testing.T, fx *cacheFixture) {
 			fx.writeDep(t, "lib.gala", "package localdep\n\nfunc Message() string = \"v2\"\n")
@@ -190,6 +199,14 @@ func TestCacheKeyMutationMatrix(t *testing.T) {
 		}, miss, miss},
 		{"local-replace dependency gala.mod edited", func(t *testing.T, fx *cacheFixture) {
 			fx.writeDep(t, "gala.mod", "module example.com/localdep\n\ngala 0.0.1\n")
+		}, miss, miss},
+		{"Go module behind a local replace edited", func(t *testing.T, fx *cacheFixture) {
+			writeFixtureFile(t, filepath.Join(filepath.Dir(fx.projectDir), "gogreet", "greet.go"),
+				"package gogreet\n\nfunc Hello() int { return 2 }\n")
+		}, miss, miss},
+		{"Go module behind a local replace the project does not require edited", func(t *testing.T, fx *cacheFixture) {
+			writeFixtureFile(t, filepath.Join(filepath.Dir(fx.projectDir), "godeep", "deep.go"),
+				"package godeep\n\nfunc Deep() int { return 2 }\n")
 		}, miss, miss},
 		{"stdlib snapshot changed", func(t *testing.T, fx *cacheFixture) {
 			fx.toolchain.Stdlib = "stdlib-b"

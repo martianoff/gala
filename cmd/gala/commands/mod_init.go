@@ -26,10 +26,11 @@ If a module path is not provided, gala will attempt to detect it from:
 In a Go module (a directory with a go.mod), every requirement of go.mod is
 copied into gala.mod as a Go dependency (marked // go), at the version go.mod
 names, so gala build uses the same versions as go build. Indirect requirements
-stay marked // indirect. A requirement go.mod replaces is not copied (gala
-build does not apply replace directives to Go dependencies), nor is a GALA
-standard library package; both are listed. The copy is made once: after
-changing a version in go.mod, run gala mod add <path>@<version> --go.
+stay marked // indirect. go.mod's replace directives are copied too. A GALA
+standard library package is not copied, nor is a replace whose path has a
+space in it (which gala.mod cannot hold) with the requirement it applies to;
+both are listed. The copy is made once:
+after changing a version in go.mod, run gala mod add <path>@<version> --go.
 
 gala mod init also adds .gala/, the directory gala build keeps its cache in,
 to .gitignore, creating the file if there is none.
@@ -90,7 +91,7 @@ func runModInit(cmd *cobra.Command, args []string) {
 	f.Gala = Version // Use current GALA version
 	var skipped []string
 	if goMod != nil {
-		f.Require, skipped = build.GoRequirementsOf(goMod)
+		f.Require, f.Replace, skipped = build.GoRequirementsOf(goMod)
 	}
 
 	if err := mod.WriteFile(f, "gala.mod"); err != nil {
@@ -99,7 +100,7 @@ func runModInit(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("Initialized gala.mod for module %s\n", modulePath)
-	reportCopiedGoRequirements(f.Require, skipped)
+	reportCopiedGoRequirements(f.Require, f.Replace, skipped)
 
 	// Create empty gala.sum if it doesn't exist
 	if _, err := os.Stat("gala.sum"); os.IsNotExist(err) {
@@ -116,17 +117,23 @@ func runModInit(cmd *cobra.Command, args []string) {
 	}
 }
 
-// reportCopiedGoRequirements prints the requirements gala mod init copied from
-// go.mod and those it did not copy, with the reason.
-func reportCopiedGoRequirements(reqs []mod.Require, skipped []string) {
+// reportCopiedGoRequirements prints the requirements and replace directives
+// gala mod init copied from go.mod and those it did not copy, with the reason.
+func reportCopiedGoRequirements(reqs []mod.Require, replaces []mod.Replace, skipped []string) {
 	if len(reqs) > 0 {
 		fmt.Printf("Copied %d requirement(s) from go.mod as Go dependencies:\n", len(reqs))
 		for _, r := range reqs {
 			fmt.Printf("  %s\n", mod.FormatRequireEntry(r))
 		}
 	}
+	if len(replaces) > 0 {
+		fmt.Printf("Copied %d replace directive(s) from go.mod:\n", len(replaces))
+		for _, r := range replaces {
+			fmt.Printf("  %s\n", mod.FormatReplaceEntry(r))
+		}
+	}
 	if len(skipped) > 0 {
-		fmt.Printf("Did not copy %d requirement(s) of go.mod:\n", len(skipped))
+		fmt.Printf("Did not copy %d line(s) of go.mod:\n", len(skipped))
 		for _, s := range skipped {
 			fmt.Printf("  %s\n", s)
 		}

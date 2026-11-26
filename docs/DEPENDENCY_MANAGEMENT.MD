@@ -316,7 +316,7 @@ gala export --out ../mylib-go --stdlib-version v0.0.0-local.1 \
 2. Writes every package's generated and hand-written Go (no tests, no `gala.mod` or Bazel files) to `--out`, with imports of GALA's standard library rewritten to the published Go module `go.gala.fyi/stdlib`
 3. Writes a `go.mod` that requires `go.gala.fyi/stdlib` at this `gala`'s version, plus every Go module the code needs, as `go mod tidy` resolves them for the build, including modules a hand-written `.go` file reaches only through another dependency. Its `go` directive is the newer of the one generated code needs and the project's own `go.mod`'s
 
-Run it in the project root: it always exports the whole project. `--out` must be empty, and outside the project and any Bazel workspace. `--go-module` must be a path the go command can download (its first element is a domain). A `main` package is exported with a warning, since Go code cannot import it. Not supported yet: packages that import another GALA module, and a `gala.mod` that `replace`s a Go module (a published module's `replace` directives do not apply to the programs that import it). Publishing the export and using it from Go: [Using GALA from a plain Go module](GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module).
+Run it in the project root: it always exports the whole project. `--out` must be empty, and outside the project and any Bazel workspace. `--go-module` must be a path the go command can download (its first element is a domain). A `main` package is exported with a warning, since Go code cannot import it. Not supported yet: packages that import another GALA module, and a `gala.mod` that `replace`s a Go module the exported code needs (a published module's `replace` directives do not apply to the programs that import it). Publishing the export and using it from Go: [Using GALA from a plain Go module](GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module).
 
 A Go module that commits the output of a few `.gala` files, rather than exporting a whole project, uses `gala transpile --stdlib-module go.gala.fyi/stdlib` instead: it writes the same standard library imports for each generated file. See [Committing transpiled files to a plain Go module](GO_INTEROP.MD#committing-transpiled-files-to-a-plain-go-module).
 
@@ -348,7 +348,7 @@ Creates:
 - Empty `gala.sum` file
 - A `.gala/` line in `.gitignore` (the file is created if there is none)
 
-In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The command prints each requirement it copied. A requirement `go.mod` replaces is not copied (`gala build` does not apply replace directives to Go dependencies), nor is a GALA standard library package; the command lists those with the reason. The copy is made once: after changing a version in `go.mod`, run `gala mod add path@version --go` to change it in `gala.mod`.
+In a Go module, `gala.mod` also gets every `require` of `go.mod`, at the version `go.mod` names, marked `// go` (and `// indirect, go` for an indirect one). `gala build` takes Go module versions from `gala.mod`, so this keeps them the versions `go build` uses. The `replace` directives of `go.mod` are copied too: `gala build` applies those of `gala.mod`, to Go dependencies as to GALA ones. The command prints each requirement and replace it copied. A GALA standard library package is not copied, nor is a `replace` whose path has a space in it (which `gala.mod` cannot hold), with the requirement it applies to; the command lists them with the reason, and `gala.mod` needs that replace with another path. The copy is made once: after changing a version in `go.mod`, run `gala mod add path@version --go` to change it in `gala.mod`.
 
 ### gala mod add
 
@@ -639,6 +639,7 @@ require (
 2. The transpiler generates correct Go imports for Go packages
 3. For non-Bazel builds: `gala build` and `gala test` read each Go dependency's source for its types before transpiling, downloading it first if it is not cached, and `go mod tidy` fetches it for the Go compile. A GALA library's own Go dependencies are read the same way when it is built as a dependency, so they need not be repeated in your `gala.mod`
 4. For Bazel builds: Gazelle's `go_deps` extension fetches them
+5. For non-Bazel builds, a `replace` in your `gala.mod` applies to a Go dependency as it would in `go.mod`: `replace example.com/greet => ../greet` builds the module from that directory, and `replace github.com/google/uuid => github.com/google/uuid v1.6.0` builds it at that version. As in Go, only the replaces of the module being built count, not those of its dependencies
 
 **Usage in GALA code:**
 

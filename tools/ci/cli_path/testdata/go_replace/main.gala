@@ -1,0 +1,14 @@
+package main
+
+import (
+    "example.com/greet"
+    "github.com/google/uuid"
+)
+
+// example.com/greet exists only as the directory go.mod replaces it with, and
+// uuid.Max is not in v1.3.0, the version go.mod requires, only in v1.6.0, the
+// one it replaces it with: the program builds only with both replaces applied.
+func main() {
+    Println(greet.Hello("gala"))
+    Println(uuid.Max.String())
+}

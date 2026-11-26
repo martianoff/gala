@@ -7,6 +7,7 @@ import (
 	"hash"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -54,6 +55,9 @@ import (
 //	               transitive): its coordinates, the directory it is read from,
 //	               and the contents of that directory — which is what makes an
 //	               edit behind `replace X => ../localX` visible
+//	Go replaces    every module but a GALA dependency that gala.mod replaces
+//	               with an existing directory: its coordinates, the directory,
+//	               and its contents (the analyzer reads Go types from it)
 //
 // Everything else a build produces (go.mod, go.sum, the binary) is regenerated
 // or left to the Go toolchain's own cache on every build.
@@ -166,7 +170,18 @@ func computeDepsHash(requires []mod.Require, replaces []mod.Replace, tc toolchai
 	}
 	sorted := make([]depInput, len(deps))
 	copy(sorted, deps)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Require.Path < sorted[j].Require.Path })
+	// A total order: two inputs can share a path (a replace for every version
+	// of a module and one for a single version).
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.Require.Path != b.Require.Path {
+			return a.Require.Path < b.Require.Path
+		}
+		if a.Require.Version != b.Require.Version {
+			return a.Require.Version < b.Require.Version
+		}
+		return a.Dir < b.Dir
+	})
 	for _, dep := range sorted {
 		fmt.Fprintf(h, "dep %s@%s at %s\n", dep.Require.Path, dep.Require.Version, filepath.ToSlash(dep.Dir))
 		files, err := dependencyInputs(dep.Dir)
@@ -461,19 +476,52 @@ func (b *Builder) galaDependencies() []depInput {
 	return deps
 }
 
+// goReplacementDirs lists the directory replacements of gala.mod that the
+// build workspace applies to Go modules (GoModGenerator.GoReplaces: not those
+// of the standard library or the GALA modules, which galaDependencies covers),
+// each with its directory. Unlike a module version, a directory can change, and the
+// analyzer reads the Go types the transpiles depend on from it, for a module
+// the project requires or one deeper in its Go modules' requirements alike, so
+// every such replacement counts. One whose directory is missing is left out:
+// no build reads it, and a build that needs it fails.
+func (b *Builder) goReplacementDirs() []depInput {
+	if b.galaMod == nil || !slices.ContainsFunc(b.galaMod.Replace, func(r mod.Replace) bool { return r.New.IsLocal() }) {
+		return nil // only a directory replacement adds one
+	}
+	gen := NewGoModGenerator(b.config)
+	gen.SetProjectDir(b.workspace.ProjectDir)
+	var deps []depInput
+	for _, rep := range gen.GoReplaces(b.galaMod) {
+		if !rep.New.IsLocal() {
+			continue
+		}
+		dir := replacementDir(b.workspace.ProjectDir, rep.New.Path)
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			continue
+		}
+		deps = append(deps, depInput{Require: mod.Require{Path: rep.Old.Path, Version: rep.Old.Version, Go: true}, Dir: dir})
+	}
+	return deps
+}
+
 // depsKey returns the dependency key, computed once per builder. It is "" when
-// the project has no GALA dependencies, and an error when one of them cannot be
-// read — the caller then treats the cache as a miss.
+// the project has neither GALA dependencies nor Go dependencies replaced by a
+// directory, and an error when one of them cannot be read — the caller then
+// treats the cache as a miss.
 func (b *Builder) depsKey() (string, error) {
 	if b.depsKeyValue != nil {
 		return *b.depsKeyValue, nil
 	}
 	key := ""
-	if b.galaMod != nil && len(b.galaMod.GalaRequires()) > 0 {
-		galaReqs := b.galaMod.GalaRequires()
-		key = computeDepsHash(galaReqs, b.galaMod.Replace, b.toolchain(), b.galaDependencies())
+	var galaReqs []mod.Require
+	if b.galaMod != nil {
+		galaReqs = b.galaMod.GalaRequires()
+	}
+	goDirs := b.goReplacementDirs()
+	if len(galaReqs) > 0 || len(goDirs) > 0 {
+		key = computeDepsHash(galaReqs, b.galaMod.Replace, b.toolchain(), append(b.galaDependencies(), goDirs...))
 		if key == "" {
-			return "", fmt.Errorf("a GALA dependency could not be read")
+			return "", fmt.Errorf("a dependency could not be read")
 		}
 	}
 	b.depsKeyValue = &key

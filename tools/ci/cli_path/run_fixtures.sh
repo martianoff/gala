@@ -296,6 +296,28 @@ fixture_add_gala_to_go() {
   expect_output "gala leaves go.mod unchanged" "$here/testdata/add_gala_to_go/go.mod" go.mod
 }
 
+# go_replace: a Go module whose go.mod replaces one Go dependency with a
+# directory and another with a different version. gala mod init copies both
+# replaces into gala.mod, and the build applies them.
+fixture_go_replace() {
+  local dir
+  dir=$(stage go_replace)
+  cd "$dir"
+  gala_ok init.log mod init || return 0
+  expect_line "gala mod init copies the directory replace" gala.mod \
+    '^(replace )?[[:space:]]*example\.com/greet => \./greet$'
+  expect_line "gala mod init copies the version replace" gala.mod \
+    '^(replace )?[[:space:]]*github\.com/google/uuid => github\.com/google/uuid v1\.6\.0$'
+  gala_ok build.log build -o goreplace . || return 0
+  "$(exe "$dir/goreplace")" >out.txt
+  expect_output "built binary" expected.out out.txt
+  go version -m "$(exe "$dir/goreplace")" >buildinfo.txt
+  expect_line "the binary uses the uuid version go.mod replaces it with" buildinfo.txt \
+    '^[[:space:]]+=>[[:space:]]+github\.com/google/uuid[[:space:]]+v1\.6\.0([[:space:]]|$)'
+  gala_ok run.log run . || return 0
+  expect_output "gala run" expected.out run.log
+}
+
 # go_cmd_main: main packages under cmd/ that import the module's GALA package,
 # one written only in Go (cmd/gomain), one in GALA and Go together (cmd/mixed,
 # whose GALA code calls a function its .go file declares).
@@ -415,7 +437,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop add_gala_to_go cobra_cli go_transitive_module go_module_missing gala_dep dep_go_subpkg dep_generic_alias sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop add_gala_to_go go_replace cobra_cli go_transitive_module go_module_missing gala_dep dep_go_subpkg dep_generic_alias sequence)
 fi
 
 for name in "${fixtures[@]}"; do

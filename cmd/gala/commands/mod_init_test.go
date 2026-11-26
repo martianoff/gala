@@ -14,15 +14,16 @@ import (
 )
 
 // gala mod init in a Go module copies the requirements of go.mod into gala.mod
-// as Go requirements, at go.mod's version and keeping its indirect mark. A
-// requirement go.mod replaces, and a GALA standard library package, are not
-// copied, and are named with the reason.
+// as Go requirements, at go.mod's version and keeping its indirect mark, and
+// its replace directives with them. A GALA standard library package is not
+// copied, and is named with the reason.
 func TestGoRequirementsOfGoMod(t *testing.T) {
 	tests := []struct {
-		name        string
-		goMod       string
-		want        []mod.Require
-		wantSkipped []string
+		name         string
+		goMod        string
+		want         []mod.Require
+		wantReplaces []mod.Replace
+		wantSkipped  []string
 	}{
 		{
 			name:  "no requirements",
@@ -44,28 +45,48 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 			},
 		},
 		{
-			name: "a replaced module and a standard library package are not copied",
+			name: "a replaced module is copied with its replace; a standard library package is not",
 			goMod: "module example.com/app\n\ngo 1.25\n\n" +
 				"require (\n\tgithub.com/google/uuid v1.3.0\n" +
 				"\texample.com/shared v0.0.0-00010101000000-000000000000\n" +
 				"\tmartianoff/gala/std v0.0.0\n)\n\n" +
-				"replace example.com/shared => ../shared\n",
-			want: []mod.Require{{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true}},
+				"replace example.com/shared => ../shared\n\n" +
+				"replace martianoff/gala/std => ../gala/std\n",
+			want: []mod.Require{
+				{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true},
+				{Path: "example.com/shared", Version: "v0.0.0-00010101000000-000000000000", Go: true},
+			},
+			wantReplaces: []mod.Replace{
+				{Old: mod.ModuleVersion{Path: "example.com/shared"}, New: mod.ModuleVersion{Path: "../shared"}},
+			},
 			wantSkipped: []string{
-				"example.com/shared v0.0.0-00010101000000-000000000000 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
 				"martianoff/gala/std v0.0.0 (a package of the GALA module, which gala build provides itself)",
+				"replace martianoff/gala/std (a package of the GALA module, which gala build provides itself)",
 			},
 		},
 		{
 			name: "a replace block, a version-limited replace, and a directive newer than x/mod",
 			goMod: "module example.com/app\n\ngo 1.25\n\nignore ./node_modules\n\n" +
-				"require (\n\texample.com/old v1.2.0\n\t\"example.com/quoted\" v1.0.0\n\texample.com/pinned v1.0.0\n)\n\n" +
+				"require (\n\texample.com/old v1.2.0\n\t\"example.com/quoted\" v1.0.0\n\texample.com/pinned v1.0.0\n" +
+				"\texample.com/spaced v0.0.0-00010101000000-000000000000\n)\n\n" +
 				"replace (\n\texample.com/old v1.0.0 => ../old\n\t\"example.com/quoted\" => example.com/fork v1.1.0\n)\n\n" +
-				"replace example.com/pinned v1.0.0 => ../pinned\n",
-			want: []mod.Require{{Path: "example.com/old", Version: "v1.2.0", Go: true}},
+				"replace example.com/pinned v1.0.0 => ../pinned\n\n" +
+				"replace example.com/spaced => \"../my dir\"\n",
+			want: []mod.Require{
+				{Path: "example.com/old", Version: "v1.2.0", Go: true},
+				{Path: "example.com/quoted", Version: "v1.0.0", Go: true},
+				{Path: "example.com/pinned", Version: "v1.0.0", Go: true},
+			},
+			wantReplaces: []mod.Replace{
+				{Old: mod.ModuleVersion{Path: "example.com/old", Version: "v1.0.0"}, New: mod.ModuleVersion{Path: "../old"}},
+				{Old: mod.ModuleVersion{Path: "example.com/quoted"}, New: mod.ModuleVersion{Path: "example.com/fork", Version: "v1.1.0"}},
+				{Old: mod.ModuleVersion{Path: "example.com/pinned", Version: "v1.0.0"}, New: mod.ModuleVersion{Path: "../pinned"}},
+			},
+			// The requirement the unwritable replace applies to is left out
+			// with it: its placeholder version cannot be downloaded.
 			wantSkipped: []string{
-				"example.com/quoted v1.0.0 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
-				"example.com/pinned v1.0.0 (go.mod replaces it; gala build does not apply replace directives to Go dependencies)",
+				"example.com/spaced v0.0.0-00010101000000-000000000000 (go.mod replaces it with a path gala.mod cannot hold)",
+				"replace example.com/spaced (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)",
 			},
 		},
 	}
@@ -76,16 +97,19 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 			goMod, err := build.ReadGoMod(path)
 			require.NoError(t, err)
 			assert.Equal(t, "example.com/app", goMod.Module.Mod.Path)
-			reqs, skipped := build.GoRequirementsOf(goMod)
+			reqs, replaces, skipped := build.GoRequirementsOf(goMod)
 			assert.Equal(t, tt.want, reqs)
+			assert.Equal(t, tt.wantReplaces, replaces)
 			assert.Equal(t, tt.wantSkipped, skipped)
 
-			// The requirements survive a round trip through gala.mod.
+			// The requirements and replaces survive a round trip through gala.mod.
 			f := mod.NewFile("example.com/app")
 			f.Require = reqs
+			f.Replace = append(f.Replace, replaces...)
 			parsed, err := mod.Parse(mod.Format(f))
 			require.NoError(t, err)
 			assert.ElementsMatch(t, f.Require, parsed.Require)
+			assert.ElementsMatch(t, f.Replace, parsed.Replace)
 		})
 	}
 }
