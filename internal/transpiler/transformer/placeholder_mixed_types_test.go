@@ -33,6 +33,10 @@ func TestPlaceholderMixedParameterTypes(t *testing.T) {
 			[]string{"Array_FoldLeft(rs, 0, func(__p0 int, __p1 R) int {", "return __p0 + __p1.Twice()"}},
 		{"the element first", `    Println(rs.FoldRight(0, _.Lo + _))`,
 			[]string{"Array_FoldRight(rs, 0, func(__p0 R, __p1 int) int {", "return __p0.Lo.Get() + __p1"}},
+		// A call whose slot takes no function leaves its `_` to the outer
+		// lambda, and the nested call on its result takes its own.
+		{"a `_` in a call the nested call is made on", `    Println(rs.FoldLeft(0, _ + ArrayOf(_.Lo).Map(_ * 2).Size()))`,
+			[]string{"Array_FoldLeft(rs, 0, func(__p0 int, __p1 R) int {", "ArrayOf(__p1.Lo.Get())"}},
 		// The nested call takes the second `_` written, so the outer
 		// lambda's second parameter is the third.
 		{"a nested call taking a `_` between them", `    Println(rs.FoldLeft(0, _ + xs.Map(_ * 2).Size() + _.Lo))`,

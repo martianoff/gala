@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"slices"
+	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -1696,33 +1697,43 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	}
 	unresolved := len(t.unresolvedTypes)
 	body, bodyResultType, takes, err := t.lowerPlaceholderBody(e, scopeType, byPosition)
-	if byPosition != nil {
-		// The k-th parameter is the k-th `_` the lambda took, which is the
-		// k-th `_` written unless a nested call took one before it
-		// (`_ + xs.Map(_ * 2).Size() + _.Lo`). Lowering found which it took;
-		// when it typed one by the wrong parameter, lower again by the
-		// right ones. A lowering that failed may have failed for that, so
-		// the `_` it takes are learnt from one binding them all to `any`,
-		// and the error stands when it typed each by the right one.
+	// The k-th parameter is the k-th `_` the lambda took, which is the k-th
+	// `_` written unless a nested call took one before it (`_ + xs.Map(_ *
+	// 2).Size() + _.Lo`). Lowering finds which it took; when it typed one by
+	// another parameter than its own, lower again by the ones it took, until
+	// the two agree: what a nested call takes may depend on the type of a
+	// `_` it is called on. A lowering that failed with more `_` written than
+	// parameters may have failed for that, so the `_` it takes are learnt
+	// from one binding them all to `any`; otherwise its error stands.
+	for range placeholderCount {
+		if byPosition == nil {
+			break
+		}
 		var taken []int
 		if err == nil {
 			taken = takes.taken(body)
-		} else {
-			shared, _, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil)
-			if sharedErr != nil {
-				return nil, false, sharedErr
+		} else if placeholderCount > len(ft.Params) {
+			if shared, _, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil); sharedErr == nil {
+				taken = sharedTakes.taken(shared)
 			}
-			taken = sharedTakes.taken(shared)
 		}
-		if !takenInPlace(taken) {
-			// What the discarded lowerings could not type is not the body's:
-			// a `_` typed by the wrong parameter is not the program's gap.
-			t.unresolvedTypes = t.unresolvedTypes[:unresolved]
-			body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, typesByParameter(paramTypes, taken))
+		if taken == nil || typedAsTaken(byPosition, paramTypes, taken) {
+			break
 		}
+		// What the discarded lowerings could not type is not the body's: a
+		// `_` typed by another parameter is not the program's gap.
+		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
+		byPosition = typesByParameter(paramTypes, taken)
+		body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, byPosition)
 	}
 	if err != nil {
 		return nil, false, err
+	}
+	line, col := e.at().start()
+	if byPosition != nil && !typedAsTaken(byPosition, paramTypes, takes.taken(body)) {
+		return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
+			"cannot tell which parameter each placeholder `_` stands for",
+			"use a lambda with named parameters")
 	}
 
 	// Rename each `_` the lambda took to its parameter, one parameter per
@@ -1732,6 +1743,11 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// itself (`_ = subject`) is not one taken, and stays.
 	paramCounter := -1
 	paramNames := takes.rename(body, func() string { return t.freshTempName("__p", &paramCounter) })
+	if takes.names != nil && hasPlaceholderName(body) {
+		return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
+			"internal error: a placeholder `_` was copied where it could not be renamed to its parameter",
+			"use a lambda with named parameters")
+	}
 
 	if len(paramNames) == 0 {
 		// Lexical scan found `_` tokens but none survived transformation
@@ -1745,7 +1761,6 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// one the type has no parameter for, or whose parameter has no type (a
 	// type parameter only the callback could bind, masked out) or one that
 	// could not be resolved, is GALA-E0033, never `any`.
-	line, col := e.at().start()
 	for i := range paramNames {
 		if len(paramNames) != len(ft.Params) {
 			// Too few is an error as too many is: a Go function literal takes
@@ -1835,6 +1850,11 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	return funcLit, true, nil
 }
 
+// placeholderNamePrefix starts the name lowerPlaceholderBody gives each taken
+// `_` it binds to its own parameter's type, until it is renamed to that
+// parameter. No GALA identifier can spell it.
+const placeholderNamePrefix = "_#"
+
 // lowerPlaceholderBody lowers e, a placeholder lambda's argument, in a scope
 // binding the `_` it takes, and returns the body, the body's result type
 // (resolved while the `_` are still bound) and what it took. With byPosition
@@ -1851,12 +1871,12 @@ func (t *galaASTTransformer) lowerPlaceholderBody(
 	t.currentScope.lambda, t.currentScope.placeholder = true, takes
 	t.addVar("_", shared)
 	if byPosition != nil {
-		// Names no GALA identifier can spell, so they shadow nothing; each
-		// taken `_` is renamed to its parameter once lowered. Bound without
+		// The names shadow nothing; each taken `_` is renamed to its
+		// parameter once lowered. Bound without
 		// addVar, which would record them as locals for the LSP.
 		takes.names = make([]string, len(byPosition))
 		for i, typ := range byPosition {
-			takes.names[i] = fmt.Sprintf("_#%d", i)
+			takes.names[i] = placeholderNamePrefix + strconv.Itoa(i)
 			t.currentScope.vals[takes.names[i]] = false
 			t.currentScope.valTypes[takes.names[i]] = typ
 		}
@@ -1875,16 +1895,29 @@ func (t *galaASTTransformer) lowerPlaceholderBody(
 	return body, t.getExprType(body), takes, nil
 }
 
-// takenInPlace reports whether taken, the positions of the `_` a placeholder
-// lambda took, is each `_` written up to the last: the k-th parameter is the
-// k-th `_` written.
-func takenInPlace(taken []int) bool {
+// typedAsTaken reports whether byPosition, the types the `_` written were
+// lowered with, typed each `_` at taken, the positions of those the lambda
+// took, by its parameter: the k-th by paramTypes[k].
+func typedAsTaken(byPosition, paramTypes []transpiler.Type, taken []int) bool {
 	for k, i := range taken {
-		if k != i {
+		if byPosition[i].String() != paramTypes[k].String() {
 			return false
 		}
 	}
 	return true
+}
+
+// hasPlaceholderName reports whether body holds an identifier still named as
+// lowerPlaceholderBody names a taken `_`: a copy of one rename could not find.
+func hasPlaceholderName(body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && strings.HasPrefix(id.Name, placeholderNamePrefix) {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // typesByParameter is the type each `_` written reads when the lambda took
