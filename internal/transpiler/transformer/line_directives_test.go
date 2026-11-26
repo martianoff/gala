@@ -440,7 +440,7 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			wants: map[string]string{
 				"if n == 0 {":      "4",
 				"return 100 / acc": "5",
-				"_tmp_1 := n - 1":  "7",
+				"var _tmp_1 int = n - 1": "7",
 			},
 		},
 		{

@@ -30,6 +30,21 @@ func TestSelfTailCallOptimization(t *testing.T) {
 		mustMiss []string
 	}{
 		{
+			// #1426: an untyped constant argument is held in a temporary of
+			// the parameter's type, not the constant's default type.
+			name: "untyped constant arguments to non-int parameters",
+			input: `package main
+
+func loop(i int, acc int64, b uint8) int64 = if (i == 0) acc + int64(b) else loop(i - 1, 5, 1 << i)
+
+func main() {
+    Println(loop(3, 0, 0))
+}
+`,
+			mustHave: []string{"var _tmp_2 int64 = 5", "var _tmp_3 uint8 = 1 << i"},
+			mustMiss: []string{"_tmp_2 := 5"},
+		},
+		{
 			// Positive: the tail self-call becomes a loop; the else branch does
 			// NOT contain a self-call to factorial( anymore.
 			name: "factorial tail recursion becomes a loop",

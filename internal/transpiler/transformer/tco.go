@@ -50,8 +50,8 @@ func (t *galaASTTransformer) tailResultSlot(tc *tailCtx) slot {
 //			if n <= 0 {
 //				return acc
 //			} else {
-//				_tmp_1 := n - 1   // temp names come from the transformer's gensym
-//				_tmp_2 := n * acc
+//				var _tmp_1 int = n - 1   // temp names come from the transformer's gensym
+//				var _tmp_2 int = n * acc
 //				n, acc = _tmp_1, _tmp_2
 //				continue
 //			}
@@ -339,13 +339,12 @@ func (t *galaASTTransformer) buildTailCallStep(
 		}
 		// Use the package gensym so temps can't collide with a user identifier
 		// and participate in the shared `_tmp_*` internal-temp convention.
+		// The temporary has the parameter's type: `:=` would give an
+		// untyped constant argument (`5`, `1 << i`) its default type, which
+		// the parameter may not accept (#1426).
 		tmp := t.nextTempVar()
 		tmpNames[i] = tmp
-		stmts = append(stmts, &ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent(tmp)},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{arg},
-		})
+		stmts = append(stmts, seqVarDecl(tmp, tc.paramTypes[i], arg))
 	}
 
 	// Simultaneous reassignment of every parameter from its temporary.
