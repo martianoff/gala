@@ -1,3 +1,21 @@
+/-
+  # M5, step 3c: the self-tail-call loop
+
+  docs/FORMAL_SEMANTICS.MD, M5. Where the transformer turns a function's self-tail-calls
+  into a loop (`loopGate`), `lowerFun` lowers it to the Go it emits, `for { if .. }`, each
+  self-call leaf a step (`_tmp_i := a_i; p1, .., pk = _tmp_1, ..; continue`). This file
+  unfolds GoCore's `for`, `:=`, `=` and `continue` on that shape, relates one iteration to
+  galaspec's recursive call (the parameters' cells stored to in place, `GFrameP`,
+  `ParamCells`), and re-proves step 3a's theorems over `lowerFun` (`calls_correct`,
+  `body_correct`, `stmts3_correct`, their statements unchanged) together with
+  `loop_correct`, by induction on galaspec's depth (`sim3_all`).
+
+  A tail loop is proved to agree for as many iterations as galaspec's depth allows: each
+  iteration is a galaspec call one level deeper, and GoCore's loop takes no depth per
+  iteration, so the claim covers the runs galaspec ends within its depth. That a galaspec
+  run diverging at every depth is a GoCore run that does not end normally (the divergence
+  theorem) is step 3d's.
+-/
 import Std.Data.String.ToNat
 import Gala.M5.Call
 namespace Gala.M5

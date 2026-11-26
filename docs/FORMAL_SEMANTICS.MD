@@ -578,9 +578,31 @@ column lists what each milestone's claim rests on beyond them.
   (`formal/Gala/M5/IifeInst.lean`, each next to `gala transpile`'s output, compared
   as GoCore syntax with the exporter's; the fixture `iife_shapes` runs that Go against
   `go run`); `iife_gocore_ok` runs `(if (true) 1 else 2) + 3` to a typed `4`. `match`
-  used as a value is step 4's. Of the 194 functions of `examples/` with signatures of the
-  three kinds, 49 lower, 16 of them through step 3b (`formal/COVERAGE.md` gives the
-  reasons for the rest).
+  used as a value is step 4's.
+  Step 3c is proved: the self-tail-call loop (the same theorems, now covering callees that
+  loop). Where the transformer loops a function (its body an `if` used as a value, through
+  nested `if`s, with a leaf that calls the function itself with an argument per
+  parameter), it emits `for { .. }`: an `if` is `if c { .. } else { .. }`, the self-call
+  leaf stores each argument in a temporary (`_tmp_1 := ..`), assigns the parameters from
+  them at once and `continue`s, and any other leaf is `return` of its value. The reference
+  lowering of a function, `lowerFun`, does the same where the transformer's gate fires,
+  and nothing where the gate fires but its loop lowering does not apply (a named
+  argument, an `if` in a step's argument, a parameter named as a temporary, ...): never
+  the recursive lowering the transformer did not emit. Elsewhere it is step 3b's
+  `lowerBody`. On `sw(a, b, n) = if (n == 0) a - b else sw(b, a, n - 1)` the lowering is
+  exactly the transpiler's Go (`sw_lowerFun`), `sw_spec_ok` computes galaspec's run of
+  `sw(1, 2, 2)` to end with `-1` after two iterations that swap the parameters (assigning
+  them in place without the temporaries would give `0`), and `sw_gocore_ok` draws the
+  conclusion for GoCore's loop; the fixture `tail_loop` runs that Go, a loop whose
+  argument panics partway through included, against `go run`. **A tail loop is proved to
+  agree for as many iterations as galaspec's depth allows**: each iteration is a galaspec
+  call one level deeper, so the theorems speak of runs galaspec ends within its depth.
+  That a galaspec run diverging at every depth is a GoCore run that never ends normally
+  (the divergence theorem) is step 3d's. Of the 194 functions of `examples/` with
+  signatures of the three kinds, 49 lower: 33 directly, 10 through step 3b and 6 as
+  self-tail-call loops (step 3c). Before step 3c those 6 counted as step 3b's, lowered as
+  recursion, which is not the Go the transpiler emits for them (`formal/COVERAGE.md`
+  gives the reasons for the rest).
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
   order](#evaluation-order)); fuel adequacy is not proved yet.
@@ -775,6 +797,12 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   changed a variable of the function around it would make that variable one a call may
   change, so the body would not fit; the lowering has no assignment, so no lowered body
   does this.
+  Step 3c widens `Body3` to the loop's statements: `for { .. }` with no init, condition
+  or post; `:=` and `=` with names on the left (`=` with names on the right too), whose
+  operands are checked like any other; and `continue`, which has no operands. A
+  parameter the loop assigns is assigned outside every function literal, so no call can
+  change it and the body still fits (on the corpus no lowered body is excluded this way).
+  `swProg_gc` meets `gc_runs3` on `sw`'s loop, the transpiler's own Go.
   Then `EvalOperand` carries weight: without it, some allowed order breaks the theorem,
   which is how a #996-class bug shows. If the parameter proves too heavy, the theorems
   fall back to gc's order and say "for gc 1.25.5's operand order".
@@ -792,10 +820,13 @@ Each step is its own pull request with a theorem.
    simulation (it starts from a run galaspec finished) cannot give: it is proved as a
    fuel-indexed lock-step lemma, galaspec given `K * (m + 1)` steps simulating GoCore's
    first `m` steps with related states. 3a (direct calls and `return`) and 3b (the IIFE)
-   are proved; 3c is the self-tail-call loop, 3d GoCore's M1 with the lock-step lemma and the
-   whole-program theorems. 3d also owes what 3a leaves open: that the GoCore context of
-   the lowered program (`buildCtx`) meets `FunRel` and that lowered bodies fit gc's scope
-   (`FitsSs`), fuel adequacy, and that full hoisting agrees with left to right.
+   are proved, and 3c (the self-tail-call loop); 3d is GoCore's M1 with the lock-step lemma
+   and the whole-program theorems. 3d also owes what 3a to 3c leave open: that the GoCore
+   context of the lowered program (`buildCtx`) meets `FunRel` and that lowered bodies fit
+   gc's scope (`FitsSs`), fuel adequacy, that full hoisting agrees with left to right,
+   that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s states, and the
+   divergence theorem for the tail loop: a galaspec run that diverges at every depth is
+   a GoCore run that does not end normally.
 4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
    M3 fragment retired.
 5. Package-level initialization (galaspec's `mentions` order against GoCore's
@@ -853,6 +884,11 @@ Each step is its own pull request with a theorem.
      differs. That branch is unreachable only if the match is exhaustive for the subject's
      value, so this lemma needs T5 (exhaustiveness) or a check that the program's matches
      are exhaustive.
+- **Normalizations M5 adds.**
+  1. *Temporary renaming (program-wide numbering vs per-function).* The transformer
+     numbers a self-tail-call loop's temporaries across the program (`_tmp_5`, `_tmp_6`
+     in the program's third loop); M5's lowering numbers each loop's from `_tmp_1`
+     (step 3c).
 - **What it removes:** the transformer from the trusted base, for each validated program.
 - **Risk:** the transformer's output must be normalized before comparison; a validator
   that is too strict rejects correct output and stalls coverage.
@@ -1209,14 +1245,16 @@ below; this is their order and where they stand.
     included.
   - Step 2b, `val`/`var`, `if` statements and blocks (`stmts_correct`, #1276): proved.
   - Step 3, calls and recursion, the function-literal and self-tail-call shapes, and the
-    divergence theorem: in progress; 3a (direct calls and `return`) and 3b (`if` used as a
-    value, Go's IIFE) are proved. It also carries the order obligations steps 2a and 2b left
+    divergence theorem: in progress; 3a (direct calls and `return`), 3b (`if` used as a
+    value, Go's IIFE) and 3c (the self-tail-call loop, for as many iterations as
+    galaspec's depth allows; divergence is 3d's) are proved. It also carries the order obligations steps 2a and 2b left
     open (gc's `&&`/`||` temporaries, `untriggered_orders_agree`).
   - Step 4: structs and sealed values on the flat layout; `match` re-proved against
     GoCore for whole programs; M3's fragment retired.
   - Step 5: package-level initialization and printing, then the theorems for whole
     programs.
-- **M6:** per-program translation validation, with the six normalization lemmas M3 left.
+- **M6:** per-program translation validation, with the six normalization lemmas M3 left
+  and the temporaries' renaming M5 step 3c adds.
 - **M7:** widening, S2 first, each construct family in galaspec, GoCore, the reference
   lowering and the validator together.
 

@@ -155,8 +155,12 @@ pinned that way.
 | `Gala.M5.calls_correct`, `body_correct`, `stmts3_correct` (step 3b) | **M5, step 3b: `if` used as a value, Go's IIFE** (`Gala/M5/Call.lean`). The same three theorems, for a lowering widened to `if` used as a value: as an expression it is Go's function literal called at once, `func() T { if c { T(a) } else { T(b) } }()`, each arm its tail (`tailOf`: its statements, then `return` of its last value; an arm that is an `if` is `{ if .. }`); a function's last value that is an `if` is that tail itself, with no IIFE. The arms have one kind, and the IIFE's value has its type, never an untyped constant (`ERes3 _ false`). The statement lowering takes the kind a `return` may have (`none` in an IIFE's arms: GALA's `return` there leaves the function, Go's would leave only the literal; `RetOK none` cannot hold, as a related value has a kind); 3a's theorems are the case `some ρ`, their meaning unchanged. GoCore's IIFE adds a closure to the state (`GFrame` lets the closures grow, as the cells) and takes one step for the call, paid by galaspec's step at the `if`. `K` is at least 11, the depth an IIFE takes; `lowerC_mono` and `lowerBody_mono` hold for the widened lowering. Proved in the same induction on galaspec's depth, with the tails (`TailSim`, `TsSim`) and the `if` of a tail or an IIFE (`IfTSim`). `match` used as a value is step 4's. |
 | `Gala.M5.tailIf_lowerBody`, `armNest_lowerBody`, `retInArm_not_lowered`, `iife_correct_instance`, `if_spec_ok`, `iife_gocore_ok` | **Step 3b on the transpiler's shapes, and a typed run** (`Gala/M5/IifeInst.lean`). On five functions (`pick`, `blk`, `tailIf`, `argIf`, `armNest`) the lowering, computed by `rfl`, is the Go `gala transpile` emits, quoted next to each; outside the proofs, the galaspec syntax was compared with `galacore`'s export of the GALA source and the lowering with `gocorejson`'s export of the transpiler's Go, all five equal, and the fixture `iife_shapes` runs that Go against `go run`. A `return` in an arm is not lowered, nor a block whose last element is a block (its statements would join the enclosing Go block, where a name declared in both would be redeclared: `nestedBlock_not_lowered`), nor a body with a `val` named as a parameter at its top (`paramShadow_not_lowered`): the lowering checks that no Go scope declares a name twice (`scopeOK`, which Go rejects and GoCore does not check) and refuses bodies that do; the check rejects a second `t` in one `if` arm and accepts one `t` in each of two arms (`scopeOK_redecl_in_arm`, `scopeOK_sibling_arms`). `iife_correct_instance` meets every hypothesis of `calls_correct` on `(if (true) 1 else 2) + 3`, `if_spec_ok` computes galaspec's run to end with `4`, and `iife_gocore_ok` draws the conclusion: GoCore's run ends with a related, typed `int`. |
 | `Gala.M5.iifeProg_gc`, `body3_div_iife`, `body3_iife_div_inside` | **The order result on IIFEs** (`Gala/M5/CallOrder.lean`, `IifeInst.lean`). An IIFE is a call to gc's model (an O-node): `Body3` treats it as one, and checks its body as a level of its own in the scope the rewrite gives it (`LitsQuiet`: the rewrite leaves the body as it is). `pick`'s lowering is `Body3` and fits its scope, so `gc_runs3` leaves it in place (`#guard` cross-check by evaluation); `x / z + func() int { .. }()` is not `Body3`, a division inside an arm is. The fixture `eval_order_iife` pins against `go run` that gc runs the literal's body first. Same limits as 3a: GoCore's model of gc 1.25.5, `FitsSs` owed by step 3d. |
+| `Gala.M5.calls_correct`, `body_correct`, `stmts3_correct` (step 3c), `lowerFun_mono` | **M5, step 3c: the self-tail-call loop** (`Gala/M5/Loop.lean`). The same three theorems, their statements unchanged, now covering callees that loop: `FunRel` declares each function as `lowerFun` lowers it. Where the transformer loops a function (`loopGate`: an `if` used as a value as the body, through nested `if`s, with a leaf calling the function itself with an argument per parameter), `lowerFun` is its Go, `for { L(tree) }`: an `if` is `if c { .. } else { .. }`, a self-call leaf `_tmp_1 := a_1; ..; p_1, .., p_k = _tmp_1, ..; continue`, any other leaf `return` of its value; where the gate fires and that lowering does not apply (a named argument, an `if` in a step's argument, a compound or parenthesized leaf, a parameter named as a temporary), nothing, never the recursive lowering; elsewhere `lowerBody`. Inside a loop the parameters' cells are stored to in place (`GFrameP`, `ParamCells`); a caller sees `GFrame` again. **A tail loop is proved to agree for as many iterations as galaspec's depth allows**: each iteration is a galaspec call one level deeper, so the claim covers the runs galaspec ends within its depth; that a run diverging at every depth is one GoCore does not end normally is step 3d's. Six definitions changed: `FunRel` declares functions by `lowerFun` and gains `noTmp` (no called name is a temporary's); `Inv3.closed`'s GoCore half is required only of names that are not temporaries'; `Inv3` gains `sync` (as many cell types as cells, a new hypothesis of the three theorems: `allocAs` pushes both, stores set only, a run starts empty; that it holds of `runProgram`'s states is owed by 3d); `GFrame` gains `Pre` on the cell types, equal growth of cells and types, and steps never more. `lowerFun_mono`: a larger `K` lowers the same. |
+| `Gala.M5.sw_lowerFun`, `tmpParam_not_lowered`, `tmpCall_no_funRel`, `loop_calls_instance`, `sw_spec_ok`, `sw_gocore_ok` | **Step 3c on the transpiler's shape, and a run** (`Gala/M5/LoopInst.lean`). On `sw(a, b, n) = if (n == 0) a - b else sw(b, a, n - 1)` the lowering, by `rfl`, is the Go `gala transpile` emits (quoted, temporaries renamed per function, M6's normalization). A parameter named `_tmp_1` is not lowered, and no program calling a function named `_tmp_1` meets `FunRel`. `loop_calls_instance` meets every hypothesis of `calls_correct` on `sw(1, 2, 2)`, `sw_spec_ok` computes galaspec's run to end with `-1` after two iterations that swap the parameters (in place without the temporaries it would be `0`), and `sw_gocore_ok` draws the conclusion: GoCore's loop ends with a related `int`. The fixture `tail_loop` runs the transpiler's loops against `go run`, a swap and an argument that panics partway through included. `loop_correct`, the loop's own statement, is internal (not pinned). |
+| `Gala.M5.swProg_gc` | **The order result on the loop** (`Gala/M5/CallOrder.lean`, `LoopInst.lean`). `Body3` and `FitsS` widen to `for {}` with no init, condition or post, `:=` and `=` with names on the left (`=` with names on the right too) and `continue`; the scope after `:=` binds its names, as the rewrite's does. `sw`'s loop is `Body3` and fits the scope gc's rewrite gives it, so `gc_runs3` leaves it in place (`#guard` cross-check by evaluation). A parameter the loop assigns is assigned outside every function literal, so no call can change it. |
 
-### How much of `examples/` steps 3a and 3b lower
+
+### How much of `examples/` steps 3a to 3c lower
 
 `formal/scripts/CallCount.lean` sorts every function of the examples' Core JSON
 (`galacore`, constant-folded as galaspec runs it) by the first reason the lowering leaves
@@ -172,14 +176,22 @@ it out. Of 542 examples, 541 export, with 1,526 functions:
 | the body calls something not lowered (another function left out, `Println`, a constructor, a lambda) | 81 |
 | a `match` (step 4) | 22 |
 | a `return` inside an arm of an `if` used as a value (Go's would leave the IIFE, GALA's the function) | 4 |
+| looped by the transformer, refused by the loop lowering where the recursive one would not | 0 |
 | another body shape (an assignment, a loop, ...: later steps) | 23 |
 | excluded by the order predicate (`Body3`) | 0 |
-| lowered, `Body3` | 49 |
+| a parameter a call may change (a function literal assigns it) | 0 |
+| lowered, `Body3`, a self-tail-call loop (step 3c) | 6 |
+| lowered, `Body3`, with an `if` used as a value or as the last value (step 3b) | 10 |
+| lowered, `Body3`, otherwise | 33 |
 
-Of the 194 functions with signatures of the three kinds, 49 lower: 33 with no `if` used
-as a value or as the last value, 16 with one (step 3b); none is excluded by the order predicate. No lowered body has an IIFE that changes a variable of the
-function around it (which would make the body not fit gc's scope): the lowering has no
-assignment. The script checks `Body3`, not `FitsSs`: that the lowered bodies fit gc's
+Of the 194 functions with signatures of the three kinds, 49 lower, as after step 3b: 33
+with no `if` used as a value or as the last value, 10 with one (step 3b), and 6 as
+self-tail-call loops (step 3c). Step 3b counted those 6 as its own, lowered as recursion,
+which is not the Go the transpiler emits for them; step 3c lowers them as its loop.
+None is excluded by the order predicate. No lowered body has an IIFE that changes a variable of the
+function around it (which would make the body not fit gc's scope): the only assignment is a
+loop's, of its parameters, outside every function literal, and the measured count of
+parameters a call may change is 0. The script checks `Body3`, not `FitsSs`: that the lowered bodies fit gc's
 scope is owed by step 3d.
 
 ### M3's stated gap: the subject has the static type the transformer inferred
@@ -277,6 +289,10 @@ come from a real `go run` (`tests/gocore/regen.sh`). They cover:
   the panic; M5 step 3a's `Body3` excludes such statements); the same before a function
   literal called at once, the transpiler's IIFE (`eval_order_iife`: the literal's body
   prints before the panic);
+- the transpiler's self-tail-call loops (`tail_loop`): a sum, a gcd, a swap of
+  parameters (`sw(1, 2, 2)` is `-1`; assigning in place without the temporaries would
+  give `0`) and an argument whose division by a parameter panics on the last
+  iteration, after each iteration's output;
 - the transpiler's IIFEs (`iife_shapes`): its Go for `if` used as a value, as a `var`'s
   value, an argument, with an arm of statements, and a function's tail `if`, the Go M5
   step 3b's lowering gives for the same functions;

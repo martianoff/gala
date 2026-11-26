@@ -1,5 +1,5 @@
 /-
-  # How much of a corpus steps 3a and 3b cover
+  # How much of a corpus steps 3a, 3b and 3c cover
 
       lake env lean --run scripts/CallCount.lean <file.json or directory>...
 
@@ -11,10 +11,13 @@
   function names an argument or leaves one out), `calls-outside` (it calls something not
   lowered: another function left out, `Println`, a constructor, a lambda, ...),
   `match-expression` (a `match`, step 4), `return-in-iife` (a `return` inside an arm of an
-  `if` used as a value: Go's would leave the IIFE, GALA's the function), `body-shape`
-  (anything else). A lowered body is `order-predicate` when `Body3` fails
-  (`Gala/M5/CallOrder.lean`), else `lowered-step3b` when it needs step 3b (an `if` used as
-  a value, or one as its last value), else `lowered`. The functions the lowering calls are the
+  `if` used as a value: Go's would leave the IIFE, GALA's the function), `tail-loop-refused`
+  (the transformer loops it, `loopGate`, and the loop lowering refuses it where the
+  recursive one would not), `body-shape` (anything else). A lowered body (`lowerFun`) is
+  `order-predicate` when `Body3` fails (`Gala/M5/CallOrder.lean`), `changeable-param` when
+  a call may change a parameter (`chSs`: a function literal assigns it), else
+  `lowered-step3c` when it is a self-tail-call loop, `lowered-step3b` when it needs step 3b
+  (an `if` used as a value, or one as its last value), else `lowered`. The functions the lowering calls are the
   greatest set whose bodies lower calling only each other. Run on constant-folded
   programs, as galaspec runs them. A development tool for `formal/COVERAGE.md`.
 -/
@@ -75,21 +78,25 @@ partial def fixSigs (ds : Decls) (sg0 : Sigs) (names : List String) : Sigs :=
   -- table is rebuilt from the names, so no earlier round's lowering is rerun.
   let sg : Sigs := fun f => if names.contains f then sg0 f else none
   let names' := names.filter fun f => match ds.funcs.lookup f with
-    | some F => (lowerBody K sg F).isSome
+    | some F => (lowerFun K sg f F).isSome
     | none => false
   if names'.length == names.length then sg else fixSigs ds sg0 names'
 
-def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String :=
+def reason (ds : Decls) (globals : List String) (sg : Sigs) (f : String) (F : Func) : String :=
   if F.result.isNone then "unit-result"
   else match sigOf F with
   | none => "signature"
   | some (xks, _) =>
     let names := xks.map (·.1)
     if !decide (ParamsOK names) then "param-names"
-    else match lowerBody K sg F with
+    else match lowerFun K sg f F with
     | some lb =>
-      if !body3Ss lb then "order-predicate" else if usesIf F.body then "lowered-step3b" else "lowered"
+      if !body3Ss lb then "order-predicate"
+      else if (GoCore.Full.Hoist.chSs (fun _ _ => false) false lb).any names.contains then "changeable-param"
+      else if loopGate f names.length F.body then "lowered-step3c"
+      else if usesIf F.body then "lowered-step3b" else "lowered"
     | none =>
+      if loopGate f names.length F.body && (lowerBody K sg F).isSome then "tail-loop-refused" else
       let es := subs F.body
       -- A name the body declares (`val`, `var`) is a local, shadowing a package-level one.
       let locals := names ++ es.flatMap (fun | .decl _ ns _ _ _ => ns | _ => [])
@@ -127,9 +134,12 @@ def main (args : List String) : IO UInt32 := do
       let globals := gs.flatMap (·.names)
       let sg0 : Sigs := fun f => (ds.funcs.lookup f).bind sigOf |>.map fun (xks, ρ) => (xks.map (·.2), ρ)
       let sg := fixSigs ds sg0 (ds.funcs.filterMap fun (f, _) => (sg0 f).map fun _ => f)
-      for (_, F) in ds.funcs do
-        let r := reason ds globals sg F
+      for (f, F) in ds.funcs do
+        let r := reason ds globals sg f F
         counts := counts.insert r (counts.getD r 0 + 1)
-  for (r, n) in counts.toList do
-    IO.println s!"{r} {n}"
+  -- Every reason, a zero included.
+  for r in ["unit-result", "signature", "param-names", "reads-package-level", "named-args-or-defaults",
+      "calls-outside", "match-expression", "return-in-iife", "tail-loop-refused", "body-shape",
+      "order-predicate", "changeable-param", "lowered-step3c", "lowered-step3b", "lowered"] do
+    IO.println s!"{r} {counts.getD r 0}"
   return 0
