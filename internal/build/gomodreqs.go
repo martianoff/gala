@@ -55,12 +55,14 @@ func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, replaces []mod.R
 	return c.reqs, c.replaces, c.skipped
 }
 
-// UnwritableGoModReplaces returns the requirements GoRequirementsOf leaves
-// out of goMod because the replace Go applies to them has a path gala.mod
-// cannot hold (one with a space). gala.mod has to replace those modules with
-// another path. GALA's own packages are not among them.
-func UnwritableGoModReplaces(goMod *modfile.File) []mod.Require {
-	return copyGoMod(goMod).unwritableReqs
+// UnwritableGoModReplaces returns what GoRequirementsOf leaves out of goMod
+// because gala.mod cannot hold a replace of it (a path with a space): the
+// modules (path and version limit) such a replace replaces, and the
+// requirements to which such a replace is the one Go applies. gala.mod has to
+// replace those with another path. GALA's own packages are not among them.
+func UnwritableGoModReplaces(goMod *modfile.File) (olds []mod.ModuleVersion, reqs []mod.Require) {
+	c := copyGoMod(goMod)
+	return c.unwritableOlds, c.unwritableReqs
 }
 
 // goModCopy is what gala mod init copies from a go.mod, and what it does not.
@@ -68,6 +70,7 @@ type goModCopy struct {
 	reqs           []mod.Require
 	replaces       []mod.Replace
 	skipped        []string
+	unwritableOlds []mod.ModuleVersion
 	unwritableReqs []mod.Require
 }
 
@@ -81,7 +84,8 @@ func copyGoMod(goMod *modfile.File) goModCopy {
 			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (a package of the GALA module, which gala build provides itself)", rep.Old.Path))
 			continue
 		case unwritableReplace(rep):
-			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)", rep.Old.Path))
+			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)", strings.TrimSpace(rep.Old.Path+" "+rep.Old.Version)))
+			c.unwritableOlds = append(c.unwritableOlds, rep.Old)
 		default:
 			c.replaces = append(c.replaces, rep)
 		}

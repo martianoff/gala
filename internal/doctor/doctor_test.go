@@ -453,6 +453,11 @@ func TestModDrift(t *testing.T) {
 			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
 		},
 		{
+			name:    "gala.mod standing in for an unwritable replace no requirement uses is not drift",
+			galaMod: "require a.com/x v1.2.0 // go\n\nreplace a.com/x v1.0.0 => ../ab",
+			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
+		},
+		{
 			name:    "a GALA package go.mod replaces with a path with a space is not drift",
 			galaMod: "",
 			goMod:   "require martianoff/gala/std v0.0.0\n\nreplace martianoff/gala/std => \"../gala std\"",

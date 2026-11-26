@@ -371,10 +371,8 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 	// A requirement go.mod replaces with a path gala.mod cannot hold still
 	// counts, and gala.mod needs a replace of its own for it, with another
 	// path: not one it copied from go.mod, which go.mod does not apply to it.
-	unwritableReqs := build.UnwritableGoModReplaces(goMod)
-	var unwritable []string
+	unwritable, unwritableReqs := build.UnwritableGoModReplaces(goMod)
 	for _, r := range unwritableReqs {
-		unwritable = append(unwritable, r.Path)
 		if rep, ok := galaMod.ReplaceFor(r.Path, r.Version); !ok || slices.Contains(wantedReplaces, rep) {
 			drift = append(drift, fmt.Sprintf("replace %s %s %s", r.Path, r.Version, unwritableNote))
 		}
@@ -404,9 +402,10 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 // replaceDrift lists the replace directives go.mod has (goReplaces) and
 // gala.mod lacks, and those gala.mod has for a Go dependency and go.mod lacks.
 // A replace of a GALA module in gala.mod is not drift: go.mod has no reason to
-// carry it. Nor is one of a module go.mod replaces with a path gala.mod cannot
-// hold (unwritable): gala.mod has to use another path.
-func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable []string) []string {
+// carry it. Nor is one of a module (path and version limit) go.mod replaces
+// with a path gala.mod cannot hold (unwritable): gala.mod has to use another
+// path.
+func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable []mod.ModuleVersion) []string {
 	inGala := make(map[mod.Replace]bool)
 	for _, r := range galaMod.Replace {
 		inGala[r] = true
@@ -420,7 +419,7 @@ func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable []stri
 		}
 	}
 	for _, r := range galaMod.GoReplaces() {
-		if !inGo[r] && !slices.Contains(unwritable, r.Old.Path) {
+		if !inGo[r] && !slices.Contains(unwritable, r.Old) {
 			drift = append(drift, fmt.Sprintf("replace %s (gala.mod only)", mod.FormatReplaceEntry(r)))
 		}
 	}
