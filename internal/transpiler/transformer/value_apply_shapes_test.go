@@ -324,6 +324,40 @@ struct Hold(var k Keeper)
 `+use)
 		require.ErrorContains(t, err, "GALA-E0113", use)
 	}
+	// So do they with no arguments.
+	out, err = transpileBareVariant(t, `package main
+
+struct Tick(var n int)
+
+func (t *Tick) Apply() int = t.n
+
+func lend(inout t Tick) int = t()
+
+func main() {
+    val a = Tick(1)
+    var b = Tick(2)
+    Println(a(), Tick(3)(), lend(&b))
+}
+`)
+	require.NoError(t, err)
+	for _, w := range []string{"std.AddrOfCopy(a).Apply()", "std.AddrOfCopy(Tick{n: 3}).Apply()", "(*t).Apply()"} {
+		require.Contains(t, out, w)
+	}
+	_, err = transpileBareVariant(t, `package main
+
+struct Keeper(var n int)
+
+func (k Ptr[Keeper]) Apply() Ptr[Keeper] = k
+
+func lend(inout k Keeper) = Println(k().n)
+
+func main() {
+    var k = Keeper(1)
+    lend(&k)
+}
+`)
+	require.ErrorContains(t, err, "GALA-E0113")
+
 	// One that only reads its receiver is called on the place.
 	out, err = transpileBareVariant(t, `package main
 
