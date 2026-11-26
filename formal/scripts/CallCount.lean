@@ -1,5 +1,5 @@
 /-
-  # How much of a corpus steps 3a, 3b and 3c cover
+  # How much of a corpus steps 3a to 3d cover
 
       lake env lean --run scripts/CallCount.lean <file.json or directory>...
 
@@ -14,14 +14,18 @@
   `if` used as a value: Go's would leave the IIFE, GALA's the function), `tail-loop-refused`
   (the transformer loops it, `loopGate`, and the loop lowering refuses it where the
   recursive one would not), `body-shape` (anything else). A lowered body (`lowerFun`) is
-  `order-predicate` when `Body3` fails (`Gala/M5/CallOrder.lean`), `not-fit` when it does
-  not fit the scope gc's rewrite gives it in the program of the file's lowered functions
-  (`fitsSs`, the check `lowerProg` makes, `Gala/M5/Prog.lean`), `changeable-param` when
-  a call may change a parameter (`chSs`: a function literal assigns it), else
+  `order-predicate` when `Body3` fails (`Gala/M5/CallOrder.lean`), `changeable-param` when
+  a call may change a parameter (`chSs`: a function literal assigns it), `not-fit` when it
+  does not fit the scope gc's rewrite gives it in the program of the file's lowered
+  functions (`fitsSs`, the check `lowerProg` makes, `Gala/M5/Prog.lean`), else
   `lowered-step3c` when it is a self-tail-call loop, `lowered-step3b` when it needs step 3b
   (an `if` used as a value, or one as its last value), else `lowered`. The functions the lowering calls are the
   greatest set whose bodies lower calling only each other. Run on constant-folded
-  programs, as galaspec runs them. A development tool for `formal/COVERAGE.md`.
+  programs, as galaspec runs them. Each file with a function of the lowered kinds is also
+  counted as a whole program (step 3d's `lowerProg`, which lowers every such function or
+  none): `program-lowered`, or refused for its names (`namesOK`), for a function that does
+  not lower (`lowerFuns`), or for a body that does not fit gc's scope (`fitsAll`). A
+  development tool for `formal/COVERAGE.md`.
 -/
 import Gala.Json
 import Gala.Const
@@ -96,8 +100,8 @@ def reason (ds : Decls) (globals : List String) (sg0 sg : Sigs) (fs : List (Stri
     else match lowerFun K sg f F with
     | some lb =>
       if !body3Ss lb then "order-predicate"
-      else if !fitsSs (gcScope (progOf fs) "main" 0 none [] (lowerSigOf xks ρ) lb) lb then "not-fit"
       else if (GoCore.Full.Hoist.chSs (fun _ _ => false) false lb).any names.contains then "changeable-param"
+      else if !fitsSs (gcScope (progOf fs) "main" 0 none [] (lowerSigOf xks ρ) lb) lb then "not-fit"
       else if loopGate f names.length F.body then "lowered-step3c"
       else if usesIf F.body then "lowered-step3b" else "lowered"
     | none =>
@@ -139,7 +143,7 @@ def main (args : List String) : IO UInt32 := do
       let p := foldConstants p
       let (ds, gs) := collect p
       let globals := gs.flatMap (·.names)
-      let sg0 : Sigs := fun f => (ds.funcs.lookup f).bind sigOf |>.map fun (xks, ρ) => (xks.map (·.2), ρ)
+      let sg0 := progSigs ds
       let sg := fixSigs ds sg0 (ds.funcs.filterMap fun (f, _) => (sg0 f).map fun _ => f)
       let fs := ds.funcs.filterMap fun (f, F) => do
         let _ ← sg f
@@ -148,7 +152,10 @@ def main (args : List String) : IO UInt32 := do
         pure (f, lowerSigOf xks ρ, lb)
       -- Whole programs: `lowerProg` lowers every function of the lowered kinds, or none.
       if (ds.funcs.any fun (_, F) => (sigOf F).isSome) then
-        let k := if (lowerProg K ds).isSome then "program-lowered" else "program-refused"
+        let k := if !namesOK ds then "program-refused-names"
+          else match lowerFuns K ds with
+          | none => "program-refused-lowering"
+          | some lfs => if fitsAll lfs then "program-lowered" else "program-refused-fit"
         counts := counts.insert k (counts.getD k 0 + 1)
       for (f, F) in ds.funcs do
         let r := reason ds globals sg0 sg fs f F
@@ -157,6 +164,6 @@ def main (args : List String) : IO UInt32 := do
   for r in ["unit-result", "signature", "param-names", "reads-package-level", "named-args-or-defaults",
       "calls-outside", "match-expression", "return-in-iife", "tail-loop-refused", "body-shape",
       "order-predicate", "not-fit", "changeable-param", "lowered-step3c", "lowered-step3b", "lowered",
-      "program-lowered", "program-refused"] do
+      "program-lowered", "program-refused-names", "program-refused-lowering", "program-refused-fit"] do
     IO.println s!"{r} {counts.getD r 0}"
   return 0

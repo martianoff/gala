@@ -157,7 +157,7 @@ theorem sw_lowerProg : lowerProg 11 swDs = some (progOf swFs) := by
   have hn : namesOK swDs = true := by decide
   have hfit : fitsAll swFs = true := by
     simp [fitsAll, swFs, fitsSs, fitsS, fitsOS, fitsE, fitsEs, fieldListNames, swGo, afterS,
-      gcScope, funcScope, changeableName, 
+      gcScope, funcScope, changeableName,
       Scope.isLocal, Scope.isLType, Scope.ltype?, Scope.obj?, Scope.env, nameOwner,
       Scope.enter, Scope.withIfaces, Scope.bind, sigNames, lowerSigOf, kindName, chSs, chS, chE,
       chEs, chOS, chOE, isVarObj, buildCtx, buildPkg, progOf, funDecl, Id.run, List.forIn_cons,

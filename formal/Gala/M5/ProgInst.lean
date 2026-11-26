@@ -69,7 +69,7 @@ theorem evenOdd_lowerProg : lowerProg 11 evenOddDs = some (progOf evenOddFs) := 
   have hO : sigOf isOddF = some ([("n", .int)], .bool) := rfl
   have hb : ∀ c b, body3Ss (boolParamG c b) = true := by
     intro c b
-    cases b <;> simp [boolParamG, ifT, body3Ss, body3S, body3OS, ccB, ccBs, canon, canonArgs, 
+    cases b <;> simp [boolParamG, ifT, body3Ss, body3S, body3OS, ccB, ccBs, canon, canonArgs,
       triggers, isNonzeroLit, isLit]
   have hl : lowerFuns 11 evenOddDs = some evenOddFs := by
     have hf : evenOddDs.funcs = [("isEven", isEvenF), ("isOdd", isOddF)] := rfl
@@ -85,8 +85,7 @@ theorem evenOdd_lowerProg : lowerProg 11 evenOddDs = some (progOf evenOddFs) := 
       chEs, chOS, isVarObj, buildCtx, buildPkg, progOf, funDecl, Id.run, List.forIn_cons,
       List.forIn_nil, List.foldl_cons, List.foldl_nil, id_pure, idb,
       Std.HashMap.getElem?_insert, isTypeObj, resultCount, beq_iff_eq,
-      Std.HashMap.get?_eq_getElem?, Std.HashMap.contains_insert, Option.bind_some, 
-      ]
+      Std.HashMap.get?_eq_getElem?, Std.HashMap.contains_insert, Option.bind_some]
   simp [lowerProg, hn, hl, hfit]
 
 /-- **Two functions calling each other**: the context GoCore builds from the lowered
@@ -118,8 +117,9 @@ def chScope : Hoist.Scope :=
   { c := ⟨∅, "main"⟩, pkg := "main", file := 0, locals := ["x"], changeable := (∅ : Std.HashSet String).insert "x" }
 
 open Hoist in
-/-- `fitsSs` is not true of every body: `return x + f()` reading such an `x` does not fit,
-    so gc's model may hoist around it, and the lowering refuses a body like it. -/
+/-- `fitsSs` is not true of every body: `return x + 1` reading such an `x` does not fit
+    (gc's model may hoist around a read a call could change), and the lowering refuses a
+    body like it. -/
 theorem changeable_not_fits : fitsSs chScope [.ret [.binary "+" (.ident "x") (.intLit 1)]] = false := by
   simp [chScope, fitsSs, fitsS, fitsEs, fitsE, changeableName, Scope.isLocal]
 

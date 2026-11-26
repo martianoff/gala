@@ -625,18 +625,20 @@ column lists what each milestone's claim rests on beyond them.
   lowers every function of the lowered kinds into one package `main`, with the program's
   own signatures (`progSigs`); a function whose signature is of no lowered kind (`main`,
   one returning nothing) is skipped, and step 5 widens that to `main`. It refuses a
-  program whose function names repeat, shadow a name the lowering uses (`true`, `false`,
-  `int`, `bool`, `string`, `init`) or are temporaries', or whose lowered bodies are not
-  `Body3` or do not fit gc's scope: `lowerProg` checks that each body fits gc's scope
-  (`fitsSs`, proved sound by `fitsSs_sound`) and refuses bodies that don't. For what it
+  program whose function names repeat, or whose declared functions are named as the
+  lowering's constants and types (`true`, `false`, `int`, `bool`, `string`), `init` or a
+  temporary, or whose lowered bodies are not `Body3`; and `lowerProg` checks that each
+  body fits gc's scope (`fitsSs`, proved sound by `fitsSs_sound`) and refuses bodies that
+  don't. For what it
   lowers, the context GoCore builds (`buildCtx`) meets every side condition of `FunRel`
   (`lowerProg_funRel`, through `buildPkg`'s tables, not a hand-built context), and gc's
   model leaves the program as written (`lowerProg_gc : Order.gc p = p`). The hand-built
   contexts of 3a and 3c are now what `buildCtx` gives (`sw_buildCtx`, `inc_buildCtx`), and
   their `FunRel` follows from `lowerProg_funRel`; `isEven` and `isOdd`, calling each other,
   meet it too (`evenOdd_funRel`, `evenOdd_gc`). Of the 93 example files with a function
-  of the lowered kinds, `lowerProg` lowers 20 whole; every other one has a function that
-  does not lower yet. `Inv3`'s hypothesis that no galaspec global is named after a lowered
+  of the lowered kinds, `lowerProg` lowers 21 whole; the 72 others each have a function
+  that does not lower yet (none is refused for its names or for a body that does not
+  fit). `Inv3`'s hypothesis that no galaspec global is named after a lowered
   function stays a hypothesis, which step 5 discharges from the initial state.
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
@@ -864,9 +866,10 @@ Each step is its own pull request with a theorem.
    and the whole-program theorems. 3d also owes what 3a to 3c leave open. Proved: fuel
    adequacy, and that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s
    states, and the whole-program lowering (`lowerProg`), whose context meets `FunRel` and
-   whose bodies fit gc's scope. Open: the divergence theorem for the tail loop: a galaspec run that diverges at every depth is a GoCore run that
-   does not end normally. That full hoisting agrees with left to right is M6's, not
-   3d's: it needs a model of real gc's copying of every call.
+   whose bodies fit gc's scope. Open: the divergence theorem for the tail loop: a
+   galaspec run that diverges at every depth is a GoCore run that does not end normally.
+   That full hoisting agrees with left to right is M6's, not 3d's: it needs a model of
+   real gc's copying of every call.
 4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
    M3 fragment retired.
 5. Package-level initialization (galaspec's `mentions` order against GoCore's

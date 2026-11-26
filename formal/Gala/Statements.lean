@@ -836,6 +836,18 @@ theorem inc_lowerProg : lowerProg 11 incDs = some (progOf incFs) :=
   Gala.M5.inc_lowerProg
 
 open Gala Gala.M5 GoCore.Full in
+theorem sw_buildCtx : buildCtx (progOf swFs) = swCtx :=
+  Gala.M5.sw_buildCtx
+
+open Gala Gala.M5 GoCore.Full in
+theorem inc_buildCtx : buildCtx (progOf incFs) = incCtx :=
+  Gala.M5.inc_buildCtx
+
+open Gala Gala.M5 GoCore.Full in
+theorem evenOdd_lowerProg : lowerProg 11 evenOddDs = some (progOf evenOddFs) :=
+  Gala.M5.evenOdd_lowerProg
+
+open Gala Gala.M5 GoCore.Full in
 theorem evenOdd_funRel : FunRel 11 evenOddSg evenOddDs (buildCtx (progOf evenOddFs)) "main" :=
   Gala.M5.evenOdd_funRel
 

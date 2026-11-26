@@ -11,9 +11,9 @@
 
   Checks, each what `FunRel` or the order result needs:
   * the names are pairwise distinct (`buildPkg` keeps the last of two);
-  * no name is `true`, `false`, `int`, `bool` or `string` (the lowering's names for them),
-    or `init` (which Go does not declare as a function);
-  * no name is a temporary's (`isTmp`);
+  * no declared name is `true`, `false`, `int`, `bool` or `string` (the lowering's names
+    for them), or `init` (which Go does not declare as a function);
+  * no declared name is a temporary's (`isTmp`);
   * every lowered body is `Body3`, the order predicate, and fits the scope gc's rewrite
     gives it (`fitsSs`, proved sound by `fitsSs_sound`): requirements, so the theorems
     about lowered programs take no hypothesis about the order.
@@ -200,10 +200,15 @@ def funDecl (d : String × Sig × List Stmt) : Decl := .func d.1 none [] d.2.1 (
 def progOf (fs : List (String × Sig × List Stmt)) : Program :=
   ⟨[⟨"main", "main", false, [⟨"main.go", [], fs.map funDecl⟩]⟩]⟩
 
-/-- The checks on the names (see the module docstring). -/
+/-- The names of the functions of the lowered kinds: those `lowerProg` declares. -/
+def kindNames (ds : Spec.Decls) : List String :=
+  (ds.funcs.filter fun x => (sigOf x.2).isSome).map (·.1)
+
+/-- The checks on the names (see the module docstring): all names distinct; the declared
+    ones neither reserved nor temporaries'. -/
 def namesOK (ds : Spec.Decls) : Bool :=
-  let names := ds.funcs.map (·.1)
-  decide names.Nodup && !names.any reservedNames.contains && !names.any isTmp
+  decide (ds.funcs.map (·.1)).Nodup && !(kindNames ds).any reservedNames.contains &&
+    !(kindNames ds).any isTmp
 
 /-- The functions of the lowered kinds, each lowered. -/
 def lowerFuns (K : Nat) (ds : Spec.Decls) : Option (List (String × Sig × List Stmt)) :=
@@ -375,15 +380,13 @@ theorem lowerProg_funRel {K : Nat} {ds : Spec.Decls} {p : Program} (h : lowerPro
   simp only [namesOK, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq, List.any_eq_false] at hok
   obtain ⟨⟨hnd, hres⟩, htmp⟩ := hok
   -- the lowered functions' names are the kinds-filtered functions' names
-  have hkeys : fs.map (·.1) = (ds.funcs.filter fun x => (sigOf x.2).isSome).map (·.1) :=
+  have hkeys : fs.map (·.1) = kindNames ds :=
     mapM_some_map hfs _ _ fun x y hy => lowerOne_fst hy
   have hnd' : (fs.map (·.1)).Nodup := by
     rw [hkeys]; exact (List.Sublist.map _ List.filter_sublist).nodup hnd
-  have hnames : ∀ d ∈ fs, d.1 ∈ ds.funcs.map (·.1) := by
+  have hnames : ∀ d ∈ fs, d.1 ∈ kindNames ds := by
     intro d hd
-    have : d.1 ∈ fs.map (·.1) := List.mem_map_of_mem hd
-    rw [hkeys] at this
-    exact (List.Sublist.map _ List.filter_sublist).subset this
+    rw [← hkeys]; exact List.mem_map_of_mem hd
   have hinit : ∀ d ∈ fs, d.1 ≠ "init" := fun d hd he =>
     hres _ (hnames d hd) (by simp [he, reservedNames])
   refine ⟨by decide, ?_, ?_⟩
@@ -392,7 +395,12 @@ theorem lowerProg_funRel {K : Nat} {ds : Spec.Decls} {p : Program} (h : lowerPro
     unfold progSigs at hf
     rcases hF : ds.funcs.lookup f with _ | F
     · simp [hF] at hf
-    have hm : f ∈ ds.funcs.map (·.1) := List.mem_map.mpr ⟨(f, F), lookup_mem hF, rfl⟩
+    have hs : (sigOf F).isSome = true := by
+      cases hsF : sigOf F with
+      | none => simp [hF, hsF] at hf
+      | some _ => rfl
+    have hm : f ∈ kindNames ds :=
+      List.mem_map.mpr ⟨(f, F), List.mem_filter.mpr ⟨lookup_mem hF, hs⟩, rfl⟩
     simpa using htmp f hm
   refine ⟨_, buildCtx_progOf fs, ?_, ?_⟩
   · intro x hx
@@ -447,7 +455,7 @@ theorem gc_progOf (fs : List (String × Sig × List Stmt))
   simp only [Order.gc, Hoist.gcOrder, StateT.run']
   generalize buildCtx (progOf fs) = c at hdecls ⊢
   unfold progOf
-  simp only [List.zipIdx_cons, List.zipIdx_nil, List.mapM_cons, List.mapM_nil, 
+  simp only [List.zipIdx_cons, List.zipIdx_nil, List.mapM_cons, List.mapM_nil,
     bind_pure_comp, map_pure]
   have h0 := hdecls {}
   generalize List.mapM (Hoist.hDecl c (Hoist.structFields c) (Hoist.allMethods c) "main" 0)
@@ -468,6 +476,5 @@ theorem lowerProg_gc {K : Nat} {ds : Spec.Decls} {p : Program} (h : lowerProg K 
   obtain ⟨x, hx, hxy⟩ := mapM_some_mem' hfs hd
   obtain ⟨_, _, -, -, -, hb⟩ := lowerOne_some hxy
   exact hb
-
 
 end Gala.M5

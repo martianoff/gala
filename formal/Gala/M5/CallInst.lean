@@ -59,13 +59,12 @@ theorem inc_lowerProg : lowerProg 11 incDs = some (progOf incFs) := by
     simp [h1, lowerOne, inc_lowerFun, h3, incFs]
   have hn : namesOK incDs = true := by decide
   have hfit : fitsAll incFs = true := by
-    simp [fitsAll, incFs, fitsSs, fitsS, fitsE, fitsEs, fieldListNames, incBody, 
-      gcScope, funcScope, changeableName, 
-      Scope.isLocal, 
+    simp [fitsAll, incFs, fitsSs, fitsS, fitsE, fitsEs, fieldListNames, incBody,
+      gcScope, funcScope, changeableName,
+      Scope.isLocal,
       Scope.enter, Scope.withIfaces, Scope.bind, sigNames, lowerSigOf, kindName, chSs, chS, chE,
       chEs, buildCtx, buildPkg, progOf, funDecl, Id.run, List.forIn_cons,
-      List.forIn_nil, List.foldl_cons, List.foldl_nil, id_pure, idb,
-      ]
+      List.forIn_nil, List.foldl_cons, List.foldl_nil, id_pure, idb]
   simp [lowerProg, hn, hl, hfit]
 
 /-- `inc`'s `FunRel`, from the context of the lowered program (`lowerProg_funRel`), which is
@@ -102,8 +101,6 @@ theorem calls_correct_instance (steps d : Nat) (hs : steps ≤ 10) :
       ((evalExpr incCtx N incEnv incCallG).run.run incSt) :=
   calls_correct incDs incCtx "main" 11 incSg inc_funRel (by omega) (fun _ => none) incCall .int incCallG
     inc_lowerC { incCore with steps } incSt incEnv inc_inv3 hs d
-
-
 
 /-! galaspec's side, step by step through the unfolding lemmas (`eval` is well-founded). -/
 
@@ -156,7 +153,6 @@ theorem inc_gocore_ok (N : Nat) (hN : N ≥ 44) :
   rw [inc_spec_ok] at h
   obtain ⟨w, g', hg, hv, -⟩ := h
   exact ⟨w, g', hg, hv⟩
-
 
 /-! ## The order result on a program: a recursive `fact` and `g(x) = fact(x) + 1`
 
