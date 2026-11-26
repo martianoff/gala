@@ -1,10 +1,13 @@
 package main
 
+import "time"
+
 // A self tail call is rewritten into a loop that holds each argument in a
 // temporary of the parameter's type, so an untyped constant argument (`5`,
 // `1 << i`) takes that type rather than int (#1426). A parameter named like
-// its type (`state state`) keeps an untyped temporary, since the name hides
-// the type in the body.
+// its type (`state state`) or its type's package (`time time.Duration`) hides
+// that name in the body: such an argument is assigned directly when it is a
+// constant, and through an untyped temporary otherwise.
 
 struct state(n int)
 
@@ -16,9 +19,12 @@ func half(n int, x float64) float64 = if (n == 0) x else half(n - 1, 0.5)
 
 func run(state state, k int) int = if (k == 0) state.n else run(state, k - 1)
 
+func wait(time time.Duration, n int) time.Duration = if (n == 0) time else wait(5, n - 1)
+
 func main() {
     Println(loop(3, 0))
     Println(bits(3, 0))
     Println(half(2, 4.0))
     Println(run(state(7), 2))
+    Println(wait(time.Second, 2))
 }

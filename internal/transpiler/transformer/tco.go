@@ -304,7 +304,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 		return nil, false, nil
 	}
 
-	tmpNames := make([]string, len(args))
+	rhsExprs := make([]ast.Expr, len(args)) // what each parameter is assigned
 	stmts := make([]ast.Stmt, 0, len(args)+2)
 	for i, a := range args {
 		// Named arguments (name = expr) are not supported for the rewrite.
@@ -343,18 +343,29 @@ func (t *galaASTTransformer) buildTailCallStep(
 		// The temporary has the parameter's type: `:=` would give an
 		// untyped constant argument (`5`, `1 << i`) its default type, which
 		// the parameter may not accept (#1426). The type is spelled inside
-		// the body, where a parameter hides a type or package of the same
-		// name (`state state`, `time time.Duration`); such a type keeps `:=`.
-		tmp := t.nextTempVar()
-		tmpNames[i] = tmp
+		// the body, where it cannot be when it names any parameter (a
+		// parameter hides a type or package of its name: `state state`,
+		// `time time.Duration`, or `fmt int` beside `s fmt.Stringer`). Such
+		// an argument goes straight into the parameter assignment when it is
+		// inert (a constant, say: evaluating it later gives the same value);
+		// otherwise it keeps a `:=` temporary.
 		if namesAny(tc.paramTypes[i], tc.paramNames) {
+			if t.inert(arg) {
+				rhsExprs[i] = arg
+				continue
+			}
+			tmp := t.nextTempVar()
+			rhsExprs[i] = ast.NewIdent(tmp)
 			stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(tmp)}, Tok: token.DEFINE, Rhs: []ast.Expr{arg}})
-		} else {
-			stmts = append(stmts, seqVarDecl(tmp, tc.paramTypes[i], arg))
+			continue
 		}
+		tmp := t.nextTempVar()
+		rhsExprs[i] = ast.NewIdent(tmp)
+		stmts = append(stmts, seqVarDecl(tmp, tc.paramTypes[i], arg))
 	}
 
-	// Simultaneous reassignment of every parameter from its temporary.
+	// Simultaneous reassignment of every parameter from its temporary (or
+	// its inert argument).
 	lhs := make([]ast.Expr, len(tc.paramNames))
 	rhs := make([]ast.Expr, len(tc.paramNames))
 	for i := range tc.paramNames {
@@ -363,23 +374,38 @@ func (t *galaASTTransformer) buildTailCallStep(
 			t.recordLocalRef(param)
 		}
 		lhs[i] = param
-		rhs[i] = ast.NewIdent(tmpNames[i])
+		rhs[i] = rhsExprs[i]
 	}
 	stmts = append(stmts, &ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: rhs})
 	stmts = append(stmts, &ast.BranchStmt{Tok: token.CONTINUE})
 	return stmts, true, nil
 }
 
-// namesAny reports whether the type expression typ mentions any identifier in
-// names.
+// namesAny reports whether the type expression typ refers to any of names: a
+// type or package name in it, not a selected name (`x.Sel`) or a parameter
+// or field name of a function or struct type inside it.
 func namesAny(typ ast.Expr, names []string) bool {
 	found := false
-	ast.Inspect(typ, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && slices.Contains(names, id.Name) {
-			found = true
+	var walk func(ast.Node) bool
+	walk = func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.Ident:
+			found = slices.Contains(names, n.Name)
+		case *ast.SelectorExpr:
+			ast.Inspect(n.X, walk)
+			return false
+		case *ast.Field:
+			if n.Type != nil {
+				ast.Inspect(n.Type, walk)
+			}
+			return false
 		}
 		return !found
-	})
+	}
+	ast.Inspect(typ, walk)
 	return found
 }
 
