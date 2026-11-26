@@ -3478,7 +3478,13 @@ func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerT
 	if transpiler.IsUnusable(typ) || t.isActiveTypeParam(typ.BaseName()) {
 		return transpiler.PointerType{}, false
 	}
-	if _, isAlias := t.typeAliases[typ.BaseName()]; !isAlias {
+	// This package's alias, by its bare or its own qualified name; another
+	// package's alias names its target as that package does, which a bare
+	// lookup here could misread.
+	if pkg := typ.GetPackage(); pkg != "" && pkg != t.packageName {
+		return transpiler.PointerType{}, false
+	}
+	if _, isAlias := t.typeAliases[stripPackagePrefix(typ.BaseName())]; !isAlias {
 		return transpiler.PointerType{}, false
 	}
 	ptr, isPtr := unwrapValueMarkers(t.followAliasChain(typ)).(transpiler.PointerType)

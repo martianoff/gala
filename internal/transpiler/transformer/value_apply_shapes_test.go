@@ -566,4 +566,36 @@ func main() {
 	require.Contains(t, out, "h.P.Apply(func(x int) int")
 	require.Contains(t, out, "h.Q.Get().Apply(func(x int) int")
 	require.Contains(t, out, "h.R.Apply(func(x int) int")
+
+	// A pointer alias of a library package, and an alias of it, called in
+	// that package.
+	libFiles := map[string]string{
+		"go.mod":   "module example.com/aliases\n\ngo 1.25\n",
+		"gala.mod": "module example.com/aliases\n",
+		"lib/lib.gala": `package lib
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int) int = n.v + x
+
+type NodeRef *Node
+
+type Again NodeRef
+
+func Use(w NodeRef, a Again) int = w(2) + a(3)
+`,
+		"main.gala": `package main
+
+import "example.com/aliases/lib"
+
+func main() {
+    var n = lib.Node(1)
+    Println(lib.Use(&n, &n))
+}
+`,
+	}
+	out, err = transpileInModule(t, libFiles, "lib/lib.gala")
+	require.NoError(t, err)
+	require.Contains(t, out, "w.Apply(2)")
+	require.Contains(t, out, "a.Apply(3)")
 }
