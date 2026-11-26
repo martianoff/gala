@@ -381,4 +381,121 @@ theorem ifSF_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihEF : ExprSF ds cx 
 
 end StmtsSF3
 
+section StmtsSF4
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+
+theorem listSF_of (d : Nat) (ihS : StmtSim ds cx P K sg d) (ihSF : StmtSF ds cx P K sg Q d) :
+    ListSF ds cx P K sg Q d := by
+  intro ρ κ ss
+  induction ss generalizing κ with
+  | nil =>
+    intro κ' ls hl s g env hi N hN
+    simp only [lowerSs3, Option.some.injEq, Prod.mk.injEq] at hl
+    obtain ⟨rfl, rfl⟩ := hl
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by omega⟩
+    rw [evalBlock_nil, execStmts_nil]
+    exact ⟨fun _ => by simp only [Stut, eszs]; omega, fun _ _ h => by simp at h⟩
+  | cons st rest ihl =>
+    intro κ' ls hl s g env hi N hN
+    simp only [lowerSs3, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq, Prod.mk.injEq] at hl
+    obtain ⟨⟨κ₁, l⟩, hst, ⟨κ₂, ls'⟩, hrest, rfl, rfl⟩ := hl
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by omega⟩
+    have hIS := ihSF ρ κ st κ₁ l hst s g env hi n (by omega)
+    rw [execStmts_cons]
+    cases rest with
+    | nil =>
+      simp only [lowerSs3, Option.some.injEq, Prod.mk.injEq] at hrest
+      obtain ⟨rfl, rfl⟩ := hrest
+      rw [evalBlock_one]
+      have hsz : eszs [st] = esz st := by simp [eszs]
+      rw [hsz]
+      refine ⟨fun hsg => ?_, fun hd hq hf => ?_⟩
+      · refine stut_congr Q ?_ (hIS.1 hsg)
+        rcases (execStmt cx n env l).run.run g with ⟨_ | _, _⟩
+        · rfl
+        · simp only; rw [execStmts_nil]
+      · have h := hIS.2 hd hq hf
+        rcases hx : (execStmt cx n env l).run.run g with ⟨rx, g'⟩
+        rw [hx] at h
+        simp only at h
+        subst h
+        rfl
+    | cons st' rest' =>
+      rw [evalBlock_cons]
+      simp only [eszs]
+      refine ⟨fun hsg => ?_, fun hd hq hf => ?_⟩
+      · have hs := ihS ρ κ st κ₁ l hst s g env hi hsg n (by omega)
+        have hSS := hIS.1 hsg
+        rcases hrs : (Spec.eval ds d st).run.run s with ⟨rs, t⟩
+        rw [hrs] at hs hSS
+        cases rs with
+        | error e => cases e with
+          | ret v =>
+            obtain ⟨w, g', hg, -⟩ := hs; rw [hg] at hSS ⊢
+            exact stut_mono Q (by omega) hSS
+          | _ => trivial
+        | ok v =>
+        obtain ⟨env', g', hg, hinv, -, -, -, -, hsp⟩ := hs
+        rw [hg] at hSS ⊢
+        simp only [Stut] at hSS
+        have h := (ihl κ₁ κ₂ ls' hrest t g' env' hinv (n + 1) hN).1 (spent_le hsp hsg)
+        exact stut_mono Q (by simp only [eszs]; omega) (stut_trans Q hSS h)
+      · rcases hrs : (Spec.eval ds d st).run.run s with ⟨rs, t⟩
+        rw [hrs] at hf
+        cases rs with
+        | error e =>
+          simp only at hf
+          cases hf
+          have h := hIS.2 hd (by omega) (by rw [hrs])
+          rcases hx : (execStmt cx n env l).run.run g with ⟨rx, g'⟩
+          rw [hx] at h
+          simp only at h
+          subst h
+          rfl
+        | ok v =>
+        simp only at hf
+        rcases stmt_down ds cx P K sg Q ihS ihSF hst hi (by omega : K * d ≤ n) hrs with
+          hgf | ⟨env', g', hg, hinv, -, -, -, -, hbd, hmono⟩
+        · rcases hx : (execStmt cx n env l).run.run g with ⟨rx, g'⟩
+          rw [hx] at hgf
+          simp only at hgf
+          subst hgf
+          rfl
+        rw [hg]
+        simp only
+        exact (ihl κ₁ κ₂ ls' hrest t g' env' hinv (n + 1) hN).2 (by omega)
+          (by simp only [eszs] at hq ⊢; rw [Nat.mul_succ] at hq ⊢; omega) hf
+
+/-- **A statement** at depth `d + 1`. -/
+theorem stmtSF_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihEF : ExprSF ds cx P K sg Q d)
+    (ihB : BlockSF ds cx P K sg Q (d + 1)) (ihI : IfSF ds cx P K sg Q (d + 1)) (hK : 3 ≤ K) :
+    StmtSF ds cx P K sg Q (d + 1) := by
+  intro ρ κ st κ' l hl s g env hi N hN
+  match st, hl with
+  | .decl m [x] false none [e], hl => exact decl_sf ds cx P K sg Q d ihE ihEF hK ρ κ κ' m x e l hl s g env hi N hN
+  | .ret (some x), hl => exact ret_sf ds cx P K sg Q d ihE ihEF hK ρ κ κ' x l hl s g env hi N hN
+  | .block ss, hl =>
+    simp only [lowerS3, Option.map_eq_some_iff, Prod.mk.injEq] at hl
+    obtain ⟨⟨κ₁, lb⟩, hlb, rfl, rfl⟩ := hl
+    obtain ⟨n, rfl⟩ : ∃ n, N = n + 1 := ⟨N - 1, by rw [Nat.mul_succ] at hN; omega⟩
+    rw [execStmt_block]
+    have h := ihB ρ κ ss κ₁ lb hlb s g env hi n (by rw [Nat.mul_succ] at hN ⊢; omega)
+    exact ⟨fun hsg => stut_congr Q (withEnv_snd _ _) (h.1 hsg), fun hd hq hf => withEnv_fuel env (h.2 hd hq hf)⟩
+  | .ifStmt c a els, hl =>
+    have hκ : κ' = κ := (lowerS3_if K sg hl).1
+    subst hκ
+    exact ihI ρ κ' c a els _ l hl s g env hi N hN
+  | .decl _ [] _ _ _, hl | .decl _ (_ :: _ :: _) _ _ _, hl | .decl _ [_] true _ _, hl
+  | .decl _ [_] false (some _) _, hl | .decl _ [_] false none [], hl
+  | .decl _ [_] false none (_ :: _ :: _), hl | .ret none, hl
+  | .lit _, hl | .name _, hl | .unary .., hl | .binary .., hl | .call .., hl | .select .., hl
+  | .paren _, hl | .tuple _, hl | .ifExpr .., hl | .mtch .., hl | .assign .., hl
+  | .incdec .., hl | .interp _, hl | .lambda .., hl | .named .., hl | .unsupported _, hl =>
+    simp [lowerS3] at hl
+
+end StmtsSF4
+
 end Gala.M5
