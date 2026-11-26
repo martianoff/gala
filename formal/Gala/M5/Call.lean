@@ -939,11 +939,11 @@ def lowerFun (K : Nat) (sg : Sigs) (f : String) (F : Spec.Func) : Option (List S
 /-! ## The relations, with calls -/
 
 /-- **GoCore's state after code ran**: cells, their types and closures only added to, as many
-    types as cells; every other part (output, deferred calls, maps, ...) as it was, but the
-    steps. -/
+    types as cells; the steps never more; every other part (output, deferred calls, maps, ...)
+    as it was. -/
 def GFrame (g g' : St) : Prop :=
   Pre g.cells g'.cells ∧ Pre g.closures g'.closures ∧ Pre g.types g'.types ∧
-    g.cells.size + g'.types.size = g'.cells.size + g.types.size ∧
+    g.cells.size + g'.types.size = g'.cells.size + g.types.size ∧ g'.steps ≤ g.steps ∧
     { g' with cells := g.cells, types := g.types, steps := g.steps, closures := g.closures } = g
 
 /-- **Steps**: GoCore spends no more than galaspec. -/
@@ -1214,29 +1214,30 @@ end NoRet
 section Frames
 open Gala.GoCore.Full
 
-theorem gframe_refl (g : St) : GFrame g g := ⟨pre_refl _, pre_refl _, pre_refl _, by omega, by cases g; rfl⟩
+theorem gframe_refl (g : St) : GFrame g g :=
+  ⟨pre_refl _, pre_refl _, pre_refl _, by omega, Nat.le_refl _, by cases g; rfl⟩
 
-theorem gframe_refl' (g : St) (k : Nat) : GFrame g { g with steps := k } :=
-  ⟨pre_refl _, pre_refl _, pre_refl _, by simp, by cases g; rfl⟩
+theorem gframe_refl' (g : St) (k : Nat) (hk : k ≤ g.steps) : GFrame g { g with steps := k } :=
+  ⟨pre_refl _, pre_refl _, pre_refl _, by simp, hk, by cases g; rfl⟩
 
 /-- A cell pushed with its type. -/
 theorem gframe_push (g : St) (v : Val) (t : Ty) :
     GFrame g { g with cells := g.cells.push v, types := g.types.push t } :=
-  ⟨pre_push _ _, pre_refl _, pre_push _ _, by simp; omega, by cases g; rfl⟩
+  ⟨pre_push _ _, pre_refl _, pre_push _ _, by simp; omega, Nat.le_refl _, by cases g; rfl⟩
 
 theorem gframe_trans {g₁ g₂ g₃ : St} (h₁ : GFrame g₁ g₂) (h₂ : GFrame g₂ g₃) : GFrame g₁ g₃ := by
   refine ⟨pre_trans h₁.1 h₂.1, pre_trans h₁.2.1 h₂.2.1, pre_trans h₁.2.2.1 h₂.2.2.1,
-    by have := h₁.2.2.2.1; have := h₂.2.2.2.1; omega, ?_⟩
-  have e₁ := h₁.2.2.2.2; have e₂ := h₂.2.2.2.2
+    by have := h₁.2.2.2.1; have := h₂.2.2.2.1; omega, Nat.le_trans h₂.2.2.2.2.1 h₁.2.2.2.2.1, ?_⟩
+  have e₁ := h₁.2.2.2.2.2; have e₂ := h₂.2.2.2.2.2
   cases g₁; cases g₂; cases g₃
   simp only [St.mk.injEq] at e₁ e₂ ⊢
   simp_all
 
 theorem gframe_out {g g' : St} (h : GFrame g g') : g'.out = g.out := by
-  have e := h.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
+  have e := h.2.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
 
 theorem gframe_defers {g g' : St} (h : GFrame g g') : g'.defers = g.defers := by
-  have e := h.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.2.2.2.2.1
+  have e := h.2.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.2.2.2.2.1
 
 theorem spent_trans {s₁ s₂ s₃ : Spec.St} {g₁ g₂ g₃ : St} (h₁ : Spent s₁ s₂ g₁ g₂) (h₂ : Spent s₂ s₃ g₂ g₃) :
     Spent s₁ s₃ g₁ g₃ := by unfold Spent at *; omega
@@ -2043,8 +2044,9 @@ theorem params_st : ∀ (l : List ((String × Expr) × Val)) (s : Env × St),
 theorem call_frame {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hpb : GFrame g₀ pb)
     (hb : GFrame { pb with defers := D :: g₀.defers } g₁) : GFrame g₀ { g₁ with defers := g₀.defers } := by
   refine ⟨pre_trans hpb.1 hb.1, pre_trans hpb.2.1 hb.2.1, pre_trans hpb.2.2.1 hb.2.2.1,
-    by have h1 := hpb.2.2.2.1; have h2 := hb.2.2.2.1; simp only at h1 h2 ⊢; omega, ?_⟩
-  have e₁ := hpb.2.2.2.2; have e₂ := hb.2.2.2.2
+    by have h1 := hpb.2.2.2.1; have h2 := hb.2.2.2.1; simp only at h1 h2 ⊢; omega,
+    by have h1 := hpb.2.2.2.2.1; have h2 := hb.2.2.2.2.1; simp only at h1 h2 ⊢; omega, ?_⟩
+  have e₁ := hpb.2.2.2.2.2; have e₂ := hb.2.2.2.2.2
   cases g₀; cases pb; cases g₁
   simp only [St.mk.injEq] at e₁ e₂ ⊢
   simp_all
@@ -2291,7 +2293,7 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
     (predeclared_callee cx P fi p hpk hobjs)
   obtain ⟨hpst, hpsteps⟩ := params_st ((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws)
     ((calleeEnv P fi).push, { ga with steps := k2 })
-  have hgac : GFrame ga { ga with steps := k2 } := gframe_refl' ga k2
+  have hgac : GFrame ga { ga with steps := k2 } := gframe_refl' ga k2 (by omega)
   have hpst' := gframe_trans hgac hpst
   have hic : Inv3 cx P sg (paramKinds xks) { sa with locals := specFrame F.params vs }.toCore
       { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers }
@@ -3267,10 +3269,11 @@ theorem inv3_same {κ : String → Option Kind} {c : Spec.Core} {g g' : St} {env
 
 /-- An IIFE's frame: a closure added, its body run with a list of deferred calls of its own,
     the list popped: cells and closures added, nothing else changed but the steps. -/
-theorem iife_frame (env : Env) (k : Kind) (st : Stmt) (g : St) (j : Nat) {g1 : St}
+theorem iife_frame (env : Env) (k : Kind) (st : Stmt) (g : St) (j : Nat) {g1 : St} (hj : j ≤ g.steps)
     (h : GFrame (iifeSt env k st g j) g1) : GFrame g { g1 with defers := g.defers } := by
-  refine ⟨h.1, pre_trans (pre_push _ _) h.2.1, h.2.2.1, by have := h.2.2.2.1; simpa [iifeSt] using this, ?_⟩
-  have e := h.2.2.2.2
+  refine ⟨h.1, pre_trans (pre_push _ _) h.2.1, h.2.2.1, by have := h.2.2.2.1; simpa [iifeSt] using this,
+    by have := h.2.2.2.2.1; simp only [iifeSt] at this ⊢; omega, ?_⟩
+  have e := h.2.2.2.2.2
   cases g; cases g1
   simp only [iifeSt, St.mk.injEq] at e ⊢
   simp_all
@@ -3311,7 +3314,7 @@ theorem iife_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ihI : If
     rw [evalExpr_iife_ret cx n env k st g hio hi.tenv hl' ho j hj v w hvw hkv g1
       (execStmts_one_err cx (n + 1) env.push st _ _ g1 hx) (gframe_defers hgf)]
     obtain ⟨hvd, hnu, -, -⟩ := vrel_default hvw
-    refine ⟨defaultVal w, { g1 with defers := g.defers }, rfl, hvd, hkv, fun _ => hnu, ?_, iife_frame env k st g j hgf, ?_⟩
+    refine ⟨defaultVal w, { g1 with defers := g.defers }, rfl, hvd, hkv, fun _ => hnu, ?_, iife_frame env k st g j (by omega) hgf, ?_⟩
     · exact sframe_mk hh hloc hgl hout
     · unfold Spent at hsp ⊢; simp only [iifeSt] at hsp; simp only [hs]; omega
   | error e =>
@@ -3322,7 +3325,7 @@ theorem iife_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ihI : If
       cases hg
       rw [evalExpr_iife_panic cx n env k st g hio hi.tenv hl' ho j hj pv true g1
         (execStmts_one_err cx (n + 1) env.push st _ _ g1 hx) (gframe_defers hgf)]
-      exact ⟨pv, _, rfl, hp, hout, iife_frame env k st g j hgf⟩
+      exact ⟨pv, _, rfl, hp, hout, iife_frame env k st g j (by omega) hgf⟩
     | _ => trivial
 
 end Iife
