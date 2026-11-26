@@ -53,9 +53,9 @@ type GoFuncSignature struct {
 	// from ordinary types, so a call site cannot instantiate the signature and
 	// would materialize the type parameters verbatim into generated Go.
 	TypeParams []string
-	// CoreTypes maps a type parameter whose constraint has one type term
-	// (`S ~[]E`, `M ~map[K]V`) to that term's underlying type ([]E,
-	// map[K]V). Once S is bound, unifying its underlying type with the core
+	// CoreTypes maps a type parameter whose constraint has a composite core
+	// type (`S ~[]E`, `M ~map[K]V`; see the analyzer's interfaceCoreType) to
+	// that type ([]E, map[K]V). Once S is bound, unifying its underlying type with the core
 	// type binds E, K and V, as Go's constraint type inference does. Nil
 	// when no type parameter has one.
 	CoreTypes map[string]Type
