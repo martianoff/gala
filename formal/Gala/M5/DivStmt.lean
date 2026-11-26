@@ -498,4 +498,92 @@ theorem stmtSF_succ (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihEF : ExprSF ds c
 
 end StmtsSF4
 
+section TailsSF
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+
+theorem ifTSF_of (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihEF : ExprSF ds cx P K sg Q d)
+    (ihT : TailSF ds cx P K sg Q d) : IfTSF ds cx P K sg Q d := by
+  intro r κ c a b k st hif e he s kk g env hs hi N hN
+  obtain ⟨lc, ta, tb, hlc, hta, htb, rfl⟩ := ifOf_some hif
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 4 := ⟨N - 4, by omega⟩
+  have hip := inv3_push cx P sg hi
+  have hIC := ihEF κ c .bool lc hlc { s with steps := kk } g env.push hip (n + 3) (by omega)
+  have hk : ({ s with steps := kk } : Spec.St).steps = kk := rfl
+  refine ⟨fun hsg => ?_, fun hd hq hf => ?_⟩
+  · have hE := ihE κ c .bool lc hlc { s with steps := kk } g env.push hip hsg (n + 3) (by omega)
+    have hSC := hIC.1 hsg
+    rcases hr : (Spec.eval ds d c).run.run { s with steps := kk } with ⟨rc, t⟩
+    rw [hr] at hE hSC
+    cases rc with
+    | error er =>
+      rw [eval_ifE_err ds d kk c a b e he s t er hs hr]
+      cases er with
+      | ret => exact hE.elim
+      | _ => trivial
+    | ok v =>
+    obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+    obtain ⟨bv, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+    rw [hg] at hSC
+    simp only [Stut] at hSC
+    rw [eval_ifE_ok ds d kk c a b e he bv s t hs hr]
+    have hit : Inv3 cx P sg κ t.toCore g' env.push.push := inv3_push cx P sg (inv3_frame hip hsf hgf)
+    have hstg : t.steps ≤ g'.steps := spent_le hsp hsg
+    cases bv with
+    | true =>
+      rw [ifT, execStmt_if_true cx (n + 2) env lc ta _ g g' ty hg, execBlock_run]
+      have h := (ihT r κ a k ta hta t g' env.push.push hit (n + 2) (by omega)).1 hstg
+      refine stut_mono Q (by omega) (stut_trans Q hSC (stut_congr Q ?_ h))
+      rcases (execStmts cx (n + 2) env.push.push ta).run.run g' with ⟨_ | _, _⟩ <;> rfl
+    | false =>
+      rw [ifT, execStmt_if_false cx (n + 2) env lc ta _ g g' ty hg]
+      simp only
+      rw [execStmt_block, execBlock_run]
+      have h := (ihT r κ b k tb htb t g' env.push.push hit (n + 1) (by omega)).1 hstg
+      refine stut_mono Q (by omega) (stut_trans Q hSC (stut_congr Q ?_ h))
+      rcases (execStmts cx (n + 1) env.push.push tb).run.run g' with ⟨_ | _, _⟩ <;> rfl
+  · rcases hr : (Spec.eval ds d c).run.run { s with steps := kk } with ⟨rc, t⟩
+    cases rc with
+    | error er =>
+      rw [eval_ifE_err ds d kk c a b e he s t er hs hr] at hf
+      simp only at hf
+      cases hf
+      have h := hIC.2 hd (by omega) (by rw [hr])
+      rcases hg : (evalExpr cx (n + 3) env.push lc).run.run g with ⟨rg, g'⟩
+      rw [hg] at h
+      simp only at h
+      subst h
+      rw [ifT, execStmt_if_err cx (n + 2) env lc ta _ g g' _ hg]
+    | ok v =>
+    rcases expr_down ds cx P K sg Q ihE ihEF (s := { s with steps := kk }) hlc hip (by omega : K * d ≤ n + 3) hr with
+      hgf | ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hbd, hmono⟩
+    · rcases hg : (evalExpr cx (n + 3) env.push lc).run.run g with ⟨rg, g'⟩
+      rw [hg] at hgf
+      simp only at hgf
+      subst hgf
+      rw [ifT, execStmt_if_err cx (n + 2) env lc ta _ g g' _ hg]
+    obtain ⟨bv, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+    rw [eval_ifE_ok ds d kk c a b e he bv s t hs hr] at hf
+    have hit : Inv3 cx P sg κ t.toCore g' env.push.push := inv3_push cx P sg (inv3_frame hip hsf hgf)
+    rw [hk] at hbd hmono hd hq
+    rw [Nat.mul_succ] at hq
+    cases bv with
+    | true =>
+      rw [ifT, execStmt_if_true cx (n + 2) env lc ta _ g g' ty hg, execBlock_run]
+      have h := (ihT r κ a k ta hta t g' env.push.push hit (n + 2) (by omega)).2 (by omega)
+        (by rw [Nat.mul_succ]; omega) hf
+      revert h
+      rcases (execStmts cx (n + 2) env.push.push ta).run.run g' with ⟨_ | _, _⟩ <;> simp [withEnv]
+    | false =>
+      rw [ifT, execStmt_if_false cx (n + 2) env lc ta _ g g' ty hg]
+      simp only
+      rw [execStmt_block, execBlock_run]
+      have h := (ihT r κ b k tb htb t g' env.push.push hit (n + 1) (by omega)).2 (by omega)
+        (by rw [Nat.mul_succ]; omega) hf
+      revert h
+      rcases (execStmts cx (n + 1) env.push.push tb).run.run g' with ⟨_ | _, _⟩ <;> simp [withEnv]
+
+end TailsSF
+
 end Gala.M5
