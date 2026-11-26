@@ -695,7 +695,15 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		}
 		return g.exprType(e.Right, sc, seen)
 	case *coreexport.IfExpr:
-		return g.exprType(e.Then, sc, seen)
+		// The then branch's type, or the else branch's where only that one
+		// is fully plain to see.
+		th := g.exprType(e.Then, sc, maps.Clone(seen))
+		if th == "" || partialType(th) {
+			if el := g.exprType(e.Else, sc, seen); el != "" && !partialType(el) {
+				return el
+			}
+		}
+		return th
 	case *coreexport.Block, *coreexport.Match:
 		// A local value; at package level its type is not looked into.
 		if sc == nil {
@@ -822,8 +830,8 @@ func (g *gen) matchType(m *coreexport.Match, sc *scope, seen map[string]bool) st
 		// Each arm's own cycle guard, as instantiate gives each argument.
 		at := g.safeType(func() string { return g.exprType(c.Body, armSc, maps.Clone(seen)) })
 		switch {
-		case at == "" || strings.Contains(at, "_gala_M _)"):
-			// Not plain to see, or a lambda whose result is left to Lean.
+		case at == "" || partialType(at):
+			// Not plain to see, or only in part.
 		case t == "":
 			t = at
 		case at != t:
@@ -831,6 +839,12 @@ func (g *gen) matchType(m *coreexport.Match, sc *scope, seen map[string]bool) st
 		}
 	}
 	return t
+}
+
+// partialType reports whether Lean type t leaves a part to Lean (`_`, as a
+// lambda's result lambdaType cannot see).
+func partialType(t string) bool {
+	return slices.Contains(strings.FieldsFunc(t, func(r rune) bool { return r == ' ' || r == '(' || r == ')' }), "_")
 }
 
 // rawPrinted is the set of types whose values `fmt` can print raw, as Go

@@ -208,7 +208,13 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 func (g *gen) markTailLambdas(e coreexport.Node, expect *coreexport.TypeFunc) {
 	switch e := e.(type) {
 	case *coreexport.Lambda:
-		g.tailExpect[e] = expect
+		// A slot type holding a type argument the translation cannot see
+		// stops the lambda's translation (unknown-type-arg). A block body's
+		// result would otherwise be read as Unit, so it takes the type; an
+		// expression body's result is left to Lean, as without the slot.
+		if _, isBlock := e.Body.(*coreexport.Block); isBlock || !holdsUnknown(expect) {
+			g.tailExpect[e] = expect
+		}
 	case *coreexport.Paren:
 		g.markTailLambdas(e.Expr, expect)
 	case *coreexport.IfExpr:

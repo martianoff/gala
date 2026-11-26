@@ -35,8 +35,8 @@ func label(n int, o Option[string]) func(int) string = run(o match {
     }
 })
 
-// An arm's lambda ends in a literal, the other in an int64: both are
-// func(int64) int64.
+// The slot's type comes from the other argument; one arm's lambda ends in a
+// literal, which takes the slot's int64.
 func widened(n int, big int64) int64 = apply(big, n match {
     case 1 => (v int64) => 0
     case _ => (v int64) => {
@@ -44,6 +44,12 @@ func widened(n int, big int64) int64 = apply(big, n match {
         w
     }
 })
+
+// A then branch whose result is not plain to see (a trailing if/else): the
+// type arguments come from the else branch.
+func clamp(up bool) func(int) int = run(if (up) (k int) => {
+    if (k > 0) { k } else { 0 }
+} else (k int) => k)
 
 // Arms that build different cases of one sealed type.
 func shape(n int) func(int) Shape = run(n match {
@@ -58,7 +64,8 @@ func area(s Shape) int = s match {
 
 func main() {
     Println(pick(1)(3), pick(2)(3))
-    Println(label(7, Some("a"))(1), label(7, None[string]())(2))
+    Println(label(7, Some("a"))(1), label(7, None())(2))
     Println(widened(1, 1 << 40), widened(2, 1 << 40))
     Println(area(shape(1)(2)), area(shape(2)(2)))
+    Println(clamp(true)(-3), clamp(true)(4), clamp(false)(-3))
 }
