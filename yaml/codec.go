@@ -1425,8 +1425,10 @@ func trimYamlSpace(s string) string { return strings.Trim(s, " \t") }
 
 // withoutComment drops a trailing comment (" # ...", outside a quoted
 // scalar) from a scalar's text. A flow collection's text keeps its comment
-// (see findComment), which is safe because every value that starts with '['
-// or '{' reaches parseFlowCollection.
+// (see findComment): a value that starts with '[' or '{' reaches
+// parseFlowCollection, which drops it. blockScalarHeader and ownerIndent
+// also see such text, and are unaffected because neither takes text that
+// starts with '[' or '{' for a header or an empty value.
 func withoutComment(s string) string {
 	if hi := findComment(s, 0); hi >= 0 {
 		return trimYamlSpace(s[:hi])
@@ -1755,9 +1757,12 @@ scan:
 		p.i = start
 		p.fail(fmt.Sprintf("a plain scalar cannot start with '%c'", c))
 	case '?', '-', ':':
-		if len(text) == 1 || isFlowBreak(text[1]) {
+		// The character after the indicator in the text, not in the
+		// scalar: in "{-: 1}" the scalar "-" is followed by ':', which is
+		// allowed.
+		if start+1 == len(p.s) || isFlowBreak(p.s[start+1]) {
 			p.i = start
-			p.fail(fmt.Sprintf("a plain scalar cannot start with %q", text[:min(2, len(text))]))
+			p.fail(fmt.Sprintf("a plain scalar cannot start with '%c' before white space or a flow indicator", c))
 		}
 	}
 	return text
