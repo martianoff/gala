@@ -890,11 +890,15 @@ def tmpDecls : Nat → List Expr → List Stmt
   | _, [] => []
   | i, le :: les => .assign ":=" [.ident (tmpName i)] [le] :: tmpDecls (i + 1) les
 
+/-- `_tmp_{i+1}, .., _tmp_{i+n}`. -/
+def tmpIdents : Nat → Nat → List Expr
+  | _, 0 => []
+  | i, n + 1 => .ident (tmpName i) :: tmpIdents (i + 1) n
+
 /-- **A loop step** (`buildTailCallStep`): each argument into a temporary, the parameters
     assigned from them at once, `continue`. -/
 def stepOf (xs : List String) (las : List Expr) : List Stmt :=
-  tmpDecls 0 las ++
-    [.assign "=" (xs.map .ident) ((List.range xs.length).map fun i => .ident (tmpName i)), .branch "continue"]
+  tmpDecls 0 las ++ [.assign "=" (xs.map .ident) (tmpIdents 0 xs.length), .branch "continue"]
 
 /-- **The lowering of a looped function's `if` tree** (`buildTailIfStmt`): an `if` is
     `if lc { L(a) } else { L(b) }`; a self-tail-call leaf with no `if` in its arguments is a
@@ -1062,8 +1066,13 @@ def ResBP (n : Nat) (ρ : Kind) (s : Spec.St) (g : St) : Except Spec.Stop Spec.V
   | _, _ => True
 
 /-- The parameters' cells are from `n` on, of the parameters' types. -/
+def PCells (n : Nat) (κ : String → Option Kind) (env : Env) (g : St) : Prop :=
+  (∀ x k, κ x = some k → ∃ cell, env.lookup x = some cell ∧ n ≤ cell ∧ g.types[cell]? = some (kindTy k)) ∧
+    ∀ x y k k' c, κ x = some k → κ y = some k' → env.lookup x = some c → env.lookup y = some c → x = y
+
+/-- The parameters' cells: from `n` on, of their kinds' types, a cell each. -/
 def ParamCells (n : Nat) (xks : List (String × Kind)) (env : Env) (g : St) : Prop :=
-  ∀ x k, paramKinds xks x = some k → ∃ cell, env.lookup x = some cell ∧ n ≤ cell ∧ g.types[cell]? = some (kindTy k)
+  PCells n (paramKinds xks) env g
 
 /-- **The functions the lowering calls are GoCore's**: package `P` of `cx` (not the
     standard library) declares no `true`, `false`, `int`, `bool` or `string`, and declares
@@ -2141,36 +2150,52 @@ theorem call_frameP {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hp
     simp only [St.mk.injEq] at he e₂ ⊢
     simp_all
 
-/-- The parameters bound, one by one: each in a cell from `n` on, of its kind's type. -/
+/-- The parameters bound, one by one: each in a new cell, from `n` on, of its kind's type. -/
 theorem params_cells : ∀ (xks : List (String × Kind)) (ws : List Val) (κ : String → Option Kind) (env : Env)
     (g : St) (n : Nat), xks.length = ws.length → (∀ x ∈ xks.map (·.1), x ≠ "_") → g.cells.size = g.types.size →
-    n ≤ g.cells.size →
-    (∀ x k, κ x = some k → ∃ cell, env.lookup x = some cell ∧ n ≤ cell ∧ g.types[cell]? = some (kindTy k)) →
-    ∀ x k, xks.foldl (fun κ xk => upd κ xk.1 xk.2) κ x = some k → ∃ cell,
-      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).1.lookup x
-        = some cell ∧ n ≤ cell ∧
-      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).2.types[cell]?
-        = some (kindTy k)
+    n ≤ g.cells.size → PCells n κ env g →
+    PCells n (xks.foldl (fun κ xk => upd κ xk.1 xk.2) κ)
+      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).1
+      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).2
   | [], [], _, _, _, _, _, _, _, _, h => by simpa using h
   | (y, ky) :: xks, w :: ws, κ, env, g, n, hl, hx, hs, hn, h => by
     simp only [List.map_cons, List.zip_cons_cons, List.foldl_cons]
     have hy : y ≠ "_" := hx y (by simp)
     refine params_cells xks ws (upd κ y ky) (env.bind y g.cells.size)
       { g with cells := g.cells.push (defaultVal w), types := g.types.push (teTy (.ident (kindName ky))) } n
-      (by simpa using hl) (fun x hx' => hx x (by simp [hx'])) (by simp [hs]) (by simp; omega) ?_
-    intro x k hk
-    unfold upd at hk
-    by_cases hxy : x = y
-    · subst hxy
-      simp only [ite_true, Option.some.injEq] at hk
-      subst hk
-      refine ⟨g.cells.size, by rw [Env.lookup_bind _ _ _ _ hy]; simp, hn, ?_⟩
-      simp only [hs, teTy_kind]
-      simp
-    · simp only [hxy, ite_false] at hk
-      obtain ⟨cell, hc, hnc, ht⟩ := h x k hk
-      refine ⟨cell, by rw [Env.lookup_bind _ _ _ _ hy]; simp only [hxy, ite_false]; exact hc, hnc, ?_⟩
-      exact pre_get (pre_push _ _) ht
+      (by simpa using hl) (fun x hx' => hx x (by simp [hx'])) (by simp [hs]) (by simp; omega) ⟨?_, ?_⟩
+    · intro x k hk
+      unfold upd at hk
+      by_cases hxy : x = y
+      · subst hxy
+        simp only [ite_true, Option.some.injEq] at hk
+        subst hk
+        refine ⟨g.cells.size, by rw [Env.lookup_bind _ _ _ _ hy]; simp, hn, ?_⟩
+        simp only [hs, teTy_kind]
+        simp
+      · simp only [hxy, ite_false] at hk
+        obtain ⟨cell, hc, hnc, ht⟩ := h.1 x k hk
+        refine ⟨cell, by rw [Env.lookup_bind _ _ _ _ hy]; simp only [hxy, ite_false]; exact hc, hnc, ?_⟩
+        exact pre_get (pre_push _ _) ht
+    · -- An old parameter's cell is below the new one.
+      have hold : ∀ x k c, κ x = some k → env.lookup x = some c → c < g.cells.size := by
+        intro x k c hk hc
+        obtain ⟨cell, hc', -, ht⟩ := h.1 x k hk
+        rw [hc] at hc'; cases hc'
+        rw [hs]; exact (Array.getElem?_eq_some_iff.mp ht).1
+      intro x z k k' c hxk hzk hxc hzc
+      unfold upd at hxk hzk
+      rw [Env.lookup_bind _ _ _ _ hy] at hxc hzc
+      by_cases hxy : x = y <;> by_cases hzy : z = y
+      · rw [hxy, hzy]
+      · simp only [hxy, ite_true] at hxc
+        simp only [hzy, ite_false] at hzk hzc
+        cases hxc; exact absurd (hold z _ _ hzk hzc) (Nat.lt_irrefl _)
+      · simp only [hzy, ite_true] at hzc
+        simp only [hxy, ite_false] at hxk hxc
+        cases hzc; exact absurd (hold x _ _ hxk hxc) (Nat.lt_irrefl _)
+      · simp only [hxy, hzy, ite_false] at hxk hzk hxc hzc
+        exact h.2 x z k k' c hxk hzk hxc hzc
   | [], _ :: _, _, _, _, _, hl, _, _, _, _ | _ :: _, [], _, _, _, _, hl, _, _, _, _ => by simp at hl
 
 theorem lowerFun_names {K : Nat} {sg : Sigs} {f : String} {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind}
@@ -2452,7 +2477,7 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
       { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers } :=
     params_cells xks ws (fun _ => none) _ { ga with steps := k2 } ga.cells.size
       (argsRel_length (argsRel_of_krel hkr)) (fun x hx => (hnm x hx).1) hia.sync (Nat.le_refl _)
-      (fun _ _ h => by cases h)
+      ⟨fun _ _ h => absurd h (by simp), fun _ _ _ _ _ h => absurd h (by simp)⟩
   have hB := ihB f F xks ρ lb hFl hsig hlb { sa with locals := specFrame F.params vs } _ _ ga.cells.size hic
     (by show sa.steps ≤ _; simp only [paramsBound]; rw [hpsteps]; unfold Spent at hspa; simp at hspa ⊢; omega)
     hpc (m + 2) (by rw [Nat.mul_succ] at hN; omega)
