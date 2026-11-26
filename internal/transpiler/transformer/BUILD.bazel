@@ -152,6 +152,7 @@ go_test(
         "bare_case_untestable_test.go",
         "bare_funcref_test.go",
         "bare_variant_pattern_test.go",
+        "basic_type_field_read_test.go",
         "binary_codegen_test.go",
         "binary_type_test.go",
         "bind_test.go",
