@@ -833,4 +833,220 @@ theorem call_sf (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (hQ : KszOK 
 
 end CallSF3
 
+section Preds
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+
+/-- The bound and the fuel claim of a galaspec run `sr` from `s` and a GoCore run `x` from `g`,
+    of code of size `z` at galaspec depth `d`. -/
+def SF (z d : Nat) (s : Spec.St) (g : St) (sr : Except Spec.Stop Spec.Val × Spec.St) (r : Except Stop α × St) :
+    Prop :=
+  (s.steps ≤ g.steps → Stut Q z s g sr r) ∧
+    (s.steps ≤ d → Q * (g.steps + 1) + z ≤ s.steps → sr.1 = .error .fuel → r.1 = .error .fuel)
+
+/-- A statement, at galaspec depth `d` (`StmtSim`'s). -/
+def StmtSF (d : Nat) : Prop :=
+  ∀ ρ κ st κ' l, lowerS3 K sg ρ κ st = some (κ', l) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ N, K * d ≤ N →
+      SF Q (esz st) d s g ((Spec.eval ds d st).run.run s) ((execStmt cx N env l).run.run g)
+
+/-- A statement list (`ListSim3`'s). -/
+def ListSF (d : Nat) : Prop :=
+  ∀ ρ κ ss κ' ls, lowerSs3 K sg ρ κ ss = some (κ', ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ N, K * d + 1 ≤ N →
+      SF Q (eszs ss) d s g ((Spec.evalBlock ds d ss).run.run s) ((execStmts cx N env ls).run.run g)
+
+/-- A block (`BlockSim3`'s). -/
+def BlockSF (d : Nat) : Prop :=
+  ∀ ρ κ ss κ' ls, lowerSs3 K sg ρ κ ss = some (κ', ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ N, K * d + 2 ≤ N + K →
+      SF Q (esz (.block ss)) d s g ((Spec.eval ds d (.block ss)).run.run s) ((execBlock cx N env ls).run.run g)
+
+/-- An `if` statement (`IfSim3`'s). -/
+def IfSF (d : Nat) : Prop :=
+  ∀ ρ κ c a els κ' l, lowerS3 K sg ρ κ (.ifStmt c a els) = some (κ', l) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ N, K * d ≤ N →
+      SF Q (esz (.ifStmt c a els)) d s g ((Spec.eval ds d (.ifStmt c a els)).run.run s)
+        ((execStmt cx N env l).run.run g)
+
+/-- A tail (`TailSim`'s). -/
+def TailSF (d : Nat) : Prop :=
+  ∀ r κ e k ls, tailOf K sg r κ e = some (k, ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ N, K * d + 3 ≤ N →
+      SF Q (esz e) d s g ((Spec.eval ds d e).run.run s) ((execStmts cx N env ls).run.run g)
+
+/-- A block's elements as a tail (`TsSim`'s). -/
+def TsSF (d : Nat) : Prop :=
+  ∀ r κ ss k ls, lowerTs K sg r κ ss = some (k, ls) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ N, K * d + 3 ≤ N →
+      SF Q (eszs ss) d s g ((Spec.evalBlock ds d ss).run.run s) ((execStmts cx N env ls).run.run g)
+
+/-- The `if` of a tail or an IIFE (`IfTSim`'s): galaspec's step for the `if` already taken,
+    so the bound and the claim start from `kk`, the steps after it, and the size is the
+    parts'. -/
+def IfTSF (d : Nat) : Prop :=
+  ∀ r κ c a b k st, ifOf (lowerC K sg κ c) (tailOf K sg r κ a) (tailOf K sg r κ b) = some (k, st) →
+    ∀ e, (e = .ifExpr c a b ∨ ∃ as, a = .block as ∧ e = .ifStmt c a (some b)) →
+    ∀ (s : Spec.St) (kk : Nat) (g : St) (env : Env), s.steps = kk + 1 →
+      Inv3 cx P sg κ s.toCore g env → ∀ N, K * d + 6 ≤ N →
+        SF Q (esz c + esz a + esz b) d { s with steps := kk } g ((Spec.eval ds (d + 1) e).run.run s)
+          ((execStmt cx N env st).run.run g)
+
+end Preds
+
+section IifeSF
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+
+theorem callBody0_zero (c : Ctx) (n : Nat) (env : Env) (k : Kind) (body : List Stmt) (g : St)
+    (hj : g.steps = 0) :
+    ((callBody c (n + 3) env (lowerSigOf [] k) (some body) none [] false).run.run g).1 = .error .fuel := by
+  rw [show n + 3 = (n + 2).succ from rfl, lowerSigOf, callBody.eq_2]
+  exact grun_bind_fuel (gtick_zero g hj)
+
+theorem callBody0_fuel (c : Ctx) (n : Nat) (env : Env) (k : Kind) (body : List Stmt) (g : St) (j : Nat)
+    (hj : g.steps = j + 1) (ht : env.tenv = []) (hl : env.lookup (kindName k) = none)
+    (ho : nameOwner c env (kindName k) = none) (g1 : St)
+    (hb : (execStmts c (n + 2) env.push body).run.run { g with steps := j, defers := [] :: g.defers } =
+      (.error .fuel, g1)) :
+    ((callBody c (n + 3) env (lowerSigOf [] k) (some body) none [] false).run.run g).1 = .error .fuel := by
+  rw [show n + 3 = (n + 2).succ from rfl, lowerSigOf, callBody.eq_2]
+  simp only [grun_bind, gtick_succ g j hj, Bool.not_false, ite_true, Bool.false_and,
+    Bool.false_eq_true, ite_false, run_pureM]
+  have hty : ∀ g', (evalType c (n + 2) env (.ident (kindName k))).run.run g' = (.ok (kindTy k), g') :=
+    fun g' => evalType_kind c n env k g' hl ht ho
+  simp only [List.flatMap_cons, List.isEmpty_nil, ite_true, List.append_nil, List.map_nil, List.flatMap_nil,
+    List.length_nil, bne_self_eq_false, Bool.false_eq_true, ite_false,
+    List.forIn_nil, run_pureM, grun_bind, hty, List.mapM_cons, List.mapM_nil, List.zip_cons_cons,
+    List.zip_nil_right, List.forIn_cons, emptyStr_isEmpty, Bool.not_true, gtryCatch, gget_run, gmodify_run]
+  rw [hb]
+  rfl
+
+section
+variable (c : Ctx) (n : Nat) (env : Env) (k : Kind) (st : Stmt) (g : St)
+  (hio : env.iota = none) (ht : env.tenv = [])
+  (hl : env.lookup (kindName k) = none) (ho : nameOwner c env (kindName k) = none)
+include hio ht hl ho
+
+theorem evalExpr_iife_zero (hj : g.steps = 0) :
+    ((evalExpr c (n + 6) env (iife k st)).run.run g).1 = .error .fuel := by
+  rw [evalExpr_iife c n env k st g hio ht hl ho]
+  exact grun_bind_fuel (callBody0_zero c n env k [st] _ hj)
+
+theorem evalExpr_iife_fuel (j : Nat) (hj : g.steps = j + 1) (g1 : St)
+    (hb : (execStmts c (n + 2) env.push [st]).run.run (iifeSt env k st g j) = (.error .fuel, g1)) :
+    ((evalExpr c (n + 6) env (iife k st)).run.run g).1 = .error .fuel := by
+  rw [evalExpr_iife c n env k st g hio ht hl ho]
+  exact grun_bind_fuel (callBody0_fuel c n env k [st] _ j hj ht hl ho g1 hb)
+end
+
+theorem iife_sf (d : Nat) (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ihI : IfTSim ds cx P K sg d)
+    (ihIF : IfTSF ds cx P K sg Q d)
+    (κ : String → Option Kind) (c a b : Spec.Expr) (k : Kind) (le : Expr)
+    (hl : lowerC K sg κ (.ifExpr c a b) = some (k, le)) (s : Spec.St) (g : St) (env : Env)
+    (hi : Inv3 cx P sg κ s.toCore g env) (N : Nat) (hN : K * (d + 1) ≤ N) :
+    SF Q (esz (.ifExpr c a b)) (d + 1) s g ((Spec.eval ds (d + 1) (.ifExpr c a b)).run.run s)
+      ((evalExpr cx N env le).run.run g) := by
+  obtain ⟨st, hst, hκ, rfl⟩ := lowerC_ifExpr K sg hl
+  simp only [esz]
+  cases hs : s.steps with
+  | zero => rw [eval_fuel _ _ _ _ hs]; exact ⟨fun _ => trivial, fun _ h _ => by omega⟩
+  | succ kk =>
+  obtain ⟨n, rfl⟩ : ∃ n, N = n + 6 := ⟨N - 6, by rw [Nat.mul_succ] at hN; omega⟩
+  obtain ⟨p, hpk, hobjs, -⟩ := hF.pkg
+  have hio : env.iota = none := hi.inv.pre.1
+  have hl' : env.lookup (kindName k) = none := (hi.closed _ hκ).2 (by cases k <;> rfl)
+  have ho : nameOwner cx env (kindName k) = none :=
+    nameOwner_none cx env _ p (by rw [hi.pkg]; exact hpk) (hobjs _ (by cases k <;> simp [kindName]))
+      (by cases k <;> decide)
+  refine ⟨fun hsg => ?_, fun hd hq hf => ?_⟩
+  · obtain ⟨j, hj⟩ : ∃ j, g.steps = j + 1 := ⟨g.steps - 1, by omega⟩
+    have hiI : Inv3 cx P sg κ s.toCore (iifeSt env k st g j) env.push :=
+      inv3_same cx P sg (inv3_push cx P sg hi) rfl rfl rfl
+    have h := ihI none κ c a b k st hst _ (Or.inl rfl) s kk (iifeSt env k st g j) env.push hs hiI
+      (by show kk ≤ j; omega) (n + 1) (by rw [Nat.mul_succ] at hN; omega)
+    have hS := (ihIF none κ c a b k st hst _ (Or.inl rfl) s kk (iifeSt env k st g j) env.push hs hiI
+      (n + 1) (by rw [Nat.mul_succ] at hN; omega)).1 (by show kk ≤ j; omega)
+    rcases hr : (Spec.eval ds (d + 1) (.ifExpr c a b)).run.run s with ⟨re, s'⟩
+    rw [hr] at h hS
+    rcases hx : (execStmt cx (n + 1) env.push st).run.run (iifeSt env k st g j) with ⟨rx, g1⟩
+    rw [hx] at h hS
+    cases re with
+    | ok v =>
+      obtain ⟨⟨w, g1', hg, hvw, hkv, -, -, -, hgf, -⟩, -⟩ := h
+      cases hg
+      rw [evalExpr_iife_ret cx n env k st g hio hi.tenv hl' ho j hj v w hvw hkv g1
+        (execStmts_one_err cx (n + 1) env.push st _ _ g1 hx) (gframe_defers hgf)]
+      simp only [Stut, iifeSt] at hS ⊢
+      rw [hj, Nat.mul_succ]
+      omega
+    | error e =>
+      cases e with
+      | ret v => exact (retOK_none h).elim
+      | _ => trivial
+  · rcases Nat.eq_zero_or_pos g.steps with hj | hj
+    · exact evalExpr_iife_zero cx n env k st g hio hi.tenv hl' ho hj
+    obtain ⟨j, hj⟩ : ∃ j, g.steps = j + 1 := ⟨g.steps - 1, by omega⟩
+    have hiI : Inv3 cx P sg κ s.toCore (iifeSt env k st g j) env.push :=
+      inv3_same cx P sg (inv3_push cx P sg hi) rfl rfl rfl
+    have h := (ihIF none κ c a b k st hst _ (Or.inl rfl) s kk (iifeSt env k st g j) env.push hs hiI
+      (n + 1) (by rw [Nat.mul_succ] at hN; omega)).2 (by show kk ≤ d; omega)
+      (by show _ ≤ kk; simp only [iifeSt]; rw [hj] at hq; simp only [Nat.mul_succ] at hq ⊢; omega) hf
+    rcases hx : (execStmt cx (n + 1) env.push st).run.run (iifeSt env k st g j) with ⟨rx, g1⟩
+    rw [hx] at h
+    simp only at h
+    subst h
+    exact evalExpr_iife_fuel cx n env k st g hio hi.tenv hl' ho j hj g1
+      (execStmts_one_err cx (n + 1) env.push st _ _ g1 hx)
+
+end IifeSF
+
+section ExprAllSF
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+
+/-- **Expressions with calls, at depth `d + 1`**, from the parts at depth `d`. -/
+theorem exprSF_succ (d : Nat) (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (hQ : KszOK ds Q)
+    (ihE : ExprSim ds cx P K sg d) (ihB : BodySim ds cx P K sg d) (ihI : IfTSim ds cx P K sg d)
+    (ih : ExprSF ds cx P K sg Q d) (ihBF : BodySF ds cx P K sg Q d) (ihIF : IfTSF ds cx P K sg Q d) :
+    ExprSF ds cx P K sg Q (d + 1) := by
+  intro κ e k le hl s g env hi N hN
+  have hKN : K ≤ N := by rw [Nat.mul_succ] at hN; omega
+  match e, hl with
+  | .lit l, hl => exact leaf_sf ds cx P K sg Q κ _ k le (by simpa [lowerC] using hl) s g env hi _ N hKN
+  | .name x, hl => exact leaf_sf ds cx P K sg Q κ _ k le (by simpa [lowerC] using hl) s g env hi _ N hKN
+  | .paren x, hl =>
+    cases hc : hasCall x
+    · exact leaf_sf ds cx P K sg Q κ _ k le (by simpa [lowerC, hc] using hl) s g env hi _ N hKN
+    · exact paren_sf ds cx P K sg Q d ih (by omega) κ x k le hl hc s g env hi N hN
+  | .unary op x, hl =>
+    cases hc : hasCall x
+    · exact leaf_sf ds cx P K sg Q κ _ k le (by simpa [lowerC, hc] using hl) s g env hi _ N hKN
+    · exact unary_sf ds cx P K sg Q d ihE ih (by omega) κ op x k le hl hc s g env hi N hN
+  | .binary op l r, hl =>
+    cases hc : (hasCall l || hasCall r)
+    · have hl' : lowerLeaf K κ (.binary op l r) = some (k, le) := by
+        simp only [lowerC] at hl; rw [hc] at hl; simpa using hl
+      exact leaf_sf ds cx P K sg Q κ _ k le hl' s g env hi _ N hKN
+    · by_cases hab : op = "&&" ∨ op = "||"
+      · exact andor_sf ds cx P K sg Q d ihE ih (by omega) κ op hab l r k le hl hc s g env hi N hN
+      · simp only [not_or] at hab
+        exact binary_sf ds cx P K sg Q d ihE ih (by omega) κ op l r k le hl hc hab.1 hab.2 s g env hi N hN
+  | .call (.name f) args, hl =>
+    exact call_sf ds cx P K sg Q d hF (by omega) hQ ihE ihB ih ihBF κ f args k le hl s g env hi N hN
+  | .ifExpr c a b, hl => exact iife_sf ds cx P K sg Q d hF hK ihI ihIF κ c a b k le hl s g env hi N hN
+  | .call (.lit _) _, hl | .call (.paren _) _, hl | .call (.unary ..) _, hl | .call (.binary ..) _, hl
+  | .call (.call ..) _, hl | .call (.select ..) _, hl | .call (.tuple _) _, hl | .call (.ifExpr ..) _, hl
+  | .call (.mtch ..) _, hl | .call (.block _) _, hl | .call (.ifStmt ..) _, hl | .call (.ret _) _, hl
+  | .call (.assign ..) _, hl | .call (.incdec ..) _, hl | .call (.decl ..) _, hl | .call (.interp _) _, hl
+  | .call (.lambda ..) _, hl | .call (.named ..) _, hl | .call (.unsupported _) _, hl
+  | .select .., hl | .tuple _, hl | .mtch .., hl | .block _, hl | .ifStmt .., hl
+  | .ret _, hl | .assign .., hl | .incdec .., hl | .decl .., hl | .interp _, hl | .lambda .., hl
+  | .named .., hl | .unsupported _, hl => simp [lowerC] at hl
+
+end ExprAllSF
+
 end Gala.M5
