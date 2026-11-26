@@ -16,8 +16,8 @@ A Go constraint with a core type ranges as that type: `interface{ ~int64 }`
 binds the loop variable to `T`, and `interface{ ~[]string }` ranges as a
 slice. A Go constraint that is not known to lack a core type is left to Go:
 one whose type information is not available (no Go SDK), one naming a type
-that could not be resolved, and a set of channels, which Go merges into one
-core type when they differ only in direction.
+that could not be resolved, and any set holding a channel (Go merges channels
+that differ only in direction into one core type).
 
 **Minimal repro.** A hand-written Go file of the package declares the
 constraint:
@@ -50,9 +50,9 @@ error[GALA-E0142]: cannot range over `n`: its type T is constrained by Number, w
   --> main.gala:4:20
   |
 4 |     for i := range n {
-  |                    ^ use a constraint whose types share one underlying type
+  |                    ^ range over a value of a concrete type, or declare the constr…
   |
-  = hint: use a constraint whose types share one underlying type (`interface{ ~int64 }`), or range over a value of a concrete type
+  = hint: range over a value of a concrete type, or declare the constraint in a .go file of the package as an interface whose types share one underlying type (`interface{ ~int64 }`)
 ```
 
 **Fix.** Constrain `T` by an interface whose types share one underlying type:
