@@ -200,7 +200,12 @@ func names() List[string] = ListOf("a")
 			// type; it used to come out as `func(any) int` (#1407).
 			name:    "variadic function type argument",
 			main:    "val b = Box(1)\n    val f = b.Pair[func(...int) int]\n    Println(f != nil)",
-			wantErr: "the method value Box.Pair cannot take these type arguments",
+			wantErr: "the method value Box.Pair cannot be written as a function value",
+		},
+		{
+			name:    "variadic function type nested in a type argument",
+			main:    "val b = Box(1)\n    val f = b.Pair[Option[func(...int) int]]\n    Println(f != nil)",
+			wantErr: "the method value Box.Pair cannot be written as a function value",
 		},
 		{
 			name:    "too many type arguments",

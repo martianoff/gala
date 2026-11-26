@@ -103,12 +103,7 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		for i, ta := range typeArgs {
 			typ := t.astTypeToTranspilerType(ta)
 			if transpiler.ContainsUnusable(typ) {
-				// A type the closure's signature cannot spell (a variadic
-				// function type, `func(...int) int`) would come out as
-				// `any`: say so rather than emit a different type.
-				return nil, false, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-					"the method value %s.%s cannot take these type arguments: its function type cannot be written with them (a variadic function type is one); call the method instead, or wrap the call in a lambda",
-					stripPackagePrefix(meta.Name), method))
+				return nil, false, unspellableMethodValueError(meta.Name, method, line, col)
 			}
 			bound[ownParams[i]] = typ
 		}
@@ -139,6 +134,11 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		}
 		// Substituting into a function type gives a function type.
 		ft = t.substituteTranspilerTypeParams(ft, bound).(transpiler.FuncType)
+	}
+	if transpiler.ContainsUnusable(ft) {
+		// A receiver type argument or a declared parameter the closure's
+		// signature cannot spell either.
+		return nil, false, unspellableMethodValueError(meta.Name, method, line, col)
 	}
 
 	// The receiver as the function takes it: `&c` for a pointer receiver,
@@ -222,6 +222,16 @@ func (t *galaASTTransformer) slotFuncType(slot transpiler.Type) *transpiler.Func
 	}
 	slot, _ = transpiler.UnwrapSendable(t.followAliasChain(slot))
 	return t.resolveTranspilerTypeAsFuncType(slot)
+}
+
+// unspellableMethodValueError reports a method value of typeName.method whose
+// closure signature has a part the generated Go cannot be given as written:
+// a variadic function type (`func(...int) int`) would come out as `any`, a
+// different type, so it is an error rather than wrong Go.
+func unspellableMethodValueError(typeName, method string, line, col int) error {
+	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"the method value %s.%s cannot be written as a function value: its function type has a part that cannot be spelled here (such as a variadic function type); call the method instead, or wrap the call in a lambda",
+		stripPackagePrefix(typeName), method))
 }
 
 // methodValueTypeParamPrefix starts the name a method value's own type
