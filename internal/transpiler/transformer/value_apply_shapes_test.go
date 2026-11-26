@@ -481,7 +481,7 @@ struct Plain(n int)
 
 func (p Plain) Apply(f func(int) int) int = f(p.n)
 
-struct Holder(var P Plain, Q Plain)
+struct Holder(var P Plain, Q Plain, var R *Plain)
 `,
 		"main.gala": `package main
 
@@ -492,8 +492,9 @@ struct Plain(s string)
 func (p Plain) Apply(x string) string = p.s + x
 
 func main() {
-    val h = lib.Holder(lib.Plain(1), lib.Plain(2))
-    Println(h.P((x) => x + 1), h.Q((x) => x * 2), Plain("a")("b"))
+    var p = lib.Plain(3)
+    val h = lib.Holder(lib.Plain(1), lib.Plain(2), &p)
+    Println(h.P((x) => x + 1), h.Q((x) => x * 2), h.R((x) => x - 1), Plain("a")("b"))
 }
 `,
 	}
@@ -501,4 +502,5 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "h.P.Apply(func(x int) int")
 	require.Contains(t, out, "h.Q.Get().Apply(func(x int) int")
+	require.Contains(t, out, "h.R.Apply(func(x int) int")
 }

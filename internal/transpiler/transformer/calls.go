@@ -3186,7 +3186,7 @@ func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMeta
 	// A pointer is called through the Apply of the type it points to
 	// (applyTypeOf).
 	if elem, isPtr := t.pointee(b.typ); isPtr {
-		return t.pointeeApplyType(t.applyTypeMeta, elem)
+		return t.pointeeApplyType(t.applyTypeByName, elem)
 	}
 	return t.applyTypeMeta(b.typ.BaseName())
 }
@@ -3395,16 +3395,26 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 		return nil
 	}
 	// Another package's struct names its field's type as that package does:
-	// a bare name is its own type, never a same-named one of this package.
-	if meta.Package != "" && meta.Package != t.packageName && fieldType.GetPackage() == "" &&
-		!strings.Contains(fieldType.BaseName(), ".") && !transpiler.IsPrimitiveType(fieldType.BaseName()) {
-		name := fieldType.BaseName()
-		if t.getTypeMeta(meta.Package+"."+name) != nil {
-			return t.applyTypeByName(meta.Package + "." + name)
+	// a bare name is its own type, never a same-named one of this package. A
+	// pointer is looked up by the type it points to (applyTypeOf).
+	named := fieldType
+	elem, isPtr := t.pointee(fieldType)
+	if isPtr {
+		named = elem
+	}
+	if meta.Package != "" && meta.Package != t.packageName && named.GetPackage() == "" &&
+		!strings.Contains(named.BaseName(), ".") && !transpiler.IsPrimitiveType(named.BaseName()) {
+		name := named.BaseName()
+		own := meta.Package + "." + name
+		if t.getTypeMeta(own) == nil {
+			// Else a std type; one it dot-imports is not known here, so the
+			// call is left as written.
+			own = registry.StdPackageName + "." + name
 		}
-		// Else a std type; one it dot-imports is not known here, so the call
-		// is left as written.
-		return t.applyTypeByName(registry.StdPackageName + "." + name)
+		if isPtr {
+			return t.pointeeApplyType(t.applyTypeByName, transpiler.NamedType{Name: own})
+		}
+		return t.applyTypeByName(own)
 	}
 	return t.applyTypeOf(fieldType)
 }
