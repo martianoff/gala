@@ -118,18 +118,26 @@ func three(u uint8, z int = int(u), c int = 0) int = z + c
 	// A default that reads a parameter of another predeclared type does not
 	// fit it, whatever the call passes: GALA-E0014 at the declaration, with
 	// or without a call.
-	for _, tc := range []struct{ name, main string }{
-		{"called with a constant", "Println(f(5))"},
-		{"not called", "Println(1)"},
+	for _, tc := range []struct{ name, decl, main string }{
+		{"called with a constant", "func f(u int, z int64 = u) int64 = z", "Println(f(5))"},
+		{"not called", "func f(u int, z int64 = u) int64 = z", "Println(1)"},
+		{"method", "struct S(V int)\n\nfunc (s S) f(u int, z int64 = u) int64 = z", "Println(S(1).f(5))"},
 	} {
 		t.Run("mismatched parameter read, "+tc.name, func(t *testing.T) {
-			src := "package main\n\nfunc f(u int, z int64 = u) int64 = z\n\nfunc main() {\n    " + tc.main + "\n}\n"
+			src := "package main\n\n" + tc.decl + "\n\nfunc main() {\n    " + tc.main + "\n}\n"
 			_, err := newThunkSugarTranspiler().Transpile(src, "")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0014")
 			assert.Contains(t, err.Error(), `default for parameter "z" has type int, expected int64`)
 		})
 	}
+	t.Run("a case field default naming a field stays GALA-E0098", func(t *testing.T) {
+		src := "package main\n\nsealed type S {\n    case C(W int, H int64 = W)\n}\n\nfunc main() {\n    Println(1)\n}\n"
+		_, err := newThunkSugarTranspiler().Transpile(src, "")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "GALA-E0014")
+		assert.Contains(t, err.Error(), "GALA-E0098")
+	})
 	t.Run("parameter read of the same or an interface type is accepted", func(t *testing.T) {
 		src := "package main\n\nfunc f(u byte, z uint8 = u, w any = u) uint8 = z\n\nfunc main() {\n    Println(f(5))\n}\n"
 		_, err := newThunkSugarTranspiler().Transpile(src, "")

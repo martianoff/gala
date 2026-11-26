@@ -1357,7 +1357,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	recordOpaqueBases(richAST, pkgName, underlying)
 	decls.markStoredAsDeclared(aliasStep(ownAliases, pkgName, richAST))
 	for _, check := range fd.pendingDefaultChecks {
-		if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
+		if err := validateDefaultParams(check, filePath, underlying); err != nil {
 			return nil, err
 		}
 	}
@@ -3796,9 +3796,24 @@ type defaultExprSpan struct {
 // `type Millis int64`) or `time.Duration` is checked the way Go converts it: a
 // numeric literal is a valid default for any type whose underlying type is
 // numeric.
-func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan, underlying func(transpiler.Type) transpiler.Type) error {
+func validateDefaultParams(check pendingDefaultCheck, filePath string, underlying func(transpiler.Type) transpiler.Type) error {
 	_ = filePath // filePath is retained for future use; position info now travels via the coded error
+	funcMeta, line, column, defaultSpans := check.meta, check.line, check.col, check.spans
 	if len(funcMeta.DefaultExprs) == 0 {
+		return nil
+	}
+	// In parameter order, so the first mismatch reported is the same each
+	// time.
+	order := slices.Sorted(maps.Keys(funcMeta.DefaultExprs))
+	if check.paramReadsOnly {
+		for _, i := range order {
+			if i >= len(funcMeta.ParamTypes) {
+				continue
+			}
+			if got := paramReadTypeMismatch(funcMeta, i, strings.TrimSpace(funcMeta.DefaultExprs[i].Text)); got != "" {
+				return defaultTypeMismatchError(funcMeta, i, got, funcMeta.ParamTypes[i].String(), line, column, defaultSpans)
+			}
+		}
 		return nil
 	}
 
@@ -3823,7 +3838,8 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	// Check literal type compatibility
-	for i, def := range funcMeta.DefaultExprs {
+	for _, i := range order {
+		def := funcMeta.DefaultExprs[i]
 		if i >= len(funcMeta.ParamTypes) {
 			continue
 		}
@@ -3836,33 +3852,14 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 			// A default that is an earlier parameter is that parameter's
 			// value, of its type: `z int64 = u` for a `u int` does not fit,
 			// whatever the call passes for u (a constant included).
-			if mismatch := paramReadTypeMismatch(funcMeta, i, strings.TrimSpace(def.Text)); mismatch != "" {
+			if mismatch := paramReadTypeMismatch(funcMeta, i, strings.TrimSpace(def.Text)); mismatch != "" && !check.fields {
 				return defaultTypeMismatchError(funcMeta, i, mismatch, paramType, line, column, defaultSpans)
 			}
 			continue // non-literal expression, can't validate statically
 		}
 		if !typesCompatibleForDefault(paramType, literalType) &&
 			(underlying == nil || !typesCompatibleForDefault(underlying(funcMeta.ParamTypes[i]).String(), literalType)) {
-			paramName := ""
-			if i < len(funcMeta.ParamNames) {
-				paramName = funcMeta.ParamNames[i]
-			}
-			// Point the diagnostic at the default expression itself (with an
-			// exact caret span) when we captured its position; otherwise fall
-			// back to the function-declaration start.
-			errLine, errCol := line, column
-			derr := galaerr.NewCodedSemanticError(
-				galaerr.CodeParamDefaultTypeMismatch,
-				errLine, errCol,
-				fmt.Sprintf("default for parameter %q has type %s, expected %s", paramName, literalType, paramType),
-				"fix the default expression or change the parameter type",
-			)
-			if sp, ok := defaultSpans[i]; ok && sp.line > 0 {
-				derr.Line = sp.line
-				derr.Column = sp.startCol
-				derr = derr.WithSpan(sp.endCol)
-			}
-			return derr
+			return defaultTypeMismatchError(funcMeta, i, literalType, paramType, line, column, defaultSpans)
 		}
 	}
 
@@ -3911,8 +3908,9 @@ func canonicalBasic(name string) string {
 }
 
 // defaultTypeMismatchError is GALA-E0014 for the default of parameter i of
-// funcMeta, of type got where want is declared, at the default expression
-// when its span is known and at line:column otherwise.
+// funcMeta, of type got where want is declared: at the default expression,
+// with an exact caret span, when its position was captured, and at the
+// declaration's start (line:column) otherwise.
 func defaultTypeMismatchError(funcMeta *transpiler.FunctionMetadata, i int, got, want string, line, column int, defaultSpans map[int]defaultExprSpan) error {
 	paramName := ""
 	if i < len(funcMeta.ParamNames) {
