@@ -6034,8 +6034,9 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 
 	// A `nil` that the thunk could not hold is the function itself: `func()`
 	// cannot evaluate it as a statement, and `func() T` cannot return it
-	// when T is a struct or a basic type (#1448). A nilable T keeps the
-	// thunk returning nil, as before.
+	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
+	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
+	// returning nil, as before.
 	if isNilIdent(expr) && (len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0])) {
 		return expr, false
 	}
@@ -6108,7 +6109,7 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 		return false
 	}
 	if _, kind, via := t.resolveScalar(typ); kind != scalarNone || via != nil {
-		return true // an opaque type is declared over a scalar
+		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
 	}
 	base := t.followAliasChain(typ)
 	if g, isGen := base.(transpiler.GenericType); isGen {
@@ -6123,12 +6124,17 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	default:
 		return false
 	}
-	if !t.isGoTyped(nt) {
-		meta := t.getTypeMeta(nt.BaseName())
-		return meta != nil && !meta.IsInterface
+	// A Go type of this or another package: its kind is known from Go.
+	if _, data := t.goTypeDataFor(nt); data != nil && data.Kind != transpiler.GoKindMethodsOnly {
+		return data.Kind == "struct"
 	}
-	_, data := t.goTypeDataFor(nt)
-	return data != nil && data.Kind == "struct"
+	if t.isGoTyped(nt) {
+		return false
+	}
+	// A GALA type: a sealed type, or a struct with fields. A placeholder
+	// for a receiver type a .go file of the package declares has neither.
+	meta := t.getTypeMeta(nt.BaseName())
+	return meta != nil && !meta.IsInterface && (meta.IsSealed || len(meta.FieldNames) > 0)
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose
