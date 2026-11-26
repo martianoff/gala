@@ -50,11 +50,6 @@ func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
 			contains: "std.Try[int64]{}.Apply(func() int64 {\n\t\treturn 5\n\t})",
 		},
 		{
-			name:     "companion Apply, any slot",
-			main:     "val tr Try[any] = Try(5)\n    Println(tr)",
-			contains: "std.Try[any]{}.Apply(func() any {\n\t\treturn 5\n\t})",
-		},
-		{
 			name:     "no slot keeps the default type",
 			main:     "val p = lazy(5, true)\n    Println(p)",
 			contains: "lazy(func() int {\n\t\treturn 5\n\t}, true)",

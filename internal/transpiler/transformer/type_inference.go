@@ -826,7 +826,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 			return funcMeta.ParamTypes[pi]
 		}
 		return nil
-	}, resolved, false)
+	}, resolved)
 	instantiated, missing := t.completeTypeArgs(fun, spelled, nil, resolved)
 	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
 		// No slot fixes an argument whose type is unknown.
