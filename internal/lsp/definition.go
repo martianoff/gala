@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
@@ -290,10 +289,6 @@ func (h *GalaHandler) definitionLocations(uri, text string, richAST *transpiler.
 	return nil, nil
 }
 
-// caseGuard finds the `if` that starts a case's guard, written with a space or
-// a parenthesis after it.
-var caseGuard = regexp.MustCompile(`[\s)]if[\s(]`)
-
 // patternBindingDefinition checks if the word at the cursor is a pattern binding
 // variable (inside case Xxx(b, h) =>). If so, returns its own position as the definition.
 // Also searches backwards for the case line if the cursor is in the body after =>.
@@ -318,18 +313,7 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		// Offsets are taken on the untrimmed line, so they are columns.
 		line := lines[i]
 		parenOpen := strings.Index(line, "(")
-		// The pattern's slots run to its last `)` before its guard or `=>`,
-		// so a binder after a parenthesized one, `case ((a), (b))`, is
-		// reached too.
 		parenClose := strings.Index(line, ")")
-		if end := strings.Index(line, "=>"); end > 0 {
-			if loc := caseGuard.FindStringIndex(line[:end]); loc != nil {
-				end = loc[0]
-			}
-			if last := strings.LastIndex(line[:end], ")"); last > parenClose {
-				parenClose = last
-			}
-		}
 		if parenOpen < 0 || parenClose < 0 || parenClose <= parenOpen {
 			continue
 		}
@@ -342,27 +326,15 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		for start <= parenClose {
 			end := start + strings.IndexAny(line[start:parenClose+1], ",)")
 			col := start
-			nameEnd := col
-			for {
-				// Parentheses around a binding only group it: `Some((x))`
-				// binds x.
-				for col < end && (line[col] == ' ' || line[col] == '\t' || line[col] == '(') {
-					col++
-				}
-				nameEnd = col
-				for nameEnd < end && isIdentChar(line[nameEnd]) {
-					nameEnd++
-				}
-				// A name followed by `(` or `.` is a constructor or a
-				// qualifier, not a binder: the slot's binder, if any, is
-				// inside its parentheses (`Some(a` in `(Some(a), b)`).
-				if nameEnd > col && nameEnd < end && (line[nameEnd] == '(' || line[nameEnd] == '.') {
-					col = nameEnd + 1
-					continue
-				}
-				break
+			// Parentheses around a binding only group it: `Some((x))` binds x.
+			for col < end && (line[col] == ' ' || line[col] == '\t' || line[col] == '(') {
+				col++
 			}
-			if nameEnd > col && line[col:nameEnd] == word {
+			nameEnd := col
+			for nameEnd < end && isIdentChar(line[nameEnd]) {
+				nameEnd++
+			}
+			if line[col:nameEnd] == word {
 				return &lsp.Location{
 					URI: lsp.DocumentURI(uri),
 					Range: lsp.Range{

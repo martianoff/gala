@@ -48,6 +48,15 @@ func f(o Option[int]) int = o match {
 `,
 		},
 		{
+			name: "parenthesized bool literals cover a bool field",
+			src: `func f(o Option[bool]) int = o match {
+    case Some((true)) => 1
+    case Some((false)) => 2
+    case None() => 0
+}
+`,
+		},
+		{
 			name: "a parenthesized rest binds as the rest does",
 			src: `import . "martianoff/gala/collection_immutable"
 

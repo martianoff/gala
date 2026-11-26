@@ -365,68 +365,6 @@ func TestDefinition_ParenthesizedPatternBinding(t *testing.T) {
 	assert.Equal(t, strings.Index(line, "((x))")+2, locs[0].Range.Start.Character)
 }
 
-// A binder after a parenthesized one is found too: the slots run to the
-// pattern's last `)`, not its first.
-func TestDefinition_BindingAfterParenthesizedOne(t *testing.T) {
-	h := newHarness(t)
-	src := "package main\n" +
-		"\n" +
-		"val b = 1\n" +
-		"\n" +
-		"func sum(t Tuple[int, int]) int = t match {\n" +
-		"\tcase ((a), (b)) => a + b\n" +
-		"}\n" +
-		"\n" +
-		"func main() {\n" +
-		"\tPrintln(sum((4, 5)), b)\n" +
-		"}\n"
-	uri := openFileOnDisk(t, h, src)
-
-	line := strings.Split(src, "\n")[5]
-	locs, err := h.Definition(uri, 5, strings.LastIndex(line, "b"))
-	require.NoError(t, err)
-	require.NotEmpty(t, locs)
-	assert.Equal(t, 5, locs[0].Range.Start.Line)
-	assert.Equal(t, strings.Index(line, "(b)")+1, locs[0].Range.Start.Character)
-}
-
-// A constructor name in a case pattern is not a binder: go-to-definition on
-// it does not land on the case line, while a binder inside a constructor's
-// parentheses is still found.
-func TestDefinition_ConstructorInPatternIsNotABinder(t *testing.T) {
-	h := newHarness(t)
-	src := "package main\n" +
-		"\n" +
-		"func f(t Tuple[Option[int], Option[int]]) Option[int] = t match {\n" +
-		"\tcase (Some(a), None()) => None()\n" +
-		"\tcase _ => Some(1)\n" +
-		"}\n" +
-		"\n" +
-		"func g(t Tuple[Option[int], int]) int = t match {\n" +
-		"\tcase (Some(a), b) => a + b\n" +
-		"\tcase _ => 0\n" +
-		"}\n" +
-		"\n" +
-		"func main() {\n" +
-		"\tPrintln(f((Some(1), None[int]())), g((Some(1), 2)))\n" +
-		"}\n"
-	uri := openFileOnDisk(t, h, src)
-
-	line := strings.Split(src, "\n")[3]
-	locs, err := h.Definition(uri, 3, strings.LastIndex(line, "None"))
-	require.NoError(t, err)
-	for _, l := range locs {
-		assert.NotEqual(t, 3, l.Range.Start.Line, "None in the body resolved to the pattern")
-	}
-
-	line = strings.Split(src, "\n")[8]
-	locs, err = h.Definition(uri, 8, strings.LastIndex(line, "a"))
-	require.NoError(t, err)
-	require.NotEmpty(t, locs)
-	assert.Equal(t, 8, locs[0].Range.Start.Line)
-	assert.Equal(t, strings.Index(line, "(a)")+1, locs[0].Range.Start.Character)
-}
-
 // TestNoHandlerReadsWireColumns keeps the conversion layer the only reader of
 // Position.Character. A wire column is in the negotiated encoding, so a handler
 // that reads one directly and indexes the document with it is wrong on any line

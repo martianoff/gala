@@ -327,6 +327,9 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 	if cell == nil || cell == covRefutable || typ == nil || typ.IsNil() {
 		return "", nil
 	}
+	// Parentheses only group: `(p)` names what p names.
+	inner := unparenPattern(*cell)
+	cell = &inner
 	typ = c.t.followAliasChain(typ)
 	if bt, ok := typ.(transpiler.BasicType); ok && bt.Name == "bool" {
 		if text := cell.text(); text == "true" || text == "false" {
@@ -339,7 +342,7 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 		return "", nil
 	}
 	if ctors[0].name == tupleCtorName {
-		elems, _, ok := unparenPattern(*cell).parenthesized()
+		elems, _, ok := cell.parenthesized()
 		if !ok || len(elems) != len(ctors[0].fields) {
 			return "", nil
 		}
