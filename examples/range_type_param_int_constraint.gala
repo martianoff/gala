@@ -1,0 +1,36 @@
+package main
+
+import "time"
+
+// A range over a value of a type parameter constrained by an integer type
+// that is no interface (`[T int64]`, a Go defined or opaque integer type)
+// binds the loop variable to the type parameter, as Go does (#1410).
+
+opaque type Millis int64
+
+func steps[T int64](n T) {
+    for i := range n {
+        val same = () => i
+        Println(s"i=$i same=${same()}")
+    }
+}
+
+func waits[T time.Duration](n T) {
+    for d := range n {
+        val same = () => d
+        Println(s"d=$d same=${same()}")
+    }
+}
+
+func ticks[T Millis](n T) {
+    for m := range n {
+        val same = () => m
+        Println(s"m=$m same=${same()}")
+    }
+}
+
+func main() {
+    steps(int64(2))
+    waits(time.Nanosecond * 2)
+    ticks(Millis(2))
+}
