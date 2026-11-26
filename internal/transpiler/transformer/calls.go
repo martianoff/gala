@@ -5532,13 +5532,31 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 	if err != nil {
 		return nil, err
 	}
-	if !isFunc && s.funcResult != nil && (lit.Type.Results == nil || len(lit.Type.Results.List) == 0) {
+	if (lit.Type.Results == nil || len(lit.Type.Results.List) == 0) && t.slotWantsInferredResult(s, isFunc) {
 		return nil, t.valuelessLambdaError(l)
 	}
 	if err := t.checkInoutFuncSlot(lit, s.typ, l.at()); err != nil {
 		return nil, err
 	}
 	return t.finishLambda(lit, checks, s.typ, l.at(), l.expression(), b)
+}
+
+// slotWantsInferredResult reports whether slot s takes a function with one
+// result whose type the lambda filling it gives: the slot has no type but a
+// function result (slot.funcResult), or its function type's result is a type
+// parameter the call leaves to the lambda — masked as unresolved (NilType),
+// or an open slot's `any` placeholder. isFunc is whether s.typ is a function
+// type.
+func (t *galaASTTransformer) slotWantsInferredResult(s slot, isFunc bool) bool {
+	if !isFunc {
+		return s.funcResult != nil
+	}
+	ft := t.resolveTranspilerTypeAsFuncType(s.typ)
+	if ft == nil || len(ft.Results) != 1 {
+		return false
+	}
+	r := ft.Results[0]
+	return r.IsNil() || s.open && r == anyTypeArg
 }
 
 // valuelessLambdaError reports l, a lambda filling a parameter that takes a

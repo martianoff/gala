@@ -34,6 +34,35 @@ func main() {
     val b = run((k int) => Println(k))
     b(1)
 }`, "this lambda has no value, but run takes a function with a result here"},
+		{"only the result is a type parameter", `package main
+
+func run[B any](f func(int) B) B = f(1)
+
+func main() {
+    run((k int) => {
+        Println(k)
+    })
+}`, "this lambda has no value, but run takes a function with a result here"},
+		{"another argument binds the parameter type", `package main
+
+func run[A any, B any](a A, f func(A) B) B = f(a)
+
+func main() {
+    run(1, (k int) => {
+        Println(k)
+    })
+}`, "this lambda has no value, but run takes a function with a result here"},
+		{"generic method", `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Map[B any](f func(T) B) B = f(b.V)
+
+func main() {
+    Box(1).Map((k) => {
+        Println(k)
+    })
+}`, "this lambda has no value, but Map takes a function with a result here"},
 		{"declared result type", `package main
 
 func run[A any](f func(A) int64) func(A) int64 = f
