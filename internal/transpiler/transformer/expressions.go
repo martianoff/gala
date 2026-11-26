@@ -899,7 +899,8 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 // `nil` has no type of its own, so whatever asks for the value's type
 // afterwards — the void check on a function's trailing value, the branch
 // unification of an if-expression, the common type of a match's arms — would
-// otherwise find none.
+// otherwise find none. An untyped constant there takes the slot's type too
+// (typeConstAs), so constant branches unify to it, not to their default type.
 //
 // A `nil` that is itself a call argument or a tuple element is lowered by
 // lowerAgainst and keeps no type: the call reads it as untyped (an explicit
@@ -912,8 +913,43 @@ func (t *galaASTTransformer) lowerResultAgainst(e exprSrc, s slot, strict bool) 
 	}
 	if !s.open {
 		t.typeNilAs(expr, s.typ)
+		t.typeConstAs(expr, s.typ)
 	}
 	return expr, nil
+}
+
+// typeConstAs gives expr, when it is an untyped constant (isUntypedConst),
+// the type typ of the slot it fills when that is a scalar type (`int64`,
+// `float64`, `string`, `bool`, or a type defined over one, see resolveScalar)
+// of the constant's kind, as a Go assignment converts a constant: the `1` of
+// `val x int64 = if (c) 1 else 0` is an int64, so the if-expression is one
+// too. A constant of another kind (a string for an int64) and any other slot
+// leave expr its default type.
+func (t *galaASTTransformer) typeConstAs(expr ast.Expr, typ transpiler.Type) {
+	if transpiler.IsUnusable(typ) || !isUntypedConst(expr) && !t.isUntypedConstArg(expr) {
+		return
+	}
+	// A constant the slot cannot hold (`0.5` for an int64, `300` for an
+	// int8) keeps its type, so the mismatch is reported as before.
+	if t.constMisfit(expr, typ) != "" {
+		return
+	}
+	_, slotKind, opaque := t.resolveScalar(typ)
+	if slotKind == scalarNone || opaque != nil {
+		return
+	}
+	if _, defKind, _ := t.resolveScalar(t.getExprTypeName(expr)); constKindOf(defKind) == constKindOf(slotKind) {
+		t.exprTypeCache[expr] = typ
+	}
+}
+
+// constKindOf is the kind of untyped constant a scalar of kind k takes: any
+// number for an integer or floating-point type.
+func constKindOf(k scalarKind) scalarKind {
+	if k == scalarUint || k == scalarFloat {
+		return scalarInt
+	}
+	return k
 }
 
 // typeNilAs gives expr, when it is a bare `nil`, the type typ of the slot it

@@ -1,0 +1,33 @@
+package main
+
+// An if-expression or match whose branch values are untyped constants takes
+// the basic type of the slot it fills, as a Go assignment converts a constant.
+
+func ratio(c bool) float64 = if (c) 1 else 2
+
+func weight(n int) float32 = n match {
+    case 0 => 0
+    case 1 => 1
+    case _ => 0.5
+}
+
+func widen(f func(int) int64) func(int) int64 = f
+
+func main() {
+    val big = true
+    val bits int64 = if (big) 1 << 40 else 0
+    Println(bits)
+
+    val mode = 2
+    val scale int64 = mode match {
+        case 1 => 1 << 10
+        case _ => 1 << 20
+    }
+    Println(scale)
+
+    Println(ratio(true), ratio(false))
+    Println(weight(0), weight(1), weight(7))
+
+    val shift = widen((k int) => if (k > 0) 1 << 33 else 0)
+    Println(shift(1), shift(0))
+}

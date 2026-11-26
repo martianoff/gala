@@ -795,6 +795,11 @@ func (t *galaASTTransformer) lowerBlockTail(b blockSrc, dst []ast.Stmt, st stmtS
 		}
 	} else {
 		stmt, pre, err = t.lowerStatement(st)
+		// A trailing untyped constant is the block's value: it takes the
+		// slot's type, as a branch's value does (typeConstAs).
+		if es, ok := stmt.(*ast.ExprStmt); ok && err == nil && value.ok() && !lastValueExpected.open {
+			t.typeConstAs(es.X, lastValueExpected.typ)
+		}
 	}
 	if err != nil {
 		return nil, err
