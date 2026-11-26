@@ -446,6 +446,12 @@ func (o *operandOrder) compound(as *ast.AssignStmt) {
 func (o *operandOrder) pinTarget(target ast.Expr) {
 	pin := func(slot *ast.Expr) {
 		if vars, pointers := o.readsChangeable(*slot); vars || pointers {
+			// An untyped shift by a value (`m[1 << n]`) keeps the key's
+			// type: only its shift counts are wrapped (see sequence).
+			if wrapped, ok := o.t.withShiftCountsMapped(*slot, o.t.evalOperand); ok {
+				*slot = wrapped
+				return
+			}
 			*slot = o.t.evalOperand(*slot)
 		}
 	}

@@ -16,7 +16,10 @@ import (
 func TestUntypedShiftArgOrder(t *testing.T) {
 	const decls = `package main
 
-import . "martianoff/gala/collection_immutable"
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+)
 
 struct Box[T any](V T)
 
@@ -37,6 +40,10 @@ func bumpInt() int {
 
 func sum(a int64, b int) int64 = a + int64(b)
 
+func half(u int64, w int, z float64 = float64(u) / 2) float64 = z
+
+func keys() map[int64]int = go_interop.MapEmpty[int64, int]()
+
 `
 	tests := []struct {
 		name     string
@@ -56,12 +63,22 @@ func sum(a int64, b int) int64 = a + int64(b)
 		{
 			name:     "read by a default",
 			main:     "val bx = Box(0)\n    var n = 2\n    val r int64 = bx.Pick(w = t(\"w\", 1), u = 1 << n)\n    Println(r)",
-			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := n\n\t\treturn Box_Pick[int64, int](bx, 1<<_tmp_1, _tmp_2, 1<<_tmp_1)",
+			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := n\n\t\treturn Box_Pick[int64, int](bx, 1<<_tmp_1, _tmp_2, int64(1<<_tmp_1))",
 		},
 		{
 			name:     "shift by a call inside a sum, read by a default",
 			main:     "val bx = Box(0)\n    val r int64 = bx.Pick(w = t(\"w\", 1), u = (1 << t(\"s\", 2)) + 1)\n    Println(r)",
-			contains: "return Box_Pick[int64, int](bx, (1<<_tmp_1)+1, _tmp_2, (1<<_tmp_1)+1)",
+			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := t(\"s\", 2)\n\t\treturn Box_Pick[int64, int](bx, (1<<_tmp_1)+1, _tmp_2, int64((1<<_tmp_1)+1))",
+		},
+		{
+			name:     "read by a default in another type's context",
+			main:     "var n = 2\n    Println(half(w = t(\"w\", 1), u = 1 << n))",
+			contains: "return half(1<<_tmp_1, _tmp_2, float64(int64(1<<_tmp_1))/2)",
+		},
+		{
+			name:     "map key read ahead of the right side's call",
+			main:     "val m = keys()\n    m[1 << shift] += bumpInt()\n    Println(m)",
+			contains: "m[1<<std.EvalOperand(shift)]",
 		},
 		{
 			name:     "operand read ahead of a later call",
