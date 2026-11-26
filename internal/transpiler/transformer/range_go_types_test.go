@@ -29,6 +29,8 @@ type Strs interface{ ~[]string }
 type Stringer interface{ String() string }
 
 type Recv interface{ chan int | <-chan int }
+
+type Count int64
 `
 	cases := []struct {
 		name, constraint string
@@ -44,6 +46,11 @@ type Recv interface{ chan int | <-chan int }
 		{"any", "any", nil},
 		{"comparable", "comparable", nil},
 		{"a GALA interface", "Shower", nil},
+		// A constraint that is no interface is its own type set (#1410).
+		{"a predeclared integer type", "int64", []string{`"i=%v"`, "func() T"}},
+		{"an unsigned integer type", "uint8", []string{`"i=%v"`, "func() T"}},
+		{"a Go defined integer type", "Count", []string{`"i=%v"`, "func() T"}},
+		{"an opaque integer type", "Millis", []string{`"i=%v"`, "func() T"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -54,6 +61,8 @@ type Recv interface{ chan int | <-chan int }
 type Shower interface {
     Show() string
 }
+
+opaque type Millis int64
 
 func steps[T ` + c.constraint + `](n T) {
     for i := range n {
