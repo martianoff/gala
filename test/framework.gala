@@ -2,6 +2,7 @@ package test
 
 import (
     "os"
+    "slices"
     "time"
 )
 
@@ -57,25 +58,45 @@ func (t T) Fatal(msg string) {
 // Run runs a subtest with the given name and function.
 // This enables table-driven testing patterns.
 // Panics in subtests are recovered and reported as failures.
-func (t T) Run(name string, f func(T) T) T {
-    val subT = newT(t.name + "/" + name)
-    Println(s"=== RUN   ${subT.name}")
+func (t T) Run(name string, f func(T) T) T =
+    if (runFramed(newT(t.name + "/" + name), f).failed) t.Fail() else t
 
+// runFramed runs f as the test t between its "=== RUN" line and its result
+// line, and returns its result.
+func runFramed(t T, f func(T) T) T {
+    frame(s"=== RUN   ${t.name}")
     val start = time.Now()
-    val result = runTest(subT, f)
-    val elapsed = time.Since(start)
-
-    if result.failed {
-        Println(f"--- FAIL: ${subT.name} (${elapsed.Seconds()}%.3fs)")
-        return T(name = t.name, failed = true, skipped = t.skipped)
-    } else if result.skipped {
-        Println(f"--- SKIP: ${subT.name} (${elapsed.Seconds()}%.3fs)")
-        return t
-    } else {
-        Println(f"--- PASS: ${subT.name} (${elapsed.Seconds()}%.3fs)")
-        return t
-    }
+    val result = runTest(t, f)
+    val status = if (result.failed) "FAIL" else if (result.skipped) "SKIP" else "PASS"
+    frame(f"--- ${status}: ${t.name} (${time.Since(start).Seconds()}%.3fs)")
+    result
 }
+
+// frame prints a framing line (=== RUN, --- PASS/FAIL/SKIP, the final
+// PASS/FAIL), led by framing.
+func frame(line string) {
+    Println(framing + line)
+}
+
+// framing is ^V when the binary's output goes to test2json, and "" otherwise.
+// test2json takes a ^V as the start of a framing line even mid-line, where a
+// test's unterminated output puts it; Go's testing package marks its framing
+// the same way. `go test -json` passes -test.v=test2json, as it does to any
+// test binary; `gala test` runs a package-main root's test binary with
+// GALA_TEST_FRAMING=test2json instead, which leaves the tests' own os.Args as
+// they were. The variable is read, and cleared, first, whichever asks.
+val framing = if (framingEnv() || slices.Contains(os.Args, "-test.v=test2json")) "\x16" else ""
+
+// framingEnv reports whether GALA_TEST_FRAMING asks for test2json framing,
+// and clears it, so a process a test starts does not inherit it. The init of
+// a package that initializes before this one still sees it.
+func framingEnv() bool {
+    val on = os.Getenv(framingEnvVar) == "test2json"
+    os.Unsetenv(framingEnvVar)
+    on
+}
+
+val framingEnvVar = "GALA_TEST_FRAMING"
 
 // runTest runs a test function with panic recovery.
 // If the function panics, the panic is caught and reported as a test failure.
@@ -98,24 +119,7 @@ type TestFunc struct {
 }
 
 // Run executes the test function and returns the result.
-func (tf TestFunc) Run() T {
-    val t = newT(tf.Name)
-    Println(s"=== RUN   ${t.name}")
-
-    val start = time.Now()
-    val result = runTest(t, tf.F)
-    val elapsed = time.Since(start)
-
-    // Print result
-    if result.failed {
-        Println(f"--- FAIL: ${t.name} (${elapsed.Seconds()}%.3fs)")
-    } else if result.skipped {
-        Println(f"--- SKIP: ${t.name} (${elapsed.Seconds()}%.3fs)")
-    } else {
-        Println(f"--- PASS: ${t.name} (${elapsed.Seconds()}%.3fs)")
-    }
-    return result
-}
+func (tf TestFunc) Run() T = runFramed(newT(tf.Name), tf.F)
 
 // RunTests runs all provided test functions and exits with appropriate code.
 // This is the main entry point for running tests.
@@ -142,8 +146,8 @@ func RunTests(tests ...TestFunc) {
     Println(s"Passed: ${passed}, Failed: ${failed}, Skipped: ${skipped}")
 
     if failed > 0 {
-        Println("FAIL")
+        frame("FAIL")
         os.Exit(1)
     }
-    Println("PASS")
+    frame("PASS")
 }
