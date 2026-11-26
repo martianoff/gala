@@ -411,6 +411,30 @@ func TestEncoderDecoder_QuotedStringRoundTrip(t *testing.T) {
 	}
 }
 
+// A string that would read as a "..." document marker at column 0 is
+// quoted, so a root scalar or a top-level key reads back as itself
+// (#1404).
+func TestEncoderDecoder_DocumentMarkerText(t *testing.T) {
+	for _, s := range []string{"...", "... done", "--- x"} {
+		e := NewYamlEncoder()
+		e.WriteString(s)
+		if got := NewYamlDecoder(e.String()).ReadString(); got != s {
+			t.Errorf("root %q through %q = %q", s, e.String(), got)
+		}
+
+		e = NewYamlEncoder()
+		e.WriteStartObject()
+		e.WriteKey(s)
+		e.WriteInt(1)
+		e.WriteEndObject()
+		d := NewYamlDecoder(e.String())
+		d.StartObject()
+		if k := d.ReadKey(); k != s {
+			t.Errorf("key %q through %q = %q", s, e.String(), k)
+		}
+	}
+}
+
 // ----- Document roots and comments -------------------------------------------
 
 // A key ending in ':' is quoted, so it reads back as the same key rather than
@@ -1150,6 +1174,8 @@ func TestDecoder_UnsupportedFormsFail(t *testing.T) {
 		{"document start before a mapping", "---\nk: v", `yaml: document marker "---" at line 1 is not supported`},
 		{"document start with a value", "--- a", `yaml: document marker "---" at line 1 is not supported`},
 		{"document end after a mapping", "k: v\n...\n", `yaml: document marker "..." at line 2 is not supported`},
+		{"line without a colon before a pair", "on push\njobs: 1", `yaml: expected 'key:' at line 1, got "on push"`},
+		{"nested line without a colon", "server:\n  host localhost\n  port: 80", `yaml: expected 'key:' at line 2, got "host localhost"`},
 		{"document marker after a block at the top", "|\nfoo\n---\nbar: 1\n", `yaml: document marker "---" at line 3 is not supported`},
 		{"tab before a mapping after a dash", "-\tk: v", "yaml: tab used for indentation at line 1; indent with spaces"},
 		{"tab before a nested sequence after a dash", "- \t- x", "yaml: tab used for indentation at line 1; indent with spaces"},

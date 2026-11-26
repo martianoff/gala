@@ -307,6 +307,11 @@ func isPlainSafe(s string) bool {
 	if s[0] == ' ' {
 		return false
 	}
+	// At column 0, as a root scalar or a top-level key, "..." would read
+	// as a document marker ("---" starts with '-', quoted below).
+	if s[0] == '.' && isDocumentMarker(s) {
+		return false
+	}
 	// A trailing ':' would read back as "key:" — a mapping, not a string.
 	if s[len(s)-1] == ' ' || s[len(s)-1] == ':' {
 		return false
@@ -1208,6 +1213,11 @@ func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
 	if !isPair {
 		// A scalar on the line below its key or dash ("key:" / "  x"),
 		// such as a block scalar whose header stands on a line of its own.
+		// A scalar is the whole block, so when the block goes on below it
+		// the line was meant as a pair, and the error names it.
+		if start+1 < len(lines) && lines[start+1].indent >= expectedIndent {
+			splitKeyValue(first.raw, first.lineNum)
+		}
 		return parseInlineScalar(withoutComment(first.raw)), start + 1
 	}
 	return parseCompactMapping(lines, start, expectedIndent, key, value)
@@ -1540,7 +1550,8 @@ func parseInlineScalar(raw string) *yNode {
 // '>'. Either starts a block scalar header, and a header the parser read
 // has become a quoted scalar by now, so s is a malformed header ("|0",
 // "| x") or plain text (">=1.0"), which YAML does not let start with
-// either. This is the one place both are rejected.
+// either. This is the one place such a value is rejected; a plain key is
+// not checked.
 func indicatorStartsPlainScalar(s string) {
 	panic(fmt.Sprintf("yaml: %q is not a block scalar header, and a plain scalar cannot start with %q; quote it", s, s[0]))
 }
