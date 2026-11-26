@@ -34,7 +34,9 @@ if stale="$(comm -23 "$work/excluded" "$work/all")" && [[ -n "$stale" ]]; then
   exit 1
 fi
 
-comm -23 "$work/all" "$work/excluded" | sed "s|^|$repo_root/|" > "$work/paths"
+# Relative to $grammar_dir, where tree-sitter runs: Git Bash does not convert
+# an absolute /c/... path inside the --paths file for a native tree-sitter.exe.
+comm -23 "$work/all" "$work/excluded" | sed 's|^|../../|' > "$work/paths"
 
 total="$(wc -l < "$work/all")"
 excluded="$(wc -l < "$work/excluded")"
@@ -47,7 +49,7 @@ tree-sitter parse --quiet --stat --paths "$work/paths" || status=$?
 
 # An excluded file that parses cleanly no longer needs its exclusion.
 while IFS= read -r f; do
-  if tree-sitter parse --quiet "$repo_root/$f" > /dev/null 2>&1; then
+  if tree-sitter parse --quiet "../../$f" > /dev/null 2>&1; then
     echo "test/parse-all.exclude: $f parses cleanly now; remove it from the list" >&2
     status=1
   fi

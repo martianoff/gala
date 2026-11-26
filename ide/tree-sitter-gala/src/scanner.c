@@ -19,9 +19,10 @@
 // As in newline.go, a comment is not a token but a line break is a line
 // break, including one inside a block comment. When a comment stands between
 // the previous token and the next, the scanner reads through it to see both.
-// If it then produces a token, the comment is part of that token's leading
-// whitespace and is not in the tree; in every other case the scanner declines,
-// and the grammar lexes the comment as usual.
+// If a line break follows the last comment, the scanner declines: the grammar
+// lexes the comment as usual, and the next call still sees that line break.
+// Only a comment with no line break after it, on the token's own line, is
+// read into the token's leading whitespace and so is not in the tree.
 
 #include "tree_sitter/parser.h"
 
@@ -53,13 +54,15 @@ void tree_sitter_gala_external_scanner_deserialize(void *payload, const char *bu
 
 static bool is_space(int32_t c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v'; }
 
-// Skips whitespace and comments, and reports whether they hold a line break.
-// Returns false if a '/' starts no comment: the scanner then declines.
-static bool skip_space_and_comments(TSLexer *lexer, bool *newline, bool *comment) {
+// Skips whitespace and comments, and reports whether they hold a line break
+// and whether one follows the last comment. Returns false if a '/' starts no
+// comment: the scanner then declines.
+static bool skip_space_and_comments(TSLexer *lexer, bool *newline, bool *comment, bool *newline_after_comment) {
   for (;;) {
     if (is_space(lexer->lookahead)) {
       if (lexer->lookahead == '\n') {
         *newline = true;
+        *newline_after_comment = true;
       }
       lexer->advance(lexer, true);
       continue;
@@ -95,6 +98,7 @@ static bool skip_space_and_comments(TSLexer *lexer, bool *newline, bool *comment
       return false;
     }
     *comment = true;
+    *newline_after_comment = false;
   }
 }
 
@@ -112,12 +116,14 @@ bool tree_sitter_gala_external_scanner_scan(void *payload, TSLexer *lexer, const
 
   bool newline = false;
   bool comment = false;
-  if (!skip_space_and_comments(lexer, &newline, &comment)) {
+  bool newline_after_comment = false;
+  if (!skip_space_and_comments(lexer, &newline, &comment, &newline_after_comment)) {
     return false;
   }
-  // Without a line break the comment changes nothing: decline, so that the
-  // grammar keeps it in the tree, and decide on the next call.
-  if (comment && !newline) {
+  // Decline, so that the grammar keeps the comment in the tree, when it
+  // changes nothing (no line break) or when the line break after it will
+  // still be there for the next call to see.
+  if (comment && (!newline || newline_after_comment)) {
     return false;
   }
 

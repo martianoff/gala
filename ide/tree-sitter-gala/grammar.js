@@ -752,10 +752,12 @@ module.exports = grammar({
       ),
     ),
 
-    escape_sequence: _ => token.immediate(/\\./),
+    // ANTLR's `.` in `'\\' .` matches a line break; a tree-sitter regex's `.`
+    // does not, so the escaped character spells it out.
+    escape_sequence: _ => token.immediate(/\\(.|\r?\n)/),
 
     // CHAR_LIT: '\'' (~['\r\n\\] | '\\' .) '\''
-    rune_literal: _ => token(seq('\'', choice(/[^'\r\n\\]/, /\\./), '\'')),
+    rune_literal: _ => token(seq('\'', choice(/[^'\r\n\\]/, /\\(.|\r?\n)/), '\'')),
 
     // RAW_STRING: '`' ~[`]* '`' — GALA's multi-line string.
     raw_string_literal: _ => token(seq('`', /[^`]*/, '`')),

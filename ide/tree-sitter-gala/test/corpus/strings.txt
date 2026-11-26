@@ -168,3 +168,35 @@ val a = 1 // trailing
     (identifier)
     (int_literal))
   (comment))
+
+==================
+An escaped line break in a string
+==================
+
+package main
+
+func f() {
+    val s = "a\
+b"
+    (s, 1)
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (val_declaration
+        (identifier)
+        (interpreted_string_literal
+          (string_content)
+          (escape_sequence)
+          (string_content)))
+      (expression_statement
+        (tuple_expression
+          (identifier)
+          (int_literal))))))

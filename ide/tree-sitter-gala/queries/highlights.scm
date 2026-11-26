@@ -1,7 +1,8 @@
 ; Highlights for GALA. Capture names follow nvim-treesitter's. Where two
 ; patterns match one node, the more specific one comes later, for editors in
 ; which the last match wins, as in Neovim. Where the first wins, as in Helix,
-; move the generic `(identifier)` and `(type_identifier)` patterns to the end.
+; move the generic `(identifier)`, `(field_identifier)` and `(type_identifier)`
+; patterns to the end.
 
 ; Identifiers
 

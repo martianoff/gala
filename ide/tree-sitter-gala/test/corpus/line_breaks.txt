@@ -267,6 +267,49 @@ func f() {
             (int_literal))))
       (expression_statement
         (identifier))
+      (comment)
+      (assignment_statement
+        (expression_list
+          (unary_expression
+            (identifier)))
+        (expression_list
+          (int_literal))))))
+
+==================
+A comment on a line of its own stays in the tree
+==================
+
+package main
+
+func f() {
+    g() // note
+    (1, 2)
+    x
+    // why
+    *p = 5
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list)))
+      (comment)
+      (expression_statement
+        (tuple_expression
+          (int_literal)
+          (int_literal)))
+      (expression_statement
+        (identifier))
+      (comment)
       (assignment_statement
         (expression_list
           (unary_expression

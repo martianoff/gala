@@ -144,13 +144,16 @@ do not share, so leave them out.
 The highlights need two edits in your copy:
 
 - Helix lets the first matching pattern win, and the query is ordered for
-  editors where the last one does. Move the generic `(identifier) @variable`
-  and `(type_identifier) @type` patterns to the end of the file, or every
-  name is colored as a plain variable or type.
+  editors where the last one does. Move the generic `(identifier) @variable`,
+  `(field_identifier) @variable.member` and `(type_identifier) @type`
+  patterns to the end of the file, or every name is colored as a plain
+  variable, field or type.
 - Helix themes match most capture names by prefix (`@keyword.conditional`
   falls back to `keyword`), but spell a few differently: rename `@number` to
-  `@constant.numeric`, `@boolean` to `@constant.builtin.boolean` and
-  `@string.escape` to `@constant.character.escape`, or those stay uncolored.
+  `@constant.numeric`, `@boolean` to `@constant.builtin.boolean`,
+  `@string.escape` to `@constant.character.escape`, `@character` to
+  `@constant.character` and `@module` to `@namespace`, or those stay
+  uncolored.
 
 ## Zed
 
@@ -230,9 +233,11 @@ Commit the regenerated `src/` with the change to `grammar.js`.
 - Only the outermost extractor of a pattern is highlighted as a constructor:
   in `case Some(Ok(x))`, `Ok` is colored as a call.
 - A qualified type has one qualifier, `pkg.Type`; gala.g4 allows more dots.
-- A comment between a line break and a line that starts with `(`, `*p` or
-  `&n` is read by the scanner to find the line break, and so is not a node of
-  its own: it is not highlighted as a comment.
+- A comment on the same line as, and just before, a `(`, `*p` or `&n` that
+  starts a statement after a line break (`x` then `/* c */ *p = 5` on the
+  next line) is read by the scanner to find that line break, and so is not a
+  node of its own: it is not highlighted as a comment. A comment on a line of
+  its own is.
 - Pattern bindings in `locals.scm` are found at the top level of a pattern and
   one extractor deep (`case Some(x)`), not deeper.
 - Format specifiers in `f"..."` strings (`%.2f`) are plain string content.
