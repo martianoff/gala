@@ -50,17 +50,11 @@ func (t *galaASTTransformer) rangeOverTypeParamError(e exprSrc, xType transpiler
 	if !ok {
 		return nil
 	}
-	if transpiler.IsInterfaceConstraint(c) {
-		if data := t.goConstraintData(c); data != nil {
-			if data.CoreType != nil {
-				return nil
-			}
-		} else if meta := t.getTypeMeta(c.BaseName()); meta == nil || !meta.IsInterface {
-			return nil
-		}
+	if core, known := t.coreTypeOfConstraint(c); !known || core != nil {
+		return nil
 	}
-	constraint := "any"
-	if c != nil && !c.IsNil() {
+	constraint := transpiler.ConstraintString(c)
+	if transpiler.IsInterfaceConstraint(c) {
 		constraint = t.sourceTypeName(c)
 	}
 	x := oneLine(e.at().sourceText())
@@ -68,6 +62,21 @@ func (t *galaASTTransformer) rangeOverTypeParamError(e exprSrc, xType transpiler
 	return spanErrorAt(galaerr.CodeRangeOverTypeParamNoCore, at, at,
 		fmt.Sprintf("cannot range over `%s`: its type %s is constrained by %s, whose types do not share one underlying type", x, name, constraint),
 		"use a constraint whose types share one underlying type (`interface{ ~int64 }`), or range over a value of a concrete type")
+}
+
+// coreTypeOfConstraint is the core type of the type parameter constraint c:
+// nil for `any`, `comparable` and a GALA interface (methods only), or the
+// Go interface's recorded core type (nil when it has none). known is false
+// for a Go constraint whose type information is missing.
+func (t *galaASTTransformer) coreTypeOfConstraint(c transpiler.Type) (core transpiler.Type, known bool) {
+	if !transpiler.IsInterfaceConstraint(c) {
+		return nil, true
+	}
+	if data := t.goConstraintData(c); data != nil {
+		return data.CoreType, true
+	}
+	meta := t.getTypeMeta(c.BaseName())
+	return nil, meta != nil && meta.IsInterface
 }
 
 // unwrapValueMarkers is typ without the Immutable and Sendable markers that

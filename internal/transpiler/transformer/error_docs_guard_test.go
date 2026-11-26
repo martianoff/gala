@@ -2693,13 +2693,7 @@ func renderReproWithGo(t *testing.T, mainSrc, goSrc string) string {
 	mainPath := filepath.Join(dir, "main.gala")
 	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
 
-	_, err := newDocGuardTranspiler().Transpile(mainSrc, mainPath)
-	require.Error(t, err, "repro was expected to fail to compile")
-	rendered := galaerr.RenderRich(err, galaerr.Options{
-		FallbackPath:   mainPath,
-		FallbackSource: mainSrc,
-		Color:          false,
-	})
+	rendered := renderRepro(t, mainPath, mainSrc)
 	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
 	return strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
 }
