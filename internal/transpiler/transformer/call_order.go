@@ -92,8 +92,11 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 // innermost call evaluates arg into. An untyped constant expression with
 // shifts by values (`1 << n`) takes its type where it is passed, which a
 // temporary would not give it: it is read again over its shift counts' bound
-// values, converted to typ when typ can be spelled here, so that it has the
-// parameter's value wherever the default uses it.
+// values, converted to typ when the parameter is declared with a predeclared
+// numeric type, so that it has the parameter's value wherever the default
+// uses it. Another type (a named one the use site may not be able to spell,
+// or a type parameter, whose type Go infers) leaves the read as it is, typed
+// where the default uses it.
 func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) ast.Expr {
 	if t.inert(arg) {
 		return arg
@@ -105,8 +108,8 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 	// A shift count is never itself such an expression, so boundArgValue
 	// gives it the inert check and a temporary.
 	if read, ok := t.withShiftCountsMapped(arg, func(c ast.Expr) ast.Expr { return t.boundArgValue(c, nil) }); ok {
-		if typ != nil && !transpiler.ContainsUnusable(typ) && !t.mentionsUnboundTypeParam(typ) {
-			read = &ast.CallExpr{Fun: t.typeToExpr(typ), Args: []ast.Expr{read}}
+		if basic, ok := typ.(transpiler.BasicType); ok && isNumericPrimitive(basic.Name) {
+			read = &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
 		}
 		return read
 	}

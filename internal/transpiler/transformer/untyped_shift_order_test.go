@@ -42,6 +42,8 @@ func sum(a int64, b int) int64 = a + int64(b)
 
 func half(u int64, w int, z float64 = float64(u) / 2) float64 = z
 
+func (b Box[T]) Fold[U any](u U, f func(U, int) U, z U = u) U = f(z, 1)
+
 func keys() map[int64]int = go_interop.MapEmpty[int64, int]()
 
 `
@@ -56,19 +58,19 @@ func keys() map[int64]int = go_interop.MapEmpty[int64, int]()
 			contains: "_tmp_2 := mk64()\n\t\t_tmp_3 := t(\"s\", 3)\n\t\treturn List_FoldLeft(_tmp_1, 1<<_tmp_3, _tmp_2)",
 		},
 		{
-			name:     "shift count read after the call before it",
-			main:     "var n = 2\n    val w int64 = nums().FoldLeft(f = mk64(), initial = 1 << n)\n    Println(w)",
-			contains: "_tmp_2 := mk64()\n\t\t_tmp_3 := n\n\t\treturn List_FoldLeft[int64, int](_tmp_1, 1<<_tmp_3, _tmp_2)",
+			name:     "read by a default, U inferred by Go from another argument",
+			main:     "var n = 2\n    Println(Box(0).Fold(f = mk64(), u = 1 << n))",
+			contains: "_tmp_3 := mk64()\n\t\t_tmp_2 := n\n\t\treturn Box_Fold(_tmp_1, 1<<_tmp_2, _tmp_3, 1<<_tmp_2)",
 		},
 		{
 			name:     "read by a default",
 			main:     "val bx = Box(0)\n    var n = 2\n    val r int64 = bx.Pick(w = t(\"w\", 1), u = 1 << n)\n    Println(r)",
-			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := n\n\t\treturn Box_Pick[int64, int](bx, 1<<_tmp_1, _tmp_2, int64(1<<_tmp_1))",
+			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := n\n\t\treturn Box_Pick[int64, int](bx, 1<<_tmp_1, _tmp_2, 1<<_tmp_1)",
 		},
 		{
 			name:     "shift by a call inside a sum, read by a default",
 			main:     "val bx = Box(0)\n    val r int64 = bx.Pick(w = t(\"w\", 1), u = (1 << t(\"s\", 2)) + 1)\n    Println(r)",
-			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := t(\"s\", 2)\n\t\treturn Box_Pick[int64, int](bx, (1<<_tmp_1)+1, _tmp_2, int64((1<<_tmp_1)+1))",
+			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := t(\"s\", 2)\n\t\treturn Box_Pick[int64, int](bx, (1<<_tmp_1)+1, _tmp_2, (1<<_tmp_1)+1)",
 		},
 		{
 			name:     "read by a default in another type's context",

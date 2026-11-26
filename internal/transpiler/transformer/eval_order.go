@@ -448,7 +448,7 @@ func (o *operandOrder) pinTarget(target ast.Expr) {
 		if vars, pointers := o.readsChangeable(*slot); vars || pointers {
 			// An untyped shift by a value (`m[1 << n]`) keeps the key's
 			// type: only its shift counts are wrapped (see sequence).
-			if wrapped, ok := o.t.withShiftCountsMapped(*slot, o.t.evalOperand); ok {
+			if wrapped, ok := o.t.withShiftCountsMapped(*slot, o.changeableCount(true)); ok {
 				*slot = wrapped
 				return
 			}
@@ -536,13 +536,26 @@ func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool
 		// takes its type where it is used, which EvalOperand's type
 		// parameter would not give it: its shift counts, all it reads, are
 		// wrapped instead.
-		if wrapped, ok := o.t.withShiftCountsMapped(*slot, o.t.evalOperand); ok {
+		if wrapped, ok := o.t.withShiftCountsMapped(*slot, o.changeableCount(laterExact[i])); ok {
 			*slot = wrapped
 			continue
 		}
 		*slot = o.t.evalOperand(*slot)
 	}
 	return laterCall[0], laterExact[0]
+}
+
+// changeableCount wraps a shift count in std.EvalOperand when it reads a
+// variable a call could change, or reads through a pointer and exact holds
+// (as sequence and pinTarget wrap an operand); any other count, a constant
+// among them, is left as it is.
+func (o *operandOrder) changeableCount(exact bool) func(ast.Expr) ast.Expr {
+	return func(c ast.Expr) ast.Expr {
+		if vars, pointers := o.readsChangeable(c); vars || (pointers && exact) {
+			return o.t.evalOperand(c)
+		}
+		return c
+	}
 }
 
 // readsChangeable reports whether evaluating e reads a variable that a call

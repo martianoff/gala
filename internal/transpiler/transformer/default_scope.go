@@ -151,7 +151,8 @@ func (t *galaASTTransformer) bindDefaultNames(expr ast.Expr, src defaultSource, 
 	types := map[string]transpiler.Type{}
 	for _, p := range src.params {
 		bound[p.name] = p.arg
-		types[p.name] = t.substituteInType(p.typ, src.typeArgs)
+		// As declared: a type parameter is left to the type Go infers.
+		types[p.name] = p.typ
 	}
 	if src.recv != "" {
 		bound[src.recv] = src.recvExpr

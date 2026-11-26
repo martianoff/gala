@@ -16,6 +16,8 @@ func (b Box[T]) Pick[U any](u U, w int, z U = u) U = z
 
 func half(u int64, w int, z float64 = float64(u) / 2) float64 = z
 
+func (b Box[T]) Fold[U any](u U, f func(U, int) U, z U = u) U = f(z, 1)
+
 func t(name string, v int) int {
     Print(name)
     v
@@ -58,6 +60,8 @@ func main() {
     Println(" ", r)
     val r2 int64 = bx.Pick(w = t("w", 1), u = (1 << t("s", 2)) + 1)
     Println(" ", r2)
+    // U is mk64's int64, which the default's read takes too.
+    Println(" ", bx.Fold(f = mk64(), u = 1 << n))
     // The default reads the parameter's int64 value in a float64 conversion.
     Println(" ", half(w = t("w", 1), u = 1 << n))
     // A map key keeps the key type, read before the right side's call.
