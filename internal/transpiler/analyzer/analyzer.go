@@ -3833,6 +3833,12 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 		}
 		literalType := inferLiteralType(def.Text)
 		if literalType == "" {
+			// A default that is an earlier parameter is that parameter's
+			// value, of its type: `z int64 = u` for a `u int` does not fit,
+			// whatever the call passes for u (a constant included).
+			if mismatch := paramReadTypeMismatch(funcMeta, i, strings.TrimSpace(def.Text)); mismatch != "" {
+				return defaultTypeMismatchError(funcMeta, i, mismatch, paramType, line, column, defaultSpans)
+			}
 			continue // non-literal expression, can't validate statically
 		}
 		if !typesCompatibleForDefault(paramType, literalType) &&
@@ -3861,6 +3867,69 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	return nil
+}
+
+// paramReadTypeMismatch is the type of the earlier parameter text names, when
+// the default of parameter i is exactly that parameter and both are
+// predeclared types of different names (`z int64 = u` for a `u int`), and ""
+// otherwise. Only predeclared types are compared: a default of an interface,
+// named or generic type needs the type checker.
+func paramReadTypeMismatch(funcMeta *transpiler.FunctionMetadata, i int, text string) string {
+	want, ok := funcMeta.ParamTypes[i].(transpiler.BasicType)
+	if !ok || !isConcretePredeclared(want.Name) {
+		return ""
+	}
+	for j := 0; j < i && j < len(funcMeta.ParamNames) && j < len(funcMeta.ParamTypes); j++ {
+		if funcMeta.ParamNames[j] != text {
+			continue
+		}
+		got, ok := funcMeta.ParamTypes[j].(transpiler.BasicType)
+		if !ok || !isConcretePredeclared(got.Name) || canonicalBasic(got.Name) == canonicalBasic(want.Name) {
+			return ""
+		}
+		return got.Name
+	}
+	return ""
+}
+
+// isConcretePredeclared reports whether name is a predeclared type a value
+// converts to only by conversion: not `any` or `error`, which are interfaces.
+func isConcretePredeclared(name string) bool {
+	return transpiler.IsPrimitiveType(name) && name != "any" && name != "error"
+}
+
+// canonicalBasic is name with Go's predeclared aliases resolved: byte is
+// uint8 and rune is int32.
+func canonicalBasic(name string) string {
+	switch name {
+	case "byte":
+		return "uint8"
+	case "rune":
+		return "int32"
+	}
+	return name
+}
+
+// defaultTypeMismatchError is GALA-E0014 for the default of parameter i of
+// funcMeta, of type got where want is declared, at the default expression
+// when its span is known and at line:column otherwise.
+func defaultTypeMismatchError(funcMeta *transpiler.FunctionMetadata, i int, got, want string, line, column int, defaultSpans map[int]defaultExprSpan) error {
+	paramName := ""
+	if i < len(funcMeta.ParamNames) {
+		paramName = funcMeta.ParamNames[i]
+	}
+	derr := galaerr.NewCodedSemanticError(
+		galaerr.CodeParamDefaultTypeMismatch,
+		line, column,
+		fmt.Sprintf("default for parameter %q has type %s, expected %s", paramName, got, want),
+		"fix the default expression or change the parameter type",
+	)
+	if sp, ok := defaultSpans[i]; ok && sp.line > 0 {
+		derr.Line = sp.line
+		derr.Column = sp.startCol
+		derr = derr.WithSpan(sp.endCol)
+	}
+	return derr
 }
 
 // aliasStep returns a resolver that follows a type one alias declaration
