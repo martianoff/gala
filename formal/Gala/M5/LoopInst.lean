@@ -72,15 +72,35 @@ theorem sw_lowerFun : lowerFun 11 swSg "sw" swF = some swGo := rfl
 
 /-! ## Temporaries' names: the lowering refuses a collision (M6 renames temporaries) -/
 
+/-- `sw` with its parameter `a` renamed `_tmp_1`, in the body too. -/
+def tmpParamF : Spec.Func :=
+  { swF with params := [iParam "_tmp_1", iParam "b", iParam "n"],
+             body := .ifExpr (.binary "==" (.name "n") (.lit (.int 0))) (.binary "-" (.name "_tmp_1") (.name "b"))
+               (.call (.name "sw") [.name "b", .name "_tmp_1", .binary "-" (.name "n") (.lit (.int 1))]) }
+
+/-- Without the temporaries' check its loop would lower (its step would redeclare `_tmp_1`
+    and assign the parameters from the wrong values). -/
+theorem tmpParam_loop_lowers :
+    (lowerLoop 11 swSg "sw" [("_tmp_1", .int), ("b", .int), ("n", .int)] .int
+      (paramKinds [("_tmp_1", .int), ("b", .int), ("n", .int)]) tmpParamF.body).isSome = true := rfl
+
 /-- A parameter named as a temporary: the function is not lowered. -/
-theorem tmpParam_not_lowered :
-    lowerFun 11 swSg "sw" { swF with params := [iParam "_tmp_1", iParam "b", iParam "n"] } = none := rfl
+theorem tmpParam_not_lowered : lowerFun 11 swSg "sw" tmpParamF = none := rfl
 
 def tmpCallSg : Sigs := fun f => if f = "sw" then some ([.int, .int, .int], .int)
   else if f = "_tmp_1" then some ([.int], .int) else none
 
-/-- A function named as a temporary, called in a step's argument: no program calling it meets
-    `FunRel`, so the theorems take none (Go would see the temporary, not the function). -/
+def tmpCallBody : Spec.Expr :=
+  .ifExpr (.binary "==" (.name "n") (.lit (.int 0))) (.name "a")
+    (.call (.name "sw") [.call (.name "_tmp_1") [.name "b"], .name "a", .binary "-" (.name "n") (.lit (.int 1))])
+
+/-- A body calling a function named as a temporary in a step's argument lowers: the lowering
+    does not refuse it, `FunRel` does (`tmpCall_no_funRel`). -/
+theorem tmpCall_lowered : (lowerFun 11 tmpCallSg "sw" { swF with body := tmpCallBody }).isSome = true := rfl
+
+/-- A function named as a temporary, called in a step's argument: no program declaring it
+    for the lowering meets `FunRel` (its `noTmp` field), so the theorems take none of them
+    (Go would read the temporary there, not the function). -/
 theorem tmpCall_no_funRel (K : Nat) (ds : Spec.Decls) (cx : Ctx) (P : String) : ¬ FunRel K tmpCallSg ds cx P := by
   intro h
   have := h.noTmp "_tmp_1" rfl

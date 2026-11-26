@@ -886,10 +886,10 @@ Each step is its own pull request with a theorem.
      value, so this lemma needs T5 (exhaustiveness) or a check that the program's matches
      are exhaustive.
 - **Normalizations M5 adds.**
-  1. *Temporary renaming (program-wide numbering vs per-function).* The transformer
+  1. *Temporary renaming (program-wide numbering vs per-step).* The transformer
      numbers a self-tail-call loop's temporaries across the program (`_tmp_5`, `_tmp_6`
-     in the program's third loop); M5's lowering numbers each loop's from `_tmp_1`
-     (step 3c).
+     in the program's third loop, and on through each later step of the same loop); M5's
+     lowering numbers each step's from `_tmp_1` (step 3c).
 - **What it removes:** the transformer from the trusted base, for each validated program.
 - **Risk:** the transformer's output must be normalized before comparison; a validator
   that is too strict rejects correct output and stalls coverage.

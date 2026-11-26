@@ -82,7 +82,7 @@ partial def fixSigs (ds : Decls) (sg0 : Sigs) (names : List String) : Sigs :=
     | none => false
   if names'.length == names.length then sg else fixSigs ds sg0 names'
 
-def reason (ds : Decls) (globals : List String) (sg : Sigs) (f : String) (F : Func) : String :=
+def reason (ds : Decls) (globals : List String) (sg0 sg : Sigs) (f : String) (F : Func) : String :=
   if F.result.isNone then "unit-result"
   else match sigOf F with
   | none => "signature"
@@ -96,7 +96,9 @@ def reason (ds : Decls) (globals : List String) (sg : Sigs) (f : String) (F : Fu
       else if loopGate f names.length F.body then "lowered-step3c"
       else if usesIf F.body then "lowered-step3b" else "lowered"
     | none =>
-      if loopGate f names.length F.body && (lowerBody K sg F).isSome then "tail-loop-refused" else
+      -- `fixSigs` dropped `f` itself, so the recursive lowering is tried with `f` put back.
+      if loopGate f names.length F.body &&
+          (lowerBody K (fun g => if g = f then sg0 f else sg g) F).isSome then "tail-loop-refused" else
       let es := subs F.body
       -- A name the body declares (`val`, `var`) is a local, shadowing a package-level one.
       let locals := names ++ es.flatMap (fun | .decl _ ns _ _ _ => ns | _ => [])
@@ -135,7 +137,7 @@ def main (args : List String) : IO UInt32 := do
       let sg0 : Sigs := fun f => (ds.funcs.lookup f).bind sigOf |>.map fun (xks, ρ) => (xks.map (·.2), ρ)
       let sg := fixSigs ds sg0 (ds.funcs.filterMap fun (f, _) => (sg0 f).map fun _ => f)
       for (f, F) in ds.funcs do
-        let r := reason ds globals sg f F
+        let r := reason ds globals sg0 sg f F
         counts := counts.insert r (counts.getD r 0 + 1)
   -- Every reason, a zero included.
   for r in ["unit-result", "signature", "param-names", "reads-package-level", "named-args-or-defaults",

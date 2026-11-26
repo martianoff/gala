@@ -742,9 +742,18 @@ theorem sw_lowerFun : lowerFun 11 swSg "sw" swF = some swGo :=
   Gala.M5.sw_lowerFun
 
 open Gala Gala.M5 GoCore.Full in
-theorem tmpParam_not_lowered :
-    lowerFun 11 swSg "sw" { swF with params := [iParam "_tmp_1", iParam "b", iParam "n"] } = none :=
+theorem tmpParam_not_lowered : lowerFun 11 swSg "sw" tmpParamF = none :=
   Gala.M5.tmpParam_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem tmpParam_loop_lowers :
+    (lowerLoop 11 swSg "sw" [("_tmp_1", .int), ("b", .int), ("n", .int)] .int
+      (paramKinds [("_tmp_1", .int), ("b", .int), ("n", .int)]) tmpParamF.body).isSome = true :=
+  Gala.M5.tmpParam_loop_lowers
+
+open Gala Gala.M5 GoCore.Full in
+theorem tmpCall_lowered : (lowerFun 11 tmpCallSg "sw" { swF with body := tmpCallBody }).isSome = true :=
+  Gala.M5.tmpCall_lowered
 
 open Gala Gala.M5 GoCore.Full in
 theorem tmpCall_no_funRel : ∀ (K : Nat) (ds : Spec.Decls) (cx : Ctx) (P : String), ¬ FunRel K tmpCallSg ds cx P :=

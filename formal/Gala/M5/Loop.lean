@@ -1475,7 +1475,7 @@ theorem sim3_all (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) : ∀ d,
     exact ⟨hEs1, bodySim_of ds cx P K sg (d + 1) hK hEs1 hT1, hS1, listSim_of ds cx P K sg (d + 1) hS1, hBl1, hI1,
       hT1, tsSim_of ds cx P K sg (d + 1) hS1 hT1, ifTSim_of ds cx P K sg (d + 1) hE1 hT1⟩
 
-/-- **M5, steps 3a and 3b: direct calls, `return`, `if` used as a value.** An expression the
+/-- **M5, steps 3a to 3c: direct calls, `return`, `if` used as a value, self-tail-call loops.** An expression the
     reference lowering accepts (`lowerC`), calls of the program's functions and IIFEs in it
     included, evaluated by
     galaspec from a state related to GoCore's (`Inv3`) with no more steps than GoCore has:
@@ -1489,9 +1489,11 @@ theorem sim3_all (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) : ∀ d,
     * **The functions**: `FunRel` says GoCore's package `P` declares every function the
       lowering calls (`sg`) as the lowering of galaspec's: parameters and result of kinds
       `int`, `bool`, `string`; positional arguments, one for each parameter (no named
-      argument, no default); the body as its tail (`tailOf`): `= e` as `return e`, a block
-      body as its statements and its last element's tail, an `if` as `{ if .. }` with a
-      tail in each arm; `return` statements inside.
+      argument, no default); the body as `lowerFun` lowers it: where the transformer loops
+      the function (`loopGate`), `for { if .. }` with each self-tail-call a step
+      (`_tmp_i := a_i; p1, .., pk = _tmp_1, ..; continue`); elsewhere its tail (`tailOf`):
+      `= e` as `return e`, a block body as its statements and its last element's tail, an
+      `if` as `{ if .. }` with a tail in each arm; `return` statements inside.
     * **`if` used as a value** is Go's IIFE, its value of the arms' kind and type (never an
       untyped constant: `isLitE` of it is `false`); no `return` inside its arms.
     * **Depth.** A call's depth in GoCore is not bounded by the program's text (a recursive

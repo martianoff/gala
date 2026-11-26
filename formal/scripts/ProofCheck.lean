@@ -104,6 +104,8 @@ def requiredTheorems : List Name := [
   `Gala.M5.swProg_gc,
   `Gala.M5.tmpCall_no_funRel,
   `Gala.M5.tmpParam_not_lowered,
+  `Gala.M5.tmpParam_loop_lowers,
+  `Gala.M5.tmpCall_lowered,
   `Gala.M5.sw_lowerFun,
   `Gala.M5.inc_spec_ok,
   `Gala.M5.inc_gocore_ok,
