@@ -189,6 +189,20 @@ func (t *galaASTTransformer) sendableInnerExpected(inner transpiler.Type, typePa
 		}
 		return inner
 	}
+	return t.funcSlotType(ft, typeParams, subst)
+}
+
+// funcSlotType is the expected type of an argument filling a parameter of
+// function type ft, declared by a callee with type parameters typeParams that
+// the call binds as subst:
+//   - with type arguments, ft with them substituted;
+//   - a void ft, or a callee with no type parameters, ft itself;
+//   - when only ft's results name type parameters, ft with those results
+//     masked (NilType), so a lambda infers them from its body rather than
+//     emitting a literal `T`;
+//   - when its parameters name them, no type (NilType): the lambda filling it
+//     binds them by its own annotations (see slot.funcResult).
+func (t *galaASTTransformer) funcSlotType(ft transpiler.FuncType, typeParams []string, subst typeSubstMap) transpiler.Type {
 	switch {
 	case len(subst) > 0:
 		return t.substituteTranspilerTypeParams(ft, subst)
@@ -197,7 +211,7 @@ func (t *galaASTTransformer) sendableInnerExpected(inner transpiler.Type, typePa
 	case !funcTypeParamsMentionTypeParams(ft.Params, typeParams):
 		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, typeParams), Inout: ft.Inout}
 	default:
-		return ft
+		return transpiler.NilType{}
 	}
 }
 
@@ -289,22 +303,7 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 			}
 		}
 		if ft != nil {
-			if len(ctx.typeSubst) > 0 {
-				// Substitute inferred or explicit type args (both void and non-void)
-				expectedType = t.substituteTranspilerTypeParams(*ft, ctx.typeSubst)
-			} else if len(ft.Results) == 0 || len(ctx.funcMeta.TypeParams) == 0 {
-				// Void function type or non-generic function — pass as-is
-				expectedType = *ft
-			} else if !funcTypeParamsMentionTypeParams(ft.Params, ctx.funcMeta.TypeParams) {
-				// Generic function whose lambda Params don't reference any of the
-				// function's type parameters (only the Results do). The Params are
-				// concrete and can drive lambda parameter inference even though the
-				// return type is still unresolved. Mask any type-param-bearing
-				// Results so the lambda transformer doesn't emit a literal `T`
-				// return signature; the lambda's body inference fills it in.
-				maskedResults := maskTypeParamResults(ft.Results, ctx.funcMeta.TypeParams)
-				expectedType = transpiler.FuncType{Params: ft.Params, Results: maskedResults, Inout: ft.Inout}
-			}
+			expectedType = t.funcSlotType(*ft, ctx.funcMeta.TypeParams, ctx.typeSubst)
 		}
 	}
 

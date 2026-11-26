@@ -2353,13 +2353,19 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			if expErr != nil {
 				return nil, nil, false, expErr
 			}
+			// The parameter the argument fills, -1 when the name is not one
+			// of the GALA callee's parameters (or there is no GALA callee).
+			paramIdx := -1
+			if fm := callCtx.funcMeta; fm != nil {
+				paramIdx = slices.Index(fm.ParamNames, argName)
+			}
 			if v.spread {
 				// A named spread fills the variadic parameter with a whole
 				// slice, as a positional one does (expectedArgType). One
 				// naming another parameter is reported by checkSpreads, and
 				// one naming a field by handleNamedArgsCall.
 				if fm := callCtx.funcMeta; fm != nil {
-					namedExpectedType = namedSpreadType(namedExpectedType, len(fm.ParamTypes), fm.Variadic, slices.Index(fm.ParamNames, argName))
+					namedExpectedType = namedSpreadType(namedExpectedType, len(fm.ParamTypes), fm.Variadic, paramIdx)
 				} else {
 					namedExpectedType = transpiler.NilType{}
 				}
@@ -2372,7 +2378,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 				return nil, nil, false, cerr
 			}
 
-			expr, aerr := t.lowerFunctionArg(v, namedExpectedType, callCtx, -1, false)
+			expr, aerr := t.lowerFunctionArg(v, namedExpectedType, callCtx, paramIdx, false)
 			if aerr != nil {
 				return nil, nil, false, aerr
 			}
@@ -2419,8 +2425,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 // depends on its slot type (a lambda, a placeholder lambda, or an if/match of
 // lambdas) first has the constructor's still-unbound type parameters masked out
 // of that type (see genericCtorLambdaExpectation). paramIdx is the parameter
-// of the GALA callee the argument fills, -1 when it is not known (no GALA
-// callee, or a named argument).
+// of the GALA callee the argument fills, -1 when there is none.
 func (t *galaASTTransformer) lowerFunctionArg(
 	v argValue,
 	expected transpiler.Type,
@@ -2434,16 +2439,31 @@ func (t *galaASTTransformer) lowerFunctionArg(
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
 	s := slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}
-	// A parameter `f func(A) B` whose type parameters no other argument binds
-	// has no expected type (see resolveExpectedFuncArgType), but it still
-	// takes a function with one result.
-	if transpiler.IsUnusable(expected) && paramIdx >= 0 && len(callCtx.inferredTypeSubst) == 0 {
-		typeParams := callCtx.funcMeta.TypeParams
-		if ft := t.aliasedFuncType(callCtx.funcMeta.ParamTypes[paramIdx]); ft != nil && len(ft.Results) == 1 && funcTypeParamsMentionTypeParams(ft.Params, typeParams) {
-			s.funcResult = maskTypeParamResults(ft.Results, typeParams)[0]
+	// A parameter `f func(A) B` (or `Sendable[func(A) B]`, positional or
+	// named) whose type parameters no other argument binds has no expected
+	// type (see funcSlotType), but it still takes a function with one result.
+	if transpiler.IsUnusable(expected) && len(callCtx.inferredTypeSubst) == 0 {
+		if ft := t.unboundFuncParam(callCtx.funcMeta, paramIdx); ft != nil && len(ft.Results) == 1 {
+			s.funcResult = maskTypeParamResults(ft.Results, callCtx.funcMeta.TypeParams)[0]
 		}
 	}
 	return t.lowerArg(v, s, strict)
+}
+
+// unboundFuncParam is the function type of parameter paramIdx of the GALA
+// function fm — through an alias of a function type or the `Sendable`
+// boundary marker — when its parameters name fm's type parameters, so that
+// with no type argument bound it gives no expected type: a lambda filling it
+// binds them. Nil otherwise, and for paramIdx -1.
+func (t *galaASTTransformer) unboundFuncParam(fm *transpiler.FunctionMetadata, paramIdx int) *transpiler.FuncType {
+	if fm == nil || paramIdx < 0 || paramIdx >= len(fm.ParamTypes) {
+		return nil
+	}
+	param, _ := transpiler.UnwrapSendable(fm.ParamTypes[paramIdx])
+	if ft := t.aliasedFuncType(param); ft != nil && funcTypeParamsMentionTypeParams(ft.Params, fm.TypeParams) {
+		return ft
+	}
+	return nil
 }
 
 // isPlaceholderLambdaArg reports whether e, filling a slot of type
@@ -2514,11 +2534,24 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 		for i, paramName := range callCtx.funcMeta.ParamNames {
 			if paramName == argName && i < len(callCtx.funcMeta.ParamTypes) {
-				param := callCtx.funcMeta.ParamTypes[i]
+				// A `Sendable[F]` parameter is F, as for a positional
+				// argument (sendableInnerExpected).
+				param, sendable := transpiler.UnwrapSendable(callCtx.funcMeta.ParamTypes[i])
+				if sendable {
+					return t.sendableInnerExpected(param, callCtx.funcMeta.TypeParams, callCtx.inferredTypeSubst), nil
+				}
 				// A generic Go function-type instance, as positionally
 				// (resolveExpectedFuncArgType).
 				if slotType, ok := t.goInstanceSlot(param, callCtx.inferredTypeSubst, callCtx.funcMeta.TypeParams); ok {
 					return slotType, nil
+				}
+				// A function parameter naming type parameters no argument
+				// binds takes the slot a positional argument does
+				// (funcSlotType), never the declared type with them in it.
+				if len(callCtx.inferredTypeSubst) == 0 {
+					if ft := t.aliasedFuncType(param); ft != nil && typeMentionsTypeParam(*ft, callCtx.funcMeta.TypeParams) {
+						return t.funcSlotType(*ft, callCtx.funcMeta.TypeParams, nil), nil
+					}
 				}
 				return t.substituteTranspilerTypeParams(param, callCtx.inferredTypeSubst), nil
 			}

@@ -961,7 +961,7 @@ func main() {
 // The parameter `f func(A) B` has no expected type before the lambda is
 // lowered, but it still takes a function with a result. The generic method
 // and constructor cases took another path that already worked; they guard it.
-// A lambda passed by name is #1327.
+// A lambda passed by name: TestLambdaBindsCalleeTypeParamsByNameOrSendable.
 func TestBlockLambdaBindsCalleeTypeParams(t *testing.T) {
 	trans := newDefaultsTranspiler()
 	cases := []struct {
@@ -1142,6 +1142,142 @@ func main() {
 			_, err := trans.Transpile(tc.input, "block_lambda_test.gala")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// TestLambdaBindsCalleeTypeParamsByNameOrSendable pins #1327 and #1334: a
+// lambda passed by name, or to a `Sendable[func(A) B]` parameter, whose
+// callee's type parameters only the lambda binds, is typed as the positional
+// one is. Its slot was the declared `func(A) B`, so the callee's `A` and `B`
+// reached the generated Go (`undefined: B`).
+func TestLambdaBindsCalleeTypeParamsByNameOrSendable(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	cases := []struct {
+		name, input string
+		contains    []string
+	}{
+		{"expression lambda by name", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val b = run(f = (k int) => k > 2)
+    Println(b(3))
+}`, []string{"func(k int) bool {"}},
+		{"block lambda by name", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val b = run(f = (k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, []string{"func(k int) int {", "return q * q"}},
+		{"by name after a positional argument", `package main
+
+func pair[A any, B any](n int, f func(A) B) func(A) B = f
+
+func main() {
+    val b = pair(1, f = (k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, []string{"func(k int) int {", "return q * q"}},
+		{"block lambda to Sendable", `package main
+
+func run[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val b = run((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(b(3))
+}`, []string{"func(k int) int {", "return q * q"}},
+		{"thunk by name", `package main
+
+func thunk[T any](f func() T) T = f()
+
+func main() {
+    Println(thunk(f = () => 5))
+}`, []string{"func() int {"}},
+		{"block thunk to Sendable by name", `package main
+
+func boundary[T any](f Sendable[func() T]) T = f()
+
+func main() {
+    Println(boundary(f = () => {
+        val n = 2
+        n * 3
+    }))
+}`, []string{"func() int {", "return n * 3"}},
+		{"unannotated lambda to Sendable by name, type bound by another argument", `package main
+
+func run2[T any](x T, f Sendable[func(T) T]) T = f(x)
+
+func main() {
+    Println(run2(1, f = (k) => k + 1))
+}`, []string{"func(k int) int {"}},
+		{"block lambda to a generic method's Sendable parameter", `package main
+
+struct Box(N int)
+
+func (b Box) Go[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val g = Box(1).Go((k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(g(3))
+}`, []string{"func(k int) int {", "return q * q"}},
+		{"block lambda by name to a generic method's Sendable parameter", `package main
+
+struct Box(N int)
+
+func (b Box) Go[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val g = Box(1).Go(f = (k int) => {
+        val q = k + 1
+        q * q
+    })
+    Println(g(3))
+}`, []string{"func(k int) int {", "return q * q"}},
+		{"expression lambda to a generic method's Sendable parameter", `package main
+
+struct Box(N int)
+
+func (b Box) Go[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val g = Box(1).Go((k int) => k > 2)
+    Println(g(3))
+}`, []string{"func(k int) bool {"}},
+		{"expression lambda to Sendable by name", `package main
+
+func run[A any, B any](f Sendable[func(A) B]) func(A) B = f
+
+func main() {
+    val b = run(f = (s string) => s + "!")
+    Println(b("a"))
+}`, []string{"func(s string) string {"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "lambda_slot_test.gala")
+			require.NoError(t, err)
+			for _, want := range tc.contains {
+				assert.Contains(t, out, want)
+			}
+			_, body, ok := strings.Cut(out, "func main")
+			require.True(t, ok)
+			// No callee type parameter in a lambda's parameters or result.
+			assert.NotRegexp(t, `func\([^)]*\b[ABT]\b[^)]*\)|\) [ABT] \{`, body, "the callee's type parameter reached the call site")
 		})
 	}
 }
