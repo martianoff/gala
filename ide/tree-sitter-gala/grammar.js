@@ -306,10 +306,11 @@ module.exports = grammar({
     ),
 
     // goResults: '(' type (',' type)+ ')'
-    // A plain '(' only, unlike `parameters`: a '(' that starts a line after
-    // `func()` begins a new statement, not the function type's results.
+    // A '(' on the same line only, unlike `parameters`: one that starts a
+    // line is never a result list (newline.go makes it NL_LPAREN, which
+    // goResults does not take).
     result_list: $ => seq(
-      choice('(', alias($._call_lparen, '(')),
+      alias($._call_lparen, '('),
       $._type,
       repeat1(seq(',', $._type)),
       ')',

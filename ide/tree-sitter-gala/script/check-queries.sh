@@ -18,8 +18,9 @@ highlights="$grammar_dir/queries/highlights.scm"
 status=0
 
 # The query's patterns alone: no comments, and no predicates, whose strings
-# (`#any-of? ... "int"`) are names to compare against, not captures.
-patterns="$(perl -0pe 's/;[^\n]*//g; s/\(#[^()]*\)//g' "$highlights")"
+# (`#any-of? ... "int"`) are names to compare against, not captures. A
+# comment's `;` starts a line or follows a space; the `";"` capture's does not.
+patterns="$(perl -0pe 's/(^|[ \t]);[^\n]*/$1/mg; s/\(#[^()]*\)//g' "$highlights")"
 
 while IFS= read -r keyword; do
   if ! grep -qE "(\"$keyword\"|\($keyword\))" <<< "$patterns"; then

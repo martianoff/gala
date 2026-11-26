@@ -9,30 +9,42 @@
   (case_clause)
   (for_statement)
   (if_statement)
+  ; A type declaration scopes its type parameters.
+  (type_declaration)
+  (struct_declaration)
+  (sealed_type_declaration)
+  (opaque_type_declaration)
 ] @local.scope
 
-; Definitions
+; Definitions. A declaration that is a scope of its own defines its name in
+; the scope around it ("parent"), where the rest of the file sees it.
 
 (function_declaration
-  name: (identifier) @local.definition.function)
+  name: (identifier) @local.definition.function
+  (#set! definition.function.scope "parent"))
 
 (type_declaration
-  name: (type_identifier) @local.definition.type)
+  name: (type_identifier) @local.definition.type
+  (#set! definition.type.scope "parent"))
 
 (struct_declaration
-  name: (type_identifier) @local.definition.type)
+  name: (type_identifier) @local.definition.type
+  (#set! definition.type.scope "parent"))
 
 (sealed_type_declaration
-  name: (type_identifier) @local.definition.type)
+  name: (type_identifier) @local.definition.type
+  (#set! definition.type.scope "parent"))
 
 (opaque_type_declaration
-  name: (type_identifier) @local.definition.type)
+  name: (type_identifier) @local.definition.type
+  (#set! definition.type.scope "parent"))
 
 (type_parameter
   name: (type_identifier) @local.definition.type)
 
 (sealed_case
-  name: (type_identifier) @local.definition.type)
+  name: (type_identifier) @local.definition.type
+  (#set! definition.type.scope "parent"))
 
 ; Only the parameters of a function, a function literal or a lambda: a name in
 ; a function type, `f func(x int) int`, binds nothing.

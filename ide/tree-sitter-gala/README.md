@@ -233,6 +233,8 @@ Commit the regenerated `src/` with the change to `grammar.js`.
 - Only the outermost extractor of a pattern is highlighted as a constructor:
   in `case Some(Ok(x))`, `Ok` is colored as a call. The extractors of a
   `|` alternative, `case Some(_) | None`, are colored as a call and a name.
+- `f[T](x)` and `fns[i](x)` have the same tree, so a called element of a
+  collection colors the collection as a function.
 - A qualified type has one qualifier, `pkg.Type`; gala.g4 allows more dots.
 - A comment on the same line as, and just before, a `(`, `*p` or `&n` that
   starts a statement after a line break (`x` then `/* c */ *p = 5` on the

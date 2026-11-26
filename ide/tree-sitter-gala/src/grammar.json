@@ -1292,22 +1292,13 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "STRING",
-              "value": "("
-            },
-            {
-              "type": "ALIAS",
-              "content": {
-                "type": "SYMBOL",
-                "name": "_call_lparen"
-              },
-              "named": false,
-              "value": "("
-            }
-          ]
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_call_lparen"
+          },
+          "named": false,
+          "value": "("
         },
         {
           "type": "SYMBOL",
