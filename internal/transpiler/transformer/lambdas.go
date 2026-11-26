@@ -1696,6 +1696,10 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	for i := 0; i < placeholderCount; i++ {
 		if i < len(ft.Params) && ft.Params[i] != nil && !ft.Params[i].IsNil() {
 			paramTypes[i] = ft.Params[i]
+			// A variadic slot's `...T` parameter is a slice of T in the body.
+			if ft.IsVariadicParam(i) {
+				paramTypes[i] = transpiler.ArrayType{Elem: ft.Params[i]}
+			}
 		} else {
 			paramTypes[i] = transpiler.BasicType{Name: "any"}
 		}
@@ -1776,6 +1780,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	fieldList := &ast.FieldList{}
 	for i, name := range paramNames {
 		typeExpr := t.typeToExpr(paramTypes[i])
+		if ft.IsVariadicParam(i) {
+			typeExpr = &ast.Ellipsis{Elt: t.typeToExpr(ft.Params[i])}
+		}
 		if typeExpr == nil {
 			typeExpr = ast.NewIdent("any")
 		}

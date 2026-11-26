@@ -23,6 +23,7 @@ func TestVariadicFuncTypeInference(t *testing.T) {
 	const decls = `package main
 
 import "fmt"
+import "log"
 import . "martianoff/gala/collection_immutable"
 
 func sum(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (a, x) => a + x)
@@ -30,6 +31,8 @@ func sum(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (a, x) => a + x)
 func twice(f func(...int) int) int = f(1, 2) * 2
 
 func sprint() Option[func(...any) string] = Some(fmt.Sprint)
+
+func logger() *log.Logger = log.Default()
 
 struct Box[T any](V T)
 
@@ -76,6 +79,16 @@ func (b Box[T]) Run[U any](g func(...int) int, u U) Tuple[int, U] = (g(1, 2, 3),
 			main: "Println(ListOf(sum).Map((f) => f(1, 2, 3)))",
 			want: "func(f func(...int) int) int",
 		},
+		{
+			name: "placeholder lambda in a variadic slot",
+			main: "Println(twice(_.Size()))",
+			want: "func(__p0 ...int) int",
+		},
+		{
+			name: "Go variadic method value",
+			main: "val l = logger()\n    val w = () => l.Print\n    Println(w() != nil)",
+			want: "func() func(...any)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,6 +102,34 @@ func (b Box[T]) Run[U any](g func(...int) int, u U) Tuple[int, U] = (g(1, 2, 3),
 			assert.NotContains(t, got, "func(any) int")
 		})
 	}
+}
+
+// TestVariadicFuncTypeInterfaceMismatch: a method whose function-typed
+// parameter differs from the interface's only in `...` does not implement it,
+// as in Go; it used to pass GALA's check and fail go build.
+func TestVariadicFuncTypeInterfaceMismatch(t *testing.T) {
+	src := `package main
+
+type Applier interface {
+    Apply(f func(...int) int) int
+}
+
+struct Impl(N int)
+
+func (i Impl) Apply(f func(int) int) int = f(i.N)
+
+func runIt(a Applier) int = a.Apply((xs) => 0)
+
+func main() {
+    Println(runIt(Impl(1)))
+}
+`
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	_, err := trans.Transpile(src, "variadic_iface.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Impl does not implement Applier")
 }
 
 // TestGoVariadicFuncType: a Go function type with a variadic parameter keeps

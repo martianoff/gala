@@ -405,7 +405,7 @@ func (t *galaASTTransformer) identicalTypes(a, b transpiler.Type) (same, known b
 		if y, ok := b.(transpiler.FuncType); ok {
 			sameParams, knownParams := t.identicalTypeLists(x.Params, y.Params)
 			sameResults, knownResults := t.identicalTypeLists(x.Results, y.Results)
-			return sameParams && sameResults, knownParams && knownResults
+			return sameParams && sameResults && x.Variadic == y.Variadic, knownParams && knownResults
 		}
 	}
 	nameA, argsA, okA := nominal(a)

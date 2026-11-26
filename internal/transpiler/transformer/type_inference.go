@@ -2152,7 +2152,7 @@ func interfaceMethodSignature(it transpiler.InterfaceType, method string) *trans
 	if !ok {
 		return nil
 	}
-	return goResultsSignature(ft.Params, nil, ft.Results, nil)
+	return goResultsSignature(ft.Params, nil, ft.Variadic, ft.Results, nil)
 }
 
 // universeMethodSignature returns the signature of method on a predeclared
