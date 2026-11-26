@@ -1617,11 +1617,14 @@ func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bo
 // holds types of different underlying types (`~int | ~int64`), which Go
 // cannot range over.
 func interfaceCoreType(iface *types.Interface) types.Type {
-	set := underlyingTypeSet(iface)
+	set := underlyingTypeSet(iface, nil)
 	if set.all || len(set.types) == 0 {
 		return nil
 	}
 	core := set.types[0]
+	if core == types.Typ[types.Invalid] { // a type error, an embedding cycle say
+		return nil
+	}
 	for _, u := range set.types[1:] {
 		if !types.Identical(core, u) {
 			return nil
@@ -1640,18 +1643,28 @@ type typeSet struct {
 
 // underlyingTypeSet is iface's type set: the intersection of its elements,
 // each a union of terms or an embedded interface (comparable and method
-// requirements do not restrict it by type).
-func underlyingTypeSet(iface *types.Interface) typeSet {
+// requirements do not restrict it by type). seen holds the interfaces being
+// expanded: an embedding cycle, which the type checker reports but may still
+// hand over, is the unrestricted set.
+func underlyingTypeSet(iface *types.Interface, seen map[*types.Interface]bool) typeSet {
+	if seen[iface] {
+		return typeSet{all: true}
+	}
+	if seen == nil {
+		seen = map[*types.Interface]bool{}
+	}
+	seen[iface] = true
+	defer delete(seen, iface)
 	set := typeSet{all: true}
 	for i := range iface.NumEmbeddeds() {
 		var elem typeSet
 		switch e := iface.EmbeddedType(i).(type) {
 		case *types.Union:
 			for j := range e.Len() {
-				elem = elem.union(termSet(e.Term(j).Type()))
+				elem = elem.union(termSet(e.Term(j).Type(), seen))
 			}
 		default:
-			elem = termSet(e)
+			elem = termSet(e, seen)
 		}
 		set = set.intersect(elem)
 	}
@@ -1660,9 +1673,9 @@ func underlyingTypeSet(iface *types.Interface) typeSet {
 
 // termSet is the type set of one term: an interface's own, or the term's
 // underlying type.
-func termSet(t types.Type) typeSet {
+func termSet(t types.Type, seen map[*types.Interface]bool) typeSet {
 	if inner, isIface := t.Underlying().(*types.Interface); isIface {
-		return underlyingTypeSet(inner)
+		return underlyingTypeSet(inner, seen)
 	}
 	return typeSet{types: []types.Type{t.Underlying()}}
 }
@@ -1735,7 +1748,11 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	if iface, ok := typ.Underlying().(*types.Interface); ok {
 		data.EmbedsComparable = embedsComparable(iface, nil)
 		if core := interfaceCoreType(iface); core != nil {
-			data.CoreType = goTypeToTranspilerType(core)
+			// An unresolved core (types.Typ[Invalid]) converts to NilType:
+			// none is recorded.
+			if ct := goTypeToTranspilerType(core); ct != nil && !ct.IsNil() {
+				data.CoreType = ct
+			}
 		}
 	} else if !isGenericGoType(typ) {
 		data.SelfEqual = hasSelfEqual(typ)

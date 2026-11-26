@@ -74,3 +74,26 @@ type WithStringer interface {
 		})
 	}
 }
+
+// An embedding cycle is a type error, but the analyzer type-checks past
+// errors: interfaceCoreType must end on it, with no core type. (go/types
+// currently breaks the cycle itself, giving an invalid underlying type for
+// the outer interface; each interface that is still one is checked.)
+func TestInterfaceCoreTypeCycle(t *testing.T) {
+	const src = `package p
+
+type A interface{ B }
+type B interface{ A }
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "p.go", src, 0)
+	require.NoError(t, err)
+	conf := types.Config{Error: func(error) {}}
+	pkg, _ := conf.Check("example.com/p", fset, []*ast.File{file}, nil)
+	require.NotNil(t, pkg)
+	for _, name := range []string{"A", "B"} {
+		if iface, ok := pkg.Scope().Lookup(name).Type().Underlying().(*types.Interface); ok {
+			assert.Nil(t, interfaceCoreType(iface), name)
+		}
+	}
+}
