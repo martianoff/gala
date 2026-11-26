@@ -1,0 +1,6 @@
+folded: "echo a echo b\n"
+indented: "  echo a\n"
+header below: "echo a\n"
+scalar below: "echo a"
+tab: yaml: tab used for indentation at line 2; indent with spaces
+marker: yaml: document marker "---" at line 1 is not supported

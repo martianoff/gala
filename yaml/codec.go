@@ -307,6 +307,12 @@ func isPlainSafe(s string) bool {
 	if s[0] == ' ' {
 		return false
 	}
+	// At column 0, as a root scalar or a top-level key, "..." would read
+	// as a document marker ("---" starts with '-', quoted below). The
+	// encoder does not track the column, so it is quoted everywhere.
+	if s[0] == '.' && isDocumentMarker(s) {
+		return false
+	}
 	// A trailing ':' would read back as "key:" — a mapping, not a string.
 	if s[len(s)-1] == ' ' || s[len(s)-1] == ':' {
 		return false
@@ -771,11 +777,11 @@ var _ std.FieldDecoder = (*YamlDecoderImpl)(nil)
 // YAML parser — builds the AST from raw text.
 //
 // Subset (per DESIGN.md §4.5): block-style mappings, block-style sequences,
-// plain / single-quoted / double-quoted scalars, literal block scalars (`|`,
-// `|-`, `|+`, chomped as YAML 1.2 says), comments, blank lines. Out of
-// scope: anchors, aliases, flow-style collections other than `[]` and `{}`,
-// custom tags, folded blocks (`>`), indentation indicators (`|2`), explicit
-// document markers (`---`, `...`).
+// plain / single-quoted / double-quoted scalars, literal (`|`) and folded
+// (`>`) block scalars with chomping and indentation indicators, comments,
+// blank lines. Indentation is spaces only. Out of scope: anchors, aliases,
+// flow-style collections other than `[]` and `{}`, custom tags, multi-line
+// plain and quoted scalars, document markers (`---`, `...`).
 // ============================================================================
 
 type pLine struct {
@@ -796,14 +802,10 @@ func parseYAML(input string) *yNode {
 		// struct is expected.
 		return &yNode{kind: yMap, nullish: true}
 	}
-	// A one-line document that is neither a sequence item nor a "key: value"
-	// pair is a bare scalar ("42", "abc", null) or an empty flow container
-	// ("[]", "{}") — the forms the encoder writes for a non-struct root.
-	if len(lines) == 1 && !isSequenceLine(lines[0].raw) {
-		if _, _, isPair := tryParseKeyValue(lines[0].raw); !isPair {
-			return parseInlineScalar(withoutComment(lines[0].raw))
-		}
-	}
+	// A document whose first line is neither a sequence item nor a
+	// "key: value" pair is a bare scalar ("42", "abc", null) or an empty
+	// flow container ("[]", "{}"), the forms the encoder writes for a
+	// non-struct root; parseBlock reads it as a scalar.
 	node, pos := parseBlock(lines, 0, lines[0].indent)
 	if pos != len(lines) {
 		panic(fmt.Sprintf("yaml: unexpected content at line %d", lines[pos].lineNum))
@@ -819,7 +821,8 @@ func splitSignificantLines(input string) []pLine {
 	// A carriage return that ends the input ends its last line too.
 	lastHasBreak := strings.HasSuffix(input, "\n") || strings.HasSuffix(input, "\r")
 	rawLines := strings.Split(strings.TrimSuffix(input, "\n"), "\n")
-	var out []pLine
+	// One pLine per line at most, so out never grows.
+	out := make([]pLine, 0, len(rawLines))
 	for i := 0; i < len(rawLines); i++ {
 		raw := strings.TrimRight(rawLines[i], " \t\r")
 		if isBlankOrComment(raw) {
@@ -827,8 +830,25 @@ func splitSignificantLines(input string) []pLine {
 		}
 		indent := countLeadingSpaces(raw)
 		content := raw[indent:]
-		if before, parent, indicator, ok := literalBlockHeader(content, indent); ok {
-			joined, consumed := takeLiteralBlock(rawLines, i+1, parent, indicator, lastHasBreak)
+		switch content[0] {
+		case '\t':
+			tabIndentation(i + 1)
+		case '-', '.':
+			if indent == 0 && isDocumentMarker(content) {
+				panic(fmt.Sprintf("yaml: document marker %q at line %d is not supported", content[:3], i+1))
+			}
+		}
+		if !mayHoldBlockHeader(content) {
+			out = append(out, pLine{indent: indent, raw: content, lineNum: i + 1})
+			continue
+		}
+		if before, parent, h, ok := blockScalarHeader(content, indent, i+1); ok {
+			if before == "" {
+				// A header on a line of its own belongs to the key or dash
+				// on the line before it, and so does its body.
+				parent = ownerIndent(out, indent)
+			}
+			joined, consumed := takeBlockScalar(rawLines, i+1, parent, h, lastHasBreak)
 			out = append(out, pLine{indent: indent, raw: before + doubleQuoted(joined), lineNum: i + 1})
 			i += consumed
 			continue
@@ -859,46 +879,131 @@ func countLeadingSpaces(s string) int {
 	return n
 }
 
-// literalBlockHeader reports whether content, a line without its
-// indentation, opens a literal block scalar: a bare "|", a sequence item
-// "- |" (or "- - |"), or a pair "key: |" (also as an item, "- key: |"),
-// each optionally "|-" or "|+" and followed by a comment. It returns the
-// text that stands before the block's body once the body is collapsed into
-// a double-quoted scalar, the column the body must be indented past, and
-// the indicator, which says how the body's final line breaks are chomped.
+// isDocumentMarker reports whether content, a line at column 0, is a YAML
+// document marker: "---" or "..." alone or followed by white space.
+func isDocumentMarker(content string) bool {
+	if !strings.HasPrefix(content, "---") && !strings.HasPrefix(content, "...") {
+		return false
+	}
+	return len(content) == 3 || content[3] == ' ' || content[3] == '\t'
+}
+
+// blockHeader is a block scalar's header: its style ('|' literal or '>'
+// folded), its chomping indicator ('-' strip, '+' keep, or 0 for clip) and
+// its indentation indicator (0 when the body's first text line sets the
+// indentation).
+type blockHeader struct {
+	style  byte
+	chomp  byte
+	indent int
+}
+
+// parseBlockHeader reads a block scalar header from s, a value without its
+// comment: '|' or '>', then at most one chomping indicator and one
+// indentation indicator from 1 to 9, in either order. ok is false for any
+// other s. Text that starts with '|' or '>' but is no header is left to
+// parseInlineScalar, which rejects it.
+func parseBlockHeader(s string) (blockHeader, bool) {
+	if s == "" || !isHeaderStart(s[0]) {
+		return blockHeader{}, false
+	}
+	h := blockHeader{style: s[0]}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case (c == '-' || c == '+') && h.chomp == 0:
+			h.chomp = c
+		case c >= '1' && c <= '9' && h.indent == 0:
+			h.indent = int(c - '0')
+		default:
+			return blockHeader{}, false
+		}
+	}
+	return h, true
+}
+
+// mayHoldBlockHeader is the cheap test, run on every line, for whether
+// content can hold a block scalar header. A header is at most three bytes
+// ("|2-") and ends the line unless a comment follows it, so a line without
+// a '#' needs a '|' or '>' among its last three bytes. A line with a '#'
+// must also hold a '|' or '>'. content is never empty.
+func mayHoldBlockHeader(content string) bool {
+	n := len(content)
+	return isHeaderStart(content[n-1]) ||
+		n > 1 && isHeaderStart(content[n-2]) ||
+		n > 2 && isHeaderStart(content[n-3]) ||
+		strings.IndexByte(content, '#') >= 0 && strings.ContainsAny(content, "|>")
+}
+
+// isHeaderStart reports whether c starts a block scalar header.
+func isHeaderStart(c byte) bool { return c == '|' || c == '>' }
+
+// blockScalarHeader reports whether content, a line without its
+// indentation, opens a block scalar: a header alone on the line ("|", ">"),
+// a sequence item "- |" (or "- - |"), or a pair "key: |" (also as an item,
+// "- key: |"), each optionally followed by a comment. It returns the text
+// that stands before the block's body once the body is collapsed into a
+// double-quoted scalar, the column the body must be indented past, and the
+// header. A header alone on its line returns no text and its own column,
+// which the caller replaces with its owner's.
 //
 // The pair is split by tryParseKeyValue, so a "#" or ": |" inside a quoted
 // or flow value, or inside a quoted key, is never taken for a comment or a
-// block indicator. Only a line holding a '|' can open a block, so only such
-// a line pays for the split.
-func literalBlockHeader(content string, indent int) (string, int, string, bool) {
-	if strings.IndexByte(content, '|') < 0 {
-		return "", 0, "", false
-	}
+// block indicator. Only a line that mayHoldBlockHeader can open a block, so
+// the caller asks that first and only such a line pays for the split.
+func blockScalarHeader(content string, indent, lineNum int) (string, int, blockHeader, bool) {
 	n, lastDash := itemPrefix(content)
 	rest := content[n:]
-	if indicator := withoutComment(rest); isBlockIndicator(indicator) {
-		// A bare "|" leaves no text before the body, so the collapsed line
-		// starts with the quote and reads as a quoted scalar, never a key.
+	if h, ok := parseBlockHeader(withoutComment(rest)); ok {
+		// A header alone on its line leaves no text before the body, so the
+		// collapsed line starts with the quote and reads as a quoted
+		// scalar, never a key.
 		if n == 0 {
-			return "", indent, indicator, true
+			return "", indent, h, true
 		}
-		return content[:n], indent + lastDash, indicator, true
+		return content[:n], indent + lastDash, h, true
 	}
-	key, value, isPair := tryParseKeyValue(rest)
-	if !isPair || !isBlockIndicator(value) || !spaceAfterQuotedKey(rest) {
-		return "", 0, "", false
+	if key, value, isPair := tryParseKeyValue(rest); isPair {
+		if h, ok := parseBlockHeader(value); ok {
+			if !spaceAfterQuotedKey(rest) {
+				panic(fmt.Sprintf("yaml: block scalar header %q at line %d needs white space after the colon of its quoted key", value, lineNum))
+			}
+			// The key is written back double-quoted, which reads back as
+			// the same key whatever it holds.
+			return content[:n] + doubleQuoted(key) + ": ", indent + n, h, true
+		}
 	}
-	// The key is written back double-quoted, which reads back as the same
-	// key whatever it holds.
-	return content[:n] + doubleQuoted(key) + ": ", indent + n, value, true
+	return "", 0, blockHeader{}, false
 }
 
-func isBlockIndicator(s string) bool { return s == "|" || s == "|-" || s == "|+" }
+// ownerIndent returns the column a block scalar header alone on its line,
+// at column indent, must have its body indented past: that of the key or
+// dash on the last line of out, whose value the block is. When that line
+// does not end with an empty value the block has no owner and keeps its own
+// column, and the first line of a document is owned by the document, -1.
+func ownerIndent(out []pLine, indent int) int {
+	if len(out) == 0 {
+		return -1
+	}
+	p := out[len(out)-1]
+	n, lastDash := itemPrefix(p.raw)
+	rest := p.raw[n:]
+	// A bare dash: "-" alone or last in "- -", or a dash followed only by
+	// a comment.
+	switch r := withoutComment(rest); {
+	case r == "-":
+		return p.indent + n
+	case n > 0 && r == "":
+		return p.indent + lastDash
+	}
+	if _, value, isPair := tryParseKeyValue(rest); isPair && value == "" {
+		return p.indent + n
+	}
+	return indent
+}
 
 // spaceAfterQuotedKey reports whether, in a pair whose key is quoted, white
 // space separates the colon from the value, as a block indicator needs: in
-// "k":| the "|" is plain text. A plain key's colon is always followed by
+// "k":| the "|" cannot open a block. A plain key's colon is always followed by
 // white space, so any other pair passes.
 func spaceAfterQuotedKey(pair string) bool {
 	if pair[0] != '"' && pair[0] != '\'' {
@@ -920,27 +1025,41 @@ func spaceAfterQuotedKey(pair string) bool {
 func itemPrefix(s string) (n, lastDash int) {
 	for len(s) > n+1 && isSequenceLine(s[n:]) {
 		lastDash = n
-		n += 1 + countLeadingSpaces(s[n+1:])
+		n += 1 + countLeadingWhite(s[n+1:])
 	}
 	return n, lastDash
 }
 
-// takeLiteralBlock reads the body of a literal block scalar from raw[start:]
-// and returns its text with the chomping that indicator ("|", "|-" or "|+")
-// asks for, and the number of lines it consumed. YAML 1.2 (section 8.1.1)
-// indents with spaces only: a line of only spaces is blank, and any other
-// line is a text line, its indentation the spaces before its first other
-// character, a tab included. The body is the text lines indented past
-// parentIndent, at the indentation of the first one, with blank lines among
-// them; a blank line that reaches past that indentation holds the spaces
-// beyond it. YAML 1.2 (section 8.1.1.2) chomps the line breaks at the end:
-// "|" (clip) keeps one, "|-" (strip) keeps none and "|+" (keep) keeps them
-// all. Blank lines before the first text line are kept. lastHasBreak says
-// whether the document's last line ends in a line break.
-func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, lastHasBreak bool) (string, int) {
+// countLeadingWhite counts the spaces and tabs s starts with: the white
+// space that separates a sequence item's dash from its content.
+func countLeadingWhite(s string) int {
+	n := 0
+	for n < len(s) && (s[n] == ' ' || s[n] == '\t') {
+		n++
+	}
+	return n
+}
+
+// takeBlockScalar reads the body of a block scalar from raw[start:] and
+// returns its text, folded and chomped as its header h asks, and the number
+// of lines it consumed. YAML 1.2 (section 8.1.1) indents with spaces only: a
+// line of only spaces is blank, and any other line is a text line, its
+// indentation the spaces before its first other character, a tab included.
+// The body is the text lines indented past parentIndent, at the indentation
+// h gives (counted from parentIndent, which is -1 at the document's top) or
+// else that of the first one, with blank lines among them; a blank line that
+// reaches past that indentation holds the spaces beyond it. Blank lines
+// before the first text line are kept. YAML 1.2 (section 8.1.1.2) chomps the
+// line breaks at the end: clip keeps one, strip ("-") none and keep ("+")
+// all of them. lastHasBreak says whether the document's last line ends in a
+// line break.
+func takeBlockScalar(raw []string, start, parentIndent int, h blockHeader, lastHasBreak bool) (string, int) {
 	var body []string
 	consumed := 0
 	bodyIndent := -1
+	if h.indent > 0 {
+		bodyIndent = parentIndent + h.indent
+	}
 	blanks := 0 // blank lines since the last text line
 	// blankLines appends the blank lines raw[from:to] to the body: empty,
 	// or the spaces past the body's indentation.
@@ -962,7 +1081,10 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 			consumed++
 			continue
 		}
-		if indent <= parentIndent {
+		// A document marker at column 0 ends a block at the document's top
+		// too, whose text may otherwise start there.
+		if indent <= parentIndent || indent == 0 && isDocumentMarker(line) {
+			blockEndsAt(line, indent, i+1)
 			break
 		}
 		if bodyIndent < 0 {
@@ -971,11 +1093,12 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 			// may not be indented further than the text.
 			for j := i - blanks; j < i; j++ {
 				if len(strings.TrimRight(raw[j], "\r")) > bodyIndent {
-					panic(fmt.Sprintf("yaml: blank line at line %d is indented more than the literal block's text", j+1))
+					panic(fmt.Sprintf("yaml: blank line at line %d is indented more than the block scalar's text", j+1))
 				}
 			}
 		}
 		if indent < bodyIndent {
+			blockEndsAt(line, indent, i+1)
 			break
 		}
 		blankLines(i-blanks, i)
@@ -996,7 +1119,12 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 			}
 		}
 	}
-	text := strings.Join(body, "\n")
+	var text string
+	if h.style == '>' {
+		text = foldLines(body)
+	} else {
+		text = strings.Join(body, "\n")
+	}
 	// The line breaks after the text: the last text line's own, then one
 	// per blank line after it, less one when the block's last line ends the
 	// document without a break (YAML 1.2, rule 165).
@@ -1008,15 +1136,69 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 		breaks--
 	}
 	switch {
-	case indicator == "|-":
+	case h.chomp == '-':
 		return text, consumed
-	case indicator == "|+":
+	case h.chomp == '+':
 		return text + strings.Repeat("\n", breaks), consumed
 	case len(body) == 0 || breaks == 0:
 		return text, consumed
 	default:
 		return text + "\n", consumed
 	}
+}
+
+// blockEndsAt checks line, numbered lineNum and indented by indent spaces,
+// where a block scalar ends because it is indented less than the body. A
+// line that is white space only there holds a tab within the indentation,
+// which YAML forbids; outside a block it would be skipped as blank, so the
+// tab is reported here.
+func blockEndsAt(line string, indent, lineNum int) {
+	if strings.TrimLeft(line[indent:], " \t") == "" {
+		tabIndentation(lineNum)
+	}
+}
+
+// tabIndentation fails on a tab used for indentation at line lineNum.
+func tabIndentation(lineNum int) {
+	panic(fmt.Sprintf("yaml: tab used for indentation at line %d; indent with spaces", lineNum))
+}
+
+// foldLines joins the lines of a folded block scalar's body, blank lines
+// given as "", as YAML 1.2 (sections 6.5 and 8.1.3) folds them. The line
+// break between two text lines becomes a space, or, when blank lines stand
+// between them, is dropped and leaves one line break per blank line. Around
+// a more-indented line, one that starts with white space, every line break
+// is kept. Blank lines before the first text line are line breaks.
+func foldLines(body []string) string {
+	// The folded text is never longer than the lines with one byte after
+	// each.
+	size := 0
+	for _, line := range body {
+		size += len(line) + 1
+	}
+	var b strings.Builder
+	b.Grow(size)
+	started, prevSpaced := false, false
+	blanks := 0
+	for _, line := range body {
+		if line == "" {
+			blanks++
+			continue
+		}
+		spaced := line[0] == ' ' || line[0] == '\t'
+		switch {
+		case started && (prevSpaced || spaced):
+			blanks++ // the break after the previous text line is kept too
+		case started && blanks == 0:
+			b.WriteByte(' ')
+		}
+		for ; blanks > 0; blanks-- {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
+		started, prevSpaced, blanks = true, spaced, 0
+	}
+	return b.String()
 }
 
 func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
@@ -1031,19 +1213,27 @@ func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
 	if isSequenceLine(first.raw) {
 		return parseSequence(lines, start, expectedIndent)
 	}
-	return parseMapping(lines, start, expectedIndent)
+	key, value, isPair := tryParseKeyValue(first.raw)
+	if !isPair {
+		// A scalar on the line below its key or dash ("key:" / "  x"),
+		// such as a block scalar whose header stands on a line of its own.
+		// A scalar is the whole block, so when the block goes on below it
+		// the line was meant as a pair, and the error names it.
+		if start+1 < len(lines) && lines[start+1].indent >= expectedIndent {
+			splitKeyValue(first.raw, first.lineNum)
+		}
+		return parseInlineScalar(withoutComment(first.raw)), start + 1
+	}
+	return parseCompactMapping(lines, start, expectedIndent, key, value)
 }
 
+// isSequenceLine reports whether content starts a sequence item: a dash
+// alone or followed by white space.
 func isSequenceLine(content string) bool {
 	if content == "-" {
 		return true
 	}
-	return len(content) >= 2 && content[0] == '-' && content[1] == ' '
-}
-
-func parseMapping(lines []pLine, start, indent int) (*yNode, int) {
-	m := &yNode{kind: yMap}
-	return m, addMappingPairs(m, lines, start, indent)
+	return len(content) >= 2 && content[0] == '-' && (content[1] == ' ' || content[1] == '\t')
 }
 
 // addMappingPairs adds to m the "key: value" pairs whose keys start at
@@ -1114,8 +1304,13 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		}
 		// The item's content starts after the dash and the spaces that follow
 		// it: a nested sequence's items, or a mapping's keys, line up there.
-		contentIndent := indent + 1 + countLeadingSpaces(line.raw[1:])
+		contentIndent := indent + 1 + countLeadingWhite(line.raw[1:])
+		// A tab may separate the dash from a scalar, but not from a nested
+		// sequence or mapping, whose indentation it would be (YAML 1.2,
+		// section 8.2.1).
+		sep := line.raw[1 : contentIndent-indent]
 		if rest := line.raw[contentIndent-indent:]; isSequenceLine(rest) {
+			tabBeforeItemCollection(sep, line.lineNum)
 			// A nested sequence that starts on the dash's line ("- - x").
 			// This line is rewritten in place as that sequence's first item
 			// and parsed again; the parser reads each line once otherwise.
@@ -1136,6 +1331,7 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		// A "- key: value" item drops its comment while the pair is split,
 		// where a quoted value is known; any other item drops it here.
 		if key, value, ok := tryParseKeyValue(itemPart); ok {
+			tabBeforeItemCollection(sep, line.lineNum)
 			child, np := parseCompactMapping(lines, i, contentIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
@@ -1160,10 +1356,19 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 	return l, i
 }
 
-// parseCompactMapping parses the mapping a sequence item on lines[start]
-// starts on the dash's line ("- key: value"), whose first key starts at
-// column keyIndent. Its first pair is key and value; the keys on the lines
-// below, aligned with the first one, belong to the same item, whatever
+// tabBeforeItemCollection fails when sep, the white space between a
+// sequence item's dash and the nested sequence or mapping that starts on
+// the dash's line, holds a tab.
+func tabBeforeItemCollection(sep string, lineNum int) {
+	if strings.IndexByte(sep, '\t') >= 0 {
+		tabIndentation(lineNum)
+	}
+}
+
+// parseCompactMapping parses the mapping whose first pair, key and value,
+// is on lines[start] with its key at column keyIndent: the first line of a
+// block, or a sequence item's line ("- key: value"). The keys on the lines
+// below, aligned with the first one, belong to the same mapping, whatever
 // form the first key's value took.
 func parseCompactMapping(lines []pLine, start, keyIndent int, key, value string) (*yNode, int) {
 	first, i := parseMappingValue(lines, start, keyIndent, value)
@@ -1324,7 +1529,10 @@ func parseInlineScalar(raw string) *yNode {
 	// A scalar that starts with a quote must be one quoted scalar: an
 	// unterminated quote, or text after the closing one, is an error rather
 	// than a plain scalar with a stray quote.
-	if q := s[0]; q == '"' || q == '\'' {
+	switch q := s[0]; q {
+	case '|', '>':
+		indicatorStartsPlainScalar(s)
+	case '"', '\'':
 		// The common case, checked here to keep it cheap: the first quote
 		// after the opening one ends s and is not escaped, so it closes the
 		// scalar. Single-quoted text then holds no '' to decode.
@@ -1340,6 +1548,16 @@ func parseInlineScalar(raw string) *yNode {
 		return newScalarNode(decodeQuotedScalar(s), false)
 	}
 	return newScalarNode(s, false)
+}
+
+// indicatorStartsPlainScalar fails on s, a value that starts with '|' or
+// '>'. Either starts a block scalar header, and a header the parser read
+// has become a quoted scalar by now, so s is a malformed header ("|0",
+// "| x") or plain text (">=1.0"), which YAML does not let start with
+// either. This is the one place such a value is rejected; a plain key is
+// not checked.
+func indicatorStartsPlainScalar(s string) {
+	panic(fmt.Sprintf("yaml: %q is not a block scalar header, and a plain scalar cannot start with %q; quote it", s, s[0]))
 }
 
 // decodeQuotedScalar decodes the quoted scalar s, or fails when s is not one.

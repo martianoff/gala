@@ -1,0 +1,32 @@
+package main
+
+// Block scalar forms common in CI files (#1350): folded blocks (">"),
+// indentation indicators ("|2"), a header on the line below its dash, and a
+// scalar on the line below its dash. Input outside the supported subset,
+// such as tab indentation or a "---" document marker, fails with an error
+// that names it.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct Job(Script Array[string])
+
+val jobs = yaml.Codec[Job](yaml.CamelCase())
+
+func show(label string, src string) {
+    jobs.Decode(src) match {
+        case Success(job) => job.Script.ForEach((line) => Println(f"${label}: ${line}%q"))
+        case Failure(err) => Println(s"${label}: ${err.Error()}")
+    }
+}
+
+func main() {
+    show("folded", "script:\n- >\n  echo a\n  echo b\n")
+    show("indented", "script:\n- |2\n    echo a\n")
+    show("header below", "script:\n-\n  |\n  echo a\n")
+    show("scalar below", "script:\n-\n  echo a\n")
+    show("tab", "script:\n\t- echo a\n")
+    show("marker", "---\nscript:\n- echo a\n")
+}
