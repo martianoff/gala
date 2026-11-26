@@ -25,6 +25,11 @@ type Embeds interface{ Tilde }
 type Mixed interface{ ~int | ~int64 }
 type Methods interface{ String() string }
 type Slice interface{ ~[]string }
+type UnionOfIface interface{ Tilde | MyInt }
+type Narrowed interface {
+	~int | ~int64
+	Tilde
+}
 `
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -41,6 +46,10 @@ type Slice interface{ ~[]string }
 		{"Mixed", ""},
 		{"Methods", ""},
 		{"Slice", "[]string"},
+		{"UnionOfIface", "int64"},
+		// Embedded interfaces intersect to int64 in Go; their terms are
+		// pooled here, so the core type is missed (known limit), not wrong.
+		{"Narrowed", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

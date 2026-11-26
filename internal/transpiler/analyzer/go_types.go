@@ -1643,7 +1643,12 @@ func typeTerms(iface *types.Interface) (terms []types.Type) {
 		switch e := iface.EmbeddedType(i).(type) {
 		case *types.Union:
 			for j := range e.Len() {
-				terms = append(terms, e.Term(j).Type())
+				// A term may itself be an interface without methods.
+				if inner, isIface := e.Term(j).Type().Underlying().(*types.Interface); isIface {
+					terms = append(terms, typeTerms(inner)...)
+				} else {
+					terms = append(terms, e.Term(j).Type())
+				}
 			}
 		default:
 			if inner, isIface := e.Underlying().(*types.Interface); isIface {
