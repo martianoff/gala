@@ -277,7 +277,7 @@ The codec emits and parses a focused, predictable subset of YAML:
 - block-style mappings
 - block-style sequences
 - scalars (`string`, `int`, `float`, `bool`, `null`), including `.nan`, `.inf` and `-.inf`
-- literal block scalars (`|`, `|-`, `|+`), chomped as YAML 1.2 says: `|` keeps one final line break (none when the block ends the document without one) and drops the breaks of trailing blank lines, `|-` drops every line break after the text, and `|+` keeps them all. Blank lines before the text are kept.
+- literal block scalars (`|`, `|-`, `|+`), chomped as YAML 1.2 says: `|` keeps one final line break, `|-` none, and `|+` every line break after the text, trailing blank lines included. A block that ends the document without a line break gains none there. Blank lines before the text are kept, and may not be indented further than the text.
 - comments
 - nested structures
 - the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List` or `HashMap` so it reads back as empty rather than `null`
@@ -295,7 +295,7 @@ account_id:
 
 Switching a field from one form to the other changes the document shape: `user_id: 42` read into the struct form is `Failure(yaml: expected mapping, got scalar)`. See [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct).
 
-Out of scope: YAML anchors and aliases (`&a`, `*a`), other flow-style collections, custom tags. If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
+Out of scope: YAML anchors and aliases (`&a`, `*a`), other flow-style collections, custom tags, folded block scalars (`>`), block indentation indicators (`|2`). If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
 
 ---
 

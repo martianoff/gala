@@ -3709,7 +3709,7 @@ opaque type field is written as its underlying value and a single-field struct a
 
 #### Supported YAML Subset
 
-The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`, `|-`, `|+`, chomped as YAML 1.2 says: `|` keeps one final line break, `|-` none, `|+` all of them, trailing blank lines included), comments, nested structures, and a document that is a single scalar or an empty `[]` / `{}`. Out of scope: YAML anchors and aliases (`&a`, `*a`), flow style, custom tags.
+The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`, `|-`, `|+`, chomped as YAML 1.2 says: `|` keeps one final line break, `|-` none, and `|+` every line break after the text, trailing blank lines included; a block that ends the document without a line break gains none there, and blank lines before the text are kept but may not be indented further than it), comments, nested structures, and a document that is a single scalar or an empty `[]` / `{}`. Out of scope: YAML anchors and aliases (`&a`, `*a`), flow style, custom tags, folded block scalars (`>`), block indentation indicators (`|2`).
 
 See the website [Yaml docs](https://martianov.dev/docs/yaml/) for the long-form treatment.
 
