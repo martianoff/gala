@@ -22,6 +22,7 @@ func main() {
 
     Println(go_bare_named_size.NamesSize())
     Println(go_bare_named_size.CountsSize())
+    Println(go_bare_named_size.CountsTwice())
     Println(go_bare_named_size.SizedSize())
     Println(go_bare_named_size.RatedScore())
     Println(go_bare_named_size.WaitNanos())

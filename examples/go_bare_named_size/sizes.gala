@@ -18,6 +18,19 @@ func CountsSize() int {
     c.Size()
 }
 
+// Twice is a method GALA declares on Counts, a Go type: Counts is still read
+// through to its map.
+func (c Counts) Twice() int = c.Size() * 2
+
+// CountsTwice is the Twice of a Counts of three entries.
+func CountsTwice() int {
+    val c = Counts{}
+    c["a"] = 1
+    c["b"] = 2
+    c["c"] = 3
+    c.Twice()
+}
+
 // SizedSize calls the Size method Sized declares, not the length.
 func SizedSize() int = Sized(go_interop.SliceOf(1, 2)).Size()
 
