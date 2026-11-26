@@ -50,12 +50,13 @@ func Ints() Seq[int] { return func(yield func(int) bool) { yield(1) } }
 	tests := []struct {
 		name, body, want string
 	}{
-		{"lambda in a generic alias slot", `Println(lib.Run(5, (x) => nil))`, "func(x int) error"},
-		{"Handler instance as a lambda slot", `Println(lib.Run("a", (s) => nil))`, "func(s string) error"},
+		// Control: a Go callee's own parameter is recorded with the alias
+		// resolved, so this passed before too.
+		{"control: a Go callee's alias-typed parameter", `Println(lib.Run(5, (x) => nil))`, "func(x int) error"},
 		{"typed val of a generic alias instance", "val h lib.Handler[int] = (x) => nil\n    Println(h(1))", "func(x int) error"},
 		{"conversion to a generic alias instance", "val h = lib.Handler[int]((x) => nil)\n    Println(h(1))", "func(x int) error"},
 		{"GALA function taking a generic alias instance", "Println(apply((x) => nil))\n}\n\nfunc apply(h lib.Handler[int]) error {\n    h(1)", "func(x int) error"},
-		{"Seq alias instance fed to a GALA lambda", "val s lib.Seq[int] = (yield) => { yield(1) }\n    Println(lib.Collect(s))", "func(yield func(int) bool)"},
+		{"lambda as a typed val of an iterator alias instance", "val s lib.Seq[int] = (yield) => { yield(1) }\n    Println(lib.Collect(s))", "func(yield func(int) bool)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

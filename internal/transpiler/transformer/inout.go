@@ -633,13 +633,14 @@ func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []str
 		return t.instantiateGoType(data.Underlying, data.TypeParams, args)
 	}
 	// A generic alias (`type Handler[T any] = func(T) error`) reads as its
-	// target's underlying type, the type arguments substituted: an unnamed
-	// type only, so not a struct (the placeholder) or one go/types could not
-	// resolve. A plain alias is left to unaliasedType.
+	// target's underlying type, the type arguments substituted, as a generic
+	// defined type does: not a struct's (the placeholder), and not one with
+	// a part go/types could not resolve. A plain alias is left to
+	// unaliasedType.
 	if len(data.TypeParams) == 0 || data.Underlying == nil || data.Underlying.IsAny() {
 		return nil
 	}
-	if u := t.instantiateGoType(data.Underlying, data.TypeParams, args); !transpiler.IsUnusable(u) {
+	if u := t.instantiateGoType(data.Underlying, data.TypeParams, args); !transpiler.ContainsUnusable(u) {
 		return u
 	}
 	return nil
