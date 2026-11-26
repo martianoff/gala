@@ -53,8 +53,8 @@ run-time panic.
 outside S1 and reported as unsupported.
 
 galaspec tries a `match`'s arms in order and does not check which arms can be reached, so
-it runs programs GALA rejects with GALA-E0141 (an arm after an unguarded `case _` or
-binding) and never reaches that arm. Such a run says nothing about GALA. M3's theorems
+it runs programs GALA rejects with GALA-E0141 or GALA-E0006 (an arm after an unguarded
+arm that matches every value) and never reaches that arm. Such a run says nothing about GALA. M3's theorems
 hold for every list of arms, these included.
 
 ### Printing
