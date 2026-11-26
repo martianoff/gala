@@ -596,7 +596,7 @@ func (w Wrapper) Unapply(o any) Option[any] = o match {
 
 func main() {
     // 1. Matching specific generic type
-    val w1 = Wrap[int](Value = 42)
+    val w1 any = Wrap[int](Value = 42)
     val res1 = w1 match {
         case w: Wrap[int] => s"Matched Wrap[int]: ${w.Value}"
         case w: Wrap[string] => "Matched Wrap[string]: " + w.Value

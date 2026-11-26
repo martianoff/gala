@@ -1176,6 +1176,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 	if funcType, ok := s.typ.(transpiler.FuncType); ok && len(funcType.Params) > 0 {
 		paramType = funcType.Params[0]
 	}
+	typedBySlot := !transpiler.IsUnusable(paramType)
 	resultElem := t.partialFunctionResultElem(s)
 
 	// If we couldn't infer from context, try to infer from the patterns themselves
@@ -1213,9 +1214,17 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(f partialSrc, s slo
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
-	// Transform each case clause, wrapping results in Some(...)
+	// Transform each case clause, wrapping results in Some(...). Cases are
+	// tried in order, so one after a case that matches every value is
+	// GALA-E0141. A parameter type guessed from the patterns is the type one
+	// of them names, so only the slot's type counts as the subject's.
+	var catchAll catchAllScan
 	for _, cc := range caseClauses {
 		patternText := cc.pattern().text()
+		catchesAll := func() bool { return t.matchesEveryValue(cc.pattern(), casesType, casesType, typedBySlot) }
+		if err := catchAll.next(cc, catchesAll); err != nil {
+			return nil, err
+		}
 
 		// Even wildcard case gets wrapped in Some for partial functions
 		clause, resultType, err := t.transformPartialCaseClause(cc, casesParam, casesType, resultElem)

@@ -15,7 +15,7 @@ func (w Wrapper[T]) Unapply(o Wrap[T]) Option[T] = Some[T](o.Value)
 
 func main() {
     // Case 1: Matching specific generic type
-    val w1 = Wrap[int](Value = 42)
+    val w1 any = Wrap[int](Value = 42)
     val res1 = w1 match {
         case w: Wrap[int] => fmt.Sprintf("Matched Wrap[int]: %d", w.Value)
         case w: Wrap[string] => "Matched Wrap[string]: " + w.Value
@@ -24,7 +24,7 @@ func main() {
     fmt.Println(res1)
 
     // Case 2: Matching another specific generic type
-    val w2 = Wrap[string](Value = "hello")
+    val w2 any = Wrap[string](Value = "hello")
     val res2 = w2 match {
         case w: Wrap[int] => fmt.Sprintf("Matched Wrap[int]: %d", w.Value)
         case w: Wrap[string] => "Matched Wrap[string]: " + w.Value

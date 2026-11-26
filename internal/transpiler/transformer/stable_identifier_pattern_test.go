@@ -170,7 +170,6 @@ func main() {
 func main() {
     val r = 3 match {
         case Other => s"bound $Other"
-        case _     => "other"
     }
     Println(r)
 }`,
@@ -334,7 +333,6 @@ import iofs "io/fs"
 
 func Kind(m int) string = m match {
     case ModeDir => s"bound $ModeDir"
-    case _       => "other"
 }
 
 func Perm() iofs.FileMode = iofs.ModePerm

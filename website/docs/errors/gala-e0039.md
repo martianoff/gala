@@ -81,7 +81,6 @@ The check is scoped to the **matched** type. A bare identifier that does not nam
 val n = 42
 val d = n match {
     case Circle => s"bound $Circle"   // OK — `int` has no `Circle` variant
-    case _      => "other"
 }
 ```
 

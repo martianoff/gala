@@ -1,0 +1,41 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Cases run in the order they are written, and the catch-all goes last: a
+// case written after one that matches every value is GALA-E0141.
+
+struct Point(X int, Y int)
+
+func name(n int) string = n match {
+    case 0 => "zero"
+    case 1 => "one"
+    case _ => "other"
+}
+
+// A guarded binding is not a catch-all, so the cases after it still run.
+func sign(n int) string = n match {
+    case m if m > 0 => s"pos $m"
+    case 0 => "zero"
+    case m => s"neg $m"
+}
+
+// A typed pattern of the subject's own type matches every value, so it closes
+// the match without a default.
+func sumOf(p Point) int = p match {
+    case q: Point => q.X + q.Y
+}
+
+// So does a tuple pattern of bindings and wildcards.
+func label(t Tuple[int, string]) string = t match {
+    case (0, s) => s"none $s"
+    case (n, s) => s"$n $s"
+}
+
+func main() {
+    Println(name(0), name(1), name(7))
+    Println(sign(3), sign(0), sign(-2))
+    Println(sumOf(Point(2, 3)))
+    Println(label((0, "a")), label((4, "b")))
+    Println(ArrayOf(1, 2, 3).Collect({ case 1 => "one" case 2 => "two" case n => s"n$n" }))
+}

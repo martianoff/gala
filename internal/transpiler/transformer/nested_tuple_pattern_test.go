@@ -100,7 +100,6 @@ func TestNestedTuplePattern(t *testing.T) {
 			name: "tuple inside a tuple",
 			body: `func f(t Tuple[Tuple[int, int], string]) string = t match {
     case ((a, b), s) => s"$s ${a * b}"
-    case _           => ""
 }`,
 			contains: []string{"_subj.V1.Get().V1.Get()", "_subj.V1.Get().V2.Get()"},
 		},

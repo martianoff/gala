@@ -322,6 +322,7 @@ go_test(
         "placeholder_field_immutable_test.go",
         "placeholder_interpolation_test.go",
         "underscore_binding_read_test.go",
+        "unreachable_case_test.go",
         "placeholder_void_context_test.go",
         "pointer_receiver_generic_method_val_test.go",
         "pointer_receiver_test.go",

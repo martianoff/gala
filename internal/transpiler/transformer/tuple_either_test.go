@@ -257,7 +257,6 @@ func main() {
     val pair = (1, "world")
     val res = pair match {
         case (x, y) => fmt.Sprintf("%d %s", x, y)
-        case _ => ""
     }
     Println(res)
 }`,
@@ -277,7 +276,6 @@ func main() {
     val triple = (1, "hello", true)
     val res = triple match {
         case (a, b, c) => fmt.Sprintf("%d %s %v", a, b, c)
-        case _ => ""
     }
     Println(res)
 }`,

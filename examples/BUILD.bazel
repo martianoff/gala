@@ -1102,6 +1102,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "catch_all_last",
+    src = "catch_all_last.gala",
+    expected = "catch_all_last.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "tuple_syntax",
     src = "tuple_syntax.gala",
     expected = "tuple_syntax.out",

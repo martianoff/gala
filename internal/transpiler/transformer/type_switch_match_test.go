@@ -144,7 +144,6 @@ type Celsius int
 			name: "concrete subject is not switched on",
 			body: `func f(p Point) int = p match {
     case q: Point => q.X
-    case _ => 0
 }`,
 		},
 	}

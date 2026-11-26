@@ -856,9 +856,10 @@ func (g *progGen) match() {
 				g.reject(Rejection{Code: galaerr.CodeNonBoolGuard})
 			}
 		}
-		if p.irrefutable && !guarded && !partial {
-			// A catch-all arm goes last, after at least one other.
-			if i == 0 {
+		if p.irrefutable && !guarded {
+			// A catch-all arm goes last (GALA-E0141): in a match after at
+			// least one other, in a partial function anywhere.
+			if i == 0 && !partial {
 				continue
 			}
 			catchAll = true

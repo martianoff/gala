@@ -2472,6 +2472,24 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "a case after `case _`",
+			code: galaerr.CodeUnreachableCase, // GALA-E0141
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func name(n int) string = n match {
+    case 0 => "zero"
+    case _ => "other"
+    case 1 => "one"
+}
+
+func main() {
+    Println(name(1))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
