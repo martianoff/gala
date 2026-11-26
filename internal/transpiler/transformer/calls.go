@@ -342,7 +342,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 					return nil, err
 				}
 				base = addressed
-				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(base.(*ast.SelectorExpr).X, "Apply")
+				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel, "Apply")
 			}
 		} else if inner, typeArgs := splitCallFunTypeArgs(base); len(typeArgs) > 0 {
 			// So is one given type arguments for its generic Apply.
