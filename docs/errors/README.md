@@ -153,6 +153,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0138` | Spread `xs...` of a value that is not a Go slice of the variadic parameter's element type | [GALA-E0138.md](GALA-E0138.md) |
 | `GALA-E0139` | A read of `_`: a `_` binding, an unbound `_`, or `_++` and `_ += x` | [GALA-E0139.md](GALA-E0139.md) |
 | `GALA-E0141` | A case after a case that matches every value | [GALA-E0141.md](GALA-E0141.md) |
+| `GALA-E0142` | `range` over a type parameter whose constraint has no core type | [GALA-E0142.md](GALA-E0142.md) |
 
 ### Retired codes
 

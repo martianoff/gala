@@ -5,14 +5,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"martianoff/gala/galaerr"
+
 	"github.com/stretchr/testify/require"
 )
 
-// TestRangeOverIntegerTypeParam pins #1378: a range over a value of a type
-// parameter whose Go constraint has an integer core type binds the loop
-// variable to the type parameter, as Go does, so `s"$i"` uses %v and a
-// lambda returning i returns T. A constraint with no core type keeps the int
-// key (Go rejects ranging over it).
+// TestRangeOverIntegerTypeParam pins #1378 and #1400: a range over a value of
+// a type parameter whose Go constraint has an integer core type binds the
+// loop variable to the type parameter, as Go does, so `s"$i"` uses %v and a
+// lambda returning i returns T. One whose constraint has no core type is
+// GALA-E0142, where it used to fail `go build`.
 func TestRangeOverIntegerTypeParam(t *testing.T) {
 	const bridge = `package main
 
@@ -21,20 +23,37 @@ type Int64ish interface{ ~int64 }
 type Sized interface{ Int64ish }
 
 type Mixed interface{ ~int | ~int64 }
+
+type Strs interface{ ~[]string }
+
+type Stringer interface{ String() string }
+
+type Recv interface{ chan int | <-chan int }
 `
 	cases := []struct {
 		name, constraint string
-		want             []string
+		want             []string // generated code; nil when it is GALA-E0142
 	}{
 		{"a ~int64 constraint", "Int64ish", []string{`"i=%v"`, "func() T"}},
 		{"a constraint embedding one", "Sized", []string{`"i=%v"`, "func() T"}},
-		{"a constraint with no core type", "Mixed", []string{`"i=%d"`, "func() int"}},
+		{"a slice core type", "Strs", []string{"for i := range n"}},
+		// Go merges channel directions into a core type: left to Go.
+		{"channels of both directions", "Recv", []string{"for i := range n"}},
+		{"a Go interface with methods only", "Stringer", nil},
+		{"a constraint with no core type", "Mixed", nil},
+		{"any", "any", nil},
+		{"comparable", "comparable", nil},
+		{"a GALA interface", "Shower", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(bridge), 0o600))
 			src := `package main
+
+type Shower interface {
+    Show() string
+}
 
 func steps[T ` + c.constraint + `](n T) {
     for i := range n {
@@ -49,6 +68,12 @@ func main() {
 			mainPath := filepath.Join(dir, "main.gala")
 			require.NoError(t, os.WriteFile(mainPath, []byte(src), 0o600))
 			out, err := newForbiddenBuiltinTranspiler().Transpile(src, mainPath)
+			if c.want == nil {
+				var se *galaerr.SemanticError
+				require.ErrorAs(t, err, &se)
+				require.Equal(t, galaerr.CodeRangeOverTypeParamNoCore, se.Code)
+				return
+			}
 			require.NoError(t, err)
 			for _, w := range c.want {
 				require.Contains(t, out, w)

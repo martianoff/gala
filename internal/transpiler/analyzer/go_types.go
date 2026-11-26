@@ -1633,6 +1633,98 @@ func interfaceCoreType(iface *types.Interface) types.Type {
 	return core
 }
 
+// interfaceHasNoCoreType reports whether iface's type set provably has no
+// core type, so Go cannot range over a type parameter it constrains: the set
+// is unrestricted (`any`, `comparable`, methods only), or holds types of
+// different underlying types. A set with an unresolved type, or with a
+// channel (Go merges channels that differ only in direction), is not known
+// to have none, nor is an empty one, nor one whose types mention a type
+// parameter (an instantiation can make them identical).
+func interfaceHasNoCoreType(iface *types.Interface) bool {
+	set := underlyingTypeSet(iface, nil)
+	if set.all {
+		return true
+	}
+	distinct := false
+	for _, u := range set.types {
+		if _, isChan := u.(*types.Chan); isChan || !settledType(u) {
+			return false
+		}
+		if !types.Identical(set.types[0], u) {
+			distinct = true
+		}
+	}
+	return distinct
+}
+
+// settledType reports whether t mentions neither an unresolved type nor a
+// type parameter, at any depth.
+func settledType(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Basic:
+		return t.Kind() != types.Invalid
+	case *types.TypeParam:
+		return false
+	case *types.Pointer:
+		return settledType(t.Elem())
+	case *types.Slice:
+		return settledType(t.Elem())
+	case *types.Array:
+		return settledType(t.Elem())
+	case *types.Chan:
+		return settledType(t.Elem())
+	case *types.Map:
+		return settledType(t.Key()) && settledType(t.Elem())
+	case *types.Signature:
+		return settledTuple(t.Params()) && settledTuple(t.Results())
+	case *types.Struct:
+		for i := range t.NumFields() {
+			if !settledType(t.Field(i).Type()) {
+				return false
+			}
+		}
+		return true
+	case *types.Named:
+		for i := range t.TypeArgs().Len() {
+			if !settledType(t.TypeArgs().At(i)) {
+				return false
+			}
+		}
+		return true
+	case *types.Alias:
+		return settledType(types.Unalias(t))
+	case *types.Interface:
+		for i := range t.NumExplicitMethods() {
+			if !settledType(t.ExplicitMethod(i).Type()) {
+				return false
+			}
+		}
+		for i := range t.NumEmbeddeds() {
+			if !settledType(t.EmbeddedType(i)) {
+				return false
+			}
+		}
+		return true
+	case *types.Union:
+		for i := range t.Len() {
+			if !settledType(t.Term(i).Type()) {
+				return false
+			}
+		}
+		return true
+	}
+	return true
+}
+
+func settledTuple(t *types.Tuple) bool {
+	for i := range t.Len() {
+		if !settledType(t.At(i).Type()) {
+			return false
+		}
+	}
+	return true
+}
+
 // typeSet is a type set by underlying type: all types (all), or those whose
 // underlying type is one of types. Telling `~T` from `T` apart is not needed
 // to find a core type: it only shrinks a set whose types share T.
@@ -1754,6 +1846,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 				data.CoreType = ct
 			}
 		}
+		data.NoCoreType = interfaceHasNoCoreType(iface)
 	} else if !isGenericGoType(typ) {
 		data.SelfEqual = hasSelfEqual(typ)
 	}

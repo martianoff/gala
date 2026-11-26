@@ -118,6 +118,12 @@ type GoTypeData struct {
 	// that type; nil otherwise. A range over a type parameter it constrains
 	// to an integer core type binds the type parameter.
 	CoreType Type
+	// NoCoreType is true for an interface whose type set provably has no
+	// core type (`any`, methods only, `~int | ~int64`): a range over a type
+	// parameter it constrains is GALA-E0142. False when that is not known,
+	// as for a set with an unresolved type or one read without type
+	// checking.
+	NoCoreType bool
 	// SelfEqual is true when the value method set of this (non-generic,
 	// non-interface) type has `Equal(T) bool` with T the type itself, as
 	// time.Time's does: == on it calls that Equal.

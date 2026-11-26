@@ -131,6 +131,8 @@ func buildSyntheticCache() *CachedRichAST {
 		PointerMethods: map[string]bool{"Reset": true},
 		NoCopy:         "sync.Mutex",
 	}
+	r.GoTypeInfo.Types["pkg.Int64ish"] = &transpiler.GoTypeData{Kind: "interface", CoreType: transpiler.BasicType{Name: "int64"}}
+	r.GoTypeInfo.Types["pkg.Mixed"] = &transpiler.GoTypeData{Kind: "interface", NoCoreType: true}
 	for i := 0; i < 50; i++ {
 		name := "T" + itoa(i)
 		r.Types["synthetic."+name] = &transpiler.TypeMetadata{

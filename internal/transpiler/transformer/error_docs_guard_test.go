@@ -2490,6 +2490,14 @@ func main() {
 `)
 			},
 		},
+		{
+			// The constraint is Go, so the repro needs a .go file on disk.
+			name: "a range over a type parameter with no core type",
+			code: galaerr.CodeRangeOverTypeParamNoCore, // GALA-E0142
+			render: func(t *testing.T) string {
+				return renderReproWithGo(t, rangeNoCoreMain, rangeNoCoreBridge)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
@@ -2649,22 +2657,43 @@ func larger(a, b int) int { return max(a, b) }
 `
 )
 
-// renderBuiltinNameFromGoRepro drives GALA-E0107. The hand-written Go has to
-// sit on disk beside the GALA file for the analyzer to read it.
+// renderBuiltinNameFromGoRepro drives GALA-E0107.
 func renderBuiltinNameFromGoRepro(t *testing.T) string {
+	return renderReproWithGo(t, builtinNameFromGoMain, builtinNameFromGoBridge)
+}
+
+// rangeNoCoreMain and rangeNoCoreBridge are GALA-E0142's repro: a range over
+// a type parameter whose Go constraint has no core type.
+const (
+	rangeNoCoreMain = `package main
+
+func steps[T Number](n T) {
+    for i := range n {
+        Println(i)
+    }
+}
+
+func main() {
+    steps(3)
+}
+`
+	rangeNoCoreBridge = `package main
+
+type Number interface{ ~int | ~int64 }
+`
+)
+
+// renderReproWithGo transpiles mainSrc as main.gala with the hand-written Go
+// goSrc beside it on disk, where the analyzer reads it, and renders the
+// resulting error as renderRepro does.
+func renderReproWithGo(t *testing.T, mainSrc, goSrc string) string {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(builtinNameFromGoBridge), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(goSrc), 0o600))
 	mainPath := filepath.Join(dir, "main.gala")
-	require.NoError(t, os.WriteFile(mainPath, []byte(builtinNameFromGoMain), 0o600))
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
 
-	_, err := newDocGuardTranspiler().Transpile(builtinNameFromGoMain, mainPath)
-	require.Error(t, err, "repro was expected to fail to compile")
-	rendered := galaerr.RenderRich(err, galaerr.Options{
-		FallbackPath:   mainPath,
-		FallbackSource: builtinNameFromGoMain,
-		Color:          false,
-	})
+	rendered := renderRepro(t, mainPath, mainSrc)
 	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
 	return strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
 }

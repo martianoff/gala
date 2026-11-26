@@ -39,6 +39,47 @@ func (t *galaASTTransformer) rangeOverGalaTypeError(e exprSrc, xType transpiler.
 		t.rangeOverGalaTypeHint(impl.meta, x))
 }
 
+// rangeOverTypeParamError reports the ranged expression e, of type xType,
+// when xType is a type parameter whose constraint has no core type: `any`,
+// `comparable`, a GALA interface (methods only), or a Go interface whose
+// types differ in underlying type. Go ranges over a type parameter only
+// through its core type. A Go constraint whose type information is missing
+// is left to Go.
+func (t *galaASTTransformer) rangeOverTypeParamError(e exprSrc, xType transpiler.Type) error {
+	name, c, ok := t.constrainedTypeParam(unwrapValueMarkers(xType))
+	if !ok {
+		return nil
+	}
+	if core, known := t.coreTypeOfConstraint(c); !known || core != nil {
+		return nil
+	}
+	constraint := transpiler.ConstraintString(c)
+	if transpiler.IsInterfaceConstraint(c) {
+		constraint = t.sourceTypeName(c)
+	}
+	x := oneLine(e.at().sourceText())
+	at := e.at().rng()
+	return spanErrorAt(galaerr.CodeRangeOverTypeParamNoCore, at, at,
+		fmt.Sprintf("cannot range over `%s`: its type %s is constrained by %s, which has no core type: the types it allows do not share one underlying type", x, name, constraint),
+		"range over a value of a concrete type, or constrain the type parameter by an interface declared in a .go file of the package whose types share one underlying type (`interface{ ~int64 }`)")
+}
+
+// coreTypeOfConstraint is the core type of the type parameter constraint c:
+// nil for `any`, `comparable` and a GALA interface (methods only), or the
+// Go interface's recorded core type. known is false when c's core type is
+// not recorded and c is not known to have none (GoTypeData.NoCoreType): a Go
+// constraint with an unresolved type, or whose type information is missing.
+func (t *galaASTTransformer) coreTypeOfConstraint(c transpiler.Type) (core transpiler.Type, known bool) {
+	if !transpiler.IsInterfaceConstraint(c) {
+		return nil, true
+	}
+	if data := t.goConstraintData(c); data != nil {
+		return data.CoreType, data.CoreType != nil || data.NoCoreType
+	}
+	meta := t.getTypeMeta(c.BaseName())
+	return nil, meta != nil && meta.IsInterface
+}
+
 // unwrapValueMarkers is typ without the Immutable and Sendable markers that
 // wrap the value Go sees, in either order: the type Go ranges over or spreads.
 func unwrapValueMarkers(typ transpiler.Type) transpiler.Type {
