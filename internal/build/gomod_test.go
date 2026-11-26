@@ -96,6 +96,67 @@ func TestWorkspaceGoModAppliesGoModuleReplaces(t *testing.T) {
 	assert.Equal(t, module.Version{Path: "example.com/fork", Version: "v1.1.0"}, got["example.com/pinned@v1.0.0"])
 }
 
+// The workspace's go.mod changes when the go.mod of a Go module replaced by a
+// directory does, so the build tidies the workspace again and picks up the
+// replacement's new requirements.
+func TestWorkspaceGoModTracksReplacementGoMod(t *testing.T) {
+	projectDir := t.TempDir()
+	greetMod := filepath.Join(projectDir, "greet", "go.mod")
+	require.NoError(t, os.MkdirAll(filepath.Dir(greetMod), 0o755))
+	galaMod := &mod.File{
+		Module:  mod.Module{Path: "example.com/app"},
+		Require: []mod.Require{{Path: "example.com/greet", Version: "v0.0.0", Go: true}},
+		Replace: []mod.Replace{{Old: mod.ModuleVersion{Path: "example.com/greet"}, New: mod.ModuleVersion{Path: "./greet"}}},
+	}
+	gen := NewGoModGenerator(&Config{StdlibDir: t.TempDir()})
+	gen.SetProjectDir(projectDir)
+	generate := func(greetGoMod string) string {
+		require.NoError(t, os.WriteFile(greetMod, []byte(greetGoMod), 0o644))
+		return gen.GenerateGoMod(galaMod, "v0.0.0", nil)
+	}
+
+	before := generate("module example.com/greet\n\ngo 1.21\n")
+	assert.Equal(t, before, generate("module example.com/greet\n\ngo 1.21\n"))
+	assert.NotEqual(t, before, generate("module example.com/greet\n\ngo 1.21\n\nrequire github.com/google/uuid v1.6.0\n"))
+}
+
+// The replaces the workspace applies to Go modules, which gala export refuses,
+// are every replace but those of the standard library and the GALA modules:
+// one of a Go module gala.mod does not require applies too, as in Go.
+func TestGoReplacesAreTheWorkspaceGoModReplaces(t *testing.T) {
+	galaMod := &mod.File{
+		Module: mod.Module{Path: "example.com/app"},
+		Require: []mod.Require{
+			{Path: "example.com/lib", Version: "v0.1.0"},
+			{Path: "github.com/google/uuid", Version: "v1.3.0", Go: true},
+		},
+		Replace: []mod.Replace{
+			{Old: mod.ModuleVersion{Path: "example.com/lib"}, New: mod.ModuleVersion{Path: "../lib"}},
+			{Old: mod.ModuleVersion{Path: "github.com/google/uuid"}, New: mod.ModuleVersion{Path: "github.com/google/uuid", Version: "v1.6.0"}},
+			{Old: mod.ModuleVersion{Path: "golang.org/x/text"}, New: mod.ModuleVersion{Path: "golang.org/x/text", Version: "v0.3.0"}},
+			{Old: mod.ModuleVersion{Path: "martianoff/gala/std"}, New: mod.ModuleVersion{Path: "../gala/std"}},
+		},
+	}
+	gen := NewGoModGenerator(&Config{StdlibDir: t.TempDir(), GalaPkgDir: t.TempDir()})
+	gen.SetProjectDir(t.TempDir())
+
+	var got []string
+	for _, r := range gen.GoReplaces(galaMod) {
+		got = append(got, r.Old.Path)
+	}
+	assert.Equal(t, []string{"github.com/google/uuid", "golang.org/x/text"}, got)
+
+	f, err := modfile.Parse("go.mod", []byte(gen.GenerateGoMod(galaMod, "v0.0.0", nil)), nil)
+	require.NoError(t, err)
+	var written []string
+	for _, r := range f.Replace {
+		if r.Old.Path == "github.com/google/uuid" || r.Old.Path == "golang.org/x/text" {
+			written = append(written, r.Old.Path)
+		}
+	}
+	assert.Equal(t, got, written)
+}
+
 // The project's replace directives apply to every module of the build, not
 // only to the ones it requires directly: a GALA dependency's own GALA
 // dependency is read from the directory the project replaces it with, and

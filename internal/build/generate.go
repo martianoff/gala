@@ -103,11 +103,13 @@ func (b *Builder) GalaImportPaths() []string {
 	return paths
 }
 
-// ReplacedGoModules returns the Go modules gala.mod requires and also
-// replaces.
+// ReplacedGoModules returns the Go modules of the build that gala.mod replaces:
+// those the build workspace's go.mod replaces (GenerateGoMod).
 func (b *Builder) ReplacedGoModules() []string {
+	gen := NewGoModGenerator(b.config)
+	gen.SetProjectDir(b.workspace.ProjectDir)
 	var replaced []string
-	for _, r := range b.galaMod.GoReplaces() {
+	for _, r := range gen.GoReplaces(b.galaMod) {
 		replaced = append(replaced, r.Old.Path)
 	}
 	return replaced

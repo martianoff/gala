@@ -1,6 +1,8 @@
 package build
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -156,8 +158,6 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 
 	// Collect all requires
 	var stdlibReqs []string
-	var galaReqs []mod.Require
-	var goReqs []mod.Require
 
 	// Add stdlib requires
 	for _, pkg := range StdlibPackages {
@@ -165,6 +165,140 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 		stdlibReqs = append(stdlibReqs, importPath)
 	}
 
+	galaReqs, goReqs := g.workspaceRequires(galaMod)
+
+	// Build mapping from require path (GitHub URL) -> internal module path
+	// by reading each dep's gala.mod. The transpiled Go code uses the internal
+	// module path for imports, so the go.mod must use it too.
+	internalModulePaths := g.resolveInternalModulePaths(galaMod, galaReqs)
+
+	// Write require block
+	sb.WriteString("require (\n")
+
+	// Stdlib requires
+	for _, importPath := range stdlibReqs {
+		sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", importPath))
+	}
+
+	// GALA package requires — use internal module path
+	for _, req := range galaReqs {
+		modPath := g.effectiveModulePath(req.Path, internalModulePaths)
+		sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", modPath))
+	}
+
+	// Go package requires (including transitive)
+	for _, req := range goReqs {
+		sb.WriteString(fmt.Sprintf("\t%s %s\n", req.Path, req.Version))
+	}
+
+	sb.WriteString(")\n\n")
+
+	// Write replace directives with absolute paths
+	sb.WriteString("// Replace directives using absolute paths to global cache\n")
+
+	// Stdlib replaces
+	stdlibDir := g.config.StdlibVersionDir(stdlibVersion)
+	for _, pkg := range StdlibPackages {
+		importPath := StdlibImportPaths[pkg]
+		absPath := filepath.Join(stdlibDir, pkg)
+		// Convert to forward slashes for go.mod compatibility
+		absPath = filepath.ToSlash(absPath)
+		sb.WriteString(fmt.Sprintf("replace %s => %s\n", importPath, absPath))
+	}
+
+	sb.WriteString("\n")
+
+	// GALA package replaces — use internal module path
+	for _, req := range galaReqs {
+		modPath := g.effectiveModulePath(req.Path, internalModulePaths)
+		if transpiledDeps != nil {
+			if dir, ok := transpiledDeps[modPath]; ok {
+				// Use transpiled directory in workspace
+				absPath := filepath.ToSlash(dir)
+				sb.WriteString(fmt.Sprintf("replace %s => %s\n", modPath, absPath))
+				continue
+			}
+		}
+		// Fallback to source cache (pure Go package or no transpilation needed).
+		// effectiveDepDir consults replace directives so a local replace still
+		// wins even when the dep is not transpiled (e.g. pure-Go library).
+		absPath := filepath.ToSlash(g.effectiveDepDir(galaMod, req))
+		sb.WriteString(fmt.Sprintf("replace %s => %s\n", modPath, absPath))
+	}
+
+	// Go modules are fetched into GOMODCACHE, except where gala.mod replaces
+	// one. The workspace is the main module of the build, the only one whose
+	// replace directives Go applies, so gala.mod's are written here.
+	for _, rep := range goReplacesOf(galaMod, g.galaManagedModules(galaReqs, internalModulePaths)) {
+		if rep.New.IsLocal() {
+			dir := replacementDir(g.projectDir, rep.New.Path)
+			rep.New.Path = filepath.ToSlash(dir)
+			// The workspace's go.mod does not change when the replacement's
+			// go.mod does, yet its requirements are the build's: a comment
+			// with its hash makes the build tidy the workspace again.
+			sb.WriteString(fmt.Sprintf("// %s go.mod %s\n", rep.Old.Path, fileFingerprint(filepath.Join(dir, "go.mod"))))
+		}
+		// Quoted where go.mod needs it (a project directory with a space).
+		rep.Old.Path, rep.New.Path = modfile.AutoQuote(rep.Old.Path), modfile.AutoQuote(rep.New.Path)
+		sb.WriteString("replace " + mod.FormatReplaceEntry(rep) + "\n")
+	}
+
+	return sb.String()
+}
+
+// goReplacesOf returns the replace directives of galaMod for Go modules: every
+// one but those for a module of managed, which the build workspace replaces
+// itself (the standard library packages and the GALA modules, pointed at their
+// extracted or transpiled source).
+func goReplacesOf(galaMod *mod.File, managed map[string]bool) []mod.Replace {
+	if galaMod == nil {
+		return nil
+	}
+	var reps []mod.Replace
+	for _, rep := range galaMod.Replace {
+		if !managed[rep.Old.Path] {
+			reps = append(reps, rep)
+		}
+	}
+	return reps
+}
+
+// galaManagedModules returns the modules the build workspace's go.mod
+// replaces itself: the standard library packages, and the GALA modules
+// galaReqs, by require path and by internal module path.
+func (g *GoModGenerator) galaManagedModules(galaReqs []mod.Require, internalModulePaths map[string]string) map[string]bool {
+	managed := make(map[string]bool, len(StdlibPackages)+2*len(galaReqs))
+	for _, pkg := range StdlibPackages {
+		managed[StdlibImportPaths[pkg]] = true
+	}
+	for _, req := range galaReqs {
+		managed[req.Path] = true
+		managed[g.effectiveModulePath(req.Path, internalModulePaths)] = true
+	}
+	return managed
+}
+
+// GoReplaces returns the replace directives of galaMod that the build
+// workspace's go.mod applies to Go modules (see GenerateGoMod).
+func (g *GoModGenerator) GoReplaces(galaMod *mod.File) []mod.Replace {
+	galaReqs, _ := g.workspaceRequires(galaMod)
+	return goReplacesOf(galaMod, g.galaManagedModules(galaReqs, g.resolveInternalModulePaths(galaMod, galaReqs)))
+}
+
+// fileFingerprint returns a short hash of the file at path, or "none" when it
+// cannot be read.
+func fileFingerprint(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "none"
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
+}
+
+// workspaceRequires returns the GALA and the Go modules the build workspace
+// requires: galaMod's, and those of its GALA dependencies, transitively.
+func (g *GoModGenerator) workspaceRequires(galaMod *mod.File) (galaReqs, goReqs []mod.Require) {
 	// Separate GALA and Go dependencies
 	if galaMod != nil {
 		for _, req := range galaMod.Require {
@@ -204,105 +338,7 @@ func (g *GoModGenerator) GenerateGoMod(galaMod *mod.File, stdlibVersion string, 
 			galaReqs = append(galaReqs, req)
 		}
 	}
-
-	// Build mapping from require path (GitHub URL) -> internal module path
-	// by reading each dep's gala.mod. The transpiled Go code uses the internal
-	// module path for imports, so the go.mod must use it too.
-	internalModulePaths := g.resolveInternalModulePaths(galaMod, galaReqs)
-
-	// Write require block
-	sb.WriteString("require (\n")
-
-	// Stdlib requires
-	for _, importPath := range stdlibReqs {
-		sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", importPath))
-	}
-
-	// GALA package requires — use internal module path
-	for _, req := range galaReqs {
-		modPath := g.effectiveModulePath(req.Path, internalModulePaths)
-		sb.WriteString(fmt.Sprintf("\t%s v0.0.0\n", modPath))
-	}
-
-	// Go package requires (including transitive)
-	for _, req := range goReqs {
-		sb.WriteString(fmt.Sprintf("\t%s %s\n", req.Path, req.Version))
-	}
-
-	sb.WriteString(")\n\n")
-
-	// Write replace directives with absolute paths
-	sb.WriteString("// Replace directives using absolute paths to global cache\n")
-
-	// The modules replaced below, which gala.mod's own replaces must not
-	// replace a second time.
-	replaced := make(map[string]bool)
-
-	// Stdlib replaces
-	stdlibDir := g.config.StdlibVersionDir(stdlibVersion)
-	for _, pkg := range StdlibPackages {
-		importPath := StdlibImportPaths[pkg]
-		replaced[importPath] = true
-		absPath := filepath.Join(stdlibDir, pkg)
-		// Convert to forward slashes for go.mod compatibility
-		absPath = filepath.ToSlash(absPath)
-		sb.WriteString(fmt.Sprintf("replace %s => %s\n", importPath, absPath))
-	}
-
-	sb.WriteString("\n")
-
-	// GALA package replaces — use internal module path
-	for _, req := range galaReqs {
-		modPath := g.effectiveModulePath(req.Path, internalModulePaths)
-		replaced[req.Path], replaced[modPath] = true, true
-		if transpiledDeps != nil {
-			if dir, ok := transpiledDeps[modPath]; ok {
-				// Use transpiled directory in workspace
-				absPath := filepath.ToSlash(dir)
-				sb.WriteString(fmt.Sprintf("replace %s => %s\n", modPath, absPath))
-				continue
-			}
-		}
-		// Fallback to source cache (pure Go package or no transpilation needed).
-		// effectiveDepDir consults replace directives so a local replace still
-		// wins even when the dep is not transpiled (e.g. pure-Go library).
-		absPath := filepath.ToSlash(g.effectiveDepDir(galaMod, req))
-		sb.WriteString(fmt.Sprintf("replace %s => %s\n", modPath, absPath))
-	}
-
-	// Go modules are fetched into GOMODCACHE, except where gala.mod replaces
-	// one. The workspace is the main module of the build, the only one whose
-	// replace directives Go applies, so gala.mod's are written here.
-	for _, rep := range g.goReplaces(galaMod, replaced) {
-		sb.WriteString("replace " + mod.FormatReplaceEntry(rep) + "\n")
-	}
-
-	return sb.String()
-}
-
-// goReplaces returns the replace directives of galaMod for Go modules: every
-// one but those for a module the workspace replaces already (replaced): the
-// standard library packages and the GALA modules, which GenerateGoMod points
-// at their extracted or transpiled source. A directory replacement is resolved
-// against the project directory, since the workspace's go.mod is elsewhere,
-// and quoted where go.mod needs it (a project directory with a space in its
-// name).
-func (g *GoModGenerator) goReplaces(galaMod *mod.File, replaced map[string]bool) []mod.Replace {
-	if galaMod == nil {
-		return nil
-	}
-	var reps []mod.Replace
-	for _, rep := range galaMod.Replace {
-		if replaced[rep.Old.Path] {
-			continue
-		}
-		if rep.New.IsLocal() {
-			rep.New.Path = filepath.ToSlash(replacementDir(g.projectDir, rep.New.Path))
-		}
-		rep.Old.Path, rep.New.Path = modfile.AutoQuote(rep.Old.Path), modfile.AutoQuote(rep.New.Path)
-		reps = append(reps, rep)
-	}
-	return reps
+	return galaReqs, goReqs
 }
 
 // resolveInternalModulePaths reads each GALA dependency's gala.mod to discover

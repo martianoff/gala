@@ -48,8 +48,23 @@ func ReadGoMod(path string) (*modfile.File, error) {
 // A requirement or replace of a GALA standard library package is left out,
 // and returned in skipped with the reason: gala build always provides those
 // packages itself. So is a replace whose path has a space in it, which
-// gala.mod has no way to write.
+// gala.mod has no way to write, with the requirement it applies to: its
+// version, often a placeholder for a directory, means nothing without it.
 func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, replaces []mod.Replace, skipped []string) {
+	all := &mod.File{}
+	var replacesSkipped []string
+	for _, rep := range goModReplaces(goMod) {
+		switch {
+		case strings.HasPrefix(rep.Old.Path, GalaModulePrefix):
+			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (a package of the GALA module, which gala build provides itself)", rep.Old.Path))
+			continue
+		case unwritableReplace(rep):
+			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)", rep.Old.Path))
+		default:
+			replaces = append(replaces, rep)
+		}
+		all.Replace = append(all.Replace, rep)
+	}
 	reqs = make([]mod.Require, 0, len(goMod.Require))
 	for _, r := range goMod.Require {
 		path, ver := r.Mod.Path, r.Mod.Version
@@ -59,19 +74,19 @@ func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, replaces []mod.R
 			skipped = append(skipped, fmt.Sprintf("%s %s (a package of the GALA module, which gala build provides itself)", path, ver))
 			continue
 		}
+		if rep, ok := all.ReplaceFor(path, ver); ok && unwritableReplace(rep) {
+			skipped = append(skipped, fmt.Sprintf("%s %s (go.mod replaces it with a path gala.mod cannot hold)", path, ver))
+			continue
+		}
 		reqs = append(reqs, mod.Require{Path: path, Version: ver, Indirect: r.Indirect, Go: true})
 	}
-	for _, rep := range goModReplaces(goMod) {
-		switch {
-		case strings.HasPrefix(rep.Old.Path, GalaModulePrefix):
-			skipped = append(skipped, fmt.Sprintf("replace %s (a package of the GALA module, which gala build provides itself)", rep.Old.Path))
-		case strings.ContainsFunc(rep.New.Path, unicode.IsSpace):
-			skipped = append(skipped, fmt.Sprintf("replace %s (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)", rep.Old.Path))
-		default:
-			replaces = append(replaces, rep)
-		}
-	}
-	return reqs, replaces, skipped
+	return reqs, replaces, append(skipped, replacesSkipped...)
+}
+
+// unwritableReplace reports whether gala.mod cannot hold rep: its replacement
+// path has a space in it.
+func unwritableReplace(rep mod.Replace) bool {
+	return strings.ContainsFunc(rep.New.Path, unicode.IsSpace)
 }
 
 // goModReplaces returns the replace directives of f. It reads f's syntax

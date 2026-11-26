@@ -500,18 +500,23 @@ func TestReplaceFor(t *testing.T) {
 	f, err := Parse("module example.com/app\n\nreplace (\n\texample.com/x => ../any\n\texample.com/x v1.2.0 => ../exact\n)\n")
 	assert.NoError(t, err)
 
-	rep, ok := f.ReplaceFor("example.com/x", "v1.2.0")
-	assert.True(t, ok)
-	assert.Equal(t, "../exact", rep.New.Path)
-
-	rep, ok = f.ReplaceFor("example.com/x", "v1.0.0")
-	assert.True(t, ok)
-	assert.Equal(t, "../any", rep.New.Path)
-
-	_, ok = f.ReplaceFor("example.com/y", "v1.0.0")
-	assert.False(t, ok)
-
-	var none *File
-	_, ok = none.ReplaceFor("example.com/x", "v1.0.0")
-	assert.False(t, ok)
+	tests := []struct {
+		name    string
+		file    *File
+		path    string
+		version string
+		want    string // the replacement path; "" for no replace
+	}{
+		{"exact version wins", f, "example.com/x", "v1.2.0", "../exact"},
+		{"any version", f, "example.com/x", "v1.0.0", "../any"},
+		{"no replace for the path", f, "example.com/y", "v1.0.0", ""},
+		{"nil file", nil, "example.com/x", "v1.0.0", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rep, ok := tt.file.ReplaceFor(tt.path, tt.version)
+			assert.Equal(t, tt.want != "", ok)
+			assert.Equal(t, tt.want, rep.New.Path)
+		})
+	}
 }

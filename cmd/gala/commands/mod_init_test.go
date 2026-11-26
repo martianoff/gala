@@ -67,7 +67,8 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 		{
 			name: "a replace block, a version-limited replace, and a directive newer than x/mod",
 			goMod: "module example.com/app\n\ngo 1.25\n\nignore ./node_modules\n\n" +
-				"require (\n\texample.com/old v1.2.0\n\t\"example.com/quoted\" v1.0.0\n\texample.com/pinned v1.0.0\n)\n\n" +
+				"require (\n\texample.com/old v1.2.0\n\t\"example.com/quoted\" v1.0.0\n\texample.com/pinned v1.0.0\n" +
+				"\texample.com/spaced v0.0.0-00010101000000-000000000000\n)\n\n" +
 				"replace (\n\texample.com/old v1.0.0 => ../old\n\t\"example.com/quoted\" => example.com/fork v1.1.0\n)\n\n" +
 				"replace example.com/pinned v1.0.0 => ../pinned\n\n" +
 				"replace example.com/spaced => \"../my dir\"\n",
@@ -81,7 +82,10 @@ func TestGoRequirementsOfGoMod(t *testing.T) {
 				{Old: mod.ModuleVersion{Path: "example.com/quoted"}, New: mod.ModuleVersion{Path: "example.com/fork", Version: "v1.1.0"}},
 				{Old: mod.ModuleVersion{Path: "example.com/pinned", Version: "v1.0.0"}, New: mod.ModuleVersion{Path: "../pinned"}},
 			},
+			// The requirement the unwritable replace applies to is left out
+			// with it: its placeholder version cannot be downloaded.
 			wantSkipped: []string{
+				"example.com/spaced v0.0.0-00010101000000-000000000000 (go.mod replaces it with a path gala.mod cannot hold)",
 				"replace example.com/spaced (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)",
 			},
 		},

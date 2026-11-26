@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -338,9 +339,13 @@ func checkProject(env Env) []Check {
 	if len(drift) == 0 {
 		return append(checks, ok("go.mod", "Go dependencies match gala.mod"))
 	}
+	hint := "run gala mod add <path>@<version> --go with the version go.mod requires"
+	if slices.ContainsFunc(drift, func(d string) bool { return strings.HasPrefix(d, "replace ") }) {
+		hint += ", and give gala.mod go.mod's replace directives"
+	}
 	return append(checks, problem(Warn, "go.mod",
 		fmt.Sprintf("gala.mod and go.mod disagree on %d Go dependencies: %s", len(drift), summarize(drift, 3)),
-		"run gala mod add <path>@<version> --go with the version go.mod requires, and give gala.mod go.mod's replace directives", anchorModDrift))
+		hint, anchorModDrift))
 }
 
 // modDrift lists the Go dependencies gala.mod and go.mod disagree on. gala
