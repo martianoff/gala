@@ -2,6 +2,7 @@ package test
 
 import (
     "os"
+    "slices"
     "time"
 )
 
@@ -89,16 +90,7 @@ func frame(line string) {
 // test2json takes what ^V starts as framing even inside a line, where it
 // lands when a test's output has no trailing newline, and drops the ^V; Go's
 // testing package marks its framing the same way.
-val framing = test2jsonFraming()
-
-func test2jsonFraming() string {
-    for i := 1; i < os.Args.Size(); i++ {
-        if os.Args[i] == "-test.v=test2json" {
-            return "\x16"
-        }
-    }
-    ""
-}
+val framing = if (slices.Contains(os.Args, "-test.v=test2json")) "\x16" else ""
 
 // runTest runs a test function with panic recovery.
 // If the function panics, the panic is caught and reported as a test failure.
