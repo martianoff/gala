@@ -453,6 +453,16 @@ func TestModDrift(t *testing.T) {
 			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
 		},
 		{
+			name:    "gala.mod standing in for an unwritable exact-version replace for every version is not drift",
+			galaMod: "require a.com/x v1.0.0 // go\n\nreplace a.com/x => ../ab",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
+		},
+		{
+			name:    "gala.mod standing in for an unwritable replace for every version at the required one is not drift",
+			galaMod: "require a.com/x v0.0.0 // go\n\nreplace a.com/x v0.0.0 => ../mydir",
+			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
+		},
+		{
 			name:    "gala.mod standing in for an unwritable replace no requirement uses is not drift",
 			galaMod: "require a.com/x v1.2.0 // go\n\nreplace a.com/x v1.0.0 => ../ab",
 			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
