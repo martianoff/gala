@@ -639,6 +639,11 @@ def isCompound : Spec.Expr → Bool
   | .ifExpr .. | .ifStmt _ (.block _) (some _) | .block _ | .ret (some _) => true
   | _ => false
 
+/-- A block. -/
+def isBlock : Spec.Expr → Bool
+  | .block _ => true
+  | _ => false
+
 /-- The tail of `x`: `lowerT`'s for a compound one, else `return` of the expression. Both
     results are passed in, so the recursive calls stay on `x`. -/
 def armOf (x : Spec.Expr) (t : Unit → Option (Kind × List Stmt)) (e : Unit → Option (Kind × Expr)) :
@@ -723,11 +728,13 @@ def lowerT (K : Nat) (sg : Sigs) (r : Option Kind) (κ : String → Option Kind)
     | some (k, le) => if some k = r then some (k, [.ret [le]]) else none
     | none => none
   | _ => none
-/-- A block's elements as a tail: its statements, then its last element's tail. -/
+/-- A block's elements as a tail: its statements, then its last element's tail. The last
+    element is no block: its statements would join the enclosing Go block, where a name it
+    declares again would be redeclared (Go keeps the block; that shape is not lowered). -/
 def lowerTs (K : Nat) (sg : Sigs) (r : Option Kind) (κ : String → Option Kind) : List Spec.Expr →
     Option (Kind × List Stmt)
   | [] => none
-  | [e] => armOf e (fun _ => lowerT K sg r κ e) (fun _ => lowerC K sg κ e)
+  | [e] => if isBlock e then none else armOf e (fun _ => lowerT K sg r κ e) (fun _ => lowerC K sg κ e)
   | s :: s' :: ss => do
     let (κ₁, l) ← lowerS3 K sg r κ s
     let (k, ls) ← lowerTs K sg r κ₁ (s' :: ss)
@@ -769,6 +776,13 @@ end
 def tailOf (K : Nat) (sg : Sigs) (r : Option Kind) (κ : String → Option Kind) (e : Spec.Expr) :
     Option (Kind × List Stmt) :=
   armOf e (fun _ => lowerT K sg r κ e) (fun _ => lowerC K sg κ e)
+
+theorem lowerTs_one {K : Nat} {sg : Sigs} {r : Option Kind} {κ : String → Option Kind} {e : Spec.Expr}
+    {p : Kind × List Stmt} (h : lowerTs K sg r κ [e] = some p) : tailOf K sg r κ e = some p := by
+  simp only [lowerTs] at h
+  split at h
+  · cases h
+  · exact h
 
 /-- The parameters' kinds, as the body sees them. -/
 def paramKinds (xks : List (String × Kind)) : String → Option Kind :=
@@ -3040,7 +3054,7 @@ theorem tsSim_of (d : Nat) (ihS : StmtSim ds cx P K sg d) (ihT : TailSim ds cx P
     cases rest with
     | nil =>
       rw [evalBlock_one]
-      exact resT_mono (fun a b h => ⟨[], by simp [h]⟩) (ihT r κ st k ls hl s g env hi hsg N hN)
+      exact resT_mono (fun a b h => ⟨[], by simp [h]⟩) (ihT r κ st k ls (lowerTs_one hl) s g env hi hsg N hN)
     | cons st' rest' =>
       simp only [lowerTs, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
         Option.some.injEq] at hl
@@ -3477,7 +3491,13 @@ theorem lowerT_mono (hKK : K ≤ K') (r : Option Kind) (κ : String → Option K
 theorem lowerTs_mono (hKK : K ≤ K') (r : Option Kind) (κ : String → Option Kind) : ∀ (ss : List Spec.Expr)
     (p : Kind × List GoCore.Full.Stmt), lowerTs K sg r κ ss = some p → lowerTs K' sg r κ ss = some p
   | [], _, h => by simp [lowerTs] at h
-  | [e], p, h => armOf_mono (lowerT_mono hKK r κ e) (lowerC_mono hKK κ e) p h
+  | [e], p, h => by
+    simp only [lowerTs] at h ⊢
+    split at h
+    · cases h
+    · rename_i hb
+      simp only [hb]
+      exact armOf_mono (lowerT_mono hKK r κ e) (lowerC_mono hKK κ e) p h
   | st :: st' :: ss, p, h => by
     simp only [lowerTs, Option.bind_eq_bind, Option.bind_eq_some_iff] at h ⊢
     obtain ⟨⟨κ₁, l⟩, h1, q, h2, h3⟩ := h

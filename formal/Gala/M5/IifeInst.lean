@@ -2,7 +2,7 @@
   # M5, step 3b: the IIFE lowering on the transpiler's shapes, and a typed IIFE run
 
   The reference lowering of `if` used as a value (`lowerC`'s IIFE, `tailOf`'s tail `if`)
-  computed on four functions, each next to the Go the transpiler emits for it (`gala
+  computed on five functions, each next to the Go the transpiler emits for it (`gala
   transpile`, built from master, `//line` comments dropped); and `calls_correct` on
   `(if (true) 1 else 2) + 3`, every hypothesis discharged, galaspec's run computed to end
   with `4`.
@@ -191,6 +191,14 @@ theorem armNest_lowerBody : lowerBody 11 shapeSg armNestF = some armNestG := rfl
     the function literal in Go. -/
 theorem retInArm_not_lowered :
     lowerC 11 shapeSg (fun _ => none) (.ifExpr (.lit (.bool true)) (.block [.ret (some (iL 1)), iL 2]) (iL 3)) = none :=
+  rfl
+
+/-- A block whose last element is a block is not lowered: the inner block's statements
+    would join the outer Go block, and `val t` declared in both would be redeclared there. -/
+theorem nestedBlock_not_lowered :
+    lowerC 11 shapeSg (fun _ => none) (.ifExpr (.lit (.bool true))
+      (.block [.decl .val ["t"] false none [iL 1], .block [.decl .val ["t"] false none [iL 2], .name "t"]])
+      (iL 3)) = none :=
   rfl
 
 /-! ## A typed IIFE, run: `(if (true) 1 else 2) + 3`
