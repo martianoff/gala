@@ -92,17 +92,19 @@ func (b *Builder) replacedGoModules(workspaceGoMod *modfile.File) []string {
 }
 
 // resolvedGoRequires returns a tidied workspace go.mod's requirements,
-// leaving out modules replaced by a local directory.
+// leaving out modules replaced by a local directory at the version required.
 func resolvedGoRequires(f *modfile.File) []GoRequire {
-	local := map[string]bool{}
+	replaces := &mod.File{}
 	for _, r := range f.Replace {
-		if r.New.Version == "" { // a directory replacement
-			local[r.Old.Path] = true
-		}
+		replaces.Replace = append(replaces.Replace, mod.Replace{
+			Old: mod.ModuleVersion{Path: r.Old.Path, Version: r.Old.Version},
+			New: mod.ModuleVersion{Path: r.New.Path, Version: r.New.Version},
+		})
 	}
 	var reqs []GoRequire
 	for _, r := range f.Require {
-		if !local[r.Mod.Path] {
+		// A replacement without a version is a directory.
+		if rep, ok := replaces.ReplaceFor(r.Mod.Path, r.Mod.Version); !ok || rep.New.Version != "" {
 			reqs = append(reqs, GoRequire{Path: r.Mod.Path, Version: r.Mod.Version, Indirect: r.Indirect})
 		}
 	}

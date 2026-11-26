@@ -442,6 +442,17 @@ func TestModDrift(t *testing.T) {
 			},
 		},
 		{
+			name:    "a GALA package go.mod replaces with a path with a space is not drift",
+			galaMod: "",
+			goMod:   "require martianoff/gala/std v0.0.0\n\nreplace martianoff/gala/std => \"../gala std\"",
+		},
+		{
+			name:    "a requirement a writable exact-version replace applies to, beside an unwritable one, is listed once",
+			galaMod: "replace a.com/x v1.0.0 => ../ok",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x => \"../a b\"\n\nreplace a.com/x v1.0.0 => ../ok",
+			want:    []string{"a.com/x v1.0.0 (go.mod only)"},
+		},
+		{
 			name:    "gala.mod Go dependency missing from go.mod",
 			galaMod: "require a.com/x v1.0.0 // go",
 			goMod:   "",

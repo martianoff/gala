@@ -340,7 +340,9 @@ func checkProject(env Env) []Check {
 		return append(checks, ok("go.mod", "Go dependencies match gala.mod"))
 	}
 	hint := "run gala mod add <path>@<version> --go with the version go.mod requires"
-	if slices.ContainsFunc(drift, func(d string) bool { return strings.HasPrefix(d, "replace ") }) {
+	if slices.ContainsFunc(drift, func(d string) bool {
+		return strings.HasPrefix(d, "replace ") && !strings.HasSuffix(d, unwritableNote)
+	}) {
 		hint += ", and give gala.mod go.mod's replace directives"
 	}
 	return append(checks, problem(Warn, "go.mod",
@@ -366,10 +368,17 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 	}
 	var drift []string
 	wanted, wantedReplaces, _ := build.GoRequirementsOf(goMod)
-	unwritable := build.UnwritableGoModReplaces(goMod)
+	// A module go.mod replaces with a path gala.mod cannot hold: gala.mod
+	// needs a replace of it with another path, and its requirements still
+	// count.
+	unwritable, unwritableReqs := build.UnwritableGoModReplaces(goMod)
 	drift = append(drift, replaceDrift(galaMod, wantedReplaces, unwritable)...)
-	drift = append(drift, unwritableDrift(galaMod, goMod, unwritable)...)
-	for _, r := range wanted {
+	for _, path := range unwritable {
+		if !slices.ContainsFunc(galaMod.Replace, func(r mod.Replace) bool { return r.Old.Path == path }) {
+			drift = append(drift, fmt.Sprintf("replace %s %s", path, unwritableNote))
+		}
+	}
+	for _, r := range append(wanted, unwritableReqs...) {
 		switch galaVer, found := inGala[r.Path]; {
 		case !found && !r.Indirect:
 			drift = append(drift, fmt.Sprintf("%s %s (go.mod only)", r.Path, r.Version))
@@ -395,7 +404,7 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 // A replace of a GALA module in gala.mod is not drift: go.mod has no reason to
 // carry it. Nor is one of a module go.mod replaces with a path gala.mod cannot
 // hold (unwritable): gala.mod has to use another path.
-func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable map[mod.ModuleVersion]bool) []string {
+func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable []string) []string {
 	inGala := make(map[mod.Replace]bool)
 	for _, r := range galaMod.Replace {
 		inGala[r] = true
@@ -409,46 +418,15 @@ func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace, unwritable map[mo
 		}
 	}
 	for _, r := range galaMod.GoReplaces() {
-		if !inGo[r] && !unwritable[r.Old] {
+		if !inGo[r] && !slices.Contains(unwritable, r.Old.Path) {
 			drift = append(drift, fmt.Sprintf("replace %s (gala.mod only)", mod.FormatReplaceEntry(r)))
 		}
 	}
 	return drift
 }
 
-// unwritableDrift lists, for each module go.mod replaces with a path gala.mod
-// cannot hold (unwritable), what gala.mod lacks of it: a replace of its own,
-// and the requirement go.mod has, at go.mod's version. GoRequirementsOf leaves
-// both out, so modDrift's other comparisons do not see them.
-func unwritableDrift(galaMod *mod.File, goMod *modfile.File, unwritable map[mod.ModuleVersion]bool) []string {
-	var drift []string
-	for old := range unwritable {
-		if !slices.ContainsFunc(galaMod.Replace, func(r mod.Replace) bool { return r.Old.Path == old.Path }) {
-			drift = append(drift, fmt.Sprintf("replace %s (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)", old.Path))
-		}
-	}
-	covered := func(path, ver string) bool {
-		for old := range unwritable {
-			if old.Path == path && (old.Version == "" || old.Version == ver) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, r := range goMod.Require {
-		path, ver := r.Mod.Path, r.Mod.Version
-		if !covered(path, ver) {
-			continue
-		}
-		switch galaReq := galaMod.GetRequire(path); {
-		case galaReq == nil:
-			drift = append(drift, fmt.Sprintf("%s %s (go.mod only)", path, ver))
-		case galaReq.Version != ver:
-			drift = append(drift, fmt.Sprintf("%s (gala.mod %s, go.mod %s)", path, galaReq.Version, ver))
-		}
-	}
-	return drift
-}
+// unwritableNote ends the drift line of a go.mod replace gala.mod cannot hold.
+const unwritableNote = "(go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)"
 
 // summarize joins the first max items and counts the rest.
 func summarize(items []string, max int) string {

@@ -22,7 +22,12 @@ require (
 	example.com/galadep v1.0.0
 )
 
-require golang.org/x/sys v0.26.0 // indirect
+require (
+	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/stale v1.2.0 // indirect
+)
+
+replace golang.org/x/stale v1.0.0 => ../stale
 
 replace martianoff/gala/std => /home/u/.gala/stdlib/v0.87.0/std
 
@@ -35,7 +40,8 @@ replace golang.org/x/term => golang.org/x/term v0.25.1
 	require.Equal(t, []GoRequire{
 		{Path: "golang.org/x/term", Version: "v0.25.0"},
 		{Path: "golang.org/x/sys", Version: "v0.26.0", Indirect: true},
-	}, resolvedGoRequires(f), "modules served from local directories are left out; an indirect requirement stays marked")
+		{Path: "golang.org/x/stale", Version: "v1.2.0", Indirect: true},
+	}, resolvedGoRequires(f), "modules served from local directories are left out, but not one whose directory replace is for another version; an indirect requirement stays marked")
 }
 
 // The Go modules gala export refuses are those the build needs, as the tidied
