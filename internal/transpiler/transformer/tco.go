@@ -393,11 +393,13 @@ func (t *galaASTTransformer) buildTailCallStep(
 }
 
 // isLiteralExpr reports whether e is a basic literal, possibly signed or
-// parenthesized: `5`, `-1`, `(0.5)`.
+// parenthesized, or nil: `5`, `-1`, `(0.5)`, `nil`.
 func isLiteralExpr(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.BasicLit:
 		return true
+	case *ast.Ident:
+		return e.Name == "nil"
 	case *ast.ParenExpr:
 		return isLiteralExpr(e.X)
 	case *ast.UnaryExpr:

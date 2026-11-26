@@ -80,6 +80,23 @@ func main() {
 			mustMiss: []string{"var _tmp_1 time.Duration", "_tmp_1 := 5"},
 		},
 		{
+			// nil for a parameter whose type a parameter hides goes straight
+			// into the assignment, where it takes the parameter's type.
+			name: "nil for a parameter named like its type",
+			input: `package main
+
+struct state(n int)
+
+func p(state *state, n int) int = if (n == 0) 1 else p(nil, n - 1)
+
+func main() {
+    Println(p(nil, 2))
+}
+`,
+			mustHave: []string{"state, n = nil, _tmp_1"},
+			mustMiss: []string{":= nil"},
+		},
+		{
 			// A parameter named like a predeclared type is renamed
 			// (`_gala_byte`), so it hides nothing: the temporary is typed.
 			name: "a parameter named like a predeclared type",

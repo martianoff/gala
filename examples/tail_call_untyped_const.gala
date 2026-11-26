@@ -21,6 +21,8 @@ func run(state state, k int) int = if (k == 0) state.n else run(state, k - 1)
 
 func wait(time time.Duration, n int) time.Duration = if (n == 0) time else wait(5, n - 1)
 
+func depth(state *state, n int) int = if (n == 0) 1 else depth(nil, n - 1)
+
 // A parameter named like a predeclared type is renamed in Go, so its
 // temporary is typed too.
 func shifted(byte byte, n int) byte = if (n == 0) byte else shifted(1 << n, n - 1)
@@ -32,4 +34,5 @@ func main() {
     Println(run(state(7), 2))
     Println(wait(time.Second, 2))
     Println(shifted(0, 3))
+    Println(depth(nil, 2))
 }
