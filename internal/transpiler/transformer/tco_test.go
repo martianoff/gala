@@ -58,8 +58,8 @@ func main() {
     Println(run(state(7), 2))
 }
 `,
-			mustHave: []string{"var _tmp_1 int = k - 1", "state, k = state, _tmp_1"},
-			mustMiss: []string{"var _tmp_1 state", "var _tmp_2 state"},
+			mustHave: []string{"_tmp_1 := state", "var _tmp_2 int = k - 1"},
+			mustMiss: []string{"var _tmp_1 state"},
 		},
 		{
 			// A parameter hides the package its own type is spelled with:
@@ -78,6 +78,21 @@ func main() {
 `,
 			mustHave: []string{"var _tmp_1 int = n - 1", "time, n = 5, _tmp_1"},
 			mustMiss: []string{"var _tmp_1 time.Duration", "_tmp_1 := 5"},
+		},
+		{
+			// An argument that is no literal keeps an untyped temporary there.
+			name: "a non-literal argument for a parameter named like its type's package",
+			input: `package main
+
+import "time"
+
+func wait(time time.Duration, n int) time.Duration = if (n == 0) time else wait(time + time, n - 1)
+
+func main() {
+    Println(wait(time.Second, 2))
+}
+`,
+			mustHave: []string{"_tmp_1 := time + time", "var _tmp_2 int = n - 1", "time, n = _tmp_1, _tmp_2"},
 		},
 		{
 			// Positive: the tail self-call becomes a loop; the else branch does

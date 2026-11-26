@@ -7,7 +7,7 @@ import "time"
 // `1 << i`) takes that type rather than int (#1426). A parameter named like
 // its type (`state state`) or its type's package (`time time.Duration`) hides
 // that name in the body: such an argument is assigned directly when it is a
-// constant, and through an untyped temporary otherwise.
+// literal, and through an untyped temporary otherwise.
 
 struct state(n int)
 

@@ -329,7 +329,15 @@ func (t *galaASTTransformer) buildTailCallStep(
 		if err := t.checkSlotFill(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
 			return nil, false, err
 		}
-		arg = t.wrapWithAssertion(arg, tc.paramTypes[i])
+		hidden := namesAny(tc.paramTypes[i], tc.paramNames)
+		if asserted := t.wrapWithAssertion(arg, tc.paramTypes[i]); asserted != arg {
+			// The assertion spells the parameter's type in the body; where a
+			// parameter hides it, keep the real recursion.
+			if hidden {
+				return nil, false, nil
+			}
+			arg = asserted
+		}
 		// A closure inside a tail-call argument would capture the loop-carried
 		// parameter by reference; once that parameter is reassigned on the next
 		// iteration, the escaped closure observes the mutated value — diverging
@@ -347,10 +355,10 @@ func (t *galaASTTransformer) buildTailCallStep(
 		// parameter hides a type or package of its name: `state state`,
 		// `time time.Duration`, or `fmt int` beside `s fmt.Stringer`). Such
 		// an argument goes straight into the parameter assignment when it is
-		// inert (a constant, say: evaluating it later gives the same value);
+		// a literal (it neither panics nor depends on when it runs);
 		// otherwise it keeps a `:=` temporary.
-		if namesAny(tc.paramTypes[i], tc.paramNames) {
-			if t.inert(arg) {
+		if hidden {
+			if isLiteralExpr(arg) {
 				rhsExprs[i] = arg
 				continue
 			}
@@ -365,7 +373,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 	}
 
 	// Simultaneous reassignment of every parameter from its temporary (or
-	// its inert argument).
+	// its literal argument).
 	lhs := make([]ast.Expr, len(tc.paramNames))
 	rhs := make([]ast.Expr, len(tc.paramNames))
 	for i := range tc.paramNames {
@@ -379,6 +387,20 @@ func (t *galaASTTransformer) buildTailCallStep(
 	stmts = append(stmts, &ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: rhs})
 	stmts = append(stmts, &ast.BranchStmt{Tok: token.CONTINUE})
 	return stmts, true, nil
+}
+
+// isLiteralExpr reports whether e is a basic literal, possibly signed or
+// parenthesized: `5`, `-1`, `(0.5)`.
+func isLiteralExpr(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.BasicLit:
+		return true
+	case *ast.ParenExpr:
+		return isLiteralExpr(e.X)
+	case *ast.UnaryExpr:
+		return (e.Op == token.SUB || e.Op == token.ADD) && isLiteralExpr(e.X)
+	}
+	return false
 }
 
 // namesAny reports whether the type expression typ refers to any of names: a
