@@ -105,7 +105,10 @@
     (identifier) @local.definition.var
     (call_expression
       arguments: (argument_list
-        (identifier) @local.definition.var))
+        [
+          (identifier) @local.definition.var
+          (rest_pattern (identifier) @local.definition.var)
+        ]))
     (tuple_expression
       (identifier) @local.definition.var)
   ])

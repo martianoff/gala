@@ -86,6 +86,9 @@ static bool skip_space_and_comments(TSLexer *lexer, bool *newline, bool *comment
         }
         if (lexer->lookahead == '\n') {
           *newline = true;
+          if (*comment) {
+            *newline_after_comment = true;
+          }
         }
         if (lexer->lookahead == '*') {
           lexer->advance(lexer, true);

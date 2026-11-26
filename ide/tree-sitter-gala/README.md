@@ -213,9 +213,14 @@ script/check-queries.sh         # highlights cover gala.g4's keywords and the bu
 or, with only Docker:
 
 ```sh
-docker run --rm -v "$PWD:/w" -w /w/ide/tree-sitter-gala node:22 sh -c \
-  'npm install --global tree-sitter-cli@0.25.10 && tree-sitter generate --abi 14 && tree-sitter test && script/parse-all.sh && script/check-queries.sh'
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$PWD:/w" -w /w/ide/tree-sitter-gala node:22 sh -c \
+  'npm install --prefix /tmp/ts tree-sitter-cli@0.25.10 && export PATH=/tmp/ts/node_modules/.bin:$PATH &&
+   tree-sitter generate --abi 14 && tree-sitter test && script/parse-all.sh && script/check-queries.sh'
 ```
+
+Run it from the repository root. `--user` keeps the regenerated files yours
+rather than root's.
 
 Commit the regenerated `src/` with the change to `grammar.js`.
 
