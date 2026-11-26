@@ -2707,7 +2707,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 	// A bare name bound in scope is that binding, as for getFunction: not a Go
 	// function or a named function type that happens to share its name.
 	shadowed := false
-	if id, isIdent := fun.(*ast.Ident); isIdent {
+	if id, isIdent := ast.Unparen(fun).(*ast.Ident); isIdent {
 		shadowed = t.shadowingScope(id.Name) != nil
 	}
 
@@ -5277,7 +5277,12 @@ func (t *galaASTTransformer) goNamedFuncSignature(name string) (*transpiler.Func
 	if t.goTypeInfo == nil {
 		return nil, false
 	}
-	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
+	td := t.goTypeInfo.GetTypeData(t.goTypeKey(name))
+	if td == nil {
+		// A dot-imported one (`HandlerFunc` under `import . "net/http"`).
+		td = t.goTypeInfo.GetTypeData(t.dotImportedGoTypeKey(name))
+	}
+	if td != nil && td.Kind == "named" {
 		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
 			return &ft, len(td.TypeParams) > 0
 		}

@@ -99,6 +99,8 @@ func (t *galaASTTransformer) goOperandUnderlying(typ transpiler.Type) (transpile
 	}
 	switch td, target := t.goTypeDataThroughAliases(typ); {
 	case td == nil || len(td.TypeParams) > 0:
+	case td.Underlying != nil && td.Underlying.IsAny():
+		// The analyzer's stand-in for a struct: nothing to read through.
 	case (td.Kind == "named" || td.Kind == "alias") && td.Underlying != nil:
 		return td.Underlying, true
 	case target != nil:

@@ -146,6 +146,25 @@ func main() {
     Println(h != nil)
 }
 `, []string{"func(w http.ResponseWriter, r *http.Request)"}},
+		{"lambda in a conversion to a dot-imported Go function type", `package main
+
+import . "net/http"
+
+func main() {
+    val h = HandlerFunc((w, r) => w.WriteHeader(204))
+    Println(h != nil)
+}
+`, []string{"func(w ResponseWriter, r *Request)"}},
+		{"parenthesized call of a local shadowing a function-type alias", `package main
+
+type handler func(int) int
+
+func apply(handler func(func(string) string) string) string = (handler)((s) => s + "!")
+
+func main() {
+    Println(apply((f) => f("a")))
+}
+`, []string{"func(s string) string"}},
 		{"index of a string", `package main
 
 func main() {
