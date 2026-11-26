@@ -317,6 +317,10 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		if parenOpen < 0 || parenClose < 0 || parenClose <= parenOpen {
 			continue
 		}
+		// A group that opens after `=>` is in the arm's body, not its
+		// pattern: a `(` in it does not group a binder.
+		arrow := strings.Index(line, "=>")
+		inPattern := arrow < 0 || parenOpen < arrow
 
 		// Each binding is the first identifier of its comma-separated slot
 		// ("x" or "x int"), located by walking the slot itself: searching the
@@ -326,7 +330,8 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		for start <= parenClose {
 			end := start + strings.IndexAny(line[start:parenClose+1], ",)")
 			col := start
-			for col < end && (line[col] == ' ' || line[col] == '\t') {
+			// Parentheses around a binding only group it: `Some((x))` binds x.
+			for col < end && (line[col] == ' ' || line[col] == '\t' || (inPattern && line[col] == '(')) {
 				col++
 			}
 			nameEnd := col

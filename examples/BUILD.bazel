@@ -1924,6 +1924,13 @@ gala_exec_test(
     expected = "block_function_trailing_value.out",
 )
 
+# Parentheses in a pattern only group: `(x)` binds as `x` does
+gala_exec_test(
+    name = "parenthesized_pattern",
+    src = "parenthesized_pattern.gala",
+    expected = "parenthesized_pattern.out",
+)
+
 # A '(' that starts a line begins a new statement instead of calling the line before
 gala_exec_test(
     name = "newline_paren_statement",

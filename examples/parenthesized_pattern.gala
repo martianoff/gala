@@ -1,0 +1,34 @@
+package main
+
+// Parentheses in a pattern only group: `(p)` matches as p does.
+
+val x = 3
+
+// `(x)` binds a new x, as `x` does; it does not compare with the val x.
+func first(o Option[int]) int = o match {
+    case Some((x)) => x
+    case None() => 0
+}
+
+func name(n int) string = n match {
+    case (0) => "zero"
+    case (1 | 2) => "small"
+    case _ => "other"
+}
+
+func sum(t Tuple[int, int]) int = t match {
+    case ((a), (b)) => a + b
+}
+
+// A parenthesized binding of the whole value is the default case, as `k` is.
+func label(n int) string = n match {
+    case 0 => "zero"
+    case ((k)) => s"k=$k"
+}
+
+func main() {
+    Println(first(Some(3)), first(Some(5)), first(None()))
+    Println(name(0), name(2), name(9))
+    Println(sum((4, 5)), x)
+    Println(label(0), label(7))
+}

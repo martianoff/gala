@@ -896,6 +896,26 @@ func unwrapExpr(e native.GalaNodeRef) native.GalaNodeRef {
 	}
 }
 
+// unparenPattern is the pattern e with any parentheses around it taken off:
+// in a pattern they only group, so `(x)` binds as `x` does.
+func unparenPattern(e native.GalaNodeRef) native.GalaNodeRef {
+	for {
+		e = unwrapExpr(e)
+		if e.Kind() != native.GalaKIND_postfixExpr {
+			return e
+		}
+		px := native.PostfixExprNode{GalaNodeRef: e}
+		if len(px.AllPostfixSuffix()) != 0 || px.MATCH().Ok() {
+			return e
+		}
+		list := px.PrimaryExpr().Primary().TupleExpressionList()
+		if !list.Ok() || list.ChildCount() != 1 || list.Child(0).IsToken() {
+			return e
+		}
+		e = list.Child(0).Node()
+	}
+}
+
 // bareName is the name e is, when it is a bare identifier.
 func bareName(e native.GalaNodeRef) (string, bool) {
 	e = unwrapExpr(e)
@@ -1690,7 +1710,7 @@ func (w *walker) patternTypes(p native.PatternNode, t transpiler.Type, ts map[st
 		unknownNames(p.GalaNodeRef, ts)
 		return
 	}
-	e := unwrapExpr(ep.Expression().GalaNodeRef)
+	e := unparenPattern(ep.Expression().GalaNodeRef)
 	if e.Kind() != native.GalaKIND_postfixExpr {
 		unknownNames(p.GalaNodeRef, ts)
 		return

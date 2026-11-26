@@ -1016,7 +1016,7 @@ func mode(env Environment, limit Environment) string = env match {
 ```
 
 #### Alternative Patterns
-`p1 | p2 | …` matches when any alternative matches, at the top of a `case` or nested inside an extractor or tuple; a sealed match is exhaustive when its alternatives cover every variant. Alternatives bind no names: `case Some(n) | None()` is rejected ([GALA-E0071](/docs/errors/gala-e0071/)), so use `_` or one case per alternative. In a pattern `|` is always an alternative, also inside parentheses; match a bitwise OR with a guard (`case n if n == (FlagA | FlagB)`) or a named `val`. Parenthesize an alternative that uses `+`, `-` or `^`: `case (1 + 1) | 3`.
+`p1 | p2 | …` matches when any alternative matches, at the top of a `case` or nested inside an extractor or tuple; a sealed match is exhaustive when its alternatives cover every variant. Alternatives bind no names: `case Some(n) | None()` is rejected ([GALA-E0071](/docs/errors/gala-e0071/)), so use `_` or one case per alternative. Parentheses in a pattern only group: `(p)` matches as `p` does, so `(x)` binds. In a pattern `|` is always an alternative, also inside parentheses; match a bitwise OR with a guard (`case n if n == (FlagA | FlagB)`) or a named `val`. Parenthesize an alternative that uses `+`, `-` or `^`: `case (1 + 1) | 3`.
 ```gala
 package main
 

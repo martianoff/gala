@@ -315,6 +315,7 @@ go_test(
         "package_val_inferred_type_test.go",
         "panic_audit_test.go",
         "param_default_clause_test.go",
+        "parenthesized_pattern_test.go",
         "partial_ctor_type_args_test.go",
         "partial_type_params_test.go",
         "phantom_reexport_funconly_test.go",

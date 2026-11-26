@@ -307,6 +307,8 @@ func (t *galaASTTransformer) exprMatchesEveryValue(e patExpr, matchedType transp
 // (isPatternBinding). A name bound twice is an error the pattern's lowering
 // reports, so such a pattern is not counted.
 func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType transpiler.Type, typeKnown bool, bound map[string]bool) bool {
+	// Parentheses only group: `(x)` binds as `x` does.
+	e = unparenPattern(e)
 	text := e.text()
 	if isWildcard(text) {
 		return true
@@ -325,8 +327,6 @@ func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType
 	if !typeKnown {
 		return false
 	}
-	// `(x)` is not counted: a parenthesized name is lowered as a value to
-	// compare with, not as a binding.
 	elems, single, ok := e.parenthesized()
 	if !ok || single {
 		return false

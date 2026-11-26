@@ -952,7 +952,7 @@ func parens(x int) string {
 		if _subj == 1 || _subj == 2 {
 //line $DIR/main.gala:161
 			return "one or two"
-		} else if _subj == (3) {
+		} else if _subj == 3 {
 //line $DIR/main.gala:162
 			return "three"
 		} else {

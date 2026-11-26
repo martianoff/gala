@@ -63,6 +63,8 @@ func (t *galaASTTransformer) patternAlternatives(expr patExpr) ([]patExpr, error
 // alternatives included, or pat itself when it has none. A malformed
 // alternative pattern counts as one pattern here; lowering reports it.
 func (t *galaASTTransformer) flatAlternatives(pat patExpr) []patExpr {
+	// Parentheses only group: `(p)` is p.
+	pat = unparenPattern(pat)
 	if !strings.Contains(pat.text(), "|") {
 		return []patExpr{pat}
 	}
@@ -86,7 +88,7 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []patExpr, objExpr
 	stmts := make([][]ast.Stmt, len(alts))
 	needStmts := false
 	for i, alt := range alts {
-		if isWildcard(alt.text()) {
+		if isWildcard(unparenPattern(alt).text()) {
 			return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
 				alt.line(), alt.col(),
 				"a wildcard alternative matches everything, so the other alternatives never decide",
