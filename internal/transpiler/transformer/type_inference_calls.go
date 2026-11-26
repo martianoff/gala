@@ -480,7 +480,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			for offset := strings.Index(sel.Sel.Name, "_"); offset != -1; {
 				receiverType := pkgName + "." + sel.Sel.Name[:offset]
 				for _, methodName := range loweredMethodNames(sel.Sel.Name[offset+1:]) {
-					if result := t.resolveMethodCallType(receiverType, methodName, typeArgs, e.Args, 0); !result.IsNil() {
+					if result := t.resolveMethodCallType(receiverType, methodName, typeArgs, e.Args, e.Ellipsis.IsValid(), 0); !result.IsNil() {
 						return result
 					}
 				}
@@ -506,7 +506,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 	xTypeName := xType.String()
 	if !xType.IsNil() {
 		// Try exact type name first (non-generic types)
-		if result := t.resolveMethodCallType(xTypeName, sel.Sel.Name, typeArgs, e.Args, -1); !result.IsNil() {
+		if result := t.resolveMethodCallType(xTypeName, sel.Sel.Name, typeArgs, e.Args, e.Ellipsis.IsValid(), -1); !result.IsNil() {
 			return result
 		}
 		// Unwrap pointer types to get to the underlying type for method lookup
@@ -521,7 +521,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		// e.g., for Pair[int, string].Swap(), try looking up Pair
 		if genType, ok := underlyingType.(transpiler.GenericType); ok {
 			baseTypeName := genType.Base.String()
-			if result := t.resolveMethodCallTypeWithParams(baseTypeName, sel.Sel.Name, typeArgs, e.Args, -1, genType.Params); !result.IsNil() {
+			if result := t.resolveMethodCallTypeWithParams(baseTypeName, sel.Sel.Name, typeArgs, e.Args, e.Ellipsis.IsValid(), -1, genType.Params); !result.IsNil() {
 				return result
 			}
 		} else if wasPointer {
@@ -529,7 +529,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			// against the unwrapped type name. Methods defined with pointer
 			// receivers are registered under the base type name, not the
 			// pointer type, so *Buffer.StyleAt → Buffer.StyleAt lookup.
-			if result := t.resolveMethodCallType(underlyingType.String(), sel.Sel.Name, typeArgs, e.Args, -1); !result.IsNil() {
+			if result := t.resolveMethodCallType(underlyingType.String(), sel.Sel.Name, typeArgs, e.Args, e.Ellipsis.IsValid(), -1); !result.IsNil() {
 				return result
 			}
 		}
@@ -727,7 +727,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 			resolvedRecvTypeName = receiverType
 		}
 		for _, methodName := range loweredMethodNames(id.Name[offset+1:]) {
-			if result := t.resolveMethodCallType(resolvedRecvTypeName, methodName, typeArgs, e.Args, 0); !result.IsNil() {
+			if result := t.resolveMethodCallType(resolvedRecvTypeName, methodName, typeArgs, e.Args, e.Ellipsis.IsValid(), 0); !result.IsNil() {
 				return result
 			}
 		}

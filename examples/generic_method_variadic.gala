@@ -1,0 +1,27 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/go_interop"
+
+// A variadic method with a type parameter of its own takes it from every
+// argument its variadic parameter receives (and from a spread slice's
+// element), not only the first: `c.Last(0, 2.5)` is a float64, as in Go.
+
+struct C(N int)
+
+func (c C) Last[U any](xs ...U) U = ArrayOf(xs...).Last()
+
+func (c C) Tag[K any, U any](k K, xs ...U) Tuple[K, U] = (k, ArrayOf(xs...).Last())
+
+func main() {
+    val c = C(1)
+    val x float64 = 3.5
+    val mixed = () => c.Last(0, 2.5)
+    val typed = () => c.Last(1, x)
+    val tagged = () => c.Tag("k", 1, 2.5)
+    val one = () => c.Last(7)
+    Println(mixed(), typed(), tagged(), one())
+    val ys = SliceOf(1.5, 4.5)
+    val spread = () => c.Last(ys...)
+    Println(spread())
+}
