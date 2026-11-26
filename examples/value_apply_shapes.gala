@@ -1,0 +1,51 @@
+package main
+
+// Any value whose type has an Apply is called through it: a val's Apply
+// types a lambda argument by its parameter, and a struct field, a call's
+// result, a value given type arguments for its generic Apply and a type
+// whose no-parameter Apply is generic are called as `v.Apply(...)` written
+// out is.
+
+// Plain hands its n to the function it is called with.
+struct Plain(n int)
+
+// Apply gives f the value n.
+func (p Plain) Apply(f func(int) int) int = f(p.n)
+
+// Show brackets what it is called with.
+struct Show()
+
+// Apply brackets a.
+func (s Show) Apply[A any](a A) string = s"<$a>"
+
+// Missing yields an empty Option of the type it is asked for.
+struct Missing()
+
+// Apply is an empty Option[A].
+func (m Missing) Apply[A any]() Option[A] = None[A]()
+
+// Holder keeps both kinds of value in fields; s is a var field, which is
+// read as a plain selector rather than unwrapped.
+struct Holder(p Plain, var s Show)
+
+func makePlain(n int) Plain = Plain(n)
+
+func makeShow() Show = Show()
+
+func main() {
+    val p = Plain(10)
+    Println(p(_ + 1))
+    Println(p(f = _ * 3))
+
+    val h = Holder(Plain(2), Show())
+    Println(h.p(_ - 1))
+    Println(h.s(4))
+    Println(makePlain(5)((x) => x * x))
+    Println(makeShow()("call"))
+
+    val show = Show()
+    Println(show[int64](7))
+
+    val n Option[int] = Missing()
+    Println(n.GetOrElse(9))
+}

@@ -60,7 +60,7 @@ func (t *galaASTTransformer) nonCallableType(typ transpiler.Type, typeParams []s
 		return false
 	}
 	// A type with an Apply method is called through it
-	// (tryTransformValWithApply).
+	// (valueApplyCallee).
 	if _, hasApply := meta.Methods["Apply"]; hasApply {
 		return false
 	}
