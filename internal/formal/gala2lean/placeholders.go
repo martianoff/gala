@@ -228,14 +228,17 @@ func (g *gen) placeholderArg(e coreexport.Node, expect coreexport.Node) {
 }
 
 // nonFuncSlot reports whether t is a type that is plainly not a function
-// type: a basic type, a declared struct or sealed type, or one of std's
-// generic types, none of them a type parameter in scope.
+// type: int, int64, string, bool or any, a declared struct or sealed type,
+// or one of std's generic types, and not a name the program declares as a
+// type parameter anywhere: a callee's slot may still be written with its
+// own type parameter (a generic receiver's method keeps it), which the call
+// may make a function type.
 func (g *gen) nonFuncSlot(t coreexport.Node) bool {
 	n, ok := t.(*coreexport.TypeName)
 	if !ok || n.Package != "" {
 		return false
 	}
-	if _, param := g.tparams[n.Name]; param {
+	if _, param := g.tparams[n.Name]; param || g.typeParamNames[n.Name] {
 		return false
 	}
 	switch n.Name {
@@ -258,16 +261,34 @@ func (g *gen) uncheckedArgs(e *coreexport.Call) {
 	}
 	for _, a := range e.Args {
 		n := argNode(a)
-		if sp, ok := n.(*coreexport.Spread); ok {
-			n = sp.Value
-		}
 		if g.argChecked[n] {
 			continue
+		}
+		if sp, ok := n.(*coreexport.Spread); ok {
+			if n = sp.Value; g.argChecked[n] {
+				continue
+			}
 		}
 		if marks, _ := argMarks(n); len(marks) > 0 || g.inPlaceholder > 0 && hasPlaceholderParam(n) {
 			unsup(posOf(n), "placeholder-unchecked-arg")
 		}
 	}
+}
+
+// typeParamNames is every name program p declares as a type parameter.
+func typeParamNames(p *coreexport.Program) map[string]bool {
+	names := map[string]bool{}
+	var visit func(n coreexport.Node)
+	visit = func(n coreexport.Node) {
+		if tp, ok := n.(*coreexport.TypeParam); ok {
+			names[tp.Name] = true
+		}
+		walkChildren(n, visit)
+	}
+	for _, f := range p.Files {
+		visit(f)
+	}
+	return names
 }
 
 // markedArg reports whether a, a call argument or a parameter's default

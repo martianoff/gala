@@ -57,6 +57,9 @@ type gen struct {
 	inPlaceholder int
 	argChecked    map[coreexport.Node]bool
 	hasMarks      bool
+	// typeParamNames is every name the program declares as a type
+	// parameter, of any function, method or type (nonFuncSlot).
+	typeParamNames map[string]bool
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).

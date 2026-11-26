@@ -54,6 +54,22 @@ func TestArgMarks(t *testing.T) {
 	}
 }
 
+// TestNonFuncSlotTypeParams checks that a slot written with a name the
+// program declares as a type parameter is not known to be a non-function
+// slot, even when a struct of that name is declared too: a generic
+// receiver's method keeps its type parameter in its signature, and the call
+// may make it a function type.
+func TestNonFuncSlotTypeParams(t *testing.T) {
+	g := newGen()
+	g.structs["T"] = &coreexport.Struct{Name: "T"}
+	slot := &coreexport.TypeName{Name: "T"}
+	require.True(t, g.nonFuncSlot(slot))
+	g.typeParamNames = typeParamNames(&coreexport.Program{Files: []*coreexport.File{{
+		Decls: []coreexport.Node{&coreexport.Struct{Name: "Box", TypeParams: []coreexport.Node{&coreexport.TypeParam{Name: "T"}}}},
+	}}})
+	require.False(t, g.nonFuncSlot(slot))
+}
+
 // TestPlaceholderArgRechecks checks that placeholderArg judges an argument
 // on each visit, by the slot and context of that visit: an argument first
 // accepted is reported when it is reached again for an unknown slot, or

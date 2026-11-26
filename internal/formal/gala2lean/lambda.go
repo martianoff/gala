@@ -167,8 +167,10 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 	ft, isFunc := expect.(*coreexport.TypeFunc)
 	if isFunc && g.inPlaceholder > 0 && hasPlaceholderParam(e) {
 		// A typed context that is not an argument (a val, say) starts no
-		// placeholder lambda of its own: its `_` are the outer lambda's,
-		// and a function type there does not compile in Go.
+		// placeholder lambda of its own, so its `_` are the outer lambda's.
+		// Reported whatever it reads them in: `val f func(int) int = _`
+		// does not compile in Go, and telling it from one that does
+		// (`adder(_)`, adder taking an int) is not modelled.
 		unsup(posOf(e), "placeholder-lambda")
 	}
 	if l, ok := e.(*coreexport.Lambda); ok {
