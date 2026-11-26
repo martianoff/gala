@@ -778,10 +778,11 @@ var _ std.FieldDecoder = (*YamlDecoderImpl)(nil)
 //
 // Subset (per DESIGN.md §4.5): block-style mappings, block-style sequences,
 // plain / single-quoted / double-quoted scalars, literal (`|`) and folded
-// (`>`) block scalars with chomping and indentation indicators, comments,
-// blank lines. Indentation is spaces only. Out of scope: anchors, aliases,
-// flow-style collections other than `[]` and `{}`, custom tags, multi-line
-// plain and quoted scalars, document markers (`---`, `...`).
+// (`>`) block scalars with chomping and indentation indicators, flow
+// sequences and mappings on one line, comments, blank lines. Indentation is
+// spaces only. Out of scope: anchors, aliases, flow collections that span
+// lines or use a collection as a key, custom tags, multi-line plain and
+// quoted scalars, document markers (`---`, `...`).
 // ============================================================================
 
 type pLine struct {
@@ -1219,10 +1220,13 @@ func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
 		// such as a block scalar whose header stands on a line of its own.
 		// A scalar is the whole block, so when the block goes on below it
 		// the line was meant as a pair, and the error names it.
+		// The scalar is read first, so a flow collection that is not closed
+		// on its line reports that.
+		node := parseInlineScalar(withoutComment(first.raw))
 		if start+1 < len(lines) && lines[start+1].indent >= expectedIndent {
 			splitKeyValue(first.raw, first.lineNum)
 		}
-		return parseInlineScalar(withoutComment(first.raw)), start + 1
+		return node, start + 1
 	}
 	return parseCompactMapping(lines, start, expectedIndent, key, value)
 }
@@ -1385,8 +1389,14 @@ func splitKeyValue(line string, lineNum int) (string, string) {
 }
 
 func tryParseKeyValue(line string) (string, string, bool) {
-	if len(line) > 0 && (line[0] == '"' || line[0] == '\'') {
-		return parseQuotedKey(line)
+	if len(line) > 0 {
+		switch line[0] {
+		case '"', '\'':
+			return parseQuotedKey(line)
+		case '[', '{':
+			// A flow collection, not a key: this subset has no complex keys.
+			return "", "", false
+		}
 	}
 	ci := findKeyColon(line)
 	if ci < 0 {
@@ -1426,48 +1436,37 @@ func findKeyColon(s string) int {
 // value text s, at index from or later; -1 if there is none. A '#' starts
 // a comment at the start of s or after white space. When the value opens
 // with a quote it is a quoted scalar, and a comment can only follow its
-// closing quote; a quote anywhere else is text.
+// closing quote; a quote anywhere else is text. A value that opens a flow
+// collection keeps its comment: parseFlowCollection finds where the
+// collection ends and reads the comment after it.
 func findComment(s string, from int) int {
 	t := 0
 	for t < len(s) && (s[t] == ' ' || s[t] == '\t') {
 		t++
 	}
-	if t < len(s) && (s[t] == '"' || s[t] == '\'') {
-		end := closingQuote(s[t:])
-		if end < 0 {
-			return -1 // unterminated: the scalar parser reports it
+	if t < len(s) {
+		switch s[t] {
+		case '"', '\'':
+			end := closingQuote(s[t:])
+			if end < 0 {
+				return -1 // unterminated: the scalar parser reports it
+			}
+			from = max(from, t+end+1)
+		case '[', '{':
+			return -1
 		}
-		from = max(from, t+end+1)
 	}
 	return scanPlain(s, from, false)
 }
 
 // scanPlain returns, from index from on, the index of the '#' that starts a
 // comment, or with wantColon the index of the first ':' followed by white
-// space (or the end) before any comment; -1 if there is none. In plain text
-// a quote is text. Flow-style text ("[a, \"b # c\"]", "{...}"), which this
-// parser keeps as a string, is different: a quote inside it opens a quoted
-// item that may hold "#" or ": ", so quotes are tracked there.
+// space (or the end) before any comment; -1 if there is none. s is plain
+// text, where a quote is text.
 func scanPlain(s string, from int, wantColon bool) int {
-	// Whether s is flow text depends on its first character, not on where
-	// the scan starts.
-	t := 0
-	for t < len(s) && (s[t] == ' ' || s[t] == '\t') {
-		t++
-	}
-	flow := t < len(s) && (s[t] == '[' || s[t] == '{')
-	quote := byte(0)
 	for i := from; i < len(s); i++ {
 		c := s[i]
 		switch {
-		case quote == '"' && c == '\\':
-			i++ // an escaped character never closes the quote
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-		case flow && (c == '"' || c == '\''):
-			quote = c
 		case c == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
 			if wantColon {
 				return -1 // the rest is a comment
@@ -1518,18 +1517,14 @@ func parseInlineScalar(raw string) *yNode {
 	if s == "" || s == "~" || s == "null" || s == "Null" || s == "NULL" {
 		return newScalarNode("", true)
 	}
-	// Flow-style empty containers, which the encoder writes for an empty
-	// Array/List/HashMap/struct.
-	switch s {
-	case "[]":
-		return &yNode{kind: ySeq}
-	case "{}":
-		return &yNode{kind: yMap}
-	}
 	// A scalar that starts with a quote must be one quoted scalar: an
 	// unterminated quote, or text after the closing one, is an error rather
 	// than a plain scalar with a stray quote.
 	switch q := s[0]; q {
+	case '[', '{':
+		// A flow collection, such as the empty [] and {} the encoder
+		// writes for an empty Array/List/HashMap/struct.
+		return parseFlowCollection(s)
 	case '|', '>':
 		indicatorStartsPlainScalar(s)
 	case '"', '\'':
@@ -1558,6 +1553,193 @@ func parseInlineScalar(raw string) *yNode {
 // not checked.
 func indicatorStartsPlainScalar(s string) {
 	panic(fmt.Sprintf("yaml: %q is not a block scalar header, and a plain scalar cannot start with %q; quote it", s, s[0]))
+}
+
+// maxFlowDepth caps how deeply flow collections may nest. Each level is a
+// level of recursion in flowParser, and running out of stack would end the
+// process, not fail the decode.
+const maxFlowDepth = 1000
+
+// parseFlowCollection parses s, a value that starts with '[' or '{', as a
+// YAML 1.2 flow sequence or mapping (section 7.4) that ends on its line,
+// optionally followed by a comment.
+//
+// Entries are flow collections, quoted scalars or plain scalars. A plain
+// scalar ends at ',', at a bracket or brace, at ": " (or a ':' before one of
+// those or the end), or at " #". A mapping entry with no ':' has a null
+// value ({a, b: 1}), and a "key: value" entry in a sequence is a mapping of
+// one pair ([a: 1]). A collection used as a key is not supported, and
+// neither is a collection that goes on to the next line.
+func parseFlowCollection(s string) *yNode {
+	p := flowParser{s: s}
+	node := p.collection(0)
+	end := p.i
+	p.skipWhite()
+	// Only a comment may follow, and a comment needs white space before it.
+	if p.i < len(s) && (s[p.i] != '#' || p.i == end) {
+		panic(fmt.Sprintf("yaml: unexpected text %q after flow collection %q", s[p.i:], s[:end]))
+	}
+	return node
+}
+
+// flowParser reads the flow collection in s from index i on.
+type flowParser struct {
+	s string
+	i int
+}
+
+func (p *flowParser) skipWhite() {
+	for p.i < len(p.s) && (p.s[p.i] == ' ' || p.s[p.i] == '\t') {
+		p.i++
+	}
+}
+
+// fail reports a malformed flow collection, quoting s from the point where
+// reading stopped.
+func (p *flowParser) fail(what string) {
+	panic(fmt.Sprintf("yaml: %s in flow collection %q at %q", what, p.s, p.s[p.i:]))
+}
+
+// collection reads the flow sequence or mapping that starts at p.i, nested
+// depth levels deep.
+func (p *flowParser) collection(depth int) *yNode {
+	if depth >= maxFlowDepth {
+		panic(fmt.Sprintf("yaml: flow collections nested more than %d deep", maxFlowDepth))
+	}
+	end := byte(']')
+	node := &yNode{kind: ySeq}
+	if p.s[p.i] == '{' {
+		end = '}'
+		node.kind = yMap
+	}
+	p.i++
+	for {
+		p.skipWhite()
+		if p.i >= len(p.s) {
+			panic(fmt.Sprintf("yaml: flow collection %q is not closed on its line; flow collections that span lines are not supported", p.s))
+		}
+		if p.s[p.i] == end {
+			p.i++
+			return node
+		}
+		if node.kind == ySeq {
+			p.sequenceEntry(node, depth)
+		} else {
+			key, value := p.pair(depth)
+			node.mapKeys = append(node.mapKeys, key)
+			node.mapVals = append(node.mapVals, value)
+		}
+		p.skipWhite()
+		switch {
+		case p.i >= len(p.s):
+			// Reported as not closed on the next pass.
+		case p.s[p.i] == ',':
+			p.i++
+		case p.s[p.i] != end:
+			p.fail(fmt.Sprintf("expected ',' or '%c'", end))
+		}
+	}
+}
+
+// sequenceEntry reads one entry of a flow sequence into seq: a node, or a
+// "key: value" pair, which is a mapping of one pair.
+func (p *flowParser) sequenceEntry(seq *yNode, depth int) {
+	start := p.i
+	entry := p.node(depth)
+	p.skipWhite()
+	if p.i >= len(p.s) || p.s[p.i] != ':' {
+		seq.seq = append(seq.seq, entry)
+		return
+	}
+	p.i = start
+	key, value := p.pair(depth)
+	seq.seq = append(seq.seq, &yNode{kind: yMap, mapKeys: []string{key}, mapVals: []*yNode{value}})
+}
+
+// pair reads a mapping entry: a scalar key, then ':' and a value, which is
+// null when it is left out.
+func (p *flowParser) pair(depth int) (string, *yNode) {
+	var key string
+	switch c := p.s[p.i]; c {
+	case '[', '{':
+		p.fail("a flow collection as a key is not supported")
+	case '"', '\'':
+		key = p.quoted()
+	default:
+		key = p.plain()
+	}
+	p.skipWhite()
+	if p.i >= len(p.s) || p.s[p.i] != ':' {
+		return key, newScalarNode("", true)
+	}
+	p.i++
+	p.skipWhite()
+	if p.i < len(p.s) && (p.s[p.i] == ',' || p.s[p.i] == ']' || p.s[p.i] == '}') {
+		return key, newScalarNode("", true)
+	}
+	return key, p.node(depth)
+}
+
+// node reads a value: a nested collection, a quoted scalar or a plain one.
+func (p *flowParser) node(depth int) *yNode {
+	if p.i >= len(p.s) {
+		return newScalarNode("", true)
+	}
+	switch p.s[p.i] {
+	case '[', '{':
+		return p.collection(depth + 1)
+	case '"', '\'':
+		return newScalarNode(p.quoted(), false)
+	}
+	return parseInlineScalar(p.plain())
+}
+
+// quoted reads the quoted scalar at p.i and returns its text.
+func (p *flowParser) quoted() string {
+	end := closingQuote(p.s[p.i:])
+	if end < 0 {
+		panic(fmt.Sprintf("yaml: unterminated quoted scalar %q", p.s[p.i:]))
+	}
+	text := decodeQuotedScalar(p.s[p.i : p.i+end+1])
+	p.i += end + 1
+	return text
+}
+
+// plain reads the plain scalar at p.i and returns its text, which is never
+// empty.
+func (p *flowParser) plain() string {
+	start := p.i
+scan:
+	for ; p.i < len(p.s); p.i++ {
+		switch c := p.s[p.i]; c {
+		case ',', '[', ']', '{', '}':
+			break scan
+		case ':':
+			if p.i+1 == len(p.s) || isFlowBreak(p.s[p.i+1]) {
+				break scan
+			}
+		case '#':
+			if p.i > start && (p.s[p.i-1] == ' ' || p.s[p.i-1] == '\t') {
+				break scan
+			}
+		}
+	}
+	text := trimYamlSpace(p.s[start:p.i])
+	if text == "" || text[0] == '#' {
+		p.i = start
+		p.fail("expected a value")
+	}
+	return text
+}
+
+// isFlowBreak reports whether c, after a ':', ends a plain scalar in a flow
+// collection: white space or a flow indicator.
+func isFlowBreak(c byte) bool {
+	switch c {
+	case ' ', '\t', ',', '[', ']', '{', '}':
+		return true
+	}
+	return false
 }
 
 // decodeQuotedScalar decodes the quoted scalar s, or fails when s is not one.

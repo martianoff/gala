@@ -280,8 +280,8 @@ The codec emits and parses a focused, predictable subset of YAML:
 - literal (`|`) and folded (`>`) block scalars, read only: the encoder writes a multi-line string double-quoted. A folded block joins its lines with spaces as YAML 1.2 folds them: where blank lines stand between two lines, each blank line leaves one line break, and the line breaks around a more-indented line are kept. An indentation indicator (`|2`, `>1-`) sets the body's indentation, and the header may stand on the line below its key or dash. Blocks are chomped as YAML 1.2 says: with no chomping indicator one final line break is kept (none for a block with no text), with `-` none, and with `+` every line break after the text, trailing blank lines included. A block that ends the document without a line break gains none there. Blank lines before the text are kept. Without an indentation indicator they may not be indented further than the text; with one, the spaces past the indentation are kept.
 - comments
 - nested structures
-- the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List`, `HashMap` or struct so it reads back as empty rather than `null`
-- a document that is a single scalar (`42`, `abc`, `null`) or an empty `[]` / `{}`
+- flow sequences and mappings on one line (`[a, b]`, `{a: 1, "b": [x]}`), as a mapping value, a sequence item or the whole document, read only. A comment may follow them, and a quoted item may hold `#` or `: `. The encoder writes only the empty `[]` and `{}`, for an empty `Array`, `List`, `HashMap` or struct, so it reads back as empty rather than `null`
+- a document that is a single scalar (`42`, `abc`, `null`) or a flow collection
 
 Indentation is spaces only: a tab in a line's indentation is an error.
 
@@ -297,7 +297,7 @@ account_id:
 
 Switching a field from one form to the other changes the document shape: `user_id: 42` read into the struct form is `Failure(yaml: expected mapping, got scalar)`. See [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct).
 
-Out of scope: YAML anchors and aliases (`&a`, `*a`), other flow-style collections, custom tags, plain and quoted scalars that span lines, document markers (`---`, `...`). A document marker is an error, and so is a value that starts with `|` or `>` but is no header the codec can read: a plain value cannot start with either, so quote it (`version: ">=1.0"`). If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
+Out of scope: YAML anchors and aliases (`&a`, `*a`), flow collections that span lines or use a collection as a key, custom tags, plain and quoted scalars that span lines, document markers (`---`, `...`). A document marker is an error, and so is a value that starts with `|` or `>` but is no header the codec can read: a plain value cannot start with either, so quote it (`version: ">=1.0"`). If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
 
 ---
 

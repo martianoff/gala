@@ -2,6 +2,7 @@ package yaml
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -894,27 +895,6 @@ func TestDecoder_QuotedPartOfPlainScalar(t *testing.T) {
 	}
 }
 
-// Flow-style text, which this parser keeps as a string, keeps its quoted
-// items whole: a "#" or ": " inside one is neither a comment nor a key's
-// colon. A comment after the flow text is still dropped.
-func TestDecoder_FlowTextKeepsQuotedItems(t *testing.T) {
-	tests := []struct{ src, want string }{
-		{`key: [a, "b # c"]`, `{key: [a, "b # c"]}`},
-		{`key: [a, "b # c"] # note`, `{key: [a, "b # c"]}`},
-		{`k: {"a": "b # c"}`, `{k: {"a": "b # c"}}`},
-		{`- [1, "a # b"]`, `[[1, "a # b"]]`},
-		{`- ["x: y"]`, `[["x: y"]]`},
-		{`- ['it''s: x']`, `[['it''s: x']]`},
-		{`"k":[a, "b # c"]`, `{k: [a, "b # c"]}`},
-		{`"k":{"a": "b # c"} # note`, `{k: {"a": "b # c"}}`},
-	}
-	for _, tt := range tests {
-		if got := parseDump(tt.src); got != tt.want {
-			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
-		}
-	}
-}
-
 // A document that is a literal block reads as a string, whatever its body
 // holds: a ": " in it does not make a key.
 func TestDecoder_BareLiteralBlockIsAString(t *testing.T) {
@@ -1011,7 +991,7 @@ func TestDecoder_DeeplyNestedSequenceLine(t *testing.T) {
 // block.
 func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 	tests := []struct{ src, want string }{
-		{"k: [a, \"b: | # c\"]\nm: 1", `{k: [a, "b: | # c"], m: 1}`},
+		{"k: [a, \"b: | # c\"]\nm: 1", `{k: [a, b: | # c], m: 1}`},
 		{"k: 'x: | # y'\nm: 1", "{k: x: | # y, m: 1}"},
 		{"- 'a: | # b'\n- c", "[a: | # b, c]"},
 		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body\n, c: 1}]"},
@@ -1189,5 +1169,120 @@ func TestDecoder_UnsupportedFormsFail(t *testing.T) {
 				t.Errorf("%q => %s, want error: %s", tt.src, got, tt.want)
 			}
 		})
+	}
+}
+
+// ----- Flow collections -------------------------------------------------------
+
+// dumpQuoted is dumpNode with every scalar quoted, so a string reads apart
+// from a nested collection.
+func dumpQuoted(n *yNode) string {
+	switch {
+	case n.kind == yScalar && n.nullish:
+		return "null"
+	case n.kind == yScalar:
+		return strconv.Quote(n.scalar)
+	case n.kind == ySeq:
+		items := make([]string, len(n.seq))
+		for i, c := range n.seq {
+			items[i] = dumpQuoted(c)
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	default:
+		pairs := make([]string, len(n.mapKeys))
+		for i, k := range n.mapKeys {
+			pairs[i] = strconv.Quote(k) + ": " + dumpQuoted(n.mapVals[i])
+		}
+		return "{" + strings.Join(pairs, ", ") + "}"
+	}
+}
+
+func parseDumpQuoted(src string) (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = "error: " + fmt.Sprint(r)
+		}
+	}()
+	return dumpQuoted(parseYAML(src))
+}
+
+// Flow sequences and mappings are parsed as YAML 1.2 reads them (#1374),
+// wherever a value may stand: after a key, as a sequence item, and as the
+// whole document. A "#" or ": " inside a quoted item is text, a comment
+// after the collection is dropped, and an apostrophe inside a plain item
+// is text.
+func TestDecoder_FlowCollections(t *testing.T) {
+	tests := []struct{ name, src, want string }{
+		{"sequence value", "k: [a, b]", `{"k": ["a", "b"]}`},
+		{"mapping value", "k: {a: 1, b: x}", `{"k": {"a": "1", "b": "x"}}`},
+		{"mapping item", "- {a: 1}", `[{"a": "1"}]`},
+		{"JSON-like item", `- {"a": "b"}`, `[{"a": "b"}]`},
+		{"mapping document", `{"a": 1}`, `{"a": "1"}`},
+		{"sequence document", "[1, 2]", `["1", "2"]`},
+		{"empty collections", "a: []\nb: {}\nc: [ ]", `{"a": [], "b": {}, "c": []}`},
+		{"nested", "k: [[1, 2], {a: [x]}]", `{"k": [["1", "2"], {"a": ["x"]}]}`},
+		{"apostrophe in a plain item", "K: [it's, b] # note", `{"K": ["it's", "b"]}`},
+		{"quoted items keep # and :", `k: [a, "b # c", 'x: y'] # note`, `{"k": ["a", "b # c", "x: y"]}`},
+		{"quoted mapping value", `k: {"a": "b # c"} # note`, `{"k": {"a": "b # c"}}`},
+		{"escaped quote", `k: ["a\"b", 'it''s']`, `{"k": ["a\"b", "it's"]}`},
+		{"trailing comma", "k: [a, b, ]", `{"k": ["a", "b"]}`},
+		{"null items", "k: [~, null, '']", `{"k": [null, null, ""]}`},
+		{"key with no value", "k: {a, b: 1, c: }", `{"k": {"a": null, "b": "1", "c": null}}`},
+		{"JSON colon after a quoted key", `k: {"a":1}`, `{"k": {"a": "1"}}`},
+		{"colon inside a plain scalar", "k: {url: http://x:80/p}", `{"k": {"url": "http://x:80/p"}}`},
+		{"plain key with a colon and no space", "k: {a:1}", `{"k": {"a:1": null}}`},
+		{"pair in a sequence", "k: [a: 1, b]", `{"k": [{"a": "1"}, "b"]}`},
+		{"spaces inside items", "k: [ a b , c ]", `{"k": ["a b", "c"]}`},
+		{"quoted key on the line", `"k": [a, "b # c"]`, `{"k": ["a", "b # c"]}`},
+		{"quoted key with no space", `"k":{"a": "b"} # note`, `{"k": {"a": "b"}}`},
+		{"compact mapping item", "- k: [a]\n  j: {b: 1}", `[{"k": ["a"], "j": {"b": "1"}}]`},
+		{"block scalar header inside", "k: [a, \"b: | # c\"]\nm: 1", `{"k": ["a", "b: | # c"], "m": "1"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseDumpQuoted(tt.src); got != tt.want {
+				t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
+			}
+		})
+	}
+}
+
+// Malformed flow collections, and the forms this subset leaves out, fail
+// with an error that names them (#1374).
+func TestDecoder_FlowCollectionErrors(t *testing.T) {
+	tests := []struct{ name, src, want string }{
+		{"not closed", "k: [a, b", `yaml: flow collection "[a, b" is not closed on its line; flow collections that span lines are not supported`},
+		{"spans lines", "k: [a,\n  b]", `yaml: flow collection "[a," is not closed on its line; flow collections that span lines are not supported`},
+		{"text after", "k: [a] b", `yaml: unexpected text "b" after flow collection "[a]"`},
+		{"comment with no space", "k: [a]#c", `yaml: unexpected text "#c" after flow collection "[a]"`},
+		{"missing comma", "k: [[a] b]", `yaml: expected ',' or ']' in flow collection "[[a] b]" at "b]"`},
+		// A quote inside a plain scalar is text, as in block context.
+		{"quote inside a plain item", "k: [a \"b\"", `yaml: flow collection "[a \"b\"" is not closed on its line; flow collections that span lines are not supported`},
+		{"empty entry", "k: [a, , b]", `yaml: expected a value in flow collection "[a, , b]" at ", b]"`},
+		{"wrong closer", "k: [a}", `yaml: expected ',' or ']' in flow collection "[a}" at "}"`},
+		{"collection as a key", "k: {[a]: 1}", `yaml: a flow collection as a key is not supported in flow collection "{[a]: 1}" at "[a]: 1}"`},
+		{"unterminated quote", `k: ["a, b]`, `yaml: unterminated quoted scalar "\"a, b]"`},
+		{"text after a quoted item", `k: ["a"x]`, `yaml: expected ',' or ']' in flow collection "[\"a\"x]" at "x]"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseDump(tt.src); got != "error: "+tt.want {
+				t.Errorf("%q => %s, want error: %s", tt.src, got, tt.want)
+			}
+		})
+	}
+}
+
+// Flow collections nested past the cap fail instead of recursing until the
+// stack runs out, which would end the process.
+func TestDecoder_DeeplyNestedFlowCollection(t *testing.T) {
+	src := strings.Repeat("[", maxFlowDepth+1) + strings.Repeat("]", maxFlowDepth+1)
+	want := fmt.Sprintf("error: yaml: flow collections nested more than %d deep", maxFlowDepth)
+	if got := parseDump(src); got != want {
+		t.Errorf("got %.80s, want %s", got, want)
+	}
+	ok := strings.Repeat("[", maxFlowDepth) + strings.Repeat("]", maxFlowDepth)
+	if got := parseDump(ok); strings.HasPrefix(got, "error: ") {
+		t.Errorf("%d levels: %.80s", maxFlowDepth, got)
 	}
 }

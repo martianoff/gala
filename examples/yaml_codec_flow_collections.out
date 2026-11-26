@@ -1,0 +1,7 @@
+name: build
+tag: "linux"
+tag: "it's fine"
+tag: "a # b"
+GOOS: linux, CGO: 0
+maps: 2, c = 3
+multi-line: yaml: flow collection "[1," is not closed on its line; flow collections that span lines are not supported
