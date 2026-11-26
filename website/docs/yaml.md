@@ -280,7 +280,7 @@ The codec emits and parses a focused, predictable subset of YAML:
 - literal block scalars (`|`, `|-`, `|+`, read only: the encoder writes a multi-line string double-quoted), chomped as YAML 1.2 says: `|` keeps one final line break (none for a block with no text), `|-` none, and `|+` every line break after the text, trailing blank lines included. A block that ends the document without a line break gains none there. Blank lines before the text are kept, and may not be indented further than the text.
 - comments
 - nested structures
-- the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List` or `HashMap` so it reads back as empty rather than `null`
+- the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List`, `HashMap` or struct so it reads back as empty rather than `null`
 - a document that is a single scalar (`42`, `abc`, `null`) or an empty `[]` / `{}`
 
 Struct fields follow the same rules as the JSON codec: every int, uint and float kind, aliases and Go named types over them, structs, and `Option` / `Array` / `List` / `HashMap[string, V]` of those; any other field type is a compile error ([GALA-E0050](/docs/errors/gala-e0050/)). Out-of-range numbers are decode errors.

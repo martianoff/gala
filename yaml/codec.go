@@ -775,7 +775,7 @@ var _ std.FieldDecoder = (*YamlDecoderImpl)(nil)
 // `|-`, `|+`, chomped as YAML 1.2 says), comments, blank lines. Out of
 // scope: anchors, aliases, flow-style collections other than `[]` and `{}`,
 // custom tags, folded blocks (`>`), indentation indicators (`|2`), explicit
-// document markers (`---`).
+// document markers (`---`, `...`).
 // ============================================================================
 
 type pLine struct {
