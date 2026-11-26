@@ -2,7 +2,7 @@ name: Perf — real-repo build budget
 
 # Manual + nightly only. The synthetic perf tests
 # (//internal/transpiler/analyzer:analyzer_test //
-# TestCachedRichAST_GobSizeBounded and TestCacheE2E_DiskFootprintBounded)
+# TestCachedRichAST_SizeBounded and TestCacheE2E_DiskFootprintBounded)
 # run on every PR and are the fast feedback loop. This lane builds a real
 # downstream repo (gala_team) against the upstream gala module to catch
 # regressions that the synthetic fixture is too small to surface — typically
@@ -217,26 +217,31 @@ jobs:
         working-directory: gala_team
         run: |
           set -euo pipefail
-          # The transpile actions run in Bazel's execution root, so the
-          # analyzer writes its cache there (<execroot>/.gala/cache), not in
-          # the gala_team checkout. Entries are <...>.bin (the binary codec);
-          # the step used to look for *.gob in the checkout and so measured
-          # nothing.
+          # The analyzer keeps its cache in the directory of the module whose
+          # file a transpile action reads: gala_team's actions run in Bazel's
+          # execution root (<execroot>/.gala/cache), the overridden modules'
+          # in their checkouts. Entries are <...>.bin (the binary codec); the
+          # step used to look for *.gob in the gala_team checkout and so
+          # measured nothing.
           execroot=$(bazel info execution_root \
             --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
             --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
             --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/ \
             --registry=https://bcr.bazel.build)
-          cache="$execroot/.gala/cache"
-          # A file a worker's stale-cache GC removes mid-walk makes find
-          # exit non-zero; the count below still catches an empty result.
-          sizes=$( { find "$cache" -type f -name '*.bin' -printf '%s %p\n' 2>/dev/null || true; } | sort -nr)
+          caches=()
+          for d in "$execroot/.gala/cache" "$GITHUB_WORKSPACE/gala_simple/.gala/cache" "$GITHUB_WORKSPACE/gala_tui/.gala/cache"; do
+            if [ -d "$d" ]; then caches+=("$d"); fi
+          done
+          sizes=""
+          if [ "${#caches[@]}" -gt 0 ]; then
+            sizes=$(find "${caches[@]}" -type f -name '*.bin' -printf '%s %p\n' | sort -nr)
+          fi
           entries=$(printf '%s' "$sizes" | grep -c . || true)
-          echo "Analyzer cache entries: ${entries} in ${cache}"
+          echo "Analyzer cache entries: ${entries} in ${caches[*]:-<none>}"
           # A budget over no entries checks nothing: fail rather than pass
           # when the cache moved or its entries were renamed again.
           if [ "$entries" -eq 0 ]; then
-            echo "::error::no analyzer cache entries (*.bin) under ${cache} — the size budget below would check nothing"
+            echo "::error::no analyzer cache entries (*.bin) under ${execroot}/.gala/cache or the module checkouts — the size budget below would check nothing"
             exit 1
           fi
           # Each individual analyzer cache entry should stay tiny; the
