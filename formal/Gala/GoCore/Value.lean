@@ -374,6 +374,8 @@ def St.localType? (s : St) (pkg name : String) (targs : List Ty) : Option LocalT
 
 abbrev GM := ExceptT Stop (StateM St)
 
+-- Fuel adequacy (`Gala/M5/GoFuel.lean`) rests on `tick` and `forLoop`'s bound on its
+-- iterations being the only code that reads `steps`.
 def tick : GM Unit := do
   if (← get).steps == 0 then throw .fuel
   modify fun s => { s with steps := s.steps - 1 }

@@ -17,13 +17,14 @@
   A shift can panic with another text (a negative count), so a statement with a shift
   and a division can trigger the rewrite. Bodies with a shift are covered by
   `stmts_correct` for GoCore's evaluator, left to right, but are outside `Step2Body`:
-  whether gc's model or real gc runs them as written is carried to step 3.
+  whether gc's model runs them as written is carried to step 3, whether real gc does to M6.
 
   This is narrower than every order the Go spec allows. An order that copies an `&&` or
   `||` into a temporary before the statement, as gc's order.go does, rewrites step 2's
   statements and is outside the predicate, although in this fragment the copy cannot be
-  observed. That such full hoisting agrees with left to right is the obligation step 3
-  carries (with `untriggered_orders_agree`); the differential run tests the gc model
+  observed. That such full hoisting agrees with left to right is an obligation M6 carries
+  (with `untriggered_orders_agree`: it needs a model of real gc's copying, which
+  `Order.gc` does not have); the differential run tests the gc model
   against `go run` meanwhile.
 -/
 import Gala.M5.Stmt

@@ -23,7 +23,7 @@
 
   This is about GoCore's model of gc, not real gc: real gc copies every call into a
   temporary, which agrees with the model only where the model's trigger is right; that full
-  hoisting agrees with left to right is carried to step 3d.
+  hoisting agrees with left to right is carried to M6, which needs a model of that copying.
 -/
 import Gala.M5.Call
 import Gala.M5.StmtOrder
