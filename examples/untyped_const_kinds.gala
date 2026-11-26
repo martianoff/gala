@@ -7,7 +7,11 @@ import "cmp"
 // `false` are untyped constants that bind after a typed argument, as in Go
 // (#1360).
 
-type Flag bool
+opaque type Flag bool
+
+struct Two[V any](A V, B V)
+
+func (t Two[V]) Pick[U any](a U, b U, f func(U) U) U = f(b)
 
 func Same[T any](a T, b T) T = b
 
@@ -22,7 +26,10 @@ func main() {
     val r = () => Same(1, 'a')
     Println(r())
 
-    val on Flag = true
+    val on = Flag(true)
     val pick = () => Same(false, on)
     Println(pick())
+
+    Println(Two(0, 2.5).B * 2)
+    Println(Two(1, 2).Pick(0, 2.5, (u) => u / 2))
 }
