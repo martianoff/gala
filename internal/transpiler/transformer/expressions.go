@@ -877,7 +877,8 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 // `nil` has no type of its own, so whatever asks for the value's type
 // afterwards — the void check on a function's trailing value, the branch
 // unification of an if-expression, the common type of a match's arms — would
-// otherwise find none.
+// otherwise find none. An untyped constant there takes the slot's type too
+// (typeConstAs), so constant branches unify to it, not to their default type.
 //
 // A `nil` that is itself a call argument or a tuple element is lowered by
 // lowerAgainst and keeps no type: the call reads it as untyped (an explicit
@@ -896,34 +897,32 @@ func (t *galaASTTransformer) lowerResultAgainst(e exprSrc, s slot, strict bool) 
 }
 
 // typeConstAs gives expr, when it is an untyped constant (isUntypedConst),
-// the type typ of the slot it fills when that is a basic type (`int64`,
-// `float64`, `string`, `bool`), as a Go assignment converts a constant: the
-// `1` of `val x int64 = if (c) 1 else 0` is an int64, so the if-expression is
-// one too. Any other slot leaves expr its default type.
+// the type typ of the slot it fills when that is a scalar type (`int64`,
+// `float64`, `string`, `bool`, or a type defined over one, see resolveScalar)
+// of the constant's kind, as a Go assignment converts a constant: the `1` of
+// `val x int64 = if (c) 1 else 0` is an int64, so the if-expression is one
+// too. A constant of another kind (a string for an int64) and any other slot
+// leave expr its default type.
 func (t *galaASTTransformer) typeConstAs(expr ast.Expr, typ transpiler.Type) {
 	if transpiler.IsUnusable(typ) || !isUntypedConst(expr) {
 		return
 	}
-	basic, ok := t.followAliasChain(typ).(transpiler.BasicType)
-	if !ok {
+	_, slotKind, opaque := t.resolveScalar(typ)
+	if slotKind == scalarNone || opaque != nil {
 		return
 	}
-	// The constant's kind, read off its default type, must be the slot's: a
-	// string constant never becomes an int64.
-	def, ok := t.getExprTypeName(expr).(transpiler.BasicType)
-	if ok && constKinds[basic.Name] != "" && constKinds[basic.Name] == constKinds[def.Name] {
+	if _, defKind, _ := t.resolveScalar(t.getExprTypeName(expr)); constKindOf(defKind) == constKindOf(slotKind) {
 		t.exprTypeCache[expr] = typ
 	}
 }
 
-// constKinds maps each predeclared type an untyped constant converts to onto
-// its kind of constant.
-var constKinds = map[string]string{
-	"bool": "bool", "string": "string",
-	"int": "number", "int8": "number", "int16": "number", "int32": "number", "int64": "number",
-	"uint": "number", "uint8": "number", "uint16": "number", "uint32": "number", "uint64": "number",
-	"uintptr": "number", "float32": "number", "float64": "number", "complex64": "number",
-	"complex128": "number", "byte": "number", "rune": "number",
+// constKindOf is the kind of untyped constant a scalar of kind k takes: any
+// number for an integer or floating-point type.
+func constKindOf(k scalarKind) scalarKind {
+	if k == scalarUint || k == scalarFloat {
+		return scalarInt
+	}
+	return k
 }
 
 // typeNilAs gives expr, when it is a bare `nil`, the type typ of the slot it
