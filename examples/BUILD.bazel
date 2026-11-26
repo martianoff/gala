@@ -1514,6 +1514,18 @@ gala_exec_test(
     ],
 )
 
+# Flow sequences and mappings on one line, as values, items and documents,
+# and the error for one that spans lines (#1374).
+gala_exec_test(
+    name = "yaml_codec_flow_collections",
+    src = "yaml_codec_flow_collections.gala",
+    expected = "yaml_codec_flow_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "yaml_codec_collections",
     src = "yaml_codec_collections.gala",

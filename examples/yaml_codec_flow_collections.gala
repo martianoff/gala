@@ -1,0 +1,36 @@
+package main
+
+// Flow sequences and mappings on one line are parsed as YAML 1.2 reads them
+// (#1374): as a mapping value, as a sequence item and as the whole document.
+// A flow collection that goes on to the next line is not supported and
+// fails with an error that says so.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct Job(Name string, Tags Array[string], Env HashMap[string, string])
+
+struct Pipeline(Jobs Array[Job])
+
+val pipelines = yaml.Codec[Pipeline](yaml.CamelCase())
+
+func main() {
+    pipelines.Decode("jobs:\n- name: build\n  tags: [linux, it's fine, \"a # b\"] # note\n  env: {GOOS: linux, CGO: \"0\"}\n") match {
+        case Success(p) => p.Jobs.ForEach((j) => {
+            Println(s"name: ${j.Name}")
+            j.Tags.ForEach((t) => Println(f"tag: ${t}%q"))
+            Println(s"GOOS: ${j.Env.Get("GOOS").GetOrElse("?")}, CGO: ${j.Env.Get("CGO").GetOrElse("?")}")
+        })
+        case Failure(err) => Println(s"decode failed: ${err.Error()}")
+    }
+    yaml.Value[Array[HashMap[string, int]]]().Decode("[{a: 1}, {b: 2, c: 3}]") match {
+        case Success(maps) => Println(s"maps: ${maps.Size()}, c = ${maps.Get(1).Get("c").GetOrElse(0)}")
+        case Failure(err) => Println(s"decode failed: ${err.Error()}")
+    }
+    yaml.Value[Array[int]]().Decode("[1,\n 2]") match {
+        case Success(xs) => Println(s"decoded ${xs.Size()} ints")
+        case Failure(err) => Println(s"multi-line: ${err.Error()}")
+    }
+}

@@ -34,12 +34,14 @@ import (
 // Supported subset: block-style mappings, block-style sequences, scalars
 // (string/int/float/bool/null), literal (`|`) and folded (`>`) block scalars
 // with chomping and indentation indicators, folded and chomped as YAML 1.2
-// says, comments, nested structures. Indentation is spaces only. Out of
-// scope: anchors, aliases, flow-style collections other than [] and {},
+// says, flow sequences and mappings on one line ([a, b], {a: 1}), comments,
+// nested structures. Indentation is spaces only. Out of scope: anchors,
+// aliases, flow collections that span lines or use a collection as a key,
 // custom tags, plain and quoted scalars that span lines, and document
-// markers (--- and ...), which are an error. Block scalars are read only:
-// the encoder writes a multi-line string double-quoted. See
-// https://martianov.dev/docs/yaml/.
+// markers (--- and ...), which are an error. Block scalars and non-empty
+// flow collections are read only: the encoder writes a multi-line string
+// double-quoted, and a collection in block style unless it is empty ([] or
+// {}). See https://martianov.dev/docs/yaml/.
 type Codec[T any] struct {}
 
 // Apply creates a typed YamlEncoder[T].
