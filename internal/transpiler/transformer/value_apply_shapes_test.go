@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -207,6 +208,30 @@ func main() {
 `)
 	require.NoError(t, err)
 	require.Contains(t, out, "b.v.Apply(func(x int) int")
+
+	// A pointer-receiver Apply of a field of a call's result, or of a call's
+	// result, is called on an addressed copy, as `recv.Apply(...)` written
+	// out is (#1389); one that can change its receiver is GALA-E0110.
+	const counter = `package main
+
+struct Counter(var n int)
+
+func (c *Counter) Apply(x int) int = c.n + x
+
+struct Box(var h Counter)
+
+func mkBox() Box = Box(Counter(1))
+
+func mkCounter() Counter = Counter(1)
+
+func main() {
+`
+	out, err = transpileBareVariant(t, counter+"    Println(mkBox().h(3), mkCounter()(3), mkBox().h.Apply(3))\n}\n")
+	require.NoError(t, err)
+	require.Equal(t, 3, strings.Count(out, "std.AddrOfCopy("))
+	require.Contains(t, out, "std.AddrOfCopy(mkCounter()).Apply(3)")
+	_, err = transpileBareVariant(t, strings.Replace(counter, "= c.n + x", "{\n    c.n = c.n + x\n    c.n\n}", 1)+"    Println(mkCounter()(3))\n}\n")
+	require.ErrorContains(t, err, "GALA-E0110")
 
 	// A misplaced spread names the field's type too.
 	_, err = transpileBareVariant(t, `package main
