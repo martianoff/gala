@@ -32,6 +32,17 @@ func (t *galaASTTransformer) checkUnknownField(base ast.Expr, xType transpiler.T
 	if ptr, ok := xType.(transpiler.PointerType); ok {
 		xType = ptr.Elem
 	}
+	// A predeclared basic type (`int`, `string`) has no fields or methods at
+	// all. A Go type defined over one (`time.Duration`) is a named type,
+	// with its own methods, and is not judged here.
+	if basic, ok := xType.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(basic.Name) && basic.Name != "any" && basic.Name != "error" {
+		if t.basicReceiverIsCertain(base, name) {
+			at := m.identAt().rng()
+			return spanErrorAt(galaerr.CodeUnknownMethod, at, at, fmt.Sprintf("%s has no field or method %s", basic.Name, name),
+				fmt.Sprintf("%s is a basic type: it has no fields", basic.Name))
+		}
+		return nil
+	}
 	_, meta, _, ok := t.receiverTypeInfo(xType)
 	if !ok || meta == nil || !declaredInGala(meta) || meta.IsSealed || meta.IsInterface || meta.IsOpaque ||
 		len(meta.FieldNames) == 0 || t.hasMemberOrGoMethod(meta, name) || !t.canJudgeMembers(meta, xType) {
@@ -43,6 +54,39 @@ func (t *galaASTTransformer) checkUnknownField(base ast.Expr, xType transpiler.T
 	}
 	at := m.identAt().rng()
 	return spanErrorAt(galaerr.CodeUnknownMethod, at, at, fmt.Sprintf("%s has no field or method %s", meta.Name, name), hint)
+}
+
+// basicReceiverIsCertain reports whether base, a receiver GALA types as a
+// predeclared basic type, surely has that type, so that a read of its member
+// name is surely wrong. The basic type of a value computed from Go values can
+// be a guess: arithmetic between an untyped Go constant and a Go named type
+// (`math.MaxInt8 * time.Second`) is typed by the constant's default, `int`,
+// where Go has a `time.Duration`. So the read is judged only when
+//   - Go type information is loaded,
+//   - base is a function, method or lambda parameter, whose type its
+//     declaration, annotation or slot gives (a val may hold such arithmetic),
+//   - and no Go type defined over a basic type has a member of that name
+//     (`Minutes` of time.Duration), which the value could really be.
+func (t *galaASTTransformer) basicReceiverIsCertain(base ast.Expr, name string) bool {
+	if t.goTypeInfo == nil {
+		return false
+	}
+	id, ok := base.(*ast.Ident)
+	if !ok || t.fixedBindingOf(id.Name) != fixedParam {
+		return false
+	}
+	for _, data := range t.goTypeInfo.Types {
+		if data == nil || data.Underlying == nil {
+			continue
+		}
+		if u, ok := data.Underlying.(transpiler.BasicType); !ok || !transpiler.IsPrimitiveType(u.Name) {
+			continue
+		}
+		if _, has := data.Methods[name]; has {
+			return false
+		}
+	}
+	return true
 }
 
 // hasMemberOrGoMethod reports whether the GALA type meta describes has name as
