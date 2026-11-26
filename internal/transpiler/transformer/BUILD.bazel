@@ -324,6 +324,7 @@ go_test(
         "placeholder_compound_body_test.go",
         "placeholder_field_immutable_test.go",
         "placeholder_interpolation_test.go",
+        "placeholder_mixed_types_test.go",
         "underscore_binding_read_test.go",
         "unreachable_case_test.go",
         "placeholder_void_context_test.go",

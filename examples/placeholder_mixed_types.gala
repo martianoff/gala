@@ -1,0 +1,66 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Each `_` of a placeholder lambda reads the type of its own parameter, so a
+// slot whose parameters have different types takes one as it takes
+// `(acc, r) => acc + r.Lo`: `rs.FoldLeft(0, _ + _.Lo)` sums the fields.
+
+struct R(Lo int, Name string)
+
+struct Group(Items Array[R])
+
+struct A(S int)
+
+struct B(V int)
+
+func (a A) M(x int) A = A(a.S + x)
+
+func (b B) M(f func(B) int) A = A(f(b))
+
+sealed type Shape {
+    case Circle(Rad int)
+    case Sq(Side int)
+}
+
+func (r R) Twice() int = r.Lo * 2
+
+func main() {
+    val rs = ArrayOf(R(1, "a"), R(2, "b"), R(3, "c"))
+    val nums = ArrayOf(10, 20)
+
+    // An int accumulator and a struct element.
+    Println(rs.FoldLeft(0, _ + _.Lo))
+
+    // A string accumulator and a string field.
+    Println(rs.FoldLeft("", _ + _.Name))
+
+    // A method of the element.
+    Println(rs.FoldLeft(0, _ + _.Twice()))
+
+    // The element first: FoldRight's function takes (T, U).
+    Println(rs.FoldRight(0, _.Lo + _))
+
+    // A nested call takes the `_` between them for its own lambda, so the
+    // outer lambda's second parameter is the third `_` written.
+    Println(rs.FoldLeft(0, _ + nums.Map(_ * 2).Size() + _.Lo))
+
+    // A placeholder lambda of mixed types inside another: each takes its own.
+    val groups = ArrayOf(Group(rs), Group(ArrayOf(R(4, "dd"))))
+    Println(groups.FoldLeft(0, _ + _.Items.FoldLeft("", _ + _.Name).Size()))
+
+    // A nested call made on a `_` past a nested call's own `_`.
+    Println(groups.FoldLeft(0, _ + nums.Map(_ * 2).Size() + _.Items.Map(_.Lo).Size()))
+
+    // Read left to right, `_.M` would be B's, whose function slot would take
+    // `_.V`; the `_` this lambda takes are the A and the B.
+    val bs = ArrayOf(B(1), B(2))
+    Println(bs.FoldLeft(A(0), if (nums.Map(_ * 2).Size() > 0) _.M(_.V) else A(0)).S)
+
+    // A match on the element after a nested call's `_`.
+    val shapes = ArrayOf[Shape](Circle(1), Sq(2))
+    Println(shapes.FoldLeft(0, nums.Map(_ * 2).Size() + _ + (_ match {
+        case Circle(r) => r
+        case Sq(q) => q * 10
+    })))
+}

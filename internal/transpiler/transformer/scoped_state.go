@@ -213,6 +213,36 @@ func (t *galaASTTransformer) saveScopedState() scopedStateSnapshot {
 	}
 }
 
+// captureScopedState returns what puts every field scopedStateChecks lists
+// back to its value now. Unlike restoreScopedState, which zeroes those it
+// does not save, it serves a lowering in the middle of an expression that
+// failed and is tried again (lowerMixedPlaceholderBody): a failure may skip
+// the restores that would have balanced what it set.
+func (t *galaASTTransformer) captureScopedState() func() {
+	saved := t.saveScopedState()
+	loweringDefault, tryThunk, pending := t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock
+	interpolation, frames := t.interpolationScope, t.callFrames
+	matchPos, localDecl, hoistedPre := t.matchInStatementPos, t.localDeclaration, t.hoistedPre
+	dots, owner, nameDepth, probes := t.signatureDots, t.equalOwner, t.typeNameDepth, t.mismatchProbes
+	return func() {
+		// Pop the scopes the failure left open, running what each puts
+		// back on pop (a local type's metadata, see lowerLocalTypeDecl).
+		for s := t.currentScope; s != nil; s = s.parent {
+			if s == saved.currentScope {
+				for t.currentScope != saved.currentScope {
+					t.popScope()
+				}
+				break
+			}
+		}
+		t.restoreScopedState(saved)
+		t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = loweringDefault, tryThunk, pending
+		t.interpolationScope, t.callFrames = interpolation, frames
+		t.matchInStatementPos, t.localDeclaration, t.hoistedPre = matchPos, localDecl, hoistedPre
+		t.signatureDots, t.equalOwner, t.typeNameDepth, t.mismatchProbes = dots, owner, nameDepth, probes
+	}
+}
+
 // restoreScopedState puts back every field scopedStateChecks lists: the saved
 // ones from s, the rest to their zero value.
 func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {

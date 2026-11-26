@@ -1219,6 +1219,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Each `_` of a placeholder lambda reads its own parameter's type, so a slot
+# whose parameters differ (`rs.FoldLeft(0, _ + _.Lo)`) takes one (#1387).
+gala_exec_test(
+    name = "placeholder_mixed_types",
+    src = "placeholder_mixed_types.gala",
+    expected = "placeholder_mixed_types.out",
+    deps = ["//collection_immutable"],
+)
+
 # A `_` inside an interpolated string is GALA-E0137; the forms that stay valid
 # around it (a placeholder outside the string, a placeholder lambda or a
 # pattern `_` written inside an interpolation) still build and run.
