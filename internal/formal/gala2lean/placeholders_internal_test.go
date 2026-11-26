@@ -64,7 +64,7 @@ func TestNonFuncSlotTypeParams(t *testing.T) {
 	g.structs["T"] = &coreexport.Struct{Name: "T"}
 	slot := &coreexport.TypeName{Name: "T"}
 	require.True(t, g.nonFuncSlot(slot))
-	g.typeParamNames = typeParamNames(&coreexport.Program{Files: []*coreexport.File{{
+	g.typeParamNames = declaredTypeParams(&coreexport.Program{Files: []*coreexport.File{{
 		Decls: []coreexport.Node{&coreexport.Struct{Name: "Box", TypeParams: []coreexport.Node{&coreexport.TypeParam{Name: "T"}}}},
 	}}})
 	require.False(t, g.nonFuncSlot(slot))

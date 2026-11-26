@@ -275,8 +275,8 @@ func (g *gen) uncheckedArgs(e *coreexport.Call) {
 	}
 }
 
-// typeParamNames is every name program p declares as a type parameter.
-func typeParamNames(p *coreexport.Program) map[string]bool {
+// declaredTypeParams is every name program p declares as a type parameter.
+func declaredTypeParams(p *coreexport.Program) map[string]bool {
 	names := map[string]bool{}
 	var visit func(n coreexport.Node)
 	visit = func(n coreexport.Node) {

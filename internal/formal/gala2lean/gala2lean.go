@@ -172,7 +172,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	g.unsup = depUnsup
 	g.hasMarks = slices.ContainsFunc(p.Files, func(f *coreexport.File) bool { return hasPlaceholder(f) })
 	if g.hasMarks {
-		g.typeParamNames = typeParamNames(p)
+		g.typeParamNames = declaredTypeParams(p)
 	}
 	g.collect(p)
 	g.findBoxes(p)
