@@ -890,8 +890,40 @@ func (t *galaASTTransformer) lowerResultAgainst(e exprSrc, s slot, strict bool) 
 	}
 	if !s.open {
 		t.typeNilAs(expr, s.typ)
+		t.typeConstAs(expr, s.typ)
 	}
 	return expr, nil
+}
+
+// typeConstAs gives expr, when it is an untyped constant (isUntypedConst),
+// the type typ of the slot it fills when that is a basic type (`int64`,
+// `float64`, `string`, `bool`), as a Go assignment converts a constant: the
+// `1` of `val x int64 = if (c) 1 else 0` is an int64, so the if-expression is
+// one too. Any other slot leaves expr its default type.
+func (t *galaASTTransformer) typeConstAs(expr ast.Expr, typ transpiler.Type) {
+	if transpiler.IsUnusable(typ) || !isUntypedConst(expr) {
+		return
+	}
+	basic, ok := t.followAliasChain(typ).(transpiler.BasicType)
+	if !ok {
+		return
+	}
+	// The constant's kind, read off its default type, must be the slot's: a
+	// string constant never becomes an int64.
+	def, ok := t.getExprTypeName(expr).(transpiler.BasicType)
+	if ok && constKinds[basic.Name] != "" && constKinds[basic.Name] == constKinds[def.Name] {
+		t.exprTypeCache[expr] = typ
+	}
+}
+
+// constKinds maps each predeclared type an untyped constant converts to onto
+// its kind of constant.
+var constKinds = map[string]string{
+	"bool": "bool", "string": "string",
+	"int": "number", "int8": "number", "int16": "number", "int32": "number", "int64": "number",
+	"uint": "number", "uint8": "number", "uint16": "number", "uint32": "number", "uint64": "number",
+	"uintptr": "number", "float32": "number", "float64": "number", "complex64": "number",
+	"complex128": "number", "byte": "number", "rune": "number",
 }
 
 // typeNilAs gives expr, when it is a bare `nil`, the type typ of the slot it

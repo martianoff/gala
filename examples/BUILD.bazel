@@ -281,6 +281,14 @@ gala_exec_test(
     expected = "bind_in_branches.out",
 )
 
+# An if or match of untyped constants takes the basic type of the slot it
+# fills (#1342)
+gala_exec_test(
+    name = "branch_constants_slot_type",
+    src = "branch_constants_slot_type.gala",
+    expected = "branch_constants_slot_type.out",
+)
+
 # A lambda passed by name, or through Sendable, to a generic function whose
 # type parameters only the lambda binds is typed as a positional one (#1327,
 # #1334)
