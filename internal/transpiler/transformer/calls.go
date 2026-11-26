@@ -916,7 +916,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// x64)`). One whose type comes from the slot (`None()`)
 				// is lowered against the binding, as before.
 				bindings := typeSubst
-				if len(weakConst) > 0 && thunksFixable && t.hasOwnByNameType(v.expr) {
+				if len(weakConst) > 0 && thunksFixable && t.hasOwnByNameType(v.expr, t.substituteTranspilerTypeParams(byNameType, typeSubst)) {
 					bindings = withoutKeys(typeSubst, weakConst)
 				}
 				byNameType = t.substituteTranspilerTypeParams(byNameType, bindings)
@@ -7090,21 +7090,26 @@ func withoutKeys(subst typeSubstMap, drop map[string]transpiler.Type) typeSubstM
 	return out
 }
 
-// hasOwnByNameType reports whether expr, an argument passed by name, has a
-// type of its own rather than one the slot gives it: an untyped constant
-// (weak, see constThunkArg), or an expression of a type known here (`x64`,
-// `x64 + 1`, `f()`), not one that takes its type from the slot (`None()`) nor
-// an if or match (a function literal called at once), whose constants the
-// slot types.
-func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc) bool {
+// hasOwnByNameType reports whether expr, an argument passed by name to a
+// parameter of type weakSlot (with the bindings only untyped constants made),
+// has a type of its own rather than one the slot gives it: an untyped constant
+// (weak, see constThunkArg), or an expression whose type stays what it is
+// against the slot (`x64`, `x64 + 1`). One the slot types is not: an if,
+// match or lambda, and an expression its constants alone type, which takes
+// the slot's type when lowered against it (`Some(1)`, `id(1)`, `None()`). The
+// lowerings are trials: what they record, and any scoped state a failed one
+// leaves, is undone.
+func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc, weakSlot transpiler.Type) bool {
 	if t.needsExpectedType(expr) {
 		return false
 	}
-	// A trial lowering: what it records (hints, warnings, unresolved types)
-	// is the real lowering's to make.
+	restore := t.captureScopedState()
 	undo := t.snapshotTrialLowering()
+	defer func() {
+		undo()
+		restore()
+	}()
 	lowered, err := t.lowerExpr(expr)
-	undo()
 	if err != nil {
 		return false
 	}
@@ -7120,5 +7125,19 @@ func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc) bool {
 		}
 	}
 	typ := t.probeExprType(lowered)
-	return !transpiler.ContainsUnusable(typ) && !typ.IsAny() && !t.mentionsUnboundTypeParam(typ)
+	if transpiler.ContainsUnusable(typ) || typ.IsAny() || t.mentionsUnboundTypeParam(typ) {
+		return false
+	}
+	// Against the slot's result, an expression the slot types takes it.
+	ft := t.resolveTranspilerTypeAsFuncType(weakSlot)
+	if ft == nil || len(ft.Results) != 1 {
+		return true
+	}
+	want := ft.Results[0]
+	if against, err := t.lowerAgainst(expr, slot{typ: want}, false); err == nil {
+		if got := t.probeExprType(against); got.String() == want.String() && got.String() != typ.String() {
+			return false
+		}
+	}
+	return true
 }
