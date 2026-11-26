@@ -6009,13 +6009,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
-	lit := &ast.FuncLit{
-		Type: &ast.FuncType{
-			Params:  &ast.FieldList{},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
-		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}},
-	}
+	lit := thunkLit(&ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}}, retTypeExpr)
 	if !concreteResult && t.isUntypedConstArg(expr) {
 		// An untyped constant's result is the constant's default type only
 		// until the call's type arguments are known (constThunkArg).
@@ -6041,7 +6035,11 @@ func (t *galaASTTransformer) constThunkArg(expr ast.Expr) *ast.FuncLit {
 
 // isWeakConstArg reports whether expr, a lowered argument, binds the type
 // parameters it fills only as an untyped constant does: it is one
-// (isUntypedConstArg), or a by-name thunk of one (constThunkArg).
+// (isUntypedConstArg), or a by-name thunk of one (constThunkArg). It is what
+// decides whether the slot's type arguments are spelled over the constant's
+// default; places that look at the constant itself (the order constants are
+// unified in, a lambda lowered over a constant's binding) keep
+// isUntypedConstArg.
 func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
 	return t.isUntypedConstArg(expr) || t.constThunkArg(expr) != nil
 }
@@ -6051,6 +6049,9 @@ func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
 // resolved are known: `func() int64 { return 5 }` for `func() U`, U int64.
 // paramType is the type of the parameter argument i fills, nil when none.
 func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, paramType func(i int) transpiler.Type, resolved map[string]transpiler.Type) {
+	if len(t.constThunks) == 0 {
+		return
+	}
 	for i, arg := range args {
 		lit := t.constThunkArg(arg)
 		if lit == nil {
