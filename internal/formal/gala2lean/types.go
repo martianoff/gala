@@ -695,7 +695,24 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		}
 		return g.exprType(e.Right, sc, seen)
 	case *coreexport.IfExpr:
-		return g.exprType(e.Then, sc, seen)
+		// The then branch's type, or the else branch's where only that one
+		// is fully plain to see.
+		th := g.exprType(e.Then, sc, maps.Clone(seen))
+		if th == "" || partialType(th) {
+			if el := g.exprType(e.Else, sc, seen); el != "" && !partialType(el) {
+				return el
+			}
+		}
+		return th
+	case *coreexport.Block, *coreexport.Match:
+		// A local value; at package level its type is not looked into.
+		if sc == nil {
+			return ""
+		}
+		if b, ok := e.(*coreexport.Block); ok {
+			return g.blockValueType(b, sc)
+		}
+		return g.matchType(e.(*coreexport.Match), sc, seen)
 	case *coreexport.Name:
 		if gv := g.globalBy[e.Name]; gv != nil && !seen[e.Name] {
 			if gv.typ != nil {
@@ -791,6 +808,43 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		return fmt.Sprintf("(T%d %s)", len(parts), strings.Join(parts, " "))
 	}
 	return ""
+}
+
+// matchType is the Lean type of match m's value: the type every arm whose
+// type is fully plain to see agrees on; "" when none is or two differ. An
+// arm's pattern binders are of unknown type here, so a name they shadow is
+// not read as the outer one.
+func (g *gen) matchType(m *coreexport.Match, sc *scope, seen map[string]bool) string {
+	t := ""
+	for _, cn := range m.Cases {
+		c, ok := cn.(*coreexport.Case)
+		if !ok {
+			return ""
+		}
+		armSc := sc.child()
+		binders := map[string]bool{}
+		g.patBinders(c.Pattern, binders)
+		for x := range binders {
+			armSc.bind(x, false, "")
+		}
+		// Each arm's own cycle guard, as instantiate gives each argument.
+		at := g.safeType(func() string { return g.exprType(c.Body, armSc, maps.Clone(seen)) })
+		switch {
+		case at == "" || partialType(at):
+			// Not plain to see, or only in part.
+		case t == "":
+			t = at
+		case at != t:
+			return ""
+		}
+	}
+	return t
+}
+
+// partialType reports whether Lean type t leaves a part to Lean (`_`, as a
+// lambda's result lambdaType cannot see).
+func partialType(t string) bool {
+	return slices.Contains(strings.FieldsFunc(t, func(r rune) bool { return r == ' ' || r == '(' || r == ')' }), "_")
 }
 
 // rawPrinted is the set of types whose values `fmt` can print raw, as Go

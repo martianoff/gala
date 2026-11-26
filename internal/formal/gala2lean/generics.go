@@ -560,6 +560,17 @@ func (g *gen) substSig(s *sig, m map[string]string, pos coreexport.Pos) {
 // unknownTypeArg stands for a type argument the translation cannot see.
 const unknownTypeArg = "_gala_unknown"
 
+// holdsUnknown reports whether type t holds unknownTypeArg.
+func holdsUnknown(t coreexport.Node) bool {
+	switch t := t.(type) {
+	case *coreexport.TypeName:
+		return t.Name == unknownTypeArg || slices.ContainsFunc(t.Args, holdsUnknown)
+	case *coreexport.TypeFunc:
+		return slices.ContainsFunc(t.Params, holdsUnknown) || holdsUnknown(t.Result)
+	}
+	return false
+}
+
 // ctorType is the Lean type of a call of the constructor of program type
 // name (a struct, or a case of a sealed type) whose fields are fields, as far
 // as the arguments' types are plain to see; "" when a type argument is not.

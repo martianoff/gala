@@ -1,8 +1,1 @@
-[
-  {
-    "program": "examples/lambda_generic_branch_result.gala",
-    "issue": 1419,
-    "symptom": "Lean rejected the translation (in main): failed to synthesize instance of type class",
-    "oracle": "gala2lean"
-  }
-]
+[]

@@ -192,7 +192,51 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 			}
 		}
 	}
+	if isFunc {
+		g.markTailLambdas(e, ft)
+	}
 	return g.expr(e, sc)
+}
+
+// markTailLambdas records function type expect for each lambda whose value
+// is e's: e itself, or one reached through parentheses, the branches of an
+// if, the arms of a match and a block's trailing statement. Those lambdas
+// are translated where e's value goes, so they take expect's parameter and
+// result types as a lambda passed directly does. The positions are the ones
+// expr and stmt (with value) translate as e's value. A lambda node has one
+// such position, so its mark holds wherever it is translated.
+func (g *gen) markTailLambdas(e coreexport.Node, expect *coreexport.TypeFunc) {
+	switch e := e.(type) {
+	case *coreexport.Lambda:
+		// A slot type holding a type argument the translation cannot see
+		// stops the lambda's translation (unknown-type-arg). A block body's
+		// result would otherwise be read as Unit, so it takes the type; an
+		// expression body's result is left to Lean, as without the slot.
+		if _, isBlock := e.Body.(*coreexport.Block); isBlock || !holdsUnknown(expect) {
+			g.tailExpect[e] = expect
+		}
+	case *coreexport.Paren:
+		g.markTailLambdas(e.Expr, expect)
+	case *coreexport.IfExpr:
+		g.markTailLambdas(e.Then, expect)
+		g.markTailLambdas(e.Else, expect)
+	case *coreexport.If:
+		// A block's trailing if/else carries its value (stmt).
+		if isValueIf(e) {
+			g.markTailLambdas(e.Then, expect)
+			g.markTailLambdas(e.Else, expect)
+		}
+	case *coreexport.Match:
+		for _, cn := range e.Cases {
+			if c, ok := cn.(*coreexport.Case); ok {
+				g.markTailLambdas(c.Body, expect)
+			}
+		}
+	case *coreexport.Block:
+		if len(e.Stmts) > 0 {
+			g.markTailLambdas(e.Stmts[len(e.Stmts)-1], expect)
+		}
+	}
 }
 
 // isFuncValue reports whether e plainly names a function value: a declared
@@ -205,6 +249,9 @@ func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
 // lambda translates a lambda; expect is the function type the context wants,
 // or nil.
 func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFunc) term {
+	if expect == nil {
+		expect = g.tailExpect[l]
+	}
 	if g.placeholders[l] {
 		if expect == nil || len(expect.Params) != len(l.Params) {
 			// The transformer makes a lambda of `_` only for a function
