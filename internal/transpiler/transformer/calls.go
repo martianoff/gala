@@ -3230,8 +3230,9 @@ func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetada
 
 // valueApplyCallee is `fun.Apply`, the method a call of fun calls when fun is
 // a value whose type has an Apply: a val, var or literal (valueApplyType), a
-// call's result (resultApplyType), and one with type arguments, `v[int](...)`
-// for `v.Apply[int](...)` of a generic Apply. A struct field is found once
+// call's result (resultApplyType), a read of an inout place (`(*k)`), and one
+// with type arguments, `v[int](...)` for `v.Apply[int](...)` of a generic
+// Apply. A struct field is found once
 // its receiver's type is known (fieldApplyType). The call is lowered as
 // `fun.Apply(...)` written out is: Section 3 lowers a generic Apply to its
 // free function, Section 4 calls any other with its parameters' types for
@@ -3252,11 +3253,15 @@ func (t *galaASTTransformer) valueApplyCallee(fun ast.Expr) (ast.Expr, bool) {
 	return nil, false
 }
 
-// calleeApplyType is the metadata of the type of fun, a val, var, literal or
-// call's result whose type has an Apply method; nil otherwise.
+// calleeApplyType is the metadata of the type of fun, a val, var, literal,
+// call's result or read of an inout place (`(*k)`) whose type has an Apply
+// method; nil otherwise.
 func (t *galaASTTransformer) calleeApplyType(fun ast.Expr) *transpiler.TypeMetadata {
 	if meta := t.valueApplyType(fun); meta != nil {
 		return meta
+	}
+	if _, isInout := t.inoutAddr(fun); isInout {
+		return t.applyTypeOf(t.getExprTypeName(fun))
 	}
 	return t.resultApplyType(fun)
 }
@@ -3352,25 +3357,34 @@ func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetad
 }
 
 // addressedApplyCallee is callee, `recv.Apply` (valueApplyCallee,
-// fieldApplyCallee), with recv given an address when Apply has a pointer
-// receiver and recv is a field or a call's result: Go calls a pointer method
-// only on an addressable operand, so recv becomes a pointer to a copy, as a
-// written-out `recv.Apply(...)` gets (addressableReceiver), or the call is
-// GALA-E0110 when Apply can change its receiver. A val's or literal's Apply
-// is called on it as before.
+// fieldApplyCallee), with recv checked and addressed as a written-out
+// `recv.Apply(...)` is: when Apply has a pointer receiver and recv is not
+// addressable (a val, a field reached through one, a call's result or a
+// literal), recv becomes a pointer to a copy (addressableReceiver), or the
+// call is GALA-E0110 when Apply can change its receiver; an inout place
+// whose address Apply could keep is GALA-E0113 (checkInoutReceiverUse).
 func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, line, col int) (ast.Expr, error) {
 	base, typeArgs := splitCallFunTypeArgs(callee)
 	sel, ok := base.(*ast.SelectorExpr)
-	if !ok || t.valueApplyType(sel.X) != nil {
+	if !ok {
 		return callee, nil
 	}
 	recvType := t.getExprTypeName(sel.X)
-	if !t.hasPointerReceiverMethod(recvType, "Apply") {
-		return callee, nil
+	recv := sel.X
+	if t.hasPointerReceiverMethod(recvType, "Apply") {
+		var err error
+		if recv, err = t.addressableReceiver(sel.X, recvType, "Apply", line, col); err != nil {
+			return nil, err
+		}
 	}
-	recv, err := t.addressableReceiver(sel.X, recvType, "Apply", line, col)
-	if err != nil {
+	// Outside the test above: a generic pointer Apply, which
+	// hasPointerReceiverMethod leaves to its free function, may keep the
+	// place's address too.
+	if err := t.checkInoutReceiverUse(recv, recvType, "Apply", true, line, col); err != nil {
 		return nil, err
+	}
+	if recv == sel.X {
+		return callee, nil
 	}
 	return applySelector(recv, typeArgs), nil
 }
@@ -3568,8 +3582,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	}
 
 	// --- Section 1.5: a value called through its Apply ---
-	// A value whose type has an Apply (a val, var, literal, struct field or
-	// call result) is called as `v.Apply(...)` written out is
+	// A value whose type has an Apply (a val, var, literal, struct field, call
+	// result or inout place) is called as `v.Apply(...)` written out is
 	// (valueApplyCallee): a generic Apply lowers to its free function (Section
 	// 3), any other is a method call whose arguments take its parameters'
 	// types (Section 4). The zero-argument call does the same in
