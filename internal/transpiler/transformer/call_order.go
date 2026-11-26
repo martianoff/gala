@@ -8,7 +8,6 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/registry"
 )
 
 // Argument order
@@ -105,7 +104,7 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 		// the parameter's type (`uint8(1 << n)` is 0 for n = 8), and only
 		// as a value, not a constant Go would fold: `int(-u)` for a uint8
 		// u passed 1 is 255, not the constant -1.
-		if t.isUntypedConstArg(arg) || isConversionOfUntypedConst(t, arg, typ) {
+		if t.isConstantArg(arg) {
 			return t.atParamType(arg, typ, true)
 		}
 		return arg
@@ -129,41 +128,49 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 	return ast.NewIdent(name)
 }
 
-// atParamType is read, an untyped constant expression a default reads for a
-// parameter of type typ, at typ when the parameter is declared with a
-// predeclared numeric type the use site does not shadow: there it has the
-// parameter's value wherever the default uses it (`float64(u / 2)` reads
-// `int64` division, not `float64(7.0 / 2)`). A constant read (constant set)
-// goes through std.EvalOperand[typ], a value rather than a typed constant, so
-// that the default computes with it as with the parameter: Go folds a typed
-// constant expression and rejects overflow (`-uint8(1)`) the parameter's
-// value would wrap. Another type (a named one the use site may not be able
-// to spell, or a type parameter, whose type Go infers) leaves read as it is.
+// atParamType is read, a constant expression a default reads for a parameter
+// of type typ, at typ when the parameter is declared with a predeclared
+// numeric type the use site does not shadow: there it has the parameter's
+// value wherever the default uses it (`float64(u / 2)` reads `int64`
+// division, not `float64(7.0 / 2)`). A constant read (constant set) is the
+// value of a function literal called at once, `func() T { return c }()`,
+// not a typed constant: Go folds a constant expression and rejects overflow
+// (`-uint8(1)`) the parameter's value wraps. It names nothing a local could
+// capture but the type. Another type (a named one the use site may not be
+// able to spell, or a type parameter, whose type Go infers) leaves read as
+// it is.
 func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, constant bool) ast.Expr {
 	basic, ok := typ.(transpiler.BasicType)
 	if !ok || !isConstantNumericType(basic.Name) || t.namesSomethingElse(basic.Name) {
 		return read
 	}
 	if constant {
-		if t.namesSomethingElse(registry.StdPackageName) || t.namesSomethingElse("EvalOperand") {
-			return read
-		}
-		return &ast.CallExpr{Fun: &ast.IndexExpr{X: t.stdIdent("EvalOperand"), Index: ast.NewIdent(basic.Name)}, Args: []ast.Expr{read}}
+		return &ast.CallExpr{Fun: thunkLit(&ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{read}}}}, ast.NewIdent(basic.Name))}
 	}
 	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
 }
 
-// isConversionOfUntypedConst reports whether arg is a conversion of an untyped
-// constant to typ, a predeclared type (`uint8(1)`): a typed constant, which
-// Go folds in the default as it does an untyped one at that type.
-func isConversionOfUntypedConst(t *galaASTTransformer, arg ast.Expr, typ transpiler.Type) bool {
-	basic, ok := typ.(transpiler.BasicType)
-	call, isCall := arg.(*ast.CallExpr)
-	if !ok || !isCall || len(call.Args) != 1 {
-		return false
+// isConstantArg reports whether arg, a lowered argument, is a Go constant
+// expression: an untyped constant (isUntypedConstArg, a shift by a value
+// included, whose type its use gives), or one built from constants with
+// operators and conversions to predeclared numeric types (`uint8(1)`,
+// `byte(200) + 50`), which Go folds wherever it is read.
+func (t *galaASTTransformer) isConstantArg(arg ast.Expr) bool {
+	if t.isUntypedConstArg(arg) {
+		return true
 	}
-	fun, isIdent := call.Fun.(*ast.Ident)
-	return isIdent && fun.Name == basic.Name && t.isUntypedConstArg(call.Args[0])
+	switch e := arg.(type) {
+	case *ast.ParenExpr:
+		return t.isConstantArg(e.X)
+	case *ast.UnaryExpr:
+		return e.Op != token.AND && e.Op != token.ARROW && t.isConstantArg(e.X)
+	case *ast.BinaryExpr:
+		return t.isConstantArg(e.X) && t.isConstantArg(e.Y)
+	case *ast.CallExpr:
+		fun, ok := e.Fun.(*ast.Ident)
+		return ok && len(e.Args) == 1 && isConstantNumericType(fun.Name) && !t.namesSomethingElse(fun.Name) && t.isConstantArg(e.Args[0])
+	}
+	return false
 }
 
 // namesSomethingElse reports whether name, a predeclared type or a package

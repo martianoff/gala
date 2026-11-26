@@ -43,7 +43,7 @@ func pick[U any](u U, z U = u) U = z
 			name: "shift by a val",
 			main: `val n = 8
     Println(narrow(u = 1 << n))`,
-			contains: "narrow(1<<n, int(std.EvalOperand[uint8](1<<n)))",
+			contains: "narrow(1<<n, int(func() uint8 {\n\t\treturn 1 << n\n\t}()))",
 		},
 		{
 			name: "shift by a var",
@@ -54,7 +54,7 @@ func pick[U any](u U, z U = u) U = z
 		{
 			name:     "Go package constant",
 			main:     `Println(kind(math.MaxInt8))`,
-			contains: "kind(math.MaxInt8, std.EvalOperand[int64](math.MaxInt8))",
+			contains: "kind(math.MaxInt8, func() int64 {\n\t\treturn math.MaxInt8\n\t}())",
 		},
 		{
 			name: "caller local named like the type keeps the plain read",
@@ -65,27 +65,38 @@ func pick[U any](u U, z U = u) U = z
 		{
 			name:     "constant in a conversion",
 			main:     `Println(half(7.0))`,
-			contains: "half(7.0, float64(std.EvalOperand[int64](7.0)/2))",
+			contains: "half(7.0, float64(func() int64 {\n\t\treturn 7.0\n\t}()/2))",
 		},
 		{
 			name:     "constant in an any slot",
 			main:     `Println(kind(5))`,
-			contains: "kind(5, std.EvalOperand[int64](5))",
+			contains: "kind(5, func() int64 {\n\t\treturn 5\n\t}())",
 		},
 		{
 			name:     "constant the parameter's type wraps",
 			main:     `Println(neg(1))`,
-			contains: "neg(1, int(-std.EvalOperand[uint8](1)))",
+			contains: "neg(1, int(-func() uint8 {\n\t\treturn 1\n\t}()))",
 		},
 		{
 			name:     "typed constant",
 			main:     `Println(neg(uint8(1)))`,
-			contains: "neg(uint8(1), int(-std.EvalOperand[uint8](uint8(1))))",
+			contains: "neg(uint8(1), int(-func() uint8 {\n\t\treturn uint8(1)\n\t}()))",
+		},
+		{
+			name:     "typed constant expression spelled with an alias",
+			main:     `Println(neg(byte(200) + 50))`,
+			contains: "return byte(200) + 50\n\t}()))",
+		},
+		{
+			name: "std local at the call site",
+			main: `val std = 1.5
+    Println(std, neg(1))`,
+			contains: "int(-func() uint8 {",
 		},
 		{
 			name:     "complex parameter",
 			main:     `Println(kindC(5))`,
-			contains: "kindC(5, std.EvalOperand[complex128](5))",
+			contains: "kindC(5, func() complex128 {\n\t\treturn 5\n\t}())",
 		},
 		{
 			name:     "type parameter left to Go",
