@@ -231,7 +231,8 @@ Commit the regenerated `src/` with the change to `grammar.js`.
   GALA allows it only inside `${...}` of an interpolated string, where the
   grammar needs it; elsewhere it is a compile error the grammar does not flag.
 - Only the outermost extractor of a pattern is highlighted as a constructor:
-  in `case Some(Ok(x))`, `Ok` is colored as a call.
+  in `case Some(Ok(x))`, `Ok` is colored as a call. The extractors of a
+  `|` alternative, `case Some(_) | None`, are colored as a call and a name.
 - A qualified type has one qualifier, `pkg.Type`; gala.g4 allows more dots.
 - A comment on the same line as, and just before, a `(`, `*p` or `&n` that
   starts a statement after a line break (`x` then `/* c */ *p = 5` on the

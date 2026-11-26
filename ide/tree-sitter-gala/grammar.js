@@ -109,6 +109,8 @@ module.exports = grammar({
     [$._signature],
     // So is a function type's: a struct field `f func()` followed by `g int`.
     [$.function_type],
+    // And a bare `return`'s: `return` then `x = 1` on the next line.
+    [$.return_statement],
     // `if (c) a else b` is an if expression; `if (c) { ... }` an if statement
     // with a parenthesized condition.
     [$.parenthesized_expression, $.if_expression],
@@ -304,7 +306,14 @@ module.exports = grammar({
     ),
 
     // goResults: '(' type (',' type)+ ')'
-    result_list: $ => seq($._lparen, $._type, repeat1(seq(',', $._type)), ')'),
+    // A plain '(' only, unlike `parameters`: a '(' that starts a line after
+    // `func()` begins a new statement, not the function type's results.
+    result_list: $ => seq(
+      choice('(', alias($._call_lparen, '(')),
+      $._type,
+      repeat1(seq(',', $._type)),
+      ')',
+    ),
 
     // parameters: ('(' | NL_LPAREN) parameterList? ')'
     parameter_list: $ => seq(
@@ -366,7 +375,14 @@ module.exports = grammar({
 
     // returnStatement: 'return' expression?
     // A value on the next line is still returned, as in gala.g4.
-    return_statement: $ => prec.right(seq('return', optional($._expression))),
+    // A bare `return` may be followed by a statement on the next line that
+    // does not continue it (`x = 1`, `x++`): a conflict for GLR to decide,
+    // preferring the value when both readings parse, as gala.g4's greedy
+    // `expression?` does.
+    return_statement: $ => choice(
+      prec.dynamic(1, seq('return', $._expression)),
+      'return',
+    ),
 
     // ifStatement: 'if' (simpleStatement ';')? expression block ('else' (block | ifStatement))?
     // `if (c) { a } else { b }` in statement position reads as both this and
