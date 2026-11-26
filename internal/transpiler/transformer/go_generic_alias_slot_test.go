@@ -19,9 +19,10 @@ import (
 // type arguments come from the other arguments (#1362).
 func TestGoGenericAliasSlot(t *testing.T) {
 	dir := t.TempDir()
-	// go 1.23, so any Go SDK from 1.23 on loads the module; the analyzer
-	// records the generic aliases all the same. examples/go_generic_alias
-	// covers them in a module at the repository's Go version.
+	// go 1.23 on purpose, so a host Go SDK of 1.23 can still list the
+	// module: go/types then reports that generic aliases need go1.24, and
+	// the analyzer records them all the same. examples/go_generic_alias
+	// covers them in a well-typed module at the repository's Go version.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module galiasmod\n\ngo 1.23\n"), 0o600))
 	libDir := filepath.Join(dir, "lib")
 	require.NoError(t, os.MkdirAll(libDir, 0o755))
@@ -68,4 +69,3 @@ func Ints() Seq[int] { return func(yield func(int) bool) { yield(1) } }
 		})
 	}
 }
-

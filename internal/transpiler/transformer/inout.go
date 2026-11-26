@@ -621,18 +621,28 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (d
 }
 
 // goDefinedUnderlying is the underlying type of typ, a type Go defines
-// (goDeclaredType) other than a non-generic alias, instantiated with typ's
-// type arguments; nil for any other type. A Go struct's is the placeholder
-// `any`, never a StructType.
+// (goDeclaredType) or an instance of a generic Go alias, instantiated with
+// typ's type arguments; nil for any other type. A Go struct's is the
+// placeholder `any`, never a StructType.
 func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []string) transpiler.Type {
 	_, data, args := t.goDeclaredType(typ, free)
-	// A generic alias (`type Handler[T any] = func(T) error`) reads as its
-	// target with the type arguments substituted; unaliasedType follows a
-	// plain one.
-	if data == nil || data.Kind == "alias" && len(data.TypeParams) == 0 {
+	if data == nil {
 		return nil
 	}
-	return t.instantiateGoType(data.Underlying, data.TypeParams, args)
+	if data.Kind != "alias" {
+		return t.instantiateGoType(data.Underlying, data.TypeParams, args)
+	}
+	// A generic alias (`type Handler[T any] = func(T) error`) reads as its
+	// target's underlying type, the type arguments substituted: an unnamed
+	// type only, so not a struct (the placeholder) or one go/types could not
+	// resolve. A plain alias is left to unaliasedType.
+	if len(data.TypeParams) == 0 || data.Underlying == nil || data.Underlying.IsAny() {
+		return nil
+	}
+	if u := t.instantiateGoType(data.Underlying, data.TypeParams, args); !transpiler.IsUnusable(u) {
+		return u
+	}
+	return nil
 }
 
 // goUnderlying is typ through aliases (unaliasedType) and then, when that is
