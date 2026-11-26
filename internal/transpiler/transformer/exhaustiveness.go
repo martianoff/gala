@@ -410,9 +410,11 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 			// `x: T` of the field's own type matches every value of it, unless
 			// the field may hold a value of another type: a typed pattern over
 			// an interface (`error`, `any` included) or a type parameter does
-			// not match nil.
+			// not match nil. A Go type this file has no type information for may be
+			// an interface, so it does not count either.
 			field := ctor.fields[i]
-			if transpiler.IsUnusable(field) || c.t.holdsAnyType(field) || !c.t.typedPatternOfType(pat, field) {
+			if transpiler.IsUnusable(field) || c.t.holdsAnyType(field) || c.t.isGoTypeWithoutInfo(field) ||
+				!c.t.typedPatternOfType(pat, field) {
 				fields[i] = covRefutable
 			}
 		default:
