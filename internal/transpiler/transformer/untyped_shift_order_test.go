@@ -60,7 +60,7 @@ func keys() map[int64]int = go_interop.MapEmpty[int64, int]()
 		{
 			name:     "read by a default, U inferred by Go from another argument",
 			main:     "var n = 2\n    Println(Box(0).Fold(f = mk64(), u = 1 << n))",
-			contains: "_tmp_3 := mk64()\n\t\t_tmp_2 := n\n\t\treturn Box_Fold(_tmp_1, 1<<_tmp_2, _tmp_3, 1<<_tmp_2)",
+			contains: "_tmp_2 := mk64()\n\t\t_tmp_1 := n\n\t\treturn Box_Fold(Box[int]{V: std.NewImmutable(0)}, 1<<_tmp_1, _tmp_2, 1<<_tmp_1)",
 		},
 		{
 			name:     "read by a default",
