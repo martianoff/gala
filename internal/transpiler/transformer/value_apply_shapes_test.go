@@ -282,6 +282,65 @@ func main() {
 	_, err = transpileBareVariant(t, mutating+"    val b = mkBox()\n    Println(b.h(3))\n}\n")
 	require.ErrorContains(t, err, "GALA-E0110")
 
+	// A val, a package-level val and a construction called through a
+	// pointer-receiver Apply follow the written-out `v.Apply(...)` rules too
+	// (#1398): an addressed copy for one that only reads its receiver,
+	// GALA-E0110 for one that changes it; a var is called in place.
+	out, err = transpileBareVariant(t, `package main
+
+struct Counter(var n int)
+
+func (c *Counter) Apply(x int) int = c.n + x
+
+val pc = Counter(2)
+
+func main() {
+    val c = Counter(1)
+    var v = Counter(3)
+    Println(c(3), pc(1), Counter(5)(3), v(4))
+}
+`)
+	require.NoError(t, err)
+	for _, w := range []string{"std.AddrOfCopy(c).Apply(3)", "std.AddrOfCopy(pc.Get()).Apply(1)", "std.AddrOfCopy(Counter{n: 5}).Apply(3)", "v.Apply(4)"} {
+		require.Contains(t, out, w)
+	}
+	_, err = transpileBareVariant(t, mutating+"    val b = Counter(1)\n    Println(b(3))\n}\n")
+	require.ErrorContains(t, err, "GALA-E0110")
+
+	// An inout place is not lent to an Apply that may keep its address, as
+	// with `k.Apply(1)` written out (GALA-E0113).
+	for _, use := range []string{
+		"func lend(inout k Keeper) = Println(k(1).n)\n\nfunc main() {\n    var k = Keeper(1)\n    lend(&k)\n}\n",
+		"func lend(inout h Hold) = Println(h.k(1).n)\n\nfunc main() {\n    var h = Hold(Keeper(1))\n    lend(&h)\n}\n",
+	} {
+		_, err = transpileBareVariant(t, `package main
+
+struct Keeper(var n int)
+
+func (k Ptr[Keeper]) Apply(x int) Ptr[Keeper] = k
+
+struct Hold(var k Keeper)
+
+`+use)
+		require.ErrorContains(t, err, "GALA-E0113", use)
+	}
+	// One that only reads its receiver is called on the place.
+	out, err = transpileBareVariant(t, `package main
+
+struct Plain(var n int)
+
+func (p Plain) Apply(x int) int = p.n + x
+
+func lend(inout p Plain) = Println(p(1))
+
+func main() {
+    var p = Plain(1)
+    lend(&p)
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "(*p).Apply(1)")
+
 	// A misplaced spread names the field's type too.
 	_, err = transpileBareVariant(t, `package main
 

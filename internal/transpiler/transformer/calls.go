@@ -3219,11 +3219,15 @@ func (t *galaASTTransformer) valueApplyCallee(fun ast.Expr) (ast.Expr, bool) {
 	return nil, false
 }
 
-// calleeApplyType is the metadata of the type of fun, a val, var, literal or
-// call's result whose type has an Apply method; nil otherwise.
+// calleeApplyType is the metadata of the type of fun, a val, var, literal,
+// call's result or read of an inout place (`(*k)`) whose type has an Apply
+// method; nil otherwise.
 func (t *galaASTTransformer) calleeApplyType(fun ast.Expr) *transpiler.TypeMetadata {
 	if meta := t.valueApplyType(fun); meta != nil {
 		return meta
+	}
+	if _, isInout := t.inoutAddr(fun); isInout {
+		return t.applyTypeOf(t.getExprTypeName(fun))
 	}
 	return t.resultApplyType(fun)
 }
@@ -3319,25 +3323,31 @@ func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetad
 }
 
 // addressedApplyCallee is callee, `recv.Apply` (valueApplyCallee,
-// fieldApplyCallee), with recv given an address when Apply has a pointer
-// receiver and recv is a field or a call's result: Go calls a pointer method
-// only on an addressable operand, so recv becomes a pointer to a copy, as a
-// written-out `recv.Apply(...)` gets (addressableReceiver), or the call is
-// GALA-E0110 when Apply can change its receiver. A val's or literal's Apply
-// is called on it as before.
+// fieldApplyCallee), with recv checked and addressed as a written-out
+// `recv.Apply(...)` is: when Apply has a pointer receiver and recv is not
+// addressable (a val, a field reached through one, a call's result or a
+// literal), recv becomes a pointer to a copy (addressableReceiver), or the
+// call is GALA-E0110 when Apply can change its receiver; an inout place
+// whose address Apply could keep is GALA-E0113 (checkInoutReceiverUse).
 func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, line, col int) (ast.Expr, error) {
 	base, typeArgs := splitCallFunTypeArgs(callee)
 	sel, ok := base.(*ast.SelectorExpr)
-	if !ok || t.valueApplyType(sel.X) != nil {
+	if !ok {
 		return callee, nil
 	}
 	recvType := t.getExprTypeName(sel.X)
-	if !t.hasPointerReceiverMethod(recvType, "Apply") {
-		return callee, nil
+	recv := sel.X
+	if t.hasPointerReceiverMethod(recvType, "Apply") {
+		var err error
+		if recv, err = t.addressableReceiver(sel.X, recvType, "Apply", line, col); err != nil {
+			return nil, err
+		}
 	}
-	recv, err := t.addressableReceiver(sel.X, recvType, "Apply", line, col)
-	if err != nil {
+	if err := t.checkInoutReceiverUse(recv, recvType, "Apply", true, line, col); err != nil {
 		return nil, err
+	}
+	if recv == sel.X {
+		return callee, nil
 	}
 	return applySelector(recv, typeArgs), nil
 }

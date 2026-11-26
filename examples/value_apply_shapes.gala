@@ -45,6 +45,8 @@ func makeShelf() Shelf = Shelf(Counter(100))
 
 func makeCounter() Counter = Counter(40)
 
+val sharedCounter = Counter(7)
+
 func main() {
     val p = Plain(10)
     Println(p(_ + 1))
@@ -64,4 +66,9 @@ func main() {
 
     Println(makeShelf().c(1))
     Println(makeCounter()(2))
+
+    val local = Counter(10)
+    Println(local(1))
+    Println(sharedCounter(1))
+    Println(Counter(20)(1))
 }
