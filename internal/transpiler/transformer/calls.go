@@ -748,6 +748,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// therefore kept apart (fromSlot) and only fill what the arguments leave.
 	var fromSlot map[string]transpiler.Type
 	slotTyped := map[string]bool{} // bound from the slot over an untyped constant argument
+	slotConst := map[string]transpiler.Type{} // the widest default type the constants a slotTyped parameter takes give it
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && !transpiler.IsUnusableOrAny(pendingExpected) {
 		// The slot binds only what it can name: no type parameter left
 		// unbound by another callee, no masked part (resultSlotTypeArgs).
@@ -909,10 +910,16 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// function of no parameters is a thunk already, passed
 				// as it is (below). One that fails to lower against the
 				// slot is lowered as it was before by-name lifting here.
-				// A binding only constants made so far stays open: the
-				// thunk's own type may replace or widen it, as a bare
-				// argument's does (`b.Both(5, x64)`).
-				byNameType = t.substituteTranspilerTypeParams(byNameType, withoutKeys(typeSubst, weakConst))
+				// A binding only constants made so far stays open for an
+				// expression with a type of its own: it replaces or widens
+				// the binding, as a bare argument's does (`b.Both(5,
+				// x64)`). One whose type comes from the slot (`None()`)
+				// is lowered against the binding, as before.
+				bindings := typeSubst
+				if len(weakConst) > 0 && thunksFixable && t.hasOwnByNameType(v.expr) {
+					bindings = withoutKeys(typeSubst, weakConst)
+				}
+				byNameType = t.substituteTranspilerTypeParams(byNameType, bindings)
 				open := typeMentionsTypeParam(byNameType, methodMeta.TypeParams) || typeMentionsTypeParam(byNameType, typeMeta.TypeParams)
 				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: open}, false)
 				if _, lifted := expr.(*ast.FuncLit); txErr == nil && lifted && sendable {
@@ -1030,10 +1037,13 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					// Go would infer the constant's default type, so the
 					// slot's is spelled when it differs
 					// (resultOnlyMethodTypeArgs).
-					// Any one of them differing decides it: Go infers
-					// the widest of their kinds, which the last alone
-					// need not show (`Pick(1.0, 2)` in an `int` slot).
-					slotTyped[tp] = slotTyped[tp] || slot.String() != inferred.String()
+					// Go infers the widest of their kinds, which the
+					// last alone need not show (`Pick(1.0, 2)` in an
+					// `int` slot).
+					if widest, seen := slotConst[tp]; !seen || numericConstRank(inferred.String()) > numericConstRank(widest.String()) {
+						slotConst[tp] = inferred
+					}
+					slotTyped[tp] = slot.String() != slotConst[tp].String()
 					continue
 				}
 				// A binding only constants made is weak, as in Go: a typed
@@ -7078,4 +7088,30 @@ func withoutKeys(subst typeSubstMap, drop map[string]transpiler.Type) typeSubstM
 		}
 	}
 	return out
+}
+
+// hasOwnByNameType reports whether expr, an argument passed by name, has a
+// type of its own rather than one the slot gives it: an untyped constant
+// (weak, see constThunkArg), or a name, field, index or call of a type known
+// here (`x64`, `f()`), not a call that takes its type arguments from the slot
+// (`None()`) nor an if or match, whose constants the slot types.
+func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc) bool {
+	lowered, err := t.lowerExpr(expr)
+	if err != nil {
+		return false
+	}
+	if t.isUntypedConstArg(lowered) {
+		return true
+	}
+	switch e := lowered.(type) {
+	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr:
+	case *ast.CallExpr:
+		if _, lit := ast.Unparen(e.Fun).(*ast.FuncLit); lit {
+			return false
+		}
+	default:
+		return false
+	}
+	typ := t.probeExprType(lowered)
+	return !transpiler.ContainsUnusable(typ) && !typ.IsAny() && !t.mentionsUnboundTypeParam(typ)
 }
