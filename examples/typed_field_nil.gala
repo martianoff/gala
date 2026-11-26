@@ -1,0 +1,23 @@
+package main
+
+import "fmt"
+
+// A typed pattern tests the dynamic type, so over an interface field it does
+// not match nil: the match needs a case for a nil field too.
+
+sealed type R {
+    case Ok(Err error)
+    case Other()
+}
+
+func describe(r R) string = r match {
+    case Ok(e: error) => s"error ${e.Error()}"
+    case Ok(_) => "nil error"
+    case Other() => "other"
+}
+
+func main() {
+    Println(describe(Ok(fmt.Errorf("boom"))))
+    Println(describe(Ok(nil)))
+    Println(describe(Other()))
+}

@@ -1993,6 +1993,13 @@ gala_exec_test(
     expected = "parenthesized_pattern.out",
 )
 
+# A typed pattern over an interface field does not match nil
+gala_exec_test(
+    name = "typed_field_nil",
+    src = "typed_field_nil.gala",
+    expected = "typed_field_nil.out",
+)
+
 # A '(' that starts a line begins a new statement instead of calling the line before
 gala_exec_test(
     name = "newline_paren_statement",
