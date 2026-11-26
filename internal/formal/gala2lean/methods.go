@@ -462,13 +462,14 @@ func (g *gen) receiverUses(f *coreexport.Func, name string, whole bool) {
 			}
 			return
 		}
-		walkChildren(n, func(c coreexport.Node) { visit(c, inLambda) })
+		// An argument holding `_` marks may be a placeholder lambda.
+		g.walkArgs(n, func(c coreexport.Node, lambda bool) { visit(c, inLambda || lambda) })
 	}
 	visit(f.Body, false)
 	// A parameter's default sees the receiver and the parameters before it.
 	for _, pn := range f.Params {
 		if p, ok := pn.(*coreexport.Param); ok {
-			visit(p.Default, false)
+			visit(p.Default, g.markedArg(p.Default))
 		}
 	}
 }
@@ -675,6 +676,7 @@ func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scop
 		}
 		positional(e.Args[0])
 		g.comparable(s.Target, sc)
+		g.placeholderArg(e.Args[0], &coreexport.TypeName{Name: name})
 		x, y := g.expr(s.Target, sc), g.expr(e.Args[0], sc)
 		return wrap(fmt.Sprintf("(%s == %s)", x.val(), y.val()), x, y), true
 	case "Copy":
@@ -690,7 +692,7 @@ func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scop
 			if !ok || g.fieldByType(t, na.Name) == nil {
 				unsup(posOf(a), "copy-argument")
 			}
-			v := g.exprExpect(na.Value, sc, g.fieldByType(t, na.Name).Type)
+			v := g.argExpect(na.Value, sc, g.fieldByType(t, na.Name).Type)
 			subs = append(subs, v)
 			sets = append(sets, ident(na.Name)+" := "+v.val())
 		}

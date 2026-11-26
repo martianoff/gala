@@ -96,6 +96,24 @@ func TestCommittedTranslation(t *testing.T) {
 		"formal/Gala/Gala2Lean/Examples/Match.lean is not the translator's output; regenerate it (see this test's comment)")
 }
 
+// TestPlaceholderArgsChecked translates every program the tests stage and
+// checks that no call argument that may hold a placeholder lambda's `_` was
+// translated without placeholderArg's check (placeholder-unchecked-arg): a
+// new path that translates arguments must check them.
+func TestPlaceholderArgsChecked(t *testing.T) {
+	srcs := programs(t)
+	for _, p := range slices.Sorted(maps.Keys(srcs)) {
+		_, err := gala2lean.Translate(export(t, p, srcs[p]), gala2lean.Options{Namespace: "GalaProgram", Main: true})
+		var u *gala2lean.UnsupportedError
+		if !errors.As(err, &u) {
+			continue
+		}
+		for _, it := range u.Items {
+			require.NotEqual(t, "placeholder-unchecked-arg", it.Construct, "%s: %s", p, it)
+		}
+	}
+}
+
 // TestUnsupportedIsNamed checks that a construct outside the translated
 // subset is reported by name, and that nothing is translated then.
 func TestUnsupportedIsNamed(t *testing.T) {
@@ -175,7 +193,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a SortWith less that divides by a zero literal", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(ArrayOf(2, 1).SortWith((a, b) => a % 0x0 < b)) }\n", "sort-less-not-pure"},
 		{"a SortWith less that interpolates", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(ArrayOf(2, 1).SortWith((a, b) => s\"$a\" < s\"$b\")) }\n", "sort-less-not-pure"},
 		{"a SortWith less comparing values with a custom Equal", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct P(N int)\nfunc (p P) Equal(o P) bool = true\nfunc main() { Println(ArrayOf(P(2), P(1)).SortWith((a, b) => a == b).Size()) }\n", "custom-equal"},
-		{"a SortWith less passed as a value","package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val lt = (a int, b int) => a < b\n Println(ArrayOf(2, 1).SortWith(lt)) }\n", "sort-less-not-pure"},
+		{"a SortWith less passed as a value", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val lt = (a int, b int) => a < b\n Println(ArrayOf(2, 1).SortWith(lt)) }\n", "sort-less-not-pure"},
 		{"a strings.Replacer held as a value", "package main\nimport \"strings\"\n\nfunc main() { val r = strings.NewReplacer(\"a\", \"b\")\n Println(r.Replace(\"a\")) }\n", "import"},
 		{"a spread of a GALA list into NewReplacer", "package main\nimport \"strings\"\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(strings.NewReplacer(ListOf(\"a\", \"b\")...).Replace(\"a\")) }\n", "spread-arg"},
 		{"a constant outside int64", "package main\nfunc main() { Println(1 << 70) }\n", "untyped-constant"},
@@ -184,16 +202,17 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"negating the int64 minimum", "package main\nfunc main() { Println(-(-9223372036854775808)) }\n", "untyped-constant"},
 		{"an order on constant bools", "package main\nfunc main() { Println(true < false) }\n", "untyped-constant"},
 		{"constants of different kinds", "package main\nfunc main() { Println(1 + \"a\") }\n", "untyped-constant"},
-		{"an int literal one past int64","package main\nfunc main() { Println(9223372036854775808) }\n", "untyped-constant"},
+		{"an int literal one past int64", "package main\nfunc main() { Println(9223372036854775808) }\n", "untyped-constant"},
 		{"a constant division by zero", "package main\nfunc main() { Println(1 / 0) }\n", "untyped-constant"},
 		{"a negative constant shift count in a larger expression", "package main\nfunc main() { val x = 2\n Println(x + (1 << -1)) }\n", "untyped-constant"},
-		{"a placeholder lambda of two parameters", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val t = ListOf(1, 2).FoldLeft(0, _ + _)\n Println(t) }\n", "placeholder-lambda"},
-		{"a placeholder in an argument of a call inside the argument", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc inc(n int) int = n + 1\nfunc main() { val ys = ListOf(1).Map(inc(_))\n Println(ys) }\n", "placeholder-lambda"},
-		{"a placeholder argument inside another call's argument", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { Println(ListOf(1).Map(_ + 1)) }\n", "placeholder-lambda"},
 		{"a placeholder for a slot that is not a function", "package main\nfunc inc(n int) int = n + 1\nfunc main() { val y = inc(_ + 1)\n Println(y) }\n", "placeholder-lambda"},
 		{"a placeholder inside an interpolated string", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val ys = ArrayOf(1).Map(s\"v${_}\")\n Println(ys) }\n", "placeholder-lambda"},
-		{"a placeholder in an if expression", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct R(Lo int)\nfunc main() { val ys = ArrayOf(R(1)).Map(if (_.Lo > 1) \"a\" else \"b\")\n Println(ys) }\n", "placeholder-lambda"},
-		{"a placeholder as a match subject", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct R(Lo int)\nfunc main() { val ys = ArrayOf(R(1)).Map(_ match {\n case R(lo) => lo\n case _ => 0\n })\n Println(ys) }\n", "placeholder-lambda"},
+		{"a placeholder a nested function slot takes", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct R(Lo int)\nfunc main() { val nums = ArrayOf(1, 2)\n val ys = ArrayOf(R(1)).Map(if (_.Lo > 1) nums.Map(_ * 2).Size() else 0)\n Println(ys) }\n", "placeholder-lambda"},
+		{"a placeholder in a case body", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val ys = ArrayOf(1).Map((x) => x match {\n case 1 => _ + 1\n case _ => 0\n })\n Println(ys) }\n", "placeholder-lambda"},
+		{"a placeholder for a type parameter's slot", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val ys = ArrayOf(1).Map(Some(_))\n Println(ys) }\n", "placeholder-lambda"},
+		{"a placeholder under a function-typed val in the argument", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val ys = ArrayOf(1).Map(if (true) {\n val f func(int) int = _\n f(1)\n } else 0)\n Println(ys) }\n", "placeholder-lambda"},
+		{"a placeholder under a function-typed field in the argument", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct Box(F func(int) int)\nfunc main() { val ys = ArrayOf(1).Map(Box(_).F(1))\n Println(ys) }\n", "placeholder-lambda"},
+		{"a pointer receiver written in a placeholder lambda's body", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct P(var X int)\nfunc (p *P) Bump(nums Array[int]) Array[int] = nums.Map(if (true) {\n p.X = p.X + 1\n _\n } else 0)\nfunc main() { var p = P(0)\n Println(p.Bump(ArrayOf(1, 2)))\n Println(p.X) }\n", "ptr-escape"},
 		{"one placeholder for a function of two parameters", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val t = ListOf(1, 2).FoldLeft(0, _ + 1)\n Println(t) }\n", "placeholder-lambda"},
 		{"fmt.Println of an Option", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(Some(1)) }\n", "fmt-operand"},
 		{"fmt.Println as a value", "package main\nimport \"fmt\"\n\nfunc main() { val r = fmt.Println(1)\n Println(r.IsSuccess()) }\n", "fmt-value"},

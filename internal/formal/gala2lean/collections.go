@@ -79,6 +79,7 @@ func (g *gen) seqCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
 	subs := make([]term, len(e.Args))
 	for i, a := range e.Args {
 		positional(a)
+		g.placeholderArg(a, nil) // a type parameter's slot
 		subs[i] = g.expr(a, sc)
 		parts[i] = subs[i].val()
 	}
@@ -222,8 +223,14 @@ func (g *gen) seqCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 	if m.prints {
 		g.printableType(elem, s.Pos)
 	}
-	if m.safeFn && !safeLess(argNode(e.Args[0])) {
-		unsup(posOf(e.Args[0]), "sort-less-not-pure")
+	if m.safeFn {
+		less := argNode(e.Args[0])
+		if l, ok := g.placeholderLambda(less, g.seqParamType(m.params[0], elem, kind, nil)); ok {
+			less = l
+		}
+		if !safeLess(less) {
+			unsup(posOf(e.Args[0]), "sort-less-not-pure")
+		}
 	}
 	recv := g.expr(s.Target, sc)
 	subs := []term{recv}
@@ -231,7 +238,7 @@ func (g *gen) seqCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 	var u coreexport.Node
 	for i, a := range e.Args {
 		positional(a)
-		t := g.exprExpect(a, sc, g.seqParamType(m.params[i], elem, kind, u))
+		t := g.argExpect(a, sc, g.seqParamType(m.params[i], elem, kind, u))
 		if m.params[i] == "U" {
 			u = g.galaType(g.typeOf(a, sc))
 		}

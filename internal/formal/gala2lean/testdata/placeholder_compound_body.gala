@@ -1,0 +1,54 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A copy of examples/placeholder_compound_body.gala without its last line,
+// `rs.Map(if (_.Lo > 1) nums.Map(_ * 2).Size() else 0)`: there a nested
+// call's own function slot takes the inner `_`, which gala2lean reports
+// (placeholders.go), so the example as a whole does not translate. Keep the
+// rest in step with the example.
+struct R(Lo int)
+
+func label(n int) string = if (n > 2) "big" else "small"
+
+func main() {
+    val rs = ArrayOf(R(1), R(2), R(3))
+    val nums = ArrayOf(1, 2, 3, 4)
+
+    // An if expression.
+    Println(rs.Map(if (_.Lo > 1) "a" else "b"))
+
+    // A match on the placeholder; the `case _` pattern stays a wildcard.
+    Println(nums.Map(_ match {
+        case 1 => "one"
+        case 2 => "two"
+        case _ => "other"
+    }))
+
+    // A match that destructures the placeholder.
+    Println(rs.Map(_ match {
+        case R(lo) if lo > 1 => lo * 10
+        case _ => 0
+    }))
+
+    // A captured outer variable.
+    val threshold = 2
+    Println(nums.Map(if (_ > threshold) "over" else "under"))
+
+    // A block.
+    Println(nums.Map(if (threshold > 1) {
+        val doubled = _ * 2
+        doubled + 1
+    } else 0))
+
+    // A nested if.
+    Println(nums.Map(if (threshold > 1) (if (_ > 3) "big" else "small") else "none"))
+
+    // A placeholder inside a call whose own slot takes no function: it is the
+    // outer lambda's parameter.
+    Println(nums.Map(if (label(_) == "big") 1 else 0))
+
+    // Two placeholders in a two-parameter slot, left to right: the
+    // accumulator, then the element.
+    Println(nums.FoldLeft(0, _ + (if (_ % 2 == 0) 10 else 1)))
+}

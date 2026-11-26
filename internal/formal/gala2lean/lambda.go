@@ -165,6 +165,14 @@ func (g *gen) safeType(f func() string) string {
 // argument).
 func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) term {
 	ft, isFunc := expect.(*coreexport.TypeFunc)
+	if isFunc && g.inPlaceholder > 0 && hasPlaceholderParam(e) {
+		// A typed context that is not an argument (a val, say) starts no
+		// placeholder lambda of its own, so its `_` are the outer lambda's.
+		// Reported whatever it reads them in: `val f func(int) int = _`
+		// does not compile in Go, and telling it from one that does
+		// (`adder(_)`, adder taking an int) is not modelled.
+		unsup(posOf(e), "placeholder-lambda")
+	}
 	if l, ok := e.(*coreexport.Lambda); ok {
 		if !isFunc {
 			ft = nil
@@ -197,10 +205,16 @@ func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
 // lambda translates a lambda; expect is the function type the context wants,
 // or nil.
 func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFunc) term {
-	if g.placeholders[l] && (expect == nil || len(expect.Params) != 1) {
-		// The transformer makes a lambda of `_` only for a function type,
-		// of one parameter per `_` (placeholders.go).
-		unsup(l.Pos, "placeholder-lambda")
+	if g.placeholders[l] {
+		if expect == nil || len(expect.Params) != len(l.Params) {
+			// The transformer makes a lambda of `_` only for a function
+			// type, of one parameter per `_` (placeholders.go).
+			unsup(l.Pos, "placeholder-lambda")
+		}
+		// Its parameters may be read in nested call arguments only where
+		// no inner lambda takes them (placeholderArg).
+		g.inPlaceholder++
+		defer func() { g.inPlaceholder-- }()
 	}
 	ls := newScope(sc, 0)
 	var ps []string
@@ -350,6 +364,15 @@ func (g *gen) findBoxes(p *coreexport.Program) {
 		}
 	}
 	var visit func(n coreexport.Node)
+	// lambdaLevel visits n, one lambda deeper when it may be a placeholder
+	// lambda (markedArg).
+	lambdaLevel := func(n coreexport.Node, lambda bool) {
+		if lambda {
+			depth++
+			defer func() { depth-- }()
+		}
+		visit(n)
+	}
 	visit = func(n coreexport.Node) {
 		switch n := n.(type) {
 		case nil:
@@ -387,7 +410,7 @@ func (g *gen) findBoxes(p *coreexport.Program) {
 			push()
 			for _, pn := range n.Params {
 				if p, ok := pn.(*coreexport.Param); ok {
-					visit(p.Default)
+					lambdaLevel(p.Default, g.markedArg(p.Default))
 					declare(p, p.Name, false)
 				}
 			}
@@ -419,7 +442,7 @@ func (g *gen) findBoxes(p *coreexport.Program) {
 			pop()
 			return
 		}
-		walkChildren(n, visit)
+		g.walkArgs(n, lambdaLevel)
 	}
 	push()
 	for _, f := range p.Files {

@@ -188,6 +188,14 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 // statement), so an argument that calls a pointer method writes its
 // receiver back there, in argument order (`x.m(x.n())`).
 func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]string, term) {
+	items, t := g.callItemsInner(s, e, sc, hoist)
+	// A pointer method's call as a statement or a val's value reaches here
+	// without g.call.
+	g.uncheckedArgs(e)
+	return items, t
+}
+
+func (g *gen) callItemsInner(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]string, term) {
 	if s.variadic {
 		e = packCall(s, e)
 	}
@@ -202,6 +210,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	pre := make([][]string, len(e.Args))
 	hoisted := false
 	for i, a := range e.Args {
+		g.placeholderArg(a, s.types[paramOf[i]])
 		if s.lent[i] != nil {
 			continue // read after the other arguments, below
 		}
@@ -215,7 +224,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 			vals[i] = g.packTerm(p, sc, s.types[paramOf[i]])
 			continue
 		}
-		vals[i] = g.exprExpect(argNode(a), sc, s.types[paramOf[i]])
+		vals[i] = g.argExpect(argNode(a), sc, s.types[paramOf[i]])
 	}
 	inOrder := true
 	defaults := false
@@ -299,7 +308,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 		}
 		saved := g.qualify
 		g.qualify = true
-		d := g.exprExpect(s.defaults[k], dsc, s.types[k])
+		d := g.argExpect(s.defaults[k], dsc, s.types[k])
 		g.qualify = saved
 		delete(g.inDefault, key)
 		tmp := g.freshName("d")
@@ -341,9 +350,17 @@ func (g *gen) apply(s *sig, args []string, subs ...term) term {
 	return actUnit(c, s.unit)
 }
 
-// call translates a call: of a declared function, struct or variant, of
-// Println/Print, of an Option/Either constructor, or of a function value.
+// call translates call e, then checks that every argument of it that may
+// hold a placeholder lambda's `_` went through placeholderArg (uncheckedArgs).
 func (g *gen) call(e *coreexport.Call, sc *scope) term {
+	t := g.callInner(e, sc)
+	g.uncheckedArgs(e)
+	return t
+}
+
+// callInner translates a call: of a declared function, struct or variant,
+// of Println/Print, of an Option/Either constructor, or of a function value.
+func (g *gen) callInner(e *coreexport.Call, sc *scope) term {
 	if u, ok := e.Callee.(*coreexport.Unsupported); ok {
 		unsup(u.Pos, "%s", u.What)
 	}
@@ -432,7 +449,7 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 		if ft != nil && i < len(ft.Params) {
 			expect = ft.Params[i]
 		}
-		t := g.exprExpect(a, sc, expect)
+		t := g.argExpect(a, sc, expect)
 		parts, subs = append(parts, t.val()), append(subs, t)
 	}
 	if len(e.Args) == 0 {
@@ -471,6 +488,7 @@ func (g *gen) print(x string, e *coreexport.Call, sc *scope) term {
 	for i, a := range e.Args {
 		positional(a)
 		g.printable(a, sc)
+		g.placeholderArg(a, anyType)
 		subs[i] = g.expr(a, sc)
 		shown[i] = "garg " + subs[i].val()
 	}
@@ -530,6 +548,8 @@ func (g *gen) stdCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
 		return term{code: head, pure: true}
 	}
 	positional(e.Args[0])
+	// A type parameter's slot: whether it takes a function is not plain.
+	g.placeholderArg(e.Args[0], nil)
 	v := g.expr(e.Args[0], sc)
 	return wrap("("+head+" "+v.val()+")", v)
 }

@@ -120,7 +120,7 @@ func (g *gen) packTerm(p *packed, sc *scope, elem coreexport.Node) term {
 	parts := make([]string, len(p.elems))
 	subs := make([]term, len(p.elems))
 	for i, a := range p.elems {
-		subs[i] = g.exprExpect(a, sc, elem)
+		subs[i] = g.argExpect(a, sc, elem)
 		parts[i] = subs[i].val()
 	}
 	code := "[" + strings.Join(parts, ", ") + "]"

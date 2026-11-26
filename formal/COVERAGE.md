@@ -375,15 +375,19 @@ galaspec models them, except as listed below):
   reference cell in the program state (one heap per type), so the lambda and the code
   around it share it, as GALA's capture by reference says; a `func() T` parameter turns
   a plain argument into a thunk;
-- a placeholder lambda of one `_`, `rs.Map(_.Lo)`, as the lambda the transformer makes
-  of it (`(p) => p.Lo`), where the argument is built only of the `_`, literals, names,
-  operators, selects, interpolated strings of these and calls on the `_` with literal or
-  name arguments (`_.Contains(1)`), and its call is not itself inside a call argument, up
-  to the nearest enclosing lambda, case clause or top-level declaration: then no other
-  slot can take the `_`, and the transformer's rewrite reaches it. Every other `_` is
-  reported (`placeholder-lambda`): two or more in one argument, one in an if or match
-  expression, a block or an interpolated string, and one for a slot that is not a
-  function type of one parameter;
+- placeholder lambdas, `rs.Map(_.Lo)` or `nums.Map(if (_ > 2) "a" else "b")`, as the
+  transformer makes them: at a call argument or default value whose slot is a function
+  type of k parameters, a lambda of the k `_` written in the argument (outside nested
+  lambdas, case clauses and interpolated strings), in source order, where no other slot
+  could take one. Every argument around it, up to the nearest lambda or case clause,
+  has a slot known not to be a function type (`int`, `int64`, `string`, `bool` or `any`, a
+  declared struct or sealed type, or std's `Option`, `Either`, `Tuple`, `Tuple3`, `Tuple4`,
+  `Array`, `List`, `HashMap` or `HashSet`; never a name the program declares as a type
+  parameter), and so has every argument
+  between it and each `_`, so the innermost function slot around each `_` is its own.
+  Everything else is reported (`placeholder-lambda`): a `_` a nested function slot would
+  take, one under a slot whose type is not known (a type parameter, say), one in a case
+  clause, a nested lambda or `${...}`, and a count of `_` other than k;
 - `Some`, `None`, `Left` and `Right`, as the prelude's `GOption` and `GEither`, with
   their patterns, and the methods std declares for them (`IsDefined`, `IsEmpty`, `Get`,
   `GetOrElse`, `OrElse`, `OnSome`, `OnNone`, `ForEach`, `Map`, `FlatMap`, `Filter`,

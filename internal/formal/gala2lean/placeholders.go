@@ -1,7 +1,9 @@
 package gala2lean
 
 import (
-	"strconv"
+	"cmp"
+	"slices"
+	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
 )
@@ -10,36 +12,51 @@ import (
 // contains `_` is a lambda of one parameter per `_` (docs/GALA.MD,
 // "Placeholder Lambda Shorthand"). The rules here follow the transformer's
 // code (internal/transpiler/transformer; lines at the time of writing):
-// tryRewriteAsPlaceholderLambda (lambdas.go:1551) rewrites an argument when
-// its expected type is a function type and countPlaceholders
-// (args_source.go:223) finds a `_` in it, counting through the whole
-// argument, nested call arguments included but not nested lambdas or case
-// clauses; transformArgument (calls.go:5116) tries it on an argument before
-// lowering what is inside, so the outermost argument whose slot is a
-// function type takes the `_`. The Core exporter marks each `_` in place,
-// as the unsupported construct placeholder-lambda.
 //
-// lowerPlaceholders rewrites an argument A of a call C into an untyped
-// lambda of one parameter p, its `_` replaced by p, only where that choice
-// cannot differ from the transformer's whatever the slot types are, and
-// where the transformer's rewrite finds the `_`:
+//   - transformArgument (calls.go:5359) tries tryRewriteAsPlaceholderLambda
+//     (lambdas.go:1621) on a call argument, a by-name argument (calls.go:783)
+//     or a parameter's default value (default_exprs.go:785), before lowering
+//     what is inside; it rewrites when the slot is a function type and
+//     visitPlaceholders (args_source.go:233) finds a `_`: every `_` written
+//     in it, in source order, outside nested lambdas and case clauses,
+//     inside if and match expressions and blocks too (a `_` in `${...}` is
+//     inside a string token there, and is never found). No other context
+//     (a typed val, an assignment, a return) starts a rewrite;
+//   - while the body is lowered, a nested argument whose slot is a function
+//     type makes a lambda of its own, binding `_` closer: a `_` belongs to
+//     the innermost such argument around it (placeholderTakes.take,
+//     lambdas.go:1559);
+//   - the lambda's parameters are the `_` it takes, in source order, and
+//     must be as many as its function type's.
 //
-//   - A is built only of its one `_`, literals, names, parentheses, unary and
-//     binary operators, selects, interpolated strings of these, and calls
-//     whose callee holds the `_` (`_.Contains(1)`) and whose arguments are
-//     literals or names. So A has exactly one `_` token, and the order of
-//     parameters never matters; no inner slot can take the `_`; and nothing
-//     in A lowers to a function literal (an if or match expression, a
-//     block, an evaluation-order wrapper), whose `_` the transformer's
-//     renaming does not reach (renameWalk in tryRewriteAsPlaceholderLambda
-//     stops at a function literal; Go then rejects the program);
-//   - C is not inside a call argument, up to the nearest enclosing lambda,
-//     case clause or top-level declaration, so no outer slot can take it.
+// The Core exporter marks each `_` in place, as the unsupported construct
+// placeholder-lambda. gala2lean decides at each argument, where its slot
+// type is known (argExpect):
 //
-// The translation then accepts such a lambda only for a slot of a function
-// type of one parameter (g.lambda), as the transformer does; anywhere else
-// it is reported (placeholder-lambda). Every other `_` stays as exported,
-// and is reported where it is reached.
+//   - for a slot of a function type with k parameters, an argument holding
+//     `_` marks (argMarks) is the lambda placeholderLambda makes of it: a
+//     parameter per mark, in source order, each mark replaced by its
+//     parameter; it is translated only when it has k marks (g.lambda);
+//   - inside such a lambda's body, an argument or other typed context that
+//     reads one of its parameters must have a slot known not to be a
+//     function type (placeholderArg): else the transformer's innermost rule
+//     might give that `_` to a lambda of its own, or the slot is unknown;
+//   - outside any, an argument holding marks must have a slot known not to
+//     be a function type, or be the lambda's own (a function slot): the
+//     marks are then left to the arguments nested in it.
+//
+// So no function slot lies between a `_` and the argument whose lambda
+// takes it, nor around that argument up to the nearest lambda or case
+// clause, and Go's innermost rule gives the `_` to the same lambda. Every
+// other `_` stays as exported, and is reported where it is reached
+// (placeholder-lambda).
+
+// placeholderParam starts the name of each parameter placeholderLambda
+// makes (freshName); no GALA name starts with `_gala_` (GALA-E0097).
+const placeholderParam = "_gala_placeholder"
+
+// anyType is the slot type of Println's and Print's arguments.
+var anyType = &coreexport.TypeName{Name: "any"}
 
 // isPlaceholder reports whether n is the exporter's mark of a `_`.
 func isPlaceholder(n coreexport.Node) bool {
@@ -47,161 +64,261 @@ func isPlaceholder(n coreexport.Node) bool {
 	return ok && u.What == coreexport.UnsupportedPlaceholder
 }
 
-// soleMark is the one `_` of argument a when a has the form the rules above
-// admit, else nil.
-func soleMark(a coreexport.Node) *coreexport.Unsupported {
-	var mark *coreexport.Unsupported
-	ok := true
-	// visit checks n; onPath is whether n may hold the mark (a call's
-	// arguments may not).
-	var visit func(n coreexport.Node, onPath bool)
-	visit = func(n coreexport.Node, onPath bool) {
+// argMarks are the `_` of argument a a placeholder lambda of it takes, in
+// source order: the marks outside lambdas, case clauses and interpolated
+// strings. ok is false when a call in it holds a `_` between brackets.
+func argMarks(a coreexport.Node) (marks []*coreexport.Unsupported, ok bool) {
+	ok = true
+	var visit func(n coreexport.Node)
+	visit = func(n coreexport.Node) {
 		switch n := n.(type) {
+		case *coreexport.Lambda, *coreexport.Case, *coreexport.Interp:
+			return
 		case *coreexport.Unsupported:
-			if !isPlaceholder(n) || !onPath || mark != nil {
-				ok = false
-				return
+			if isPlaceholder(n) {
+				marks = append(marks, n)
 			}
-			mark = n
-		case *coreexport.Int, *coreexport.Bool, *coreexport.String, *coreexport.Name:
-		case *coreexport.Paren:
-			visit(n.Expr, onPath)
-		case *coreexport.Unary:
-			visit(n.Operand, onPath)
-		case *coreexport.Binary:
-			visit(n.Left, onPath)
-			visit(n.Right, onPath)
-		case *coreexport.Select:
-			visit(n.Target, onPath)
-		case *coreexport.Interp:
-			// A `_` in it is inside a string token for the transformer, which
-			// does not count it (Go then rejects it).
-			walkChildren(n, func(c coreexport.Node) { visit(c, false) })
-		case *coreexport.InterpText:
+			return
 		case *coreexport.Call:
-			if n.Bracket != nil {
+			if n.Bracket != nil && slices.ContainsFunc(n.Bracket.Exprs, hasPlaceholder) {
 				ok = false
-				return
 			}
-			visit(n.Callee, onPath)
-			for _, x := range n.Args {
-				switch argNode(x).(type) {
-				case *coreexport.Int, *coreexport.Bool, *coreexport.String, *coreexport.Name:
-				default:
-					ok = false
-				}
-			}
-		default:
-			ok = false
 		}
+		walkChildren(n, visit)
 	}
-	visit(a, true)
-	if !ok {
-		return nil
-	}
-	return mark
+	visit(a)
+	slices.SortFunc(marks, func(x, y *coreexport.Unsupported) int { return cmp.Compare(x.Pos.Off, y.Pos.Off) })
+	return marks, ok
 }
 
-// lowerPlaceholders is p with each placeholder argument that the rules
-// above admit rewritten into a lambda; the lambdas are in the returned set.
-func lowerPlaceholders(p *coreexport.Program) (*coreexport.Program, map[*coreexport.Lambda]bool) {
-	l := &placeholderLowering{lambdas: map[*coreexport.Lambda]bool{}, marked: map[coreexport.Node]bool{}}
-	out := *p
-	out.Files = make([]*coreexport.File, len(p.Files))
-	for i, f := range p.Files {
-		out.Files[i] = f
-		if l.mark(f) {
-			out.Files[i] = l.rewrite(f, false).(*coreexport.File)
+// hasNode reports whether n or a node below it satisfies f.
+func hasNode(n coreexport.Node, f func(coreexport.Node) bool) bool {
+	found := false
+	var scan func(n coreexport.Node)
+	scan = func(n coreexport.Node) {
+		found = found || f(n)
+		if !found {
+			walkChildren(n, scan)
 		}
 	}
-	return &out, l.lambdas
+	scan(n)
+	return found
 }
 
-type placeholderLowering struct {
-	lambdas map[*coreexport.Lambda]bool
-	// marked holds the nodes with a `_` mark at or below them: only those
-	// are rewritten (copied).
-	marked map[coreexport.Node]bool
-	fresh  int
-}
+// hasPlaceholder reports whether n holds a `_` mark.
+func hasPlaceholder(n coreexport.Node) bool { return hasNode(n, isPlaceholder) }
 
-// mark records in l.marked whether n holds a `_` mark, and reports it.
-func (l *placeholderLowering) mark(n coreexport.Node) bool {
-	has := isPlaceholder(n)
-	walkChildren(n, func(c coreexport.Node) {
-		if l.mark(c) {
-			has = true
-		}
+// hasPlaceholderParam reports whether n refers to a parameter of a lambda
+// placeholderLambda made.
+func hasPlaceholderParam(n coreexport.Node) bool {
+	return hasNode(n, func(n coreexport.Node) bool {
+		x, ok := n.(*coreexport.Name)
+		return ok && strings.HasPrefix(x.Name, placeholderParam)
 	})
-	if has {
-		l.marked[n] = true
-	}
-	return has
 }
 
-// rewrite is n with its admitted placeholder arguments rewritten; inArg is
-// whether n is inside a call argument within the current lambda, case
-// clause or top-level declaration.
-func (l *placeholderLowering) rewrite(n coreexport.Node, inArg bool) coreexport.Node {
-	if !l.marked[n] {
-		return n
+// placeholderLambda is the lambda the transformer makes of argument a for
+// a slot of type expect: when expect is a function type and a, not a lambda
+// itself, holds `_` marks. It is made once per argument, so the translation
+// and the type queries see the same one.
+func (g *gen) placeholderLambda(a coreexport.Node, expect coreexport.Node) (*coreexport.Lambda, bool) {
+	if !g.hasMarks {
+		return nil, false
 	}
-	switch n := n.(type) {
-	case *coreexport.Lambda, *coreexport.Case:
-		// A new context: its body's `_` are its own.
-		return mapChildren(n, func(c coreexport.Node) coreexport.Node { return l.rewrite(c, false) })
-	case *coreexport.Call:
-		out := *n
-		out.Callee = l.rewrite(n.Callee, inArg)
-		out.Args = make([]coreexport.Node, len(n.Args))
-		for i, a := range n.Args {
-			if !inArg && l.marked[a] {
-				if lam := l.lambdaOf(a); lam != nil {
-					out.Args[i] = withArg(a, lam)
-					continue
-				}
-			}
-			out.Args[i] = l.rewrite(a, true)
-		}
-		return &out
+	a = argNode(a)
+	if _, isFunc := expect.(*coreexport.TypeFunc); !isFunc {
+		return nil, false
 	}
-	return mapChildren(n, func(c coreexport.Node) coreexport.Node { return l.rewrite(c, inArg) })
-}
-
-// lambdaOf is argument a, of a call outside any call argument, as a lambda
-// when it has the admitted form (soleMark), else nil.
-func (l *placeholderLowering) lambdaOf(a coreexport.Node) *coreexport.Lambda {
-	v := argNode(a)
-	mark := soleMark(v)
-	if mark == nil {
-		return nil
+	if l, ok := g.placeholderOf[a]; ok {
+		return l, l != nil
 	}
-	l.fresh++
-	// No GALA name starts with `_gala_` (GALA-E0097).
-	name := "_gala_placeholder" + strconv.Itoa(l.fresh)
+	g.placeholderOf[a] = nil
+	switch a.(type) {
+	case *coreexport.Lambda, *coreexport.Spread:
+		return nil, false
+	}
+	marks, ok := argMarks(a)
+	if !ok || len(marks) == 0 {
+		return nil, false
+	}
+	pos := posOf(a)
+	names := map[*coreexport.Unsupported]string{}
+	params := make([]coreexport.Node, len(marks))
+	for i, m := range marks {
+		names[m] = g.freshName("placeholder")
+		params[i] = &coreexport.Param{Meta: coreexport.Meta{Kind: "param", Pos: pos}, Name: names[m]}
+	}
+	// Only the nodes on a path to a mark are copied: the rest is shared
+	// with the original tree, so what the passes before the translation
+	// keyed by node (findBoxes's cells, the constant folds) still applies.
+	onPath := map[coreexport.Node]bool{}
+	var find func(n coreexport.Node) bool
+	find = func(n coreexport.Node) bool {
+		m, isMark := n.(*coreexport.Unsupported)
+		found := isMark && names[m] != ""
+		walkChildren(n, func(c coreexport.Node) { found = find(c) || found })
+		onPath[n] = found
+		return found
+	}
+	find(a)
 	var subst func(n coreexport.Node) coreexport.Node
 	subst = func(n coreexport.Node) coreexport.Node {
-		if n == coreexport.Node(mark) {
-			return &coreexport.Name{Meta: coreexport.Meta{Kind: "name", Pos: mark.Pos}, Name: name}
+		if m, ok := n.(*coreexport.Unsupported); ok && names[m] != "" {
+			return &coreexport.Name{Meta: coreexport.Meta{Kind: "name", Pos: m.Pos}, Name: names[m]}
 		}
-		return mapChildren(n, subst)
+		if !onPath[n] {
+			return n
+		}
+		c := mapChildren(n, subst)
+		if v, ok := n.(*coreexport.Var); ok {
+			// `var x = _`, copied: the copy binds x in a cell when the
+			// original does.
+			for _, x := range v.Names {
+				if g.boxed[boxKey{n, x}] {
+					g.boxed[boxKey{c, x}] = true
+				}
+			}
+		}
+		return c
 	}
-	pos := posOf(v)
-	lam := &coreexport.Lambda{
-		Meta:   coreexport.Meta{Kind: "lambda", Pos: pos},
-		Params: []coreexport.Node{&coreexport.Param{Meta: coreexport.Meta{Kind: "param", Pos: pos}, Name: name}},
-		Body:   subst(v),
-	}
-	l.lambdas[lam] = true
-	return lam
+	l := &coreexport.Lambda{Meta: coreexport.Meta{Kind: "lambda", Pos: pos}, Params: params, Body: subst(a)}
+	g.placeholderOf[a], g.placeholders[l] = l, true
+	return l, true
 }
 
-// withArg is argument a with its value replaced by v.
-func withArg(a, v coreexport.Node) coreexport.Node {
-	if na, ok := a.(*coreexport.NamedArg); ok {
-		out := *na
-		out.Value = v
-		return &out
+// argExpect translates a, a call argument or a parameter's default value,
+// for a slot of type expect (nil when unknown): as the lambda the
+// transformer makes of it when it is a placeholder lambda, else as
+// exprExpect does.
+func (g *gen) argExpect(a coreexport.Node, sc *scope, expect coreexport.Node) term {
+	g.placeholderArg(a, expect)
+	if l, ok := g.placeholderLambda(a, expect); ok {
+		return g.lambda(l, sc, expect.(*coreexport.TypeFunc))
 	}
-	return v
+	return g.exprExpect(a, sc, expect)
+}
+
+// placeholderArg stops the translation of e, an argument or other typed
+// context for a slot of type expect (nil when unknown), where the `_` it
+// holds might not be the lambda's gala2lean gives them to: e reads a
+// parameter of a placeholder lambda around it and its slot is not known to
+// want something other than a function (the transformer might make a
+// lambda of e that takes that `_`), or e holds `_` marks for a slot that is
+// neither a function type nor known not to be one.
+func (g *gen) placeholderArg(e coreexport.Node, expect coreexport.Node) {
+	e = argNode(e)
+	if !g.hasMarks {
+		return
+	}
+	// Checked on every visit: the same argument is reached for different
+	// slots (a type query, then its translation) and inside or outside a
+	// placeholder lambda's body; argChecked only records that it was.
+	g.argChecked[e] = true
+	if l, ok := e.(*coreexport.Lambda); ok && g.placeholders[l] || g.nonFuncSlot(expect) {
+		return
+	}
+	if g.inPlaceholder > 0 && hasPlaceholderParam(e) {
+		unsup(posOf(e), "placeholder-lambda")
+	}
+	if _, isFunc := expect.(*coreexport.TypeFunc); !isFunc {
+		if marks, _ := argMarks(e); len(marks) > 0 {
+			unsup(posOf(e), "placeholder-lambda")
+		}
+	}
+}
+
+// nonFuncSlot reports whether t is a type that is plainly not a function
+// type: int, int64, string, bool or any, a declared struct or sealed type,
+// or one of std's generic types, and not a name the program declares as a
+// type parameter anywhere: a callee's slot may still be written with its
+// own type parameter (a generic receiver's method keeps it), which the call
+// may make a function type.
+func (g *gen) nonFuncSlot(t coreexport.Node) bool {
+	n, ok := t.(*coreexport.TypeName)
+	if !ok || n.Package != "" {
+		return false
+	}
+	if _, param := g.tparams[n.Name]; param || g.typeParamNames[n.Name] {
+		return false
+	}
+	switch n.Name {
+	case "int", "int64", "string", "bool", "any":
+		return true
+	}
+	_, std := stdGeneric[n.Name]
+	return g.declaredType(n.Name) || std || hashTypes[n.Name]
+}
+
+// uncheckedArgs stops the translation of call e when an argument of it that
+// holds `_` marks or reads a placeholder lambda's parameter was translated
+// without placeholderArg's check: every path that translates an argument
+// must check it (argExpect, or placeholderArg with the slot's type, nil when
+// unknown). TestPlaceholderArgsChecked keeps this construct out of every
+// program the tests translate.
+func (g *gen) uncheckedArgs(e *coreexport.Call) {
+	if !g.hasMarks {
+		return
+	}
+	for _, a := range e.Args {
+		n := argNode(a)
+		if g.argChecked[n] {
+			continue
+		}
+		if sp, ok := n.(*coreexport.Spread); ok {
+			if n = sp.Value; g.argChecked[n] {
+				continue
+			}
+		}
+		if marks, _ := argMarks(n); len(marks) > 0 || g.inPlaceholder > 0 && hasPlaceholderParam(n) {
+			unsup(posOf(n), "placeholder-unchecked-arg")
+		}
+	}
+}
+
+// declaredTypeParams is every name program p declares as a type parameter.
+func declaredTypeParams(p *coreexport.Program) map[string]bool {
+	names := map[string]bool{}
+	var visit func(n coreexport.Node)
+	visit = func(n coreexport.Node) {
+		if tp, ok := n.(*coreexport.TypeParam); ok {
+			names[tp.Name] = true
+		}
+		walkChildren(n, visit)
+	}
+	for _, f := range p.Files {
+		visit(f)
+	}
+	return names
+}
+
+// markedArg reports whether a, a call argument or a parameter's default
+// value, holds `_` marks (argMarks): the translation may make a placeholder
+// lambda of it (argExpect). The passes that run before the translation
+// (findBoxes, receiverUses) do not know the slot's type yet, so they take
+// every such argument for a lambda: when its `_` go to a lambda nested in
+// it instead, or to none, they only box or report more than they need to.
+func (g *gen) markedArg(a coreexport.Node) bool {
+	if !g.hasMarks || a == nil {
+		return false
+	}
+	marks, _ := argMarks(argNode(a))
+	return len(marks) > 0
+}
+
+// walkArgs calls f on each direct child of n (walkChildren), with lambda
+// true for an argument of call n that markedArg says may be a placeholder
+// lambda.
+func (g *gen) walkArgs(n coreexport.Node, f func(c coreexport.Node, lambda bool)) {
+	var marked map[coreexport.Node]bool
+	if c, ok := n.(*coreexport.Call); ok && g.hasMarks {
+		for _, a := range c.Args {
+			if g.markedArg(a) {
+				if marked == nil {
+					marked = map[coreexport.Node]bool{}
+				}
+				marked[a] = true
+			}
+		}
+	}
+	walkChildren(n, func(c coreexport.Node) { f(c, marked[c]) })
 }
