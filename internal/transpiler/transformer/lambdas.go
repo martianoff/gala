@@ -1652,7 +1652,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	if !ok {
 		return nil, false, nil
 	}
-	placeholderCount := len(newPlaceholderTakes(e).index)
+	placeholderCount := countPlaceholders(e)
 	if placeholderCount == 0 {
 		return nil, false, nil
 	}
@@ -1715,7 +1715,8 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 			taken = sharedTakes.taken(shared)
 		}
 		if !takenInPlace(taken) {
-			// What the discarded lowerings could not type is not the body's.
+			// What the discarded lowerings could not type is not the body's:
+			// a `_` typed by the wrong parameter is not the program's gap.
 			t.unresolvedTypes = t.unresolvedTypes[:unresolved]
 			body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, typesByParameter(paramTypes, taken))
 		}
@@ -1851,7 +1852,8 @@ func (t *galaASTTransformer) lowerPlaceholderBody(
 	t.addVar("_", shared)
 	if byPosition != nil {
 		// Names no GALA identifier can spell, so they shadow nothing; each
-		// taken `_` is renamed to its parameter once lowered.
+		// taken `_` is renamed to its parameter once lowered. Bound without
+		// addVar, which would record them as locals for the LSP.
 		takes.names = make([]string, len(byPosition))
 		for i, typ := range byPosition {
 			takes.names[i] = fmt.Sprintf("_#%d", i)

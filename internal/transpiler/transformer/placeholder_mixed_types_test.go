@@ -21,7 +21,7 @@ func TestPlaceholderMixedParameterTypes(t *testing.T) {
 			"func main() {\n    val rs = ArrayOf(R(1, \"a\"), R(2, \"b\"))\n    val xs = ArrayOf(1, 2)\n"
 		footer = "    Println(rs.Size() + xs.Size())\n}\n"
 	)
-	accepted := []struct {
+	cases := []struct {
 		name, body string
 		want       []string // the outer lambda as the call passes it, and its body
 	}{
@@ -38,7 +38,7 @@ func TestPlaceholderMixedParameterTypes(t *testing.T) {
 		{"a nested call taking a `_` between them", `    Println(rs.FoldLeft(0, _ + xs.Map(_ * 2).Size() + _.Lo))`,
 			[]string{"Array_FoldLeft(rs, 0, func(__p0 int, __p1 R) int {", "+ __p1.Lo.Get()"}},
 	}
-	for _, tc := range accepted {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := newForbiddenBuiltinTranspiler().Transpile(header+tc.body+"\n"+footer, "")
 			require.NoError(t, err)
@@ -47,5 +47,4 @@ func TestPlaceholderMixedParameterTypes(t *testing.T) {
 			}
 		})
 	}
-
 }
