@@ -365,25 +365,30 @@ func (t *galaASTTransformer) withShiftCountsMapped(e ast.Expr, f func(ast.Expr) 
 	for _, c := range counts {
 		with[c] = f(c)
 	}
-	return copyUntypedReplacing(e, with), true
+	return t.copyUntypedReplacing(e, with), true
 }
 
 // copyUntypedReplacing copies expr, an untyped constant expression (see
 // untypedShiftCounts), with every node that is a key of with replaced by its
-// value; expr itself is left as it is.
-func copyUntypedReplacing(expr ast.Expr, with map[ast.Expr]ast.Expr) ast.Expr {
+// value; expr itself is left as it is. A rebuilt node keeps the operand marks
+// of the one it copies.
+func (t *galaASTTransformer) copyUntypedReplacing(expr ast.Expr, with map[ast.Expr]ast.Expr) ast.Expr {
 	if r, ok := with[expr]; ok {
 		return r
 	}
+	var rebuilt ast.Expr
 	switch e := expr.(type) {
 	case *ast.ParenExpr:
-		return &ast.ParenExpr{X: copyUntypedReplacing(e.X, with)}
+		rebuilt = &ast.ParenExpr{X: t.copyUntypedReplacing(e.X, with)}
 	case *ast.UnaryExpr:
-		return &ast.UnaryExpr{Op: e.Op, X: copyUntypedReplacing(e.X, with)}
+		rebuilt = &ast.UnaryExpr{Op: e.Op, X: t.copyUntypedReplacing(e.X, with)}
 	case *ast.BinaryExpr:
-		return &ast.BinaryExpr{X: copyUntypedReplacing(e.X, with), Op: e.Op, Y: copyUntypedReplacing(e.Y, with)}
+		rebuilt = &ast.BinaryExpr{X: t.copyUntypedReplacing(e.X, with), Op: e.Op, Y: t.copyUntypedReplacing(e.Y, with)}
+	default:
+		return expr
 	}
-	return expr
+	t.copyMarks(expr, rebuilt)
+	return rebuilt
 }
 
 // replaceExprs returns expr with every node that is a key of with replaced by

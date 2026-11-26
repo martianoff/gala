@@ -4962,7 +4962,10 @@ gala_exec_test(
     name = "untyped_shift_arg_order",
     src = "untyped_shift_arg_order.gala",
     expected = "untyped_shift_arg_order.out",
-    deps = ["//collection_immutable"],
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
 )
 
 # Gap #10 regression: tuple literal passed to Append on Array[Tuple[A,B]]
