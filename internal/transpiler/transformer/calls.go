@@ -6263,6 +6263,8 @@ func (t *galaASTTransformer) callArgs(list argsSrc, paramNames []string) []callA
 // typedPartType).
 func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, variadic bool, args []callArg, typed map[string]transpiler.Type) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
+	var lowered []ast.Expr
+	var slotTypes []transpiler.Type
 	for _, a := range args {
 		pi := paramIndex(a.slot, paramTypes, variadic)
 		if a.lambda.ok() || pi < 0 || t.isPlaceholderLambdaArg(a.expr, paramTypes[pi]) {
@@ -6282,11 +6284,25 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if err != nil {
 			continue
 		}
+		lowered = append(lowered, expr)
+		slotTypes = append(slotTypes, paramType)
+	}
+	// Untyped constants bind last, as in Go (constantsLast).
+	order, firstConst := constantsLast(lowered, t.isUntypedConstArg)
+	var bound map[string]transpiler.Type
+	for n, i := range order {
+		if n == firstConst {
+			bound = maps.Clone(inferredMap)
+		}
+		expr, paramType := lowered[i], slotTypes[i]
 		argType := t.getExprTypeNameManual(expr)
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
 		t.unifyGoParam(paramType, argType, typeParams, inferredMap)
+		if n >= firstConst {
+			t.widenConstBinding(expr, paramType, typeParams, bound, inferredMap)
+		}
 		if typed != nil {
 			t.unifyGoParam(paramType, t.typedPartType(expr, argType), typeParams, typed)
 		}

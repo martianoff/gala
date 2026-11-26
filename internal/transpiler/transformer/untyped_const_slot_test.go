@@ -63,3 +63,43 @@ func TestUntypedConstGenericSlot(t *testing.T) {
 		})
 	}
 }
+
+// TestUntypedConstKinds pins that a type parameter only untyped constants
+// bind takes the default type of the largest kind among them (int < rune <
+// float64 < complex128), and that `true` and `false` are untyped constants
+// that bind after a typed argument, as Go infers them (#1360). The lambda's
+// result type shows the binding.
+func TestUntypedConstKinds(t *testing.T) {
+	const decls = `package main
+
+import "cmp"
+
+type MyBool bool
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Pick[U any](a U, b U) U = b
+
+func Same[U any](a U, b U) U = b
+
+func order(a int, b int) int = cmp.Compare(a, b)
+`
+	trans := newAliasExpectedTranspiler()
+	tests := []struct {
+		name, input, want string
+	}{
+		{"Go callee, int then float", "func g() float64 {\n    val z = cmp.Or(0, 2.5)\n    val w = () => z\n    w()\n}", "func() float64"},
+		{"GALA callee, int then float", "func g() float64 {\n    val w = () => Same(0, 2.5)\n    w()\n}", "func() float64"},
+		{"GALA callee, int then rune", "func g() rune {\n    val w = () => Same(1, 'a')\n    w()\n}", "func() rune"},
+		{"GALA method, int then float", "func g() float64 {\n    val w = () => Cell(1).Pick(0, 2.5)\n    w()\n}", "func() float64"},
+		{"a typed argument still wins", "func g(x float32) float32 {\n    val w = () => Same(1, x)\n    w()\n}", "func() float32"},
+		{"bool constant before a typed argument", "func g(flag MyBool) MyBool {\n    val w = () => Same(true, flag)\n    w()\n}", "func() MyBool"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+}

@@ -165,6 +165,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "untyped_const_kinds",
+    src = "untyped_const_kinds.gala",
+    expected = "untyped_const_kinds.out",
+)
+
+gala_exec_test(
     name = "receiver_type_param_rename",
     src = "receiver_type_param_rename.gala",
     expected = "receiver_type_param_rename.out",

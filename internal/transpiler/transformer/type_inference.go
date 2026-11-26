@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 	"slices"
 	"strings"
 
@@ -660,8 +661,12 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 
 	// Try to infer type params from each argument, untyped constants last
 	// (constantsLast): `FoldLeft(0, f)` takes U from f when f fixes it.
-	order, _ := constantsLast(args, t.isUntypedConstArg)
-	for _, i := range order {
+	order, firstConst := constantsLast(args, t.isUntypedConstArg)
+	var typed map[string]transpiler.Type
+	for n, i := range order {
+		if n == firstConst {
+			typed = maps.Clone(inferredMap)
+		}
 		arg := args[i]
 		if i >= len(substitutedParamTypes) {
 			continue
@@ -686,6 +691,9 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyGoParam(paramType, argType, freshParamNames, inferredMap)
+		if n >= firstConst {
+			t.widenConstBinding(arg, paramType, freshParamNames, typed, inferredMap)
+		}
 	}
 	t.inferMethodFromConstraints(methodMeta, freshParamNames, structTypeParams, structTypeArgs, inferredMap)
 
@@ -1021,13 +1029,38 @@ func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) (order []int, f
 	return append(order, consts...), len(order)
 }
 
+// widenConstBinding runs after paramType is unified with the type of arg, an
+// untyped constant (constants bind last, constantsLast). When paramType is a
+// type parameter that only constants bind (typed holds the bindings made
+// before the first constant), it takes the default type of the largest kind
+// among them, as Go infers it: `cmp.Or(0, 2.5)` binds float64, though its
+// first constant is an int.
+func (t *galaASTTransformer) widenConstBinding(arg ast.Expr, paramType transpiler.Type, typeParams []string, typed, inferred map[string]transpiler.Type) {
+	tp, bare := bareTypeName(unwrapValueMarkers(paramType))
+	if !bare || !slices.Contains(typeParams, tp) {
+		return
+	}
+	cur, bound := inferred[tp]
+	if _, byTyped := typed[tp]; !bound || byTyped {
+		return
+	}
+	def, numeric := t.untypedNumericConstExprDefault(arg)
+	if have := numericConstRank(cur.String()); numeric && have >= 0 && numericConstRank(def) > have {
+		inferred[tp] = transpiler.BasicType{Name: def}
+	}
+}
+
 // argTypeArgs binds fMeta's type parameters from the lowered arguments of a
 // call, unifying each parameter type with its argument's type; only those an
 // argument determines appear in the result. A nil argument binds nothing.
 func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
-	order, _ := constantsLast(args, t.isUntypedConstArg)
-	for _, i := range order {
+	order, firstConst := constantsLast(args, t.isUntypedConstArg)
+	var typed map[string]transpiler.Type
+	for n, i := range order {
+		if n == firstConst {
+			typed = maps.Clone(inferredMap)
+		}
 		arg := args[i]
 		if arg == nil {
 			continue
@@ -1055,6 +1088,9 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyGoParam(paramType, argType, fMeta.TypeParams, inferredMap)
+		if n >= firstConst {
+			t.widenConstBinding(arg, paramType, fMeta.TypeParams, typed, inferredMap)
+		}
 	}
 	t.inferFromConstraints(fMeta.TypeParams, fMeta.TypeParamConstraints, inferredMap)
 	return inferredMap
@@ -1595,9 +1631,11 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 	// after the typed arguments and the core types have had their say:
 	// `Fold(floats, 0, f)` with `init E` takes E from floats, not from 0.
 	order, firstConst := constantsLast(args, t.isUntypedConstArg)
+	var typed map[string]transpiler.Type
 	for n, i := range order {
 		if n == firstConst {
 			t.inferFromGoCoreTypes(sig, inferred)
+			typed = maps.Clone(inferred)
 		}
 		arg := args[i]
 		paramType := goSigParamType(sig, i)
@@ -1616,6 +1654,9 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 			}
 		}
 		t.unifyGoParam(paramType, argType, sig.TypeParams, inferred)
+		if n >= firstConst {
+			t.widenConstBinding(arg, paramType, sig.TypeParams, typed, inferred)
+		}
 	}
 	t.inferFromGoCoreTypes(sig, inferred)
 

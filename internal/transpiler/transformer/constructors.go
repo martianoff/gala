@@ -488,11 +488,16 @@ func (t *galaASTTransformer) untypedNumericConstExprDefault(expr ast.Expr) (stri
 }
 
 // isUntypedConstArg reports whether expr, a lowered call argument, is an
-// untyped constant: a literal, or one of a Go package (`math.MaxInt8`). Go
+// untyped constant: a literal, `true` or `false`, or one of a Go package
+// (`math.MaxInt8`). Go
 // infers a type parameter only such arguments bind as the constant's default
 // type, whatever the slot the call fills.
 func (t *galaASTTransformer) isUntypedConstArg(expr ast.Expr) bool {
 	if isUntypedConstExpr(expr) {
+		return true
+	}
+	// So are `true` and `false`, unless a binding shadows them.
+	if id, ok := ast.Unparen(expr).(*ast.Ident); ok && (id.Name == "true" || id.Name == "false") && t.shadowingScope(id.Name) == nil {
 		return true
 	}
 	_, ok := t.untypedNumericConstExprDefault(expr)
