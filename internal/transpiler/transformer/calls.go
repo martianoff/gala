@@ -6032,6 +6032,14 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
 	}
 
+	// A `nil` that the thunk could not hold is the function itself: `func()`
+	// cannot evaluate it as a statement, and `func() T` cannot return it
+	// when T is a struct or a basic type (#1448). A nilable T keeps the
+	// thunk returning nil, as before.
+	if isNilIdent(expr) && (len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0])) {
+		return expr, false
+	}
+
 	// Void thunk: `func()` expecting no result. The body is the expression as a
 	// statement, matching the void expression-lambda form `() => expr`.
 	if len(ft.Results) == 0 {
@@ -6089,6 +6097,19 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		t.constThunks[lit] = true
 	}
 	return withLead(lit, mark), true
+}
+
+// nilCannotBe reports whether typ is a concrete type no `nil` can have: not a
+// pointer, slice, map, channel, function or interface (`any` included), nor
+// a type parameter or a type that is not resolved.
+func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
+	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() || t.hasTypeParams(typ) || t.mentionsUnboundTypeParam(typ) {
+		return false
+	}
+	if _, isChan := t.followAliasChain(typ).(transpiler.ChanType); isChan {
+		return false
+	}
+	return !t.holdsNil(typ)
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose

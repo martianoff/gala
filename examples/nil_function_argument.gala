@@ -1,0 +1,24 @@
+package main
+
+// `nil` for a zero-argument function parameter whose result nil cannot be
+// (a struct, an int, or no result) is the function itself, passed as is
+// (#1448). For a result nil can be (a pointer), by-name sugar still lifts it
+// into a thunk returning nil.
+
+struct state(n int)
+
+func orDefault(f func() state, n int) int = if (f == nil) n else f().n
+
+func count(f func() int, n int) int = if (f == nil) n else f()
+
+func run(f func(), n int) int = if (f == nil) n else 0
+
+func deref(f func() *state, n int) int = if (f() == nil) n else 0
+
+func main() {
+    Println(orDefault(nil, 1))
+    Println(orDefault(state(5), 1))
+    Println(count(nil, 2))
+    Println(run(nil, 3))
+    Println(deref(nil, 4))
+}

@@ -482,3 +482,40 @@ func main() {
 		assert.Contains(t, out, want)
 	}
 }
+
+// TestThunkSugar_NilForAFunctionParam pins #1448: `nil` for a zero-arg
+// function parameter whose thunk could not return nil (`func() state`, a
+// struct result, or a void `func()`) is the function itself, passed as is.
+// For a result nil can be (`func() *state`, `func() any`), the thunk
+// returning nil stays, as before.
+func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
+	cases := []struct {
+		name, param, want, notWant string
+	}{
+		{"a struct result", "func() state", "b(nil, 2)", "return nil"},
+		{"an int result", "func() int", "b(nil, 2)", "return nil"},
+		{"no result", "func()", "b(nil, 2)", "func() {"},
+		{"a pointer result", "func() *state", "return nil", ""},
+		{"an any result", "func() any", "return nil", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			input := `package main
+
+struct state(n int)
+
+func b(f ` + c.param + `, n int) int = if (f == nil) n else 0
+
+func main() {
+    Println(b(nil, 2))
+}`
+			out, err := newThunkSugarTranspiler().Transpile(input, "")
+			require.NoError(t, err)
+			body := mainBodyOf(t, out)
+			assert.Contains(t, body, c.want)
+			if c.notWant != "" {
+				assert.NotContains(t, body, c.notWant)
+			}
+		})
+	}
+}
