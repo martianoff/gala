@@ -249,7 +249,11 @@ import (
 // entries, and two packages no longer share a name (#1354). A v51
 // directory's entries would never be evicted under the new names; the bump
 // leaves the directory to the stale-cache GC.
-const CacheVersion = "v52"
+//
+// v53: a Go interface records the core type of its type set
+// (GoTypeData.CoreType), so a range over a type parameter it constrains to
+// an integer type binds the type parameter. A v52 payload lacks it.
+const CacheVersion = "v53"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

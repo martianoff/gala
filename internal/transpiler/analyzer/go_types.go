@@ -1611,6 +1611,98 @@ func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bo
 	return false
 }
 
+// interfaceCoreType is the one underlying type of every type in iface's type
+// set (`~int64`, `int64 | MyInt`, `interface{ ~int | ~int64; ~int64 }`), or
+// nil when the set is unrestricted (no type terms, or a union with `any`) or
+// holds types of different underlying types (`~int | ~int64`), which Go
+// cannot range over.
+func interfaceCoreType(iface *types.Interface) types.Type {
+	set := underlyingTypeSet(iface, nil)
+	if set.all || len(set.types) == 0 {
+		return nil
+	}
+	core := set.types[0]
+	if core == types.Typ[types.Invalid] { // a type error, an embedding cycle say
+		return nil
+	}
+	for _, u := range set.types[1:] {
+		if !types.Identical(core, u) {
+			return nil
+		}
+	}
+	return core
+}
+
+// typeSet is a type set by underlying type: all types (all), or those whose
+// underlying type is one of types. Telling `~T` from `T` apart is not needed
+// to find a core type: it only shrinks a set whose types share T.
+type typeSet struct {
+	all   bool
+	types []types.Type
+}
+
+// underlyingTypeSet is iface's type set: the intersection of its elements,
+// each a union of terms or an embedded interface (comparable and method
+// requirements do not restrict it by type). seen holds the interfaces being
+// expanded: an embedding cycle, which the type checker reports but may still
+// hand over, is the unrestricted set.
+func underlyingTypeSet(iface *types.Interface, seen map[*types.Interface]bool) typeSet {
+	if seen[iface] {
+		return typeSet{all: true}
+	}
+	if seen == nil {
+		seen = map[*types.Interface]bool{}
+	}
+	seen[iface] = true
+	defer delete(seen, iface)
+	set := typeSet{all: true}
+	for i := range iface.NumEmbeddeds() {
+		var elem typeSet
+		switch e := iface.EmbeddedType(i).(type) {
+		case *types.Union:
+			for j := range e.Len() {
+				elem = elem.union(termSet(e.Term(j).Type(), seen))
+			}
+		default:
+			elem = termSet(e, seen)
+		}
+		set = set.intersect(elem)
+	}
+	return set
+}
+
+// termSet is the type set of one term: an interface's own, or the term's
+// underlying type.
+func termSet(t types.Type, seen map[*types.Interface]bool) typeSet {
+	if inner, isIface := t.Underlying().(*types.Interface); isIface {
+		return underlyingTypeSet(inner, seen)
+	}
+	return typeSet{types: []types.Type{t.Underlying()}}
+}
+
+func (s typeSet) union(o typeSet) typeSet {
+	if s.all || o.all {
+		return typeSet{all: true}
+	}
+	return typeSet{types: append(slices.Clip(s.types), o.types...)}
+}
+
+func (s typeSet) intersect(o typeSet) typeSet {
+	switch {
+	case s.all:
+		return o
+	case o.all:
+		return s
+	}
+	var both []types.Type
+	for _, t := range s.types {
+		if slices.ContainsFunc(o.types, func(u types.Type) bool { return types.Identical(t, u) }) {
+			both = append(both, t)
+		}
+	}
+	return typeSet{types: both}
+}
+
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
 // and methods are recorded and, when own (the type belongs to the package being
 // compiled), the unexported ones that package declares as well.
@@ -1655,6 +1747,13 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	}
 	if iface, ok := typ.Underlying().(*types.Interface); ok {
 		data.EmbedsComparable = embedsComparable(iface, nil)
+		if core := interfaceCoreType(iface); core != nil {
+			// An unresolved core (types.Typ[Invalid]) converts to NilType:
+			// none is recorded.
+			if ct := goTypeToTranspilerType(core); ct != nil && !ct.IsNil() {
+				data.CoreType = ct
+			}
+		}
 	} else if !isGenericGoType(typ) {
 		data.SelfEqual = hasSelfEqual(typ)
 	}
@@ -1957,37 +2056,15 @@ func hasArrayType(t types.Type) bool {
 	return false
 }
 
-// constraintCoreType is the underlying type of the one type term tp's
-// constraint lists (`~[]E` and `[]E` give []E), or nil when it lists none or
-// several. Only a composite core type is kept: it is the one that names other
-// type parameters and so can bind them.
+// constraintCoreType is the core type of tp's constraint (`~[]E` and `[]E`
+// give []E; see interfaceCoreType), or nil. Only a composite core type is
+// kept: it is the one that names other type parameters and so can bind them.
 func constraintCoreType(tp *types.TypeParam) types.Type {
 	iface, ok := tp.Constraint().Underlying().(*types.Interface)
 	if !ok {
 		return nil
 	}
-	var term types.Type
-	for i := 0; i < iface.NumEmbeddeds(); i++ {
-		e := iface.EmbeddedType(i)
-		if u, isUnion := e.(*types.Union); isUnion {
-			if u.Len() != 1 {
-				return nil
-			}
-			e = u.Term(0).Type()
-		} else if _, isIface := e.Underlying().(*types.Interface); isIface {
-			// An embedded interface (comparable, one required for its
-			// methods) is not read for type terms.
-			continue
-		}
-		if term != nil {
-			return nil
-		}
-		term = e
-	}
-	if term == nil {
-		return nil
-	}
-	switch core := term.Underlying().(type) {
+	switch core := interfaceCoreType(iface).(type) {
 	case *types.Slice, *types.Map, *types.Pointer, *types.Chan, *types.Signature, *types.Array:
 		return core
 	}
