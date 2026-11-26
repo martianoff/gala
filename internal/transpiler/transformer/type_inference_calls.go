@@ -191,15 +191,24 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 	return t.substituteConcreteTypes(ft, meta.TypeParams, gen.Params), true
 }
 
-// namesGoType reports whether fun, a callee spelled `pkg.T` or `pkg.T[...]`,
+// namesGoType reports whether fun, a callee spelled `pkg.T`, `pkg.T[...]`,
+// a dot-imported `T` (parenthesized or not),
 // names a Go type of a package the file imports (a Go package, or the .go
 // files of a GALA one, where no GALA type of the name hides it): a call of it is
 // a conversion to that type. A qualifier a local binding shadows is no
 // package here (`x.T(...)` is a method call).
 func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
-	base, _ := splitCallFunTypeArgs(fun)
+	base, _ := splitCallFunTypeArgs(ast.Unparen(fun))
+	if t.goTypeInfo == nil || t.importManager == nil {
+		return false
+	}
+	// A bare name: a type of a dot-imported Go package (`StringSlice` under
+	// `import . "sort"`) that no binding, type parameter or GALA type hides.
+	if id, isIdent := base.(*ast.Ident); isIdent {
+		return t.dotImportedGoTypeKey(id.Name) != "" && t.shadowingScope(id.Name) == nil
+	}
 	sel, ok := base.(*ast.SelectorExpr)
-	if !ok || t.goTypeInfo == nil || t.importManager == nil {
+	if !ok {
 		return false
 	}
 	pkg, ok := sel.X.(*ast.Ident)
@@ -231,27 +240,29 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 
 	// A conversion to an opaque type, `UserID(n)` or `billing.UserID(n)`, has
 	// that type.
-	if t.opaqueConversionCallee(e.Fun) != nil {
-		return t.astTypeToTranspilerType(e.Fun)
+	// A conversion is read through parentheses: `(UserID)(n)` as `UserID(n)`.
+	convFun := ast.Unparen(e.Fun)
+	if t.opaqueConversionCallee(convFun) != nil {
+		return t.astTypeToTranspilerType(convFun)
 	}
 	// So has a conversion to a Go type, `sort.StringSlice(xs)` or
 	// `pkg.Bag[string](xs)`.
-	if len(e.Args) == 1 && t.namesGoType(e.Fun) {
-		return t.astTypeToTranspilerType(e.Fun)
+	if len(e.Args) == 1 && t.namesGoType(convFun) {
+		return t.astTypeToTranspilerType(convFun)
 	}
 	// So has a conversion to a type parameter of the enclosing declaration,
 	// `T(v)`.
-	if id, ok := e.Fun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
+	if id, ok := convFun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
 		return t.resolveType(id.Name)
 	}
 	// And a conversion to a generic Go function type written with its type
 	// arguments, `Pred[int](f)` or `iter.Seq[string](f)`.
-	switch e.Fun.(type) {
+	switch convFun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
-		name := t.extractFuncName(e.Fun)
+		name := t.extractFuncName(convFun)
 		if _, alias := t.typeAliases[name]; !alias && t.getFunction(name) == nil && len(e.Args) == 1 &&
-			!t.marked(e.Fun, operandThroughPointer) && t.conversionFuncType(e.Fun) != nil {
-			return t.astTypeToTranspilerType(e.Fun)
+			!t.marked(convFun, operandThroughPointer) && t.conversionFuncType(convFun) != nil {
+			return t.astTypeToTranspilerType(convFun)
 		}
 	}
 

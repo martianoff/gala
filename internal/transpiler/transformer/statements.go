@@ -507,7 +507,7 @@ func (t *galaASTTransformer) commaOkTypes(expr ast.Expr) []transpiler.Type {
 // type's definition: a map or a channel, however it is named.
 func (t *galaASTTransformer) underlyingTypeOf(expr ast.Expr) transpiler.Type {
 	typ := t.followAliasChain(t.getExprTypeName(expr))
-	if u, ok := t.goNamedUnderlying(typ); ok {
+	if u, ok := t.goOperandUnderlying(typ); ok {
 		return u
 	}
 	return typ

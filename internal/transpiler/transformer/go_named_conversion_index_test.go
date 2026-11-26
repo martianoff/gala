@@ -83,6 +83,96 @@ func main() {
     Println(f())
 }
 `, []string{"func() []string"}},
+		// #1347
+		{"conversion to a dot-imported Go type", `package main
+
+import . "sort"
+import "slices"
+import "martianoff/gala/go_interop"
+
+func main() {
+    val ss = StringSlice(go_interop.SliceOf("b"))
+    Println(slices.IndexFunc(ss, (x) => x == "b"))
+}
+`, []string{"func(x string) bool"}},
+		{"parenthesized conversion to a Go type", `package main
+
+import "sort"
+import "slices"
+import "martianoff/gala/go_interop"
+
+func main() {
+    val ss = (sort.StringSlice)(go_interop.SliceOf("b"))
+    Println(slices.IndexFunc(ss, (x) => x == "b"))
+}
+`, []string{"func(x string) bool"}},
+		{"index of a dot-imported Go map type", `package main
+
+import . "net/url"
+
+func main() {
+    val q = Values{}
+    val f = () => q["a"]
+    Println(f())
+}
+`, []string{"func() []string"}},
+		{"comma-ok index of a dot-imported Go map type", `package main
+
+import . "net/url"
+
+func main() {
+    val q = Values{}
+    vs, ok := q["a"]
+    val f = () => vs
+    Println(f(), ok)
+}
+`, []string{"func() []string"}},
+		{"parenthesized conversion to an opaque type", `package main
+
+opaque type UserID int
+
+func main() {
+    val id = (UserID)(42)
+    val f = () => id
+    Println(f())
+}
+`, []string{"func() UserID"}},
+		{"lambda in a parenthesized conversion to a Go function type", `package main
+
+import "net/http"
+
+func main() {
+    val h = (http.HandlerFunc)((w, r) => w.WriteHeader(204))
+    Println(h != nil)
+}
+`, []string{"func(w http.ResponseWriter, r *http.Request)"}},
+		{"lambda in a conversion to a dot-imported Go function type", `package main
+
+import . "net/http"
+
+func main() {
+    val h = HandlerFunc((w, r) => w.WriteHeader(204))
+    Println(h != nil)
+}
+`, []string{"func(w ResponseWriter, r *Request)"}},
+		{"parenthesized call of a local shadowing a function-type alias", `package main
+
+type handler func(int) int
+
+func apply(handler func(func(string) string) string) string = (handler)((s) => s + "!")
+
+func main() {
+    Println(apply((f) => f("a")))
+}
+`, []string{"func(s string) string"}},
+		{"index of a string", `package main
+
+func main() {
+    val s = "hey"
+    val f = () => s[0]
+    Println(f())
+}
+`, []string{"func() byte"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
