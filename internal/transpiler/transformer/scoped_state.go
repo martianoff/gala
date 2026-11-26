@@ -223,6 +223,16 @@ func (t *galaASTTransformer) captureScopedState() func() {
 	matchPos, localDecl, hoistedPre := t.matchInStatementPos, t.localDeclaration, t.hoistedPre
 	dots, owner, nameDepth, probes := t.signatureDots, t.equalOwner, t.typeNameDepth, t.mismatchProbes
 	return func() {
+		// Pop the scopes the failure left open, running what each puts
+		// back on pop (a local type's metadata, see lowerLocalTypeDecl).
+		for s := t.currentScope; s != nil; s = s.parent {
+			if s == saved.currentScope {
+				for t.currentScope != saved.currentScope {
+					t.popScope()
+				}
+				break
+			}
+		}
 		t.restoreScopedState(saved)
 		t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = loweringDefault, tryThunk, pending
 		t.interpolationScope, t.callFrames = interpolation, frames
