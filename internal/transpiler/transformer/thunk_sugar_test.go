@@ -498,6 +498,8 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a string result", "func() string", "b(nil, 2)", "return nil"},
 		{"an opaque result", "func() Count", "b(nil, 2)", "return nil"},
 		{"a sealed result", "func() Shape", "b(nil, 2)", "return nil"},
+		{"a fieldless struct result", "func() Empty", "b(nil, 2)", "return nil"},
+		{"a generic struct result", "func() Option[int]", "b(nil, 2)", "return nil"},
 		{"a Go struct result", "func() time.Time", "b(nil, 2)", "return nil"},
 		{"a pointer result", "func() *state", "return nil", ""},
 		{"an any result", "func() any", "return nil", ""},
@@ -517,6 +519,8 @@ import "net/http"
 import "time"
 
 struct state(n int)
+
+struct Empty()
 
 sealed type Shape {
     case Dot()

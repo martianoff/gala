@@ -6102,18 +6102,23 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 
 // nilCannotBe reports whether typ is known to be a type no `nil` can have: a
 // scalar (a predeclared number, string or bool, or a Go or opaque type over
-// one), a GALA struct or sealed type, or a Go struct type. Anything else,
-// including a Go type whose type information is missing, may hold nil.
+// one), a GALA struct or sealed type, or a Go struct type, generic ones with
+// any type arguments included (`Option[T]`). Anything else, including a Go
+// type whose type information is missing, may hold nil.
 func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
-	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() || t.hasTypeParams(typ) || t.mentionsUnboundTypeParam(typ) {
+	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() {
 		return false
-	}
-	if _, kind, via := t.resolveScalar(typ); kind != scalarNone || via != nil {
-		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
 	}
 	base := t.followAliasChain(typ)
 	if g, isGen := base.(transpiler.GenericType); isGen {
-		base = g.Base
+		base = g.Base // its type arguments do not decide whether nil is one
+	}
+	// A type parameter may be instantiated with a type nil can be.
+	if t.hasTypeParams(base) || t.mentionsUnboundTypeParam(base) {
+		return false
+	}
+	if _, kind, via := t.resolveScalar(base); kind != scalarNone || via != nil {
+		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
 	}
 	var nt transpiler.NamedType
 	switch b := base.(type) {
@@ -6131,10 +6136,13 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if t.isGoTyped(nt) {
 		return false
 	}
-	// A GALA type: a sealed type, or a struct with fields. A placeholder
-	// for a receiver type a .go file of the package declares has neither.
+	// A GALA struct or sealed type: declared in GALA source (DefinedIn, a
+	// shorthand `struct Empty()`), or with fields. A placeholder for a
+	// receiver type a .go file of the package declares (a Go `type Names
+	// []string`) has none of these.
 	meta := t.getTypeMeta(nt.BaseName())
-	return meta != nil && !meta.IsInterface && (meta.IsSealed || len(meta.FieldNames) > 0)
+	return meta != nil && !meta.IsInterface &&
+		(meta.IsSealed || meta.IsShorthand || meta.DefinedIn != "" || len(meta.FieldNames) > 0)
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose
