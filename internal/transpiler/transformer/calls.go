@@ -986,7 +986,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				return true, nil, err
 			}
 			// An untyped constant leaves the slot's binding in place.
-			isConst := t.isUntypedConstArg(expr)
+			isConst := t.isWeakConstArg(expr)
 			for tp, inferred := range inferredMap {
 				if slot, slotted := fromSlot[tp]; slotted && isConst {
 					// Go would infer the constant's default type, so the
@@ -1201,6 +1201,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if typeArgs, err = t.resultOnlyMethodTypeArgs(c, methodMeta, typeArgs, typeSubst, slotTyped, yields, mArgs); err != nil {
 			return true, nil, err
 		}
+		t.fixConstThunks(mArgs, func(i int) transpiler.Type {
+			if pi := methodParamIndex(methodMeta, i); pi >= 0 {
+				return t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
+			}
+			return nil
+		}, typeSubst)
 		// The type arguments spelled from the slot (those the arguments
 		// bind were checked with them).
 		if hasPtrConstrained {
@@ -6003,13 +6009,68 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
-	return withLead(&ast.FuncLit{
+	lit := &ast.FuncLit{
 		Type: &ast.FuncType{
 			Params:  &ast.FieldList{},
 			Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
 		},
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}},
-	}, mark), true
+	}
+	if !concreteResult && t.isUntypedConstArg(expr) {
+		// An untyped constant's result is the constant's default type only
+		// until the call's type arguments are known (constThunkArg).
+		if t.constThunks == nil {
+			t.constThunks = make(map[*ast.FuncLit]bool)
+		}
+		t.constThunks[lit] = true
+	}
+	return withLead(lit, mark), true
+}
+
+// constThunkArg is the by-name thunk expr is, of an untyped constant whose
+// result type a type parameter left open when it was lowered (`lazy(5)` for
+// `lazy[U any](d func() U)`), or nil. Such an argument binds its type
+// parameter as the bare constant does in a `U` parameter: the slot the call
+// fills fixes it over the constant's default type (fixConstThunks).
+func (t *galaASTTransformer) constThunkArg(expr ast.Expr) *ast.FuncLit {
+	if lit, ok := expr.(*ast.FuncLit); ok && t.constThunks[lit] {
+		return lit
+	}
+	return nil
+}
+
+// isWeakConstArg reports whether expr, a lowered argument, binds the type
+// parameters it fills only as an untyped constant does: it is one
+// (isUntypedConstArg), or a by-name thunk of one (constThunkArg).
+func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
+	return t.isUntypedConstArg(expr) || t.constThunkArg(expr) != nil
+}
+
+// fixConstThunks gives each by-name thunk of an untyped constant among args
+// (constThunkArg) the result type its parameter has once the type arguments
+// resolved are known: `func() int64 { return 5 }` for `func() U`, U int64.
+// paramType is the type of the parameter argument i fills, nil when none.
+func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, paramType func(i int) transpiler.Type, resolved map[string]transpiler.Type) {
+	for i, arg := range args {
+		lit := t.constThunkArg(arg)
+		if lit == nil {
+			continue
+		}
+		pt := paramType(i)
+		if pt == nil {
+			continue
+		}
+		ft, ok := t.substituteInType(pt, resolved).(transpiler.FuncType)
+		if !ok || len(ft.Params) != 0 || len(ft.Results) != 1 {
+			continue
+		}
+		res := ft.Results[0]
+		if transpiler.IsUnusableOrAny(res) || t.hasTypeParams(res) {
+			continue
+		}
+		lit.Type.Results.List[0].Type = t.typeToExpr(res)
+		t.exprTypeCache[lit] = ft
+	}
 }
 
 // passesNamedFunctionAsThunk reports whether a value of a named function type

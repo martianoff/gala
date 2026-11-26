@@ -1,0 +1,29 @@
+package main
+
+import "fmt"
+
+// An untyped constant passed by name (a `func() U` parameter) takes the type
+// the slot the call fills gives U, as a constant passed to a `U` parameter
+// does. With no slot, U is the constant's default type.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
+
+func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
+
+func plain[U any](d U, on bool) Option[U] = if (on) Some(d) else None()
+
+func typeOf[U any](o Option[U]) string = fmt.Sprintf("%T", o)
+
+func main() {
+    val a Option[int64] = plain(5, true)
+    val p Option[int64] = lazy(5, true)
+    val f Option[float64] = lazy(1 << 3, true)
+    val none Option[uint8] = lazy(7, false)
+    Println(a, p, f, none)
+    Println(typeOf(p), typeOf(f), typeOf(lazy(5, true)))
+    val b = Box(0)
+    val m Option[int64] = b.Lazy(5, true)
+    Println(m, typeOf(m))
+}

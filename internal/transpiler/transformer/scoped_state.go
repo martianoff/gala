@@ -147,6 +147,7 @@ var accumulatedStateFields = []string{
 	"exprTypeCache",
 	"goResults",
 	"goResultsByRaw",
+	"constThunks",
 	"genericGoResultCalls",
 	"genericMethodCalls",
 	"goIdentSignatures",

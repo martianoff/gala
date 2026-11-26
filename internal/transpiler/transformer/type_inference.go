@@ -791,7 +791,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		return fun, nil
 	}
 	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, inferringParamTypes(filledParamTypes(funcMeta, len(args), hasSpread), funcMeta.Variadic, args))
-	if len(phantom) == 0 && !slices.ContainsFunc(args, t.isUntypedConstArg) {
+	if len(phantom) == 0 && !slices.ContainsFunc(args, t.isWeakConstArg) {
 		// Every type param is determined by an argument — leave it to Go.
 		return fun, nil
 	}
@@ -821,6 +821,12 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 			resolved[tp] = typ
 		}
 	}
+	t.fixConstThunks(args, func(i int) transpiler.Type {
+		if pi := funcParamIndex(funcMeta, i); pi >= 0 {
+			return funcMeta.ParamTypes[pi]
+		}
+		return nil
+	}, resolved)
 	instantiated, missing := t.completeTypeArgs(fun, spelled, nil, resolved)
 	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
 		// No slot fixes an argument whose type is unknown.
@@ -1021,7 +1027,7 @@ func (t *galaASTTransformer) constSlotTypeArgs(fMeta *transpiler.FunctionMetadat
 	}
 	typedArgs := make([]ast.Expr, len(args))
 	for i, arg := range args {
-		if !t.isUntypedConstArg(arg) {
+		if !t.isWeakConstArg(arg) {
 			typedArgs[i] = arg
 		}
 	}
