@@ -3,7 +3,6 @@ package build
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -56,24 +55,20 @@ func GoRequirementsOf(goMod *modfile.File) (reqs []mod.Require, replaces []mod.R
 	return c.reqs, c.replaces, c.skipped
 }
 
-// UnwritableGoModReplaces returns what GoRequirementsOf leaves out of goMod
-// because gala.mod cannot hold a replace of it (a path with a space): the
-// paths of the modules such a replace replaces, each once, and the
-// requirements to which such a replace is the one Go applies. gala.mod has to
-// replace those modules with another path. GALA's own packages are not
-// among them.
-func UnwritableGoModReplaces(goMod *modfile.File) (paths []string, reqs []mod.Require) {
-	c := copyGoMod(goMod)
-	return c.unwritablePaths, c.unwritableReqs
+// UnwritableGoModReplaces returns the requirements GoRequirementsOf leaves
+// out of goMod because the replace Go applies to them has a path gala.mod
+// cannot hold (one with a space). gala.mod has to replace those modules with
+// another path. GALA's own packages are not among them.
+func UnwritableGoModReplaces(goMod *modfile.File) []mod.Require {
+	return copyGoMod(goMod).unwritableReqs
 }
 
 // goModCopy is what gala mod init copies from a go.mod, and what it does not.
 type goModCopy struct {
-	reqs            []mod.Require
-	replaces        []mod.Replace
-	skipped         []string
-	unwritablePaths []string
-	unwritableReqs  []mod.Require
+	reqs           []mod.Require
+	replaces       []mod.Replace
+	skipped        []string
+	unwritableReqs []mod.Require
 }
 
 func copyGoMod(goMod *modfile.File) goModCopy {
@@ -87,9 +82,6 @@ func copyGoMod(goMod *modfile.File) goModCopy {
 			continue
 		case unwritableReplace(rep):
 			replacesSkipped = append(replacesSkipped, fmt.Sprintf("replace %s (gala.mod cannot hold a path with a space; add the replace to gala.mod with a path without one)", rep.Old.Path))
-			if !slices.Contains(c.unwritablePaths, rep.Old.Path) {
-				c.unwritablePaths = append(c.unwritablePaths, rep.Old.Path)
-			}
 		default:
 			c.replaces = append(c.replaces, rep)
 		}

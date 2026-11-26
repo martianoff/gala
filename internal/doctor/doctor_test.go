@@ -438,8 +438,19 @@ func TestModDrift(t *testing.T) {
 			goMod:   "require a.com/x v0.0.0\n\nreplace a.com/x => \"../my dir\"",
 			want: []string{
 				"a.com/x v0.0.0 (go.mod only)",
-				"replace a.com/x (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)",
+				"replace a.com/x v0.0.0 (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)",
 			},
+		},
+		{
+			name:    "an unwritable exact-version replace is not stood in for by a replace copied from go.mod",
+			galaMod: "require a.com/x v1.0.0 // go\n\nreplace a.com/x => ../ok",
+			goMod:   "require a.com/x v1.0.0\n\nreplace a.com/x v1.0.0 => \"../a b\"\n\nreplace a.com/x => ../ok",
+			want:    []string{"replace a.com/x v1.0.0 (go.mod only, with a path gala.mod cannot hold: give gala.mod a replace with another path)"},
+		},
+		{
+			name:    "an unwritable replace limited to a version go.mod does not require is not drift",
+			galaMod: "require a.com/x v1.2.0 // go",
+			goMod:   "require a.com/x v1.2.0\n\nreplace a.com/x v1.0.0 => \"../a b\"",
 		},
 		{
 			name:    "a GALA package go.mod replaces with a path with a space is not drift",

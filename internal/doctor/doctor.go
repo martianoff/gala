@@ -368,16 +368,18 @@ func modDrift(galaMod *mod.File, goMod *modfile.File) []string {
 	}
 	var drift []string
 	wanted, wantedReplaces, _ := build.GoRequirementsOf(goMod)
-	// A module go.mod replaces with a path gala.mod cannot hold: gala.mod
-	// needs a replace of it with another path, and its requirements still
-	// count.
-	unwritable, unwritableReqs := build.UnwritableGoModReplaces(goMod)
-	drift = append(drift, replaceDrift(galaMod, wantedReplaces, unwritable)...)
-	for _, path := range unwritable {
-		if !slices.ContainsFunc(galaMod.Replace, func(r mod.Replace) bool { return r.Old.Path == path }) {
-			drift = append(drift, fmt.Sprintf("replace %s %s", path, unwritableNote))
+	// A requirement go.mod replaces with a path gala.mod cannot hold still
+	// counts, and gala.mod needs a replace of its own for it, with another
+	// path: not one it copied from go.mod, which go.mod does not apply to it.
+	unwritableReqs := build.UnwritableGoModReplaces(goMod)
+	var unwritable []string
+	for _, r := range unwritableReqs {
+		unwritable = append(unwritable, r.Path)
+		if rep, ok := galaMod.ReplaceFor(r.Path, r.Version); !ok || slices.Contains(wantedReplaces, rep) {
+			drift = append(drift, fmt.Sprintf("replace %s %s %s", r.Path, r.Version, unwritableNote))
 		}
 	}
+	drift = append(drift, replaceDrift(galaMod, wantedReplaces, unwritable)...)
 	for _, r := range append(wanted, unwritableReqs...) {
 		switch galaVer, found := inGala[r.Path]; {
 		case !found && !r.Indirect:
