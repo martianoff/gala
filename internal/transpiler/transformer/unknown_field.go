@@ -59,14 +59,16 @@ func (t *galaASTTransformer) checkUnknownField(base ast.Expr, xType transpiler.T
 // basicReceiverIsCertain reports whether base, a receiver GALA types as a
 // predeclared basic type, surely has that type, so that a read of its member
 // name is surely wrong. The basic type of a value computed from Go values can
-// be a guess: arithmetic between an untyped Go constant and a Go named type
-// (`math.MaxInt8 * time.Second`) is typed by the constant's default, `int`,
-// where Go has a `time.Duration`. So the read is judged only when
+// be a guess: GALA types arithmetic between an untyped Go constant and a Go
+// named type (`math.MaxInt8 * time.Second`) by the constant's default, `int`,
+// where Go has a `time.Duration` (#1440). So the read is judged only when
 //   - Go type information is loaded,
-//   - base is a function, method or lambda parameter, whose type its
-//     declaration, annotation or slot gives (a val may hold such arithmetic),
-//   - and no Go type defined over a basic type has a member of that name
-//     (`Minutes` of time.Duration), which the value could really be.
+//   - base is a function, method or lambda parameter (a val may hold such
+//     arithmetic),
+//   - and, for a lambda parameter typed by its slot, no Go type defined over
+//     a basic type has a member of that name (`Minutes` of time.Duration),
+//     which the value could really be. A parameter whose type is written
+//     (`func f(s string)`, `(x float64) =>`) has that type for sure.
 func (t *galaASTTransformer) basicReceiverIsCertain(base ast.Expr, name string) bool {
 	if t.goTypeInfo == nil {
 		return false
@@ -75,6 +77,9 @@ func (t *galaASTTransformer) basicReceiverIsCertain(base ast.Expr, name string) 
 	if !ok || t.fixedBindingOf(id.Name) != fixedParam {
 		return false
 	}
+	if !t.isInferredParam(id.Name) {
+		return true
+	}
 	for _, data := range t.goTypeInfo.Types {
 		if data == nil || data.Underlying == nil {
 			continue
@@ -82,7 +87,7 @@ func (t *galaASTTransformer) basicReceiverIsCertain(base ast.Expr, name string) 
 		if u, ok := data.Underlying.(transpiler.BasicType); !ok || !transpiler.IsPrimitiveType(u.Name) {
 			continue
 		}
-		if _, has := data.Methods[name]; has {
+		if _, has := data.Methods[name]; has || data.PointerMethods[name] {
 			return false
 		}
 	}

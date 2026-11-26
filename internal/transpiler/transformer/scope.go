@@ -50,6 +50,10 @@ type scope struct {
 	// inout records the `inout` parameters and receivers, read through
 	// their pointer (see inout.go). Allocated on first use.
 	inout map[string]bool
+	// inferredParams records the lambda parameters written without a type,
+	// whose type the slot the lambda fills gives (see
+	// basicReceiverIsCertain). Allocated on first use.
+	inferredParams map[string]bool
 	// lambda marks the scope a function literal pushes for its parameters
 	// and body (a lambda, a partial function, a placeholder lambda): a name
 	// bound outside it is captured. tryRegion marks the lambda that is the
@@ -432,6 +436,25 @@ func (t *galaASTTransformer) fixedBindingOf(name string) fixedBinding {
 		return s.fixedParams[name]
 	}
 	return notFixed
+}
+
+// markInferredParam flags name in the innermost scope as a lambda parameter
+// written without a type, typed by the slot the lambda fills.
+func (t *galaASTTransformer) markInferredParam(name string) {
+	if t.currentScope == nil {
+		return
+	}
+	if t.currentScope.inferredParams == nil {
+		t.currentScope.inferredParams = map[string]bool{}
+	}
+	t.currentScope.inferredParams[name] = true
+}
+
+// isInferredParam reports whether name is bound to a lambda parameter whose
+// type its slot gave (markInferredParam).
+func (t *galaASTTransformer) isInferredParam(name string) bool {
+	s := t.bindingScope(name)
+	return s != nil && s.inferredParams[name]
 }
 
 // markSendable flags name in the innermost scope as a binding whose declared

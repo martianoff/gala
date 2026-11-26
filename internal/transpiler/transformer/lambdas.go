@@ -211,6 +211,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 							"drop `inout`: the lambda gets a copy of the value")
 					default:
 						t.addParam(p.name, expType, p.isVar)
+						t.markInferredParam(p.name)
 					}
 					if t.lspVarTypes != nil && t.loweringDefault == nil {
 						line, col := p.nameAt.start()
