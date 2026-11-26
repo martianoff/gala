@@ -248,11 +248,15 @@ end
 theorem blocked_off {evs : List Ev} (h : triggers evs = false) : blocked evs = none := by
   simp [blocked, h]
 
+theorem hOperands_ccs (s : Scope) (top : Bool) : ∀ (es : List Expr), CCs es → LitsQuietArgs s es → ∀ h,
+    (hOperands s false top es).run h = (es, h)
+  | [], _, _, h => rfl
+  | e :: es, ⟨he, hes⟩, ⟨qe, qes⟩, h => by
+    simp only [hOperands, StateT.run_bind, hE_cc s _ e he qe h, idb, hEs_cc s es hes qes h]; rfl
+
 theorem hOperands_cc (s : Scope) (top : Bool) (le : Expr) (hc : CC le) (hq : LitsQuiet s le) (h : HState) :
-    (hOperands s false top [le]).run h = ([le], h) := by
-  simp only [hOperands, hEs, StateT.run_bind, List.isEmpty_nil, Bool.and_true]
-  rw [hE_cc s top le hc hq h]
-  rfl
+    (hOperands s false top [le]).run h = ([le], h) :=
+  hOperands_ccs s top [le] ⟨hc, trivial⟩ ⟨hq, trivial⟩ h
 
 /-- The value of a lowered declaration `var x = e`. -/
 def declExpr? : Decl → Option (String × Expr)
@@ -270,7 +274,26 @@ def afterS (s : Scope) : Stmt → Scope
   | .decl d => match declExpr? d with
     | some (x, _) => s.bind [x]
     | none => s
+  | .assign tok lhs _ => if tok == ":=" then s.bind (declaredBy lhs) else s
   | _ => s
+
+/-- A name, as a target of a lowered assignment. -/
+def isIdentE : Expr → Bool
+  | .ident _ => true
+  | _ => false
+
+theorem idents_map : ∀ (es : List Expr), es.all isIdentE = true → ∃ xs : List String, es = xs.map .ident
+  | [], _ => ⟨[], rfl⟩
+  | e :: es, h => by
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    obtain ⟨xs, rfl⟩ := idents_map es h.2
+    cases e
+    case ident x => exact ⟨x :: xs, rfl⟩
+    all_goals simp [isIdentE] at h
+
+theorem idents_cc (s : Scope) : ∀ (xs : List String), CCs (xs.map .ident) ∧ LitsQuietArgs s (xs.map .ident)
+  | [] => ⟨trivial, trivial⟩
+  | _ :: xs => ⟨⟨trivial, (idents_cc s xs).1⟩, ⟨trivial, (idents_cc s xs).2⟩⟩
 
 mutual
 /-- **No statement fires gc's trigger**, in scope `s`: each is a lowered declaration,
@@ -283,7 +306,11 @@ def NoTrigS (s : Scope) : Stmt → Prop
   | .block ss => NoTrigSs s ss
   | .if_ init c b els => init = none ∧ CC c ∧ LitsQuiet s c ∧ triggers (scanE s false c) = false ∧
       NoTrigSs s b ∧ NoTrigOS s els
-  | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
+  | .assign tok lhs rhs => (tok = ":=" ∨ tok = "=") ∧ lhs.all isIdentE = true ∧ CCs rhs ∧ LitsQuietArgs s rhs ∧
+      triggers (scanEs s lhs ++ scanOperands s true rhs) = false
+  | .branch _ => True
+  | .for_ init c p b => init = none ∧ c = none ∧ p = none ∧ NoTrigSs s b
+  | .expr _ | .incDec .. | .switch .. | .typeSwitch .. | .range ..
   | .defer_ _ | .empty | .unsupported _ | .localType _ => False
 def NoTrigSs (s : Scope) : List Stmt → Prop
   | [] => True
@@ -321,8 +348,36 @@ theorem hS_noTrig (s : Scope) : ∀ (st : Stmt), NoTrigS s st → ∀ h, (hS s s
     simp only [blocked_off ht, ht, StateT.run_bind, isolated_run _ lc (hE_cc s false lc hc hq), idb,
       hSs_noTrig s la hb h, hes]
     cases els <;> rfl
-  | .expr _, h', _ | .incDec .., h', _ | .assign .., h', _ | .branch _, h', _ | .switch .., h', _
-  | .typeSwitch .., h', _ | .for_ .., h', _ | .range .., h', _ | .defer_ _, h', _
+  | .assign tok lhs rhs, hst, h => by
+    simp only [NoTrigS] at hst
+    obtain ⟨htok, hl, hc, hq, ht⟩ := hst
+    obtain ⟨xs, rfl⟩ := idents_map lhs hl
+    have hlc := idents_cc s xs
+    -- Names on the left: the right side is the top-level operand for `:=` and `=` alike.
+    have hall : (xs.all fun _ => true) = true := List.all_eq_true.2 fun _ _ => rfl
+    rw [hS]
+    rcases htok with rfl | rfl
+    · simp only [show ((":=" : String) == ":=") = true from rfl, Bool.true_or, blocked_off ht, ht, ite_true,
+        StateT.run_bind]
+      rw [isolated_run _ (xs.map .ident, rhs) (fun h' => by
+        simp only [StateT.run_bind, StateT.run_pure, pure_bind, idb, hOperands_ccs s true rhs hc hq h']; rfl) h]
+      rfl
+    · simp only [show (("=" : String) == ":=") = false from rfl, show (("=" : String) == "=") = true from rfl,
+        Bool.and_true, List.all_map, Function.comp_def, hall,
+        Bool.or_true, Bool.false_eq_true, ite_false, blocked_off ht, ht, StateT.run_bind]
+      rw [isolated_run _ (xs.map .ident, rhs) (fun h' => by
+        simp only [StateT.run_bind, StateT.run_pure, hEs_cc s _ hlc.1 hlc.2 h', idb,
+          hOperands_ccs s true rhs hc hq h']; rfl) h]
+      rfl
+  | .branch _, _, h => rfl
+  | .for_ init c p b, hst, h => by
+    simp only [NoTrigS] at hst
+    obtain ⟨rfl, rfl, rfl, hb⟩ := hst
+    simp only [hS, hOS, hOE, StateT.run_bind, StateT.run_pure, pure_bind, idb, hSs_noTrig s b hb h]
+    simp [scanOE, triggers, afterS]
+    rfl
+  | .expr _, h', _ | .incDec .., h', _ | .switch .., h', _
+  | .typeSwitch .., h', _ | .range .., h', _ | .defer_ _, h', _
   | .empty, h', _ | .unsupported _, h', _ | .localType _, h', _ => by simp only [NoTrigS] at h'
 theorem hSs_noTrig (s : Scope) : ∀ (ss : List Stmt), NoTrigSs s ss → ∀ h, (hSs s ss).run h = (ss, h)
   | [], _, h => rfl
@@ -390,6 +445,8 @@ def FitsS (s : Scope) : Stmt → Prop
   | .ret es => FitsEs s es
   | .block ss => FitsSs s ss
   | .if_ _ c b els => FitsE s c ∧ FitsSs s b ∧ FitsOS s els
+  | .assign _ lhs rhs => FitsEs s lhs ∧ FitsEs s rhs
+  | .for_ _ _ _ b => FitsSs s b
   | _ => True
 def FitsSs (s : Scope) : List Stmt → Prop
   | [] => True
@@ -503,6 +560,29 @@ theorem scanArgs_eq (s : Scope) (conv : List Bool) : ∀ (es : List Expr), CCs e
 end
 
 
+/-- `canon` of a statement's operand list (`scanOperands`): an only operand is the top-level one. -/
+def canonOps (top : Bool) : List Expr → List Ev
+  | [e] => canon top e
+  | es => canonArgs es
+
+theorem scanEs_eq (s : Scope) : ∀ (es : List Expr), CCs es → FitsEs s es → scanEs s es = canonArgs es
+  | [], _, _ => rfl
+  | e :: es, ⟨he, hes⟩, ⟨fe, fes⟩ => by
+    simp only [scanEs, canonArgs, canon_eq s false e he fe, scanEs_eq s es hes fes]
+
+theorem scanSlots_eq (s : Scope) : ∀ (es : List Expr), CCs es → FitsEs s es → scanSlots s es = canonArgs es
+  | [], _, _ => rfl
+  | e :: es, ⟨he, hes⟩, ⟨fe, fes⟩ => by
+    simp only [scanSlots, canonArgs, canon_eq s false e he fe, slotEv_off s e _ (canon_noRead false e he),
+      scanSlots_eq s es hes fes, List.append_nil]
+
+theorem scanOperands_eq (s : Scope) (top : Bool) (es : List Expr) (hc : CCs es) (hf : FitsEs s es) :
+    scanOperands s top es = canonOps top es := by
+  match es, hc, hf with
+  | [e], hc, hf => simp only [scanOperands, canonOps]; exact canon_eq s top e hc.1 hf.1
+  | [], _, _ => rfl
+  | a :: b :: es, hc, hf => simp only [scanOperands, canonOps]; exact scanSlots_eq s _ hc hf
+
 /-! ## The orders step 3a allows -/
 
 mutual
@@ -524,6 +604,10 @@ def body3S : Stmt → Bool
   | .ret [e] => ccB e && !triggers (canon true e)
   | .block ss => body3Ss ss
   | .if_ init c b els => init.isNone && (ccB c && !triggers (canon false c)) && body3Ss b && body3OS els
+  | .assign tok lhs rhs => (tok == ":=" || tok == "=") && lhs.all isIdentE && ccBs rhs &&
+      !triggers (canonArgs lhs ++ canonOps true rhs)
+  | .branch b => b == "continue"
+  | .for_ init c p b => init.isNone && c.isNone && p.isNone && body3Ss b
   | _ => false
 def body3Ss : List Stmt → Bool
   | [] => true
@@ -650,8 +734,21 @@ theorem noTrigS_of (s : Scope) : ∀ (st : Stmt), body3S st = true → FitsS s s
   | .decl (.value false [.mk [_] none (_ :: _ :: _)]), hb, _ =>
     by obtain ⟨_, _, hd, -⟩ := body3S_decl_shape hb; cases hd
   | .ret [], hb, _ | .ret (_ :: _ :: _), hb, _ => by obtain ⟨_, hd, -⟩ := body3S_ret_shape hb; cases hd
-  | .expr _, hb, _ | .incDec .., hb, _ | .assign .., hb, _ | .branch _, hb, _ | .switch .., hb, _
-  | .typeSwitch .., hb, _ | .for_ .., hb, _ | .range .., hb, _ | .defer_ _, hb, _
+  | .assign tok lhs rhs, hb, hf => by
+    simp only [body3S, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true, beq_iff_eq] at hb
+    obtain ⟨⟨⟨htok, hl⟩, hrb⟩, ht⟩ := hb
+    obtain ⟨xs, rfl⟩ := idents_map lhs hl
+    have hrc := ccBs_sound rhs hrb
+    refine ⟨htok, hl, hrc, litsQuietArgs_of s rhs hrb hf.2, ?_⟩
+    rw [scanEs_eq s _ (idents_cc s xs).1 hf.1, scanOperands_eq s true rhs hrc hf.2]
+    exact ht
+  | .branch _, _, _ => trivial
+  | .for_ init c p b, hb, hf => by
+    simp only [body3S, Bool.and_eq_true, Option.isNone_iff_eq_none] at hb
+    obtain ⟨⟨⟨hi, hc⟩, hp⟩, hbb⟩ := hb
+    exact ⟨hi, hc, hp, noTrigSs_of s b hbb hf⟩
+  | .expr _, hb, _ | .incDec .., hb, _ | .switch .., hb, _
+  | .typeSwitch .., hb, _ | .range .., hb, _ | .defer_ _, hb, _
   | .empty, hb, _ | .unsupported _, hb, _ | .localType _, hb, _ => by simp [body3S] at hb
 theorem noTrigSs_of (s : Scope) : ∀ (ss : List Stmt), body3Ss ss = true → FitsSs s ss → NoTrigSs s ss
   | [], _, _ => trivial
