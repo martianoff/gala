@@ -217,17 +217,38 @@ jobs:
         working-directory: gala_team
         run: |
           set -euo pipefail
-          if [ ! -d .gala/cache ]; then
-            echo "::warning::no .gala/cache directory; analyzer cache may have been disabled"
-            exit 0
+          # The transpile actions run in Bazel's execution root, so the
+          # analyzer writes its cache there (<execroot>/.gala/cache), not in
+          # the gala_team checkout. Entries are <...>.bin (the binary codec);
+          # the step used to look for *.gob in the checkout and so measured
+          # nothing.
+          execroot=$(bazel info execution_root \
+            --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
+            --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
+            --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/ \
+            --registry=https://bcr.bazel.build)
+          dirs=()
+          for d in "$execroot/.gala/cache" .gala/cache; do
+            [ -d "$d" ] && dirs+=("$d")
+          done
+          entries=0
+          if [ "${#dirs[@]}" -gt 0 ]; then
+            entries=$(find "${dirs[@]}" -type f -name '*.bin' | wc -l)
+          fi
+          echo "Analyzer cache entries: ${entries} in ${dirs[*]:-<none>}"
+          # A budget over no entries checks nothing: fail rather than pass
+          # when the cache moved or its entries were renamed again.
+          if [ "$entries" -eq 0 ]; then
+            echo "::error::no analyzer cache entries (*.bin) under $execroot/.gala/cache or .gala/cache — the size budget below would check nothing"
+            exit 1
           fi
           # Each individual analyzer cache entry should stay tiny; the
           # symptom we care about is per-entry blowup (a hub package
           # inlining its full transitive type closure), so we cap the
-          # largest single .gob.
-          biggest=$(find .gala/cache -name '*.gob' -printf '%s\n' | sort -nr | head -1 || echo 0)
-          biggest=${biggest:-0}
-          echo "Largest cache entry: ${biggest} bytes"
+          # largest single entry.
+          biggest=$(find "${dirs[@]}" -type f -name '*.bin' -printf '%s %p\n' | sort -nr | awk 'NR == 1')
+          echo "Largest cache entry: ${biggest}"
+          biggest=${biggest%% *}
           # 5 MiB ceiling — pre-fix saw 138 MiB for app/cli; even with
           # a stdlib bigger than today's, ~5 MiB is loose-but-firm.
           if [ "$biggest" -gt $((5 * 1024 * 1024)) ]; then
