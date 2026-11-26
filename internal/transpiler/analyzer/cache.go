@@ -261,7 +261,11 @@ import (
 // v55: a generic Go alias records its underlying type exactly (instance type
 // arguments, array lengths, interface methods), as it types lambdas in slots
 // of its instances. A v54 payload holds the lossy spelling.
-const CacheVersion = "v55"
+//
+// v56: a Go defined type other than a struct or an interface records its
+// underlying type exactly when GALA can spell it (instance type arguments,
+// array lengths). A v55 payload holds the lossy spelling.
+const CacheVersion = "v56"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
