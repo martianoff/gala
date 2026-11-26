@@ -565,7 +565,11 @@ column lists what each milestone's claim rests on beyond them.
   that is itself an `if` as `{ if .. }`; a function's last value that is an `if` is that
   tail directly, with no IIFE. Both arms have one kind, and the IIFE's value has its type,
   never an untyped constant. A `return` inside an arm is not lowered: GALA's leaves the
-  function, Go's would leave only the literal (`retInArm_not_lowered`); the statement
+  function, Go's would leave only the literal (`retInArm_not_lowered`). A body that would declare
+  a name twice in one Go scope is not lowered either: a block whose last element is a
+  block (`nestedBlock_not_lowered`), or a `val` named as a parameter at the body's top
+  (`paramShadow_not_lowered`); `lowerBody_scopeOK` proves no lowered body does, which Go
+  rejects and GoCore does not check. The statement
   lowering takes the kind `return` may have, none inside an IIFE. GoCore's IIFE adds a
   closure to the state and takes one step for the call, which galaspec's step at the `if`
   pays for. On five functions the lowering gives exactly the transpiler's Go

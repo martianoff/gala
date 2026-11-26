@@ -114,7 +114,10 @@ def requiredTheorems : List Name := [
   `Gala.M5.iife_gocore_ok,
   `Gala.M5.iifeProg_gc,
   `Gala.M5.body3_div_iife,
-  `Gala.M5.body3_iife_div_inside
+  `Gala.M5.body3_iife_div_inside,
+  `Gala.M5.nestedBlock_not_lowered,
+  `Gala.M5.paramShadow_not_lowered,
+  `Gala.M5.lowerBody_scopeOK
 ]
 
 /-- The library's modules: `Gala` plus one module per `.lean` file under `Gala/`. -/

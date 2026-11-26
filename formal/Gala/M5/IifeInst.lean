@@ -201,6 +201,14 @@ theorem nestedBlock_not_lowered :
       (iL 3)) = none :=
   rfl
 
+/-- `func f(x int) int { val x = 2; x }` is not lowered: Go's `var x` would declare `x`
+    again in the parameters' scope. -/
+def shadowF : Spec.Func :=
+  { name := "f", params := [⟨"x", some (.name "int")⟩], defaults := [none], result := some (.name "int"),
+    body := .block [.decl .val ["x"] false none [iL 2], .name "x"] }
+
+theorem paramShadow_not_lowered : lowerBody 11 shapeSg shadowF = none := rfl
+
 /-! ## A typed IIFE, run: `(if (true) 1 else 2) + 3`
 
 Its arms are literals, but the IIFE's value has the arms' type (`int`), so the `+` is on

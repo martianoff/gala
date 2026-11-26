@@ -793,19 +793,66 @@ def ParamsOK (names : List String) : Prop := names.Nodup ∧ ∀ x ∈ names, x 
 
 instance (names : List String) : Decidable (ParamsOK names) := by unfold ParamsOK; infer_instance
 
+mutual
+/-- **No Go scope declares a name twice**: the statements of one Go block, `declared` the
+    names already declared in it (a function's parameters, for its body). Each block, `if`
+    body and function literal's body is a scope of its own. Go rejects a second declaration
+    of a name in one scope, and GoCore does not check it, so the lowering checks it. -/
+def scopeOK (declared : List String) : List Stmt → Bool
+  | [] => true
+  | .decl (.value _ [.mk [x] _ vs]) :: ss => !declared.contains x && exprsOK vs && scopeOK (x :: declared) ss
+  | .block b :: ss => scopeOK [] b && scopeOK declared ss
+  | .if_ none c b els :: ss => exprOK c && scopeOK [] b && elseOK els && scopeOK declared ss
+  | .ret es :: ss => exprsOK es && scopeOK declared ss
+  | _ :: _ => false
+def elseOK : Option Stmt → Bool
+  | none => true
+  | some (.block b) => scopeOK [] b
+  | some (.if_ none c b els) => exprOK c && scopeOK [] b && elseOK els
+  | some _ => false
+def exprOK : Expr → Bool
+  | .paren x | .unary _ x => exprOK x
+  | .binary _ x y => exprOK x && exprOK y
+  | .call fn args _ => exprOK fn && exprsOK args
+  | .funcLit _ body => scopeOK [] body
+  | _ => true
+def exprsOK : List Expr → Bool
+  | [] => true
+  | e :: es => exprOK e && exprsOK es
+end
+
 /-- **The lowering of a function's body**: parameters of distinct names (none `_`, `true` or
     `false`), each of a kind, and a result of one; the body is its tail (`tailOf`): `= e` is
     Go's `return e`, a block body its statements and then its last element's tail, an `if`
-    `{ if c { .. } else { .. } }` with a tail in each arm. -/
+    `{ if c { .. } else { .. } }` with a tail in each arm; and no Go scope of it declares a
+    name twice (`scopeOK`, the parameters declared in its top scope). -/
 def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) :=
   match sigOf F with
   | none => none
   | some (xks, ρ) =>
     if ParamsOK (xks.map (·.1)) then
       match tailOf K sg (some ρ) (paramKinds xks) F.body with
-      | some (k, lb) => if k = ρ then some lb else none
+      | some (k, lb) => if k = ρ ∧ scopeOK (xks.map (·.1)) lb = true then some lb else none
       | none => none
     else none
+
+/-- **A lowered body declares no name twice in one Go scope**, its parameters included. -/
+theorem lowerBody_scopeOK {K : Nat} {sg : Sigs} {F : Spec.Func} {lb : List Stmt} (h : lowerBody K sg F = some lb) :
+    ∃ xks ρ, sigOf F = some (xks, ρ) ∧ scopeOK (xks.map (·.1)) lb = true := by
+  unfold lowerBody at h
+  split at h
+  · cases h
+  · rename_i xks ρ hs
+    split at h
+    · split at h
+      · split at h
+        · rename_i hk
+          simp only [Option.some.injEq] at h
+          subst h
+          exact ⟨xks, ρ, hs, hk.2⟩
+        · cases h
+      · cases h
+    · cases h
 
 /-! ## The relations, with calls -/
 
@@ -3240,7 +3287,7 @@ theorem bodySim_of (d : Nat) (ihT : TailSim ds cx P K sg d) : BodySim ds cx P K 
     · rename_i k lb' htl
       split at hlb
       · rename_i hk
-        subst hk
+        obtain ⟨rfl, -⟩ := hk
         simp only [Option.some.injEq] at hlb
         subst hlb
         exact resB_of_resT (ihT (some k) _ F.body k lb' htl s g env hi hsg N hN)

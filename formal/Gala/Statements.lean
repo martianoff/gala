@@ -708,4 +708,20 @@ theorem body3_iife_div_inside :
       (iife .int (ifT (.ident "b") [.ret [.binary "/" (.ident "x") (.ident "z")]] [.ret [.intLit 2]]))]] :=
   Gala.M5.body3_iife_div_inside
 
+open Gala Gala.M5 GoCore.Full in
+theorem nestedBlock_not_lowered :
+    lowerC 11 shapeSg (fun _ => none) (.ifExpr (.lit (.bool true))
+      (.block [.decl .val ["t"] false none [iL 1], .block [.decl .val ["t"] false none [iL 2], .name "t"]])
+      (iL 3)) = none :=
+  Gala.M5.nestedBlock_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem paramShadow_not_lowered : lowerBody 11 shapeSg shadowF = none :=
+  Gala.M5.paramShadow_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem lowerBody_scopeOK : ∀ {K : Nat} {sg : Sigs} {F : Spec.Func} {lb : List Stmt}, lowerBody K sg F = some lb →
+    ∃ xks ρ, sigOf F = some (xks, ρ) ∧ scopeOK (xks.map (·.1)) lb = true :=
+  Gala.M5.lowerBody_scopeOK
+
 end Gala.Statements
