@@ -311,7 +311,7 @@ func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType
 	if isWildcard(text) {
 		return true
 	}
-	// A capitalized name that names nothing binds too, in its own arm.
+	// A capitalized name that is not a value in scope binds too, in its own arm.
 	if bound == nil && (t.isBindingPatternOf(text, matchedType) || t.isPatternBinding(text, matchedType)) {
 		return true
 	}
@@ -1805,7 +1805,7 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(cc caseSrc, paramName string, 
 	}
 	// A binding the body never reads is an error, as in any other arm (see
 	// transformCaseClauseWithType); Go would reject the unused variable.
-	if binds && len(bindingStmts) > 0 {
+	if binds && len(bindingStmts) > 0 && len(arm.defaultBody) >= len(bindingStmts) {
 		name := cc.pattern().text()
 		nodes := make([]ast.Node, 0, len(arm.defaultBody))
 		for _, s := range arm.defaultBody[len(bindingStmts):] {
