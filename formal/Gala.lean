@@ -29,9 +29,11 @@ import Gala.M5.StmtOrder
 import Gala.M5.Call
 import Gala.M5.Loop
 import Gala.M5.CallOrder
+import Gala.M5.Prog
 import Gala.M5.CallInst
 import Gala.M5.IifeInst
 import Gala.M5.LoopInst
+import Gala.M5.ProgInst
 import Gala.M5.GoFuel
 import Gala.M5.GoFuelInst
 import Gala.Gala2Lean.Prelude

@@ -7,6 +7,7 @@
 -/
 import Gala.M5.CallOrder
 import Gala.M5.Loop
+import Gala.M5.Prog
 
 namespace Gala.M5
 
@@ -33,22 +34,45 @@ def incPkg : PkgCtx :=
 
 def incCtx : Ctx := ⟨(∅ : HashMap String PkgCtx).insert "main" incPkg, "main"⟩
 
+def incFs : List (String × Sig × List Stmt) := [("inc", lowerSigOf [("x", .int)] .int, incBody)]
+
+theorem inc_buildCtx : buildCtx (progOf incFs) = incCtx := by
+  simp [buildCtx, progOf, incFs, incCtx, incPkg, buildPkg, funDecl, Std.HashMap.fold_eq_foldl_toList]
+
+theorem inc_progSigs : progSigs incDs = incSg := by
+  funext f; unfold progSigs incSg; by_cases h : f = "inc"
+  · subst h; rfl
+  · have h' : (f == "inc") = false := by simp [h]
+    simp [h, h', incDs, List.lookup]
+
+theorem inc_lowerFun : lowerFun 11 incSg "inc" incF = some incBody := rfl
+
+open Hoist in
+theorem inc_lowerProg : lowerProg 11 incDs = some (progOf incFs) := by
+  have h1 : sigOf incF = some ([("x", .int)], .int) := rfl
+  have h3 : body3Ss incBody = true := by
+    simp [body3Ss, body3S, ccB, canon, triggers, isNonzeroLit, isLit, incBody]
+  have hl : lowerFuns 11 incDs = some incFs := by
+    have hf : incDs.funcs = [("inc", incF)] := rfl
+    unfold lowerFuns
+    rw [inc_progSigs, hf]
+    simp [h1, lowerOne, inc_lowerFun, h3, incFs]
+  have hn : namesOK incDs = true := by decide
+  have hfit : fitsAll incFs = true := by
+    simp [fitsAll, incFs, fitsSs, fitsS, fitsE, fitsEs, fieldListNames, incBody, 
+      gcScope, funcScope, changeableName, 
+      Scope.isLocal, 
+      Scope.enter, Scope.withIfaces, Scope.bind, sigNames, lowerSigOf, kindName, chSs, chS, chE,
+      chEs, buildCtx, buildPkg, progOf, funDecl, Id.run, List.forIn_cons,
+      List.forIn_nil, List.foldl_cons, List.foldl_nil, id_pure, idb,
+      ]
+  simp [lowerProg, hn, hl, hfit]
+
+/-- `inc`'s `FunRel`, from the context of the lowered program (`lowerProg_funRel`), which is
+    the context above (`inc_buildCtx`). -/
 theorem inc_funRel : FunRel 11 incSg incDs incCtx "main" := by
-  refine ⟨by decide, fun f hf => ?_, incPkg, by simp [incCtx], fun x hx => ?_, fun f sig h => ?_⟩
-  · unfold incSg at hf
-    split at hf
-    · rename_i hf'; subst hf'; rfl
-    · cases hf
-  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
-    rcases hx with rfl | rfl | rfl | rfl | rfl <;> simp [incPkg]
-  · unfold incSg at h
-    split at h
-    · rename_i hf
-      subst hf
-      simp only [Option.some.injEq] at h
-      subst h
-      exact ⟨incF, [("x", .int)], .int, incBody, 0, rfl, rfl, rfl, inc_lowerBody, by simp [incPkg]⟩
-    · cases h
+  have h := lowerProg_funRel inc_lowerProg
+  rwa [inc_buildCtx, inc_progSigs] at h
 
 def incEnv : Env := { pkg := "main", file := 0 }
 def incCore : Spec.Core := { locals := [], globals := [], out := "" }

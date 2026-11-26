@@ -14,7 +14,9 @@
   `if` used as a value: Go's would leave the IIFE, GALA's the function), `tail-loop-refused`
   (the transformer loops it, `loopGate`, and the loop lowering refuses it where the
   recursive one would not), `body-shape` (anything else). A lowered body (`lowerFun`) is
-  `order-predicate` when `Body3` fails (`Gala/M5/CallOrder.lean`), `changeable-param` when
+  `order-predicate` when `Body3` fails (`Gala/M5/CallOrder.lean`), `not-fit` when it does
+  not fit the scope gc's rewrite gives it in the program of the file's lowered functions
+  (`fitsSs`, the check `lowerProg` makes, `Gala/M5/Prog.lean`), `changeable-param` when
   a call may change a parameter (`chSs`: a function literal assigns it), else
   `lowered-step3c` when it is a self-tail-call loop, `lowered-step3b` when it needs step 3b
   (an `if` used as a value, or one as its last value), else `lowered`. The functions the lowering calls are the
@@ -24,6 +26,7 @@
 import Gala.Json
 import Gala.Const
 import Gala.M5.CallOrder
+import Gala.M5.Prog
 
 open Gala Gala.Spec Gala.M5
 
@@ -82,16 +85,18 @@ partial def fixSigs (ds : Decls) (sg0 : Sigs) (names : List String) : Sigs :=
     | none => false
   if names'.length == names.length then sg else fixSigs ds sg0 names'
 
-def reason (ds : Decls) (globals : List String) (sg0 sg : Sigs) (f : String) (F : Func) : String :=
+def reason (ds : Decls) (globals : List String) (sg0 sg : Sigs) (fs : List (String × GoCore.Full.Sig × List GoCore.Full.Stmt))
+    (f : String) (F : Func) : String :=
   if F.result.isNone then "unit-result"
   else match sigOf F with
   | none => "signature"
-  | some (xks, _) =>
+  | some (xks, ρ) =>
     let names := xks.map (·.1)
     if !decide (ParamsOK names) then "param-names"
     else match lowerFun K sg f F with
     | some lb =>
       if !body3Ss lb then "order-predicate"
+      else if !fitsSs (gcScope (progOf fs) "main" 0 none [] (lowerSigOf xks ρ) lb) lb then "not-fit"
       else if (GoCore.Full.Hoist.chSs (fun _ _ => false) false lb).any names.contains then "changeable-param"
       else if loopGate f names.length F.body then "lowered-step3c"
       else if usesIf F.body then "lowered-step3b" else "lowered"
@@ -136,12 +141,22 @@ def main (args : List String) : IO UInt32 := do
       let globals := gs.flatMap (·.names)
       let sg0 : Sigs := fun f => (ds.funcs.lookup f).bind sigOf |>.map fun (xks, ρ) => (xks.map (·.2), ρ)
       let sg := fixSigs ds sg0 (ds.funcs.filterMap fun (f, _) => (sg0 f).map fun _ => f)
+      let fs := ds.funcs.filterMap fun (f, F) => do
+        let _ ← sg f
+        let (xks, ρ) ← sigOf F
+        let lb ← lowerFun K sg f F
+        pure (f, lowerSigOf xks ρ, lb)
+      -- Whole programs: `lowerProg` lowers every function of the lowered kinds, or none.
+      if (ds.funcs.any fun (_, F) => (sigOf F).isSome) then
+        let k := if (lowerProg K ds).isSome then "program-lowered" else "program-refused"
+        counts := counts.insert k (counts.getD k 0 + 1)
       for (f, F) in ds.funcs do
-        let r := reason ds globals sg0 sg f F
+        let r := reason ds globals sg0 sg fs f F
         counts := counts.insert r (counts.getD r 0 + 1)
   -- Every reason, a zero included.
   for r in ["unit-result", "signature", "param-names", "reads-package-level", "named-args-or-defaults",
       "calls-outside", "match-expression", "return-in-iife", "tail-loop-refused", "body-shape",
-      "order-predicate", "changeable-param", "lowered-step3c", "lowered-step3b", "lowered"] do
+      "order-predicate", "not-fit", "changeable-param", "lowered-step3c", "lowered-step3b", "lowered",
+      "program-lowered", "program-refused"] do
     IO.println s!"{r} {counts.getD r 0}"
   return 0
