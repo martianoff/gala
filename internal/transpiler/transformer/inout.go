@@ -621,12 +621,15 @@ func (t *galaASTTransformer) pointerDepth(typ transpiler.Type, free []string) (d
 }
 
 // goDefinedUnderlying is the underlying type of typ, a type Go defines
-// (goDeclaredType) other than an alias, instantiated with typ's type
-// arguments; nil for any other type. A Go struct's is the placeholder
+// (goDeclaredType) other than a non-generic alias, instantiated with typ's
+// type arguments; nil for any other type. A Go struct's is the placeholder
 // `any`, never a StructType.
 func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []string) transpiler.Type {
 	_, data, args := t.goDeclaredType(typ, free)
-	if data == nil || data.Kind == "alias" {
+	// A generic alias (`type Handler[T any] = func(T) error`) reads as its
+	// target with the type arguments substituted; unaliasedType follows a
+	// plain one.
+	if data == nil || data.Kind == "alias" && len(data.TypeParams) == 0 {
 		return nil
 	}
 	return t.instantiateGoType(data.Underlying, data.TypeParams, args)

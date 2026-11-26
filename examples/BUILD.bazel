@@ -2243,6 +2243,15 @@ gala_exec_test(
     ],
 )
 
+# Lambdas typed by instances of generic Go type aliases of function types,
+# through a Go bridge package (#1362).
+gala_exec_test(
+    name = "go_generic_alias",
+    src = "go_generic_alias/main.gala",
+    expected = "go_generic_alias/main.out",
+    deps = ["//examples/go_generic_alias_bridge"],
+)
+
 # #1298 and #1299 through a Go bridge package: Go types defined over a slice
 # or map, generic Go iterators, a generic Go struct's fields and a generic Go
 # slice type's methods. In a directory of its own: the single-file example
