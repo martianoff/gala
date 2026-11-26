@@ -725,7 +725,8 @@ type slot struct {
 	// does. lowerLambdaArg reads it, for the argument's lambda or for one in
 	// a parenthesized, if or match value: lowerAgainst passes the slot on,
 	// and so does lowerBlockTail for a branch block ending in such a value
-	// (carriesLambda). Nil for any other slot.
+	// (carriesLambda). A branch lowerBranches retries gets a typed slot
+	// instead, without it. Nil for any other slot.
 	funcResult transpiler.Type
 }
 

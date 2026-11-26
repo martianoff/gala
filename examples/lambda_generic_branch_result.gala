@@ -8,6 +8,7 @@ func run[A any, B any](f func(A) B) func(A) B = f
 
 func widen[A any](f func(A) int64) func(A) int64 = f
 
+// Here the declared result binds run's type parameters (the typed-slot path).
 func pick(n int) func(int) int = run(n match {
     case 1 => (k int) => {
         val q = k + 1
