@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"slices"
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the parse tree
@@ -341,10 +342,16 @@ func (t *galaASTTransformer) buildTailCallStep(
 		// and participate in the shared `_tmp_*` internal-temp convention.
 		// The temporary has the parameter's type: `:=` would give an
 		// untyped constant argument (`5`, `1 << i`) its default type, which
-		// the parameter may not accept (#1426).
+		// the parameter may not accept (#1426). The type is spelled inside
+		// the body, where a parameter hides a type or package of the same
+		// name (`state state`, `time time.Duration`); such a type keeps `:=`.
 		tmp := t.nextTempVar()
 		tmpNames[i] = tmp
-		stmts = append(stmts, seqVarDecl(tmp, tc.paramTypes[i], arg))
+		if namesAny(tc.paramTypes[i], tc.paramNames) {
+			stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(tmp)}, Tok: token.DEFINE, Rhs: []ast.Expr{arg}})
+		} else {
+			stmts = append(stmts, seqVarDecl(tmp, tc.paramTypes[i], arg))
+		}
 	}
 
 	// Simultaneous reassignment of every parameter from its temporary.
@@ -361,6 +368,19 @@ func (t *galaASTTransformer) buildTailCallStep(
 	stmts = append(stmts, &ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: rhs})
 	stmts = append(stmts, &ast.BranchStmt{Tok: token.CONTINUE})
 	return stmts, true, nil
+}
+
+// namesAny reports whether the type expression typ mentions any identifier in
+// names.
+func namesAny(typ ast.Expr, names []string) bool {
+	found := false
+	ast.Inspect(typ, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && slices.Contains(names, id.Name) {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // containsFuncLit reports whether e contains a function literal (closure)

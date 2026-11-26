@@ -45,6 +45,23 @@ func main() {
 			mustMiss: []string{"_tmp_2 := 5"},
 		},
 		{
+			// A parameter hides a type of the same name inside the body, so
+			// that temporary is not spelled with its type.
+			name: "a parameter named like its type",
+			input: `package main
+
+struct state(n int)
+
+func run(state state, k int) int = if (k == 0) state.n else run(state, k - 1)
+
+func main() {
+    Println(run(state(7), 2))
+}
+`,
+			mustHave: []string{"_tmp_1 := state", "var _tmp_2 int = k - 1"},
+			mustMiss: []string{"var _tmp_1 state"},
+		},
+		{
 			// Positive: the tail self-call becomes a loop; the else branch does
 			// NOT contain a self-call to factorial( anymore.
 			name: "factorial tail recursion becomes a loop",
