@@ -6099,17 +6099,36 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	return withLead(lit, mark), true
 }
 
-// nilCannotBe reports whether typ is a concrete type no `nil` can have: not a
-// pointer, slice, map, channel, function or interface (`any` included), nor
-// a type parameter or a type that is not resolved.
+// nilCannotBe reports whether typ is known to be a type no `nil` can have: a
+// scalar (a predeclared number, string or bool, or a Go or opaque type over
+// one), a GALA struct or sealed type, or a Go struct type. Anything else,
+// including a Go type whose type information is missing, may hold nil.
 func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() || t.hasTypeParams(typ) || t.mentionsUnboundTypeParam(typ) {
 		return false
 	}
-	if _, isChan := t.followAliasChain(typ).(transpiler.ChanType); isChan {
+	if _, kind, via := t.resolveScalar(typ); kind != scalarNone || via != nil {
+		return true // an opaque type is declared over a scalar
+	}
+	base := t.followAliasChain(typ)
+	if g, isGen := base.(transpiler.GenericType); isGen {
+		base = g.Base
+	}
+	var nt transpiler.NamedType
+	switch b := base.(type) {
+	case transpiler.NamedType:
+		nt = b
+	case transpiler.BasicType: // a local type by its bare name
+		nt = transpiler.NamedType{Name: b.Name}
+	default:
 		return false
 	}
-	return !t.holdsNil(typ)
+	if !t.isGoTyped(nt) {
+		meta := t.getTypeMeta(nt.BaseName())
+		return meta != nil && !meta.IsInterface
+	}
+	_, data := t.goTypeDataFor(nt)
+	return data != nil && data.Kind == "struct"
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose

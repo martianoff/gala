@@ -495,14 +495,34 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a struct result", "func() state", "b(nil, 2)", "return nil"},
 		{"an int result", "func() int", "b(nil, 2)", "return nil"},
 		{"no result", "func()", "b(nil, 2)", "func() {"},
+		{"a string result", "func() string", "b(nil, 2)", "return nil"},
+		{"an opaque result", "func() Count", "b(nil, 2)", "return nil"},
 		{"a pointer result", "func() *state", "return nil", ""},
 		{"an any result", "func() any", "return nil", ""},
+		{"an error result", "func() error", "return nil", ""},
+		{"a slice result", "func() []int", "return nil", ""},
+		{"a map result", "func() map[string]int", "return nil", ""},
+		{"a GALA interface result", "func() Shower", "return nil", ""},
+		{"a Go named map result", "func() http.Header", "return nil", ""},
+		{"a Go interface result", "func() io.Reader", "return nil", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			input := `package main
 
+import "io"
+import "net/http"
+
 struct state(n int)
+
+opaque type Count int
+
+type Shower interface {
+    Show() string
+}
+
+var _r io.Reader = nil
+var _h http.Header = nil
 
 func b(f ` + c.param + `, n int) int = if (f == nil) n else 0
 
