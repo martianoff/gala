@@ -583,13 +583,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 30 | 1 | 76 | 3 |
+| AGREE | 30 | 1 | 80 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 508 | 34 | 462 | 32 |
+| UNSUPPORTED | 524 | 34 | 474 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
 Examples that run wholly inside the subset and agree with the spec: **30** (ratchet baseline 30).
-Examples gala2lean translates whose Lean run agrees with Go: **76** (ratchet baseline 76).
+Examples gala2lean translates whose Lean run agrees with Go: **80** (ratchet baseline 80).
 
 ### Constructs
 
@@ -603,63 +603,63 @@ when run as Lean and compared with Go.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
-| `file` | yes | yes: 31 agree | no | translated: 79 agree |
-| `import` | yes | no: 1 agree | no | translated: 29 agree |
-| `val` | yes | yes: 12 agree | no | translated: 53 agree |
+| `file` | yes | yes: 31 agree | no | translated: 83 agree |
+| `import` | yes | no: 1 agree | no | translated: 32 agree |
+| `val` | yes | yes: 12 agree | no | translated: 56 agree |
 | `var` | yes | yes: 4 agree | no | translated: 7 agree |
-| `func` | yes | yes: 31 agree | no | translated: 79 agree |
-| `receiver` | not seen | no | no | translated: 7 agree |
-| `type-param` | not seen | no | no | translated: 16 agree |
-| `param` | yes | yes: 27 agree | no | translated: 65 agree |
-| `struct` | yes | yes: 4 agree | no | translated: 20 agree |
-| `field` | yes | yes: 8 agree | no | translated: 40 agree |
+| `func` | yes | yes: 31 agree | no | translated: 83 agree |
+| `receiver` | not seen | no | no | translated: 8 agree |
+| `type-param` | not seen | no | no | translated: 17 agree |
+| `param` | yes | yes: 27 agree | no | translated: 68 agree |
+| `struct` | yes | yes: 4 agree | no | translated: 21 agree |
+| `field` | yes | yes: 8 agree | no | translated: 41 agree |
 | `sealed` | yes | yes: 8 agree | no | translated: 27 agree |
 | `variant` | yes | yes: 8 agree | no | translated: 27 agree |
-| `type-name` | yes | yes: 28 agree | no | translated: 71 agree |
-| `block` | yes | yes: 31 agree | no | translated: 79 agree |
-| `if` | yes | yes: 7 agree | no | translated: 11 agree |
-| `return` | yes | yes: 5 agree | no | translated: 19 agree |
+| `type-name` | yes | yes: 28 agree | no | translated: 75 agree |
+| `block` | yes | yes: 31 agree | no | translated: 83 agree |
+| `if` | yes | yes: 7 agree | no | translated: 12 agree |
+| `return` | yes | yes: 5 agree | no | translated: 20 agree |
 | `assign` | yes | yes: 4 agree | no | translated: 7 agree |
 | `incdec` | not seen | no | no | not translated |
-| `int` | yes | yes: 28 agree | no | translated: 65 agree |
-| `bool` | yes | yes: 9 agree | no | translated: 17 agree |
-| `string` | yes | yes: 22 agree | no | translated: 62 agree |
-| `name` | yes | yes: 31 agree | no | translated: 79 agree |
+| `int` | yes | yes: 28 agree | no | translated: 68 agree |
+| `bool` | yes | yes: 9 agree | no | translated: 18 agree |
+| `string` | yes | yes: 22 agree | no | translated: 65 agree |
+| `name` | yes | yes: 31 agree | no | translated: 83 agree |
 | `unary` | yes | yes: 6 agree | no | translated: 13 agree |
 | `address-of` | not seen | no | no | not translated |
-| `binary` | yes | yes: 23 agree | no | translated: 48 agree |
-| `call` | yes | yes: 31 agree | no | translated: 79 agree |
-| `select` | yes | yes: 4 agree | no | translated: 41 agree |
-| `paren` | yes | no: 2 agree | no | translated: 4 agree |
+| `binary` | yes | yes: 23 agree | no | translated: 52 agree |
+| `call` | yes | yes: 31 agree | no | translated: 83 agree |
+| `select` | yes | yes: 4 agree | no | translated: 44 agree |
+| `paren` | yes | no: 2 agree | no | translated: 6 agree |
 | `tuple` | not seen | no | no | translated: 5 agree |
-| `if-expr` | yes | yes: 10 agree | no | translated: 13 agree |
-| `match` | yes | yes: 15 agree | no | translated: 38 agree |
-| `case` | yes | yes: 15 agree | no | translated: 38 agree |
-| `pat-wild` | yes | yes: 9 agree | no | translated: 22 agree |
-| `pat-name` | yes | yes: 9 agree | no | translated: 29 agree |
-| `pat-lit` | yes | yes: 9 agree | no | translated: 15 agree |
+| `if-expr` | yes | yes: 10 agree | no | translated: 14 agree |
+| `match` | yes | yes: 15 agree | no | translated: 40 agree |
+| `case` | yes | yes: 15 agree | no | translated: 40 agree |
+| `pat-wild` | yes | yes: 9 agree | no | translated: 23 agree |
+| `pat-name` | yes | yes: 9 agree | no | translated: 30 agree |
+| `pat-lit` | yes | yes: 9 agree | no | translated: 16 agree |
 | `pat-tuple` | not seen | no | no | translated: 1 agree |
-| `pat-extract` | yes | yes: 4 agree | no | translated: 25 agree |
+| `pat-extract` | yes | yes: 4 agree | no | translated: 26 agree |
 | `named-arg` | yes | yes: 5 agree | no | translated: 17 agree |
 | `spread` | not seen | no | no | translated: 1 agree |
-| `lambda` | yes | yes: 5 agree | no | translated: 21 agree |
-| `type-func` | yes | yes: 3 agree | no | translated: 7 agree |
-| `interp` | yes | yes: 14 agree | no | translated: 36 agree |
-| `interp-text` | yes | yes: 14 agree | no | translated: 36 agree |
+| `lambda` | yes | yes: 5 agree | no | translated: 23 agree |
+| `type-func` | yes | yes: 3 agree | no | translated: 8 agree |
+| `interp` | yes | yes: 14 agree | no | translated: 39 agree |
+| `interp-text` | yes | yes: 14 agree | no | translated: 39 agree |
 
 ### Outside the subset
 
-The constructs galaspec stopped at, by how many programs it stopped at each (40 kinds, the top 20 shown):
+The constructs galaspec stopped at, by how many programs it stopped at each (41 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 304 |
+| `import` | 313 |
 | `method-call` | 57 |
-| `generic-type` | 43 |
+| `generic-type` | 44 |
 | `index` | 37 |
-| `generic-decl` | 17 |
+| `generic-decl` | 21 |
+| `unresolved-name` | 11 |
 | `address-of` | 10 |
-| `unresolved-name` | 10 |
 | `composite-literal` | 8 |
 | `float-literal` | 7 |
 | `method` | 7 |
@@ -676,19 +676,19 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 
 ### Outside what gala2lean translates
 
-The first construct gala2lean did not translate in each program, by how many programs (94 kinds, the top 20 shown):
+The first construct gala2lean did not translate in each program, by how many programs (95 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
-| `import` | 110 |
-| `generic-type` | 36 |
-| `index` | 32 |
+| `import` | 112 |
+| `generic-type` | 39 |
+| `index` | 34 |
 | `qualified-type` | 24 |
-| `method-call` | 15 |
+| `method-call` | 17 |
+| `type-float64` | 16 |
 | `pointer-type` | 14 |
-| `type-float64` | 14 |
-| `fmt-operand` | 13 |
-| `untyped-global` | 11 |
+| `untyped-global` | 13 |
+| `fmt-operand` | 11 |
 | `for` | 10 |
 | `type-error` | 10 |
 | `bind` | 8 |
@@ -715,18 +715,18 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 359 | 34 |
+| AGREE | 369 | 34 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 78 | 1 |
+| UNSUPPORTED | 81 | 1 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **393** (ratchet baseline 393).
+Programs GoCore agrees with go run on: **403** (ratchet baseline 393).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **30** (ratchet baseline 30).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/formal_match_witness.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
 
-The construct GoCore stopped at in each program it did not run to the end, by how many programs (61 kinds, the top 20 shown):
+The construct GoCore stopped at in each program it did not run to the end, by how many programs (63 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
@@ -746,10 +746,10 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 | `time.After` | 2 |
 | `time.Duration` | 2 |
 | `type-complex64` | 2 |
+| `untyped-shift` | 2 |
 | `bytes.Buffer` | 1 |
 | `bytes.NewBufferString` | 1 |
 | `context.Background` | 1 |
-| `crypto/sha256.New` | 1 |
 <!-- difftest:end -->
 
 <!-- ownership:begin -->
