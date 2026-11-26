@@ -946,6 +946,15 @@ def GFrame (g g' : St) : Prop :=
     g.cells.size + g'.types.size = g'.cells.size + g.types.size ∧ g'.steps ≤ g.steps ∧
     { g' with cells := g.cells, types := g.types, steps := g.steps, closures := g.closures } = g
 
+/-- **GoCore's state after a loop's body ran** (step 3c): `GFrame`, but cells from `n` on may
+    have been stored to (the loop's parameters, which `callBody` allocated from `n` on). A
+    caller sees `GFrame` again (`call_frameP`). -/
+def GFrameP (n : Nat) (g g' : St) : Prop :=
+  g.cells.size ≤ g'.cells.size ∧ (∀ i, i < n → i < g.cells.size → g'.cells[i]? = g.cells[i]?) ∧
+    Pre g.closures g'.closures ∧ Pre g.types g'.types ∧
+    g.cells.size + g'.types.size = g'.cells.size + g.types.size ∧ g'.steps ≤ g.steps ∧
+    { g' with cells := g.cells, types := g.types, steps := g.steps, closures := g.closures } = g
+
 /-- **Steps**: GoCore spends no more than galaspec. -/
 def Spent (s s' : Spec.St) (g g' : St) : Prop := g.steps + s'.steps ≤ g'.steps + s.steps
 
@@ -1034,16 +1043,39 @@ def ResB (ρ : Kind) (s : Spec.St) (g : St) : Except Spec.Stop Spec.Val × Spec.
   | (.error (.panic pc m), s'), r => PanOK s g pc m s' r
   | _, _ => True
 
+/-- `RetOK` of a function body's value, cells from `n` on (its parameters) stored to. -/
+def RetOKP (n : Nat) (ρ : Kind) (s : Spec.St) (g : St) (v : Spec.Val) (s' : Spec.St) : Except Stop α × St → Prop
+  | r => ∃ w g', r = (.error (.ret [w]), g') ∧ VRel v w ∧ valKind v = some ρ ∧ Pre s.heap s'.heap ∧
+      s'.globals = s.globals ∧ s'.out = s.out ∧ GFrameP n g g' ∧ Spent s s' g g'
+
+/-- `PanOK`, cells from `n` on stored to. -/
+def PanOKP (n : Nat) (s : Spec.St) (g : St) (pc : Spec.PanicClass) (m : String) (s' : Spec.St) :
+    Except Stop α × St → Prop
+  | r => ∃ pv g', r = (.error (.panic pv true), g') ∧ PanicRel pc m pv ∧ s'.out = s.out ∧ GFrameP n g g'
+
+/-- **A function body's results agree** (`ResB`), its parameters' cells, from `n` on, stored
+    to: a loop's body (step 3c). -/
+def ResBP (n : Nat) (ρ : Kind) (s : Spec.St) (g : St) : Except Spec.Stop Spec.Val × Spec.St → Except Stop α × St → Prop
+  | (.ok v, s'), r => RetOKP n ρ s g v s' r
+  | (.error (.ret v), s'), r => RetOKP n ρ s g v s' r
+  | (.error (.panic pc m), s'), r => PanOKP n s g pc m s' r
+  | _, _ => True
+
+/-- The parameters' cells are from `n` on, of the parameters' types. -/
+def ParamCells (n : Nat) (xks : List (String × Kind)) (env : Env) (g : St) : Prop :=
+  ∀ x k, paramKinds xks x = some k → ∃ cell, env.lookup x = some cell ∧ n ≤ cell ∧ g.types[cell]? = some (kindTy k)
+
 /-- **The functions the lowering calls are GoCore's**: package `P` of `cx` (not the
     standard library) declares no `true`, `false`, `int`, `bool` or `string`, and declares
     each function `f` with `sg f = some sig` as the lowering of galaspec's `f`, of signature
-    `sig`, with the lowered signature and body. -/
+    `sig`, with the lowered signature and body (`lowerFun`: a loop where the transformer
+    loops it); no such `f` is named as the transformer's temporaries. -/
 structure FunRel (K : Nat) (sg : Sigs) (ds : Spec.Decls) (cx : Ctx) (P : String) : Prop where
   notStd : P ≠ stdPath
   noTmp : ∀ f, (sg f).isSome → isTmp f = false
   pkg : ∃ p, cx.pkgs.get? P = some p ∧ (∀ x ∈ ["true", "false", "int", "bool", "string"], p.objs.get? x = none) ∧
     ∀ f sig, sg f = some sig → ∃ F xks ρ lb fi, ds.funcs.lookup f = some F ∧ sigOf F = some (xks, ρ) ∧
-      sig = (xks.map (·.2), ρ) ∧ lowerBody K sg F = some lb ∧
+      sig = (xks.map (·.2), ρ) ∧ lowerFun K sg f F = some lb ∧
       p.objs.get? f = some (.func fi [] (lowerSigOf xks ρ) (some lb))
 
 /-! ## galaspec's steps never grow -/
@@ -2051,6 +2083,111 @@ theorem call_frame {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hpb
   simp only [St.mk.injEq] at e₁ e₂ ⊢
   simp_all
 
+theorem pre_of_get {a b : Array α} (hs : a.size ≤ b.size) (h : ∀ i, i < a.size → b[i]? = a[i]?) : Pre a b := by
+  refine ⟨b.extract a.size b.size, ?_⟩
+  apply Array.ext
+  · simp; omega
+  · intro i h1 h2
+    by_cases hi : i < a.size
+    · rw [Array.getElem_append_left hi]
+      have := h i hi
+      rw [Array.getElem?_eq_getElem h1, Array.getElem?_eq_getElem hi] at this
+      exact Option.some.inj this
+    · rw [Array.getElem_append_right (by omega)]
+      simp [Array.getElem_extract]
+      congr 1; omega
+
+theorem gframeP_of {n : Nat} {g g' : St} (h : GFrame g g') : GFrameP n g g' := by
+  obtain ⟨⟨t, ht⟩, hc, hty, hgr, hst, he⟩ := h
+  exact ⟨by rw [ht]; simp, fun i _ hi => by rw [ht, Array.getElem?_append_left hi], hc, hty, hgr, hst, he⟩
+
+theorem gframeP_trans {n : Nat} {g₁ g₂ g₃ : St} (h₁ : GFrameP n g₁ g₂) (h₂ : GFrameP n g₂ g₃) : GFrameP n g₁ g₃ := by
+  refine ⟨Nat.le_trans h₁.1 h₂.1, fun i hn hi => (h₂.2.1 i hn (Nat.lt_of_lt_of_le hi h₁.1)).trans (h₁.2.1 i hn hi),
+    pre_trans h₁.2.2.1 h₂.2.2.1, pre_trans h₁.2.2.2.1 h₂.2.2.2.1,
+    by have := h₁.2.2.2.2.1; have := h₂.2.2.2.2.1; omega, Nat.le_trans h₂.2.2.2.2.2.1 h₁.2.2.2.2.2.1, ?_⟩
+  have e₁ := h₁.2.2.2.2.2.2; have e₂ := h₂.2.2.2.2.2.2
+  cases g₁; cases g₂; cases g₃
+  simp only [St.mk.injEq] at e₁ e₂ ⊢
+  simp_all
+
+theorem gframeP_out {n : Nat} {g g' : St} (h : GFrameP n g g') : g'.out = g.out := by
+  have e := h.2.2.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
+
+theorem gframeP_defers {n : Nat} {g g' : St} (h : GFrameP n g g') : g'.defers = g.defers := by
+  have e := h.2.2.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.2.2.2.2.1
+
+/-- A store into a cell from `n` on. -/
+theorem gframeP_set {n : Nat} (g : St) (cell : Nat) (v : Val) (hc : n ≤ cell) :
+    GFrameP n g { g with cells := g.cells.set! cell v } := by
+  refine ⟨by simp, fun i hn hi => ?_, pre_refl _, pre_refl _, by simp, Nat.le_refl _, by cases g; rfl⟩
+  simp only [Array.set!_eq_setIfInBounds]
+  rw [Array.getElem?_setIfInBounds_ne (by omega)]
+
+/-- **The frame of a call whose body ran as `GFrameP` says**, below the caller's cells: only
+    cells added, as callers see it. -/
+theorem call_frameP {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hpb : GFrame g₀ pb)
+    (hb : GFrameP g₀.cells.size { pb with defers := D :: g₀.defers } g₁) : GFrame g₀ { g₁ with defers := g₀.defers } := by
+  obtain ⟨⟨t, ht⟩, hc, hty, hgr, hst, he⟩ := hpb
+  refine ⟨pre_of_get ?_ ?_, pre_trans hc hb.2.2.1, pre_trans hty hb.2.2.2.1, ?_, ?_, ?_⟩
+  · have := hb.1; simp only [ht, Array.size_append] at this; simp; omega
+  · intro i hi
+    have := hb.2.1 i hi (by simp [ht]; omega)
+    simp only at this ⊢
+    rw [this, ht, Array.getElem?_append_left hi]
+  · have := hb.2.2.2.2.1; simp only at this ⊢; omega
+  · have := hb.2.2.2.2.2.1; simp only at this ⊢; omega
+  · have e₂ := hb.2.2.2.2.2.2
+    cases g₀; cases pb; cases g₁
+    simp only [St.mk.injEq] at he e₂ ⊢
+    simp_all
+
+/-- The parameters bound, one by one: each in a cell from `n` on, of its kind's type. -/
+theorem params_cells : ∀ (xks : List (String × Kind)) (ws : List Val) (κ : String → Option Kind) (env : Env)
+    (g : St) (n : Nat), xks.length = ws.length → (∀ x ∈ xks.map (·.1), x ≠ "_") → g.cells.size = g.types.size →
+    n ≤ g.cells.size →
+    (∀ x k, κ x = some k → ∃ cell, env.lookup x = some cell ∧ n ≤ cell ∧ g.types[cell]? = some (kindTy k)) →
+    ∀ x k, xks.foldl (fun κ xk => upd κ xk.1 xk.2) κ x = some k → ∃ cell,
+      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).1.lookup x
+        = some cell ∧ n ≤ cell ∧
+      (((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl (fun s a => paramStep a s) (env, g)).2.types[cell]?
+        = some (kindTy k)
+  | [], [], _, _, _, _, _, _, _, _, h => by simpa using h
+  | (y, ky) :: xks, w :: ws, κ, env, g, n, hl, hx, hs, hn, h => by
+    simp only [List.map_cons, List.zip_cons_cons, List.foldl_cons]
+    have hy : y ≠ "_" := hx y (by simp)
+    refine params_cells xks ws (upd κ y ky) (env.bind y g.cells.size)
+      { g with cells := g.cells.push (defaultVal w), types := g.types.push (teTy (.ident (kindName ky))) } n
+      (by simpa using hl) (fun x hx' => hx x (by simp [hx'])) (by simp [hs]) (by simp; omega) ?_
+    intro x k hk
+    unfold upd at hk
+    by_cases hxy : x = y
+    · subst hxy
+      simp only [ite_true, Option.some.injEq] at hk
+      subst hk
+      refine ⟨g.cells.size, by rw [Env.lookup_bind _ _ _ _ hy]; simp, hn, ?_⟩
+      simp only [hs, teTy_kind]
+      simp
+    · simp only [hxy, ite_false] at hk
+      obtain ⟨cell, hc, hnc, ht⟩ := h x k hk
+      refine ⟨cell, by rw [Env.lookup_bind _ _ _ _ hy]; simp only [hxy, ite_false]; exact hc, hnc, ?_⟩
+      exact pre_get (pre_push _ _) ht
+  | [], _ :: _, _, _, _, _, hl, _, _, _, _ | _ :: _, [], _, _, _, _, hl, _, _, _, _ => by simp at hl
+
+theorem lowerFun_names {K : Nat} {sg : Sigs} {f : String} {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind}
+    {lb : List Stmt} (hs : sigOf F = some (xks, ρ)) (h : lowerFun K sg f F = some lb) :
+    ∀ x ∈ xks.map (·.1), x ≠ "_" ∧ x ≠ "true" ∧ x ≠ "false" := by
+  unfold lowerFun at h
+  rw [hs] at h
+  simp only at h
+  split at h
+  · split at h
+    · rename_i hc; exact hc.1.2
+    · cases h
+  · simp only [lowerBody, hs] at h
+    split at h
+    · rename_i hc; exact hc.2
+    · cases h
+
 /-- A name the package does not declare, and not exported, is no package's. -/
 theorem nameOwner_none (cx : Ctx) (env : Env) (x : String) (p : PkgCtx) (hpk : cx.pkgs.get? env.pkg = some p)
     (ho : p.objs.get? x = none) (hx : exported x = false) : nameOwner cx env x = none := by
@@ -2085,8 +2222,16 @@ open Gala.GoCore.Full
 
 variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
 
-/-- The function bodies, at galaspec depth `d` and GoCore depth from `K * d + 3` on. -/
+/-- The function bodies a call runs, at galaspec depth `d` and GoCore depth from `K * d + 3`
+    on, the parameters' cells from `n` on (a loop stores to them). -/
 def BodySim (d : Nat) : Prop :=
+  ∀ f F xks ρ lb, ds.funcs.lookup f = some F → sigOf F = some (xks, ρ) → lowerFun K sg f F = some lb →
+    ∀ (s : Spec.St) (g : St) (env : Env) (n : Nat), Inv3 cx P sg (paramKinds xks) s.toCore g env →
+      s.steps ≤ g.steps → ParamCells n xks env g → ∀ N, K * d + 3 ≤ N →
+        ResBP n ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g)
+
+/-- The bodies `lowerBody` gives, at galaspec depth `d`: `body_correct`'s relation. -/
+def BodySimB (d : Nat) : Prop :=
   ∀ F xks ρ lb, sigOf F = some (xks, ρ) → lowerBody K sg F = some lb → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg (paramKinds xks) s.toCore g env → s.steps ≤ g.steps → ∀ N, K * d + 3 ≤ N →
       ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g)
@@ -2277,7 +2422,7 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
   have hia := inv3_frame hi hsfa hgfa
   -- The callee's frame.
   have hlenV : vs.length = F.params.length := by rw [hlenP, krel_length hkr, List.length_map]
-  have hnm := lowerBody_names K sg hsig hlb
+  have hnm := lowerFun_names hsig hlb
   have hfr := frameRel_params xks F.params vs ws (fun _ => none) { sa.toCore with locals := [] }
     (calleeEnv P fi).push { ga with steps := k2 } hnames hkr (fun x hx => (hnm x hx).1)
     ⟨fun _ _ h => (by cases h), fun x _ => ⟨rfl, by simp [calleeEnv, Env.push, Env.lookup, List.findSome?]⟩⟩
@@ -2303,9 +2448,14 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
     · show sa.out = (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2.out
       rw [paramsBound, gframe_out hpst']; exact hia.inv.out
     · intro x hx; exact hia.globals x hx
-  have hB := ihB F xks ρ lb hsig hlb { sa with locals := specFrame F.params vs } _ _ hic
+  have hpc : ParamCells ga.cells.size xks (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).1
+      { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers } :=
+    params_cells xks ws (fun _ => none) _ { ga with steps := k2 } ga.cells.size
+      (argsRel_length (argsRel_of_krel hkr)) (fun x hx => (hnm x hx).1) hia.sync (Nat.le_refl _)
+      (fun _ _ h => by cases h)
+  have hB := ihB f F xks ρ lb hFl hsig hlb { sa with locals := specFrame F.params vs } _ _ ga.cells.size hic
     (by show sa.steps ≤ _; simp only [paramsBound]; rw [hpsteps]; unfold Spent at hspa; simp at hspa ⊢; omega)
-    (m + 2) (by rw [Nat.mul_succ] at hN; omega)
+    hpc (m + 2) (by rw [Nat.mul_succ] at hN; omega)
   have hnames' := nameOwner_kinds cx P fi p hpk hobjs
   have hstSteps : ((xks.map fun xk => (xk.1, Expr.ident (kindName xk.2))).zip ws).foldl
       (fun s a => paramStep a s) ((calleeEnv P fi).push, { ga with steps := k2 }) =
@@ -2317,7 +2467,7 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
       (Spec.callFunc ds d F vs).run.run sa = (r, t') := fun r t' hr hrun =>
     callFunc_run ds d F vs sa (params_typed htys) ρ hres hlenV r t' hrun hr
   -- Both sides return a value: the call's result.
-  have hok : ∀ v, RetOK ρ { sa with locals := specFrame F.params vs }
+  have hok : ∀ v, RetOKP ga.cells.size ρ { sa with locals := specFrame F.params vs }
       { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers } v t
       ((execStmts cx (m + 2) (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).1 lb).run.run
         { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers }) →
@@ -2329,12 +2479,12 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
     have hv1 : v ≠ .unit := by intro h; subst h; cases hvw
     rw [hcall (.ok v) _ (fun h => hv1 (by cases h; rfl)) hrun]
     rw [grun_bind, callBody_ret cx m P fi xks ρ lb ws ga k2 hk2 (argsRel_of_krel hkr) hnames' v w hvw hkv g1
-      hgo (by rw [gframe_defers hgf1])]
+      hgo (by rw [gframeP_defers hgf1])]
     obtain ⟨hvd, hnu, -, -⟩ := vrel_default hvw
     refine ⟨defaultVal w, { g1 with defers := ga.defers }, rfl, hvd, hkv, fun _ => hnu, ?_, ?_, ?_⟩
     · obtain ⟨hl1, hg1, ho1⟩ := sframe_parts hsfa
       exact sframe_mk (pre_trans hsfa.1 hheap) hl1 (hglob'.trans hg1) (hout'.trans ho1)
-    · exact gframe_trans hgfa (call_frame [] hpst' hgf1)
+    · exact gframe_trans hgfa (call_frameP [] hpst' hgf1)
     · unfold Spent at hspa hsp1 ⊢
       simp only [paramsBound] at hsp1
       rw [hpsteps] at hsp1
@@ -2357,10 +2507,10 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
     | panic pc msg =>
       obtain ⟨pv, g1, hgo, hp, ho, hgf1⟩ := hB
       have hcb := callBody_panic cx m P fi xks ρ lb ws ga k2 hk2 (argsRel_of_krel hkr) hnames' pv true g1 hgo
-          (by rw [gframe_defers hgf1])
+          (by rw [gframeP_defers hgf1])
       simp only [calleeEnv] at hcb
       rw [hcall (.error (.panic pc msg)) _ (fun h => nomatch h) (by rw [runIn_res, hrb]), hcb]
-      refine panOK_tick ht ⟨pv, _, rfl, hp, ?_, gframe_trans hgfa (call_frame [] hpst' hgf1)⟩
+      refine panOK_tick ht ⟨pv, _, rfl, hp, ?_, gframe_trans hgfa (call_frameP [] hpst' hgf1)⟩
       rw [ho]; exact (sframe_parts hsfa).2.2
     | fuel =>
       rw [hcall (.error .fuel) _ (fun h => nomatch h) (by rw [runIn_res, hrb])]
@@ -3385,7 +3535,7 @@ open Gala.GoCore.Full
 variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
 
 /-- **A function's body**: its tail (`tailOf`), its `return`s of the result's kind. -/
-theorem bodySim_of (d : Nat) (ihT : TailSim ds cx P K sg d) : BodySim ds cx P K sg d := by
+theorem bodySimB_of (d : Nat) (ihT : TailSim ds cx P K sg d) : BodySimB ds cx P K sg d := by
   intro F xks ρ lb hsig hlb s g env hi hsg N hN
   simp only [lowerBody, hsig] at hlb
   split at hlb
@@ -3402,90 +3552,6 @@ theorem bodySim_of (d : Nat) (ihT : TailSim ds cx P K sg d) : BodySim ds cx P K 
   · cases hlb
 
 end Bodies
-
-/-! ## The induction on galaspec's depth, and the theorems -/
-
-section Main
-open Gala.GoCore.Full
-
-variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
-
-/-- Every part, at every galaspec depth: induction on the depth. -/
-theorem sim3_all (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) : ∀ d,
-    ExprSim ds cx P K sg d ∧ BodySim ds cx P K sg d ∧ StmtSim ds cx P K sg d ∧ ListSim3 ds cx P K sg d ∧
-      BlockSim3 ds cx P K sg d ∧ IfSim3 ds cx P K sg d ∧ TailSim ds cx P K sg d ∧ TsSim ds cx P K sg d ∧
-      IfTSim ds cx P K sg d
-  | 0 => by
-    have hE := exprSim_zero ds cx P K sg
-    have hS := stmtSim_zero ds cx P K sg
-    have hT := tailSim_of ds cx P K sg 0 hE (fun _ h => by cases h) (fun _ h => by cases h)
-      (fun _ h => by cases h) (by omega)
-    exact ⟨hE, bodySim_of ds cx P K sg 0 hT, hS, listSim_of ds cx P K sg 0 hS, blockSim_zero ds cx P K sg,
-      ifSim_zero ds cx P K sg, hT, tsSim_of ds cx P K sg 0 hS hT, ifTSim_of ds cx P K sg 0 hE hT⟩
-  | d + 1 => by
-    obtain ⟨hE, hB, hS, hL, hBl, hI, hT, hTs, hIT⟩ := sim3_all hF hK d
-    have hE1 := exprSim_succ ds cx P K sg d hF hK hE hB hIT
-    have hBl1 := blockSim_succ ds cx P K sg d hL
-    have hI1 := ifSim_succ ds cx P K sg d hE hBl hI (by omega)
-    have hS1 := stmtSim_succ ds cx P K sg d hE hBl1 hI1 (by omega)
-    have hT1 := tailSim_of ds cx P K sg (d + 1) hE1 (fun d' h => by cases h; exact hE)
-      (fun d' h => by cases h; exact hTs) (fun d' h => by cases h; exact hIT) (by omega)
-    exact ⟨hE1, bodySim_of ds cx P K sg (d + 1) hT1, hS1, listSim_of ds cx P K sg (d + 1) hS1, hBl1, hI1, hT1,
-      tsSim_of ds cx P K sg (d + 1) hS1 hT1, ifTSim_of ds cx P K sg (d + 1) hE1 hT1⟩
-
-/-- **M5, steps 3a and 3b: direct calls, `return`, `if` used as a value.** An expression the
-    reference lowering accepts (`lowerC`), calls of the program's functions and IIFEs in it
-    included, evaluated by
-    galaspec from a state related to GoCore's (`Inv3`) with no more steps than GoCore has:
-    wherever galaspec's evaluation ends with a value, GoCore's evaluation of the lowering, at
-    every depth from `K * d` on, ends with a related value of the expression's kind; both
-    states only gain cells (and GoCore's otherwise unchanged: `GFrame`, `SFrame`); and GoCore
-    spends no more steps than galaspec (`Spent`). Wherever galaspec panics, GoCore panics the
-    same way, with equal outputs. An expression never ends with a `return`. Nothing is
-    claimed when galaspec runs out of fuel or depth or stops `stuck` or `unsupported`.
-
-    * **The functions**: `FunRel` says GoCore's package `P` declares every function the
-      lowering calls (`sg`) as the lowering of galaspec's: parameters and result of kinds
-      `int`, `bool`, `string`; positional arguments, one for each parameter (no named
-      argument, no default); the body as its tail (`tailOf`): `= e` as `return e`, a block
-      body as its statements and its last element's tail, an `if` as `{ if .. }` with a
-      tail in each arm; `return` statements inside.
-    * **`if` used as a value** is Go's IIFE, its value of the arms' kind and type (never an
-      untyped constant: `isLitE` of it is `false`); no `return` inside its arms.
-    * **Depth.** A call's depth in GoCore is not bounded by the program's text (a recursive
-      call goes as deep as the run), so the bound is `K * d` for galaspec's depth `d` and a
-      `K` of the program: each galaspec level costs GoCore at most `K` levels when `K` is at
-      least 11 (an IIFE takes eleven) and at least the depth of each call-free part (the
-      lowering at `K` accepts only those; `lowerC_mono`: raising `K` loses nothing). The
-      claim is for every GoCore depth from `K * d` on: GoCore never runs out of depth there.
-    * **Steps.** GoCore takes one step per call, galaspec at least one per evaluation;
-      with no more steps than GoCore to start with, galaspec's run that ends has paid for
-      every step GoCore takes, so GoCore never runs out of steps where galaspec does not.
-    * **Order.** Stated for GoCore's evaluator as it is, left to right; `Body3` and
-      `gc_runs3` say when GoCore's model of gc's order runs a lowered body as written. -/
-theorem calls_correct (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (κ : String → Option Kind) (e : Spec.Expr)
-    (k : Kind) (le : Expr) (hl : lowerC K sg κ e = some (k, le)) (s : Spec.St) (g : St) (env : Env)
-    (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (d : Nat) :
-    ∀ N ≥ K * d, ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) :=
-  fun N hN => (sim3_all ds cx P K sg hF hK d).1 κ e k le hl s g env hi hsg N hN
-
-/-- **A function's body**, called: the value galaspec's body gives or returns is the value
-    Go's body `return`s, or the same panic; as `calls_correct`. -/
-theorem body_correct (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (F : Spec.Func) (xks : List (String × Kind))
-    (ρ : Kind) (lb : List Stmt) (hs : sigOf F = some (xks, ρ)) (hl : lowerBody K sg F = some lb) (s : Spec.St)
-    (g : St) (env : Env) (hi : Inv3 cx P sg (paramKinds xks) s.toCore g env) (hsg : s.steps ≤ g.steps) (d : Nat) :
-    ∀ N ≥ K * d + 3, ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g) :=
-  fun N hN => (sim3_all ds cx P K sg hF hK d).2.1 F xks ρ lb hs hl s g env hi hsg N hN
-
-/-- **Statement lists with calls and `return`**: step 2b's claim (`stmts_correct`) with
-    calls in the expressions, and a `return` of the result's kind `ρ` matched by Go's. -/
-theorem stmts3_correct (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ρ : Kind) (κ κ' : String → Option Kind)
-    (ss : List Spec.Expr) (ls : List Stmt) (hl : lowerSs3 K sg ρ κ ss = some (κ', ls)) (s : Spec.St) (g : St)
-    (env : Env) (hi : Inv3 cx P sg κ s.toCore g env) (hsg : s.steps ≤ g.steps) (d : Nat) :
-    ∀ N ≥ K * d + 1, ResL3 cx P sg ρ κ' s g ((Spec.evalBlock ds d ss).run.run s) ((execStmts cx N env ls).run.run g) :=
-  fun N hN => (sim3_all ds cx P K sg hF hK d).2.2.2.1 ρ κ ss κ' ls hl s g env hi hsg N hN
-
-end Main
 
 /-! ## `K` is no restriction: a lowering at `K` is the same at every larger `K` -/
 
