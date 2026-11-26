@@ -200,6 +200,7 @@ go_test(
         "default_cycle_test.go",
         "default_immutability_test.go",
         "default_lexical_scope_test.go",
+        "default_reads_untyped_arg_test.go",
         "default_type_param_binding_test.go",
         "default_values_test.go",
         "dependency_error_test.go",

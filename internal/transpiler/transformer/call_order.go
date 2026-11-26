@@ -99,6 +99,11 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 // where the default uses it.
 func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) ast.Expr {
 	if t.inert(arg) {
+		// An untyped constant read again is the parameter's value only at
+		// the parameter's type (`uint8(1 << n)` is 0 for n = 8).
+		if t.isUntypedConstArg(arg) {
+			return t.atParamType(arg, typ)
+		}
 		return arg
 	}
 	frame := t.topCallFrame()
@@ -108,10 +113,7 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 	// A shift count is never itself such an expression, so boundArgValue
 	// gives it the inert check and a temporary.
 	if read, ok := t.withShiftCountsMapped(arg, func(c ast.Expr) ast.Expr { return t.boundArgValue(c, nil) }); ok {
-		if basic, ok := typ.(transpiler.BasicType); ok && isNumericPrimitive(basic.Name) {
-			read = &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
-		}
-		return read
+		return t.atParamType(read, typ)
 	}
 	for _, tmp := range frame.temps {
 		if tmp.expr == arg {
@@ -121,6 +123,21 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 	name := t.nextTempVar()
 	frame.temps = append(frame.temps, frameTemp{expr: arg, name: name})
 	return ast.NewIdent(name)
+}
+
+// atParamType is read, an untyped constant expression a default reads for a
+// parameter of type typ, converted to typ when the parameter is declared with
+// a predeclared numeric type the use site does not shadow: there it has the
+// parameter's value wherever the default uses it (`float64(u)` reads
+// `float64(int64(7) / 2)`, not `float64(7.0 / 2)`). Another type (a named one
+// the use site may not be able to spell, or a type parameter, whose type Go
+// infers) leaves read as it is.
+func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type) ast.Expr {
+	basic, ok := typ.(transpiler.BasicType)
+	if !ok || !isNumericPrimitive(basic.Name) || shadowedAt(t.currentScope, basic.Name) {
+		return read
+	}
+	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
 }
 
 // changeableInScope reports whether name is bound to a variable a call could

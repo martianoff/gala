@@ -891,6 +891,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "default_reads_untyped_arg",
+    src = "default_reads_untyped_arg.gala",
+    expected = "default_reads_untyped_arg.out",
+)
+
+gala_exec_test(
     name = "interface_literal",
     src = "interface_literal.gala",
     expected = "interface_literal.out",
