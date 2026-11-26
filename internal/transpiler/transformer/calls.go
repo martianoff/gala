@@ -3288,10 +3288,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	// A Go conversion; a direct conversion between two opaque types is
 	// rejected (opaque.go). Any other arity is left to Go, which names it.
 	if len(namedArgs) == 0 && !hasSpread && !ownFunc {
-		if target := t.opaqueConversionCallee(fun); target != nil {
+		// Read through parentheses: `(OrderID)(id)` is `OrderID(id)`.
+		if target := t.opaqueConversionCallee(ast.Unparen(fun)); target != nil {
 			if len(args) == 1 {
 				at := c.args.list[0].at()
-				if err := t.checkOpaqueConversion(target, t.astTypeToTranspilerType(fun), args[0], at); err != nil {
+				if err := t.checkOpaqueConversion(target, t.astTypeToTranspilerType(ast.Unparen(fun)), args[0], at); err != nil {
 					return nil, err
 				}
 			}

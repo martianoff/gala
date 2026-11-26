@@ -2119,6 +2119,20 @@ func main() {
 			expectContains: "cannot convert UserID to OrderID directly",
 		},
 		{
+			name: "GALA-E0063 parenthesized direct conversion between two opaque types",
+			input: `package main
+
+opaque type UserID int64
+opaque type OrderID int64
+
+func main() {
+    val id = UserID(1)
+    Println((OrderID)(id))
+}`,
+			expectCode:     galaerr.CodeOpaqueToOpaqueConversion,
+			expectContains: "cannot convert UserID to OrderID directly",
+		},
+		{
 			name: "GALA-E0064 opaque type passed where its underlying type is expected",
 			input: `package main
 
