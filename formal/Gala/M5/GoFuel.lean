@@ -27,10 +27,11 @@
   unfolding those copies each into every branch that jumps to it, which grows
   exponentially in GoCore's larger functions, so `gsim_let` keeps them bound and relates
   each pair once. A function added to the mutual block needs its field in both bundles,
-  its two step lemmas (`<f>_step`, `<f>_sync`) and its entries in `gsim_ih`, `pres_ih`,
+  its two step lemmas (`<f>_step`, `<f>_sync`) and its entries in `ih_step`,
   `simAll` and `syncAll`; a helper outside the block, its `sim_` and `sync_` lemma.
 -/
 import Gala.GoCore.Run
+import Gala.M5.Expr
 import Lean
 
 namespace Gala.M5
@@ -54,14 +55,6 @@ structure GSim (k : Nat) (x y : GM α) : Prop where
 
 /-! ## `GSim` of the building blocks of `GM` -/
 
-theorem run_bind_eq (x : GM α) (f : α → GM β) (s : St) :
-    (x >>= f).run.run s = match x.run.run s with
-      | (.ok a, t) => (f a).run.run t
-      | (.error e, t) => (.error e, t) := by
-  simp only [ExceptT.run_bind, StateT.run_bind]
-  rcases hx : x.run.run s with ⟨r, t⟩
-  cases r <;> rfl
-
 theorem notFuel_error {e : Stop} (h : GNotFuel (Except.error e : Except Stop α)) :
     GNotFuel (Except.error e : Except Stop β) := by
   cases e <;> first | trivial | exact h
@@ -73,8 +66,8 @@ theorem sim_of_fuel {k : Nat} {x y : GM α} (h : ∀ s, ¬ GNotFuel (x.run.run s
 theorem sim_bind {k : Nat} {x y : GM α} {f g : α → GM β} (hx : GSim k x y)
     (hf : ∀ a, GSim k (f a) (g a)) : GSim k (x >>= f) (y >>= g) := by
   refine ⟨fun s h => ?_⟩
-  rw [run_bind_eq] at h ⊢
-  rw [run_bind_eq]
+  rw [grun_bind] at h ⊢
+  rw [grun_bind]
   rcases hxs : x.run.run s with ⟨r, t⟩
   rw [hxs] at h
   cases r with
@@ -251,18 +244,18 @@ theorem sim_loopM_steps {k : Nat} (s : St) (env : Env) {body body' : Env → GM 
     GSim k (loopM (s.steps + 1) env body) (loopM (s.steps + k + 1) env body') :=
   sim_loopM (by omega) env hbody
 
-@[simp] theorem shift_steps : (shift k s).steps = s.steps + k := rfl
-@[simp] theorem shift_cells : (shift k s).cells = s.cells := rfl
-@[simp] theorem shift_types : (shift k s).types = s.types := rfl
-@[simp] theorem shift_closures : (shift k s).closures = s.closures := rfl
-@[simp] theorem shift_out : (shift k s).out = s.out := rfl
-@[simp] theorem shift_printing : (shift k s).printing = s.printing := rfl
-@[simp] theorem shift_globals : (shift k s).globals = s.globals := rfl
-@[simp] theorem shift_defers : (shift k s).defers = s.defers := rfl
-@[simp] theorem shift_recoverable : (shift k s).recoverable = s.recoverable := rfl
-@[simp] theorem shift_maps : (shift k s).maps = s.maps := rfl
-@[simp] theorem shift_localTypes : (shift k s).localTypes = s.localTypes := rfl
-@[simp] theorem shift_localType? : (shift k s).localType? p n a = s.localType? p n a := rfl
+theorem shift_steps : (shift k s).steps = s.steps + k := rfl
+theorem shift_cells : (shift k s).cells = s.cells := rfl
+theorem shift_types : (shift k s).types = s.types := rfl
+theorem shift_closures : (shift k s).closures = s.closures := rfl
+theorem shift_out : (shift k s).out = s.out := rfl
+theorem shift_printing : (shift k s).printing = s.printing := rfl
+theorem shift_globals : (shift k s).globals = s.globals := rfl
+theorem shift_defers : (shift k s).defers = s.defers := rfl
+theorem shift_recoverable : (shift k s).recoverable = s.recoverable := rfl
+theorem shift_maps : (shift k s).maps = s.maps := rfl
+theorem shift_localTypes : (shift k s).localTypes = s.localTypes := rfl
+theorem shift_localType? : (shift k s).localType? p n a = s.localType? p n a := rfl
 
 
 /-! ## Local definitions
@@ -361,7 +354,8 @@ elab "gsim_hyp" : tactic => do
   let ty ← instantiateMVars (← g.getType)
   let some (_, x, _) := relParts ty.consumeMData | throwError "gsim_hyp"
   unless x.getAppFn.isFVar do throwError "gsim_hyp: not a variable"
-  for d in (← getLCtx) do
+  -- newest first: the join point's fact is among the last hypotheses
+  for d in ((← getLCtx).foldl (fun acc d => acc.push d) #[]).reverse do
     if d.isImplementationDetail then continue
     let s ← saveState
     try
@@ -378,12 +372,11 @@ elab "gsim_hyp" : tactic => do
 
 set_option hygiene false in
 /-- One step of relating two runs of the same code (`GSim`): a building block above, a
-    helper below (`sim_helper`), or an induction hypothesis (`gsim_ih`, defined with the
-    bundle). `split` follows an `if` or `match`, which is the same on both sides. -/
+    or a jump to a join point (`gsim_hyp`). `gsim_auto` tries it first, then a helper
+    (`gsim_help`), the induction hypothesis (`ih_step`), `rangeLoop`'s iterations
+    (`item_step`), and last `dsimp` and `split` (an `if` or `match`, the same on both sides). -/
 macro "gsim_base" : tactic => `(tactic| (first
-  | dsimp -zeta only
   | gsim_let
-  | gsim_hyp
   | with_reducible exact sim_pure _
   | with_reducible exact sim_throw _
   | with_reducible exact sim_tick
@@ -396,6 +389,7 @@ macro "gsim_base" : tactic => `(tactic| (first
   | (is_ite; first | apply sim_ite | apply sim_dite)
   | with_reducible apply sim_tryCatch
   | with_reducible intro _
+  | with_reducible apply sim_bind_item  -- `rangeLoop`'s iterations, below
   | with_reducible apply sim_bind
   | with_reducible apply sim_map
   | with_reducible apply sim_seqRight
@@ -406,7 +400,7 @@ macro "gsim_base" : tactic => `(tactic| (first
   | with_reducible apply sim_filterMapM
   | apply sim_optionMapM
   | with_reducible apply sim_flatMapM
-  | split))
+  | gsim_hyp))
 
 /-! ## Helpers outside the mutual block -/
 
@@ -448,7 +442,7 @@ macro "gsim_help" : tactic => `(tactic| (first
   | with_reducible apply sim_constTo
   | with_reducible apply sim_inferTArgs))
 
-macro "hauto" : tactic => `(tactic| repeat' (first | gsim_help | gsim_base))
+macro "hauto" : tactic => `(tactic| repeat' (first | gsim_base | gsim_help | dsimp -zeta only | split))
 
 theorem sim_stuck {k : Nat} (m : String) : GSim k (stuck m : GM α) (stuck m) := ⟨fun _ _ => rfl⟩
 theorem sim_unsupported {k : Nat} (m : String) : GSim k (unsupported m : GM α) (unsupported m) :=
@@ -564,7 +558,7 @@ elab "pres_hyp" : tactic => do
   let args := ty.consumeMData.getAppArgs
   unless ty.consumeMData.isAppOf ``Pres do throwError "pres_hyp"
   unless (args[args.size - 1]!).getAppFn.isFVar do throwError "pres_hyp: not a variable"
-  for d in (← getLCtx) do
+  for d in ((← getLCtx).foldl (fun acc d => acc.push d) #[]).reverse do
     if d.isImplementationDetail then continue
     let s ← saveState
     try
@@ -581,7 +575,7 @@ elab "pres_hyp" : tactic => do
 theorem pres_bind {P : St → Prop} {x : GM α} {f : α → GM β} (hx : Pres P x)
     (hf : ∀ a, Pres P (f a)) : Pres P (x >>= f) := by
   intro s h
-  rw [run_bind_eq]
+  rw [grun_bind]
   rcases hxs : x.run.run s with ⟨r, t⟩
   have ht : P t := by have := hx s h; rw [hxs] at this; exact this
   cases r with
@@ -703,9 +697,7 @@ theorem sync_storeCell (i : Nat) (v : Val) : Pres Sync (storeCell i v) := by
 
 set_option hygiene false in
 macro "pres_base" : tactic => `(tactic| (first
-  | dsimp -zeta only
   | pres_let
-  | pres_hyp
   | with_reducible exact pres_pure _
   | with_reducible exact pres_throw _
   | (with_reducible apply pres_modify); intro _ h; exact h
@@ -715,6 +707,7 @@ macro "pres_base" : tactic => `(tactic| (first
   | with_reducible apply pres_tryCatch
   | with_reducible apply pres_loopM
   | with_reducible intro _
+  | with_reducible apply pres_bind_item  -- `rangeLoop`'s iterations, below
   | with_reducible apply pres_bind
   | with_reducible apply pres_map
   | with_reducible apply pres_seqRight
@@ -725,7 +718,7 @@ macro "pres_base" : tactic => `(tactic| (first
   | with_reducible apply pres_filterMapM
   | apply pres_optionMapM
   | with_reducible apply pres_flatMapM
-  | split))
+  | pres_hyp))
 
 set_option hygiene false in
 macro "pres_help" : tactic => `(tactic| (first
@@ -766,7 +759,7 @@ macro "pres_help" : tactic => `(tactic| (first
   | with_reducible apply sync_constTo
   | with_reducible apply sync_inferTArgs))
 
-macro "pauto" : tactic => `(tactic| repeat' (first | pres_help | pres_base))
+macro "pauto" : tactic => `(tactic| repeat' (first | pres_base | pres_help | dsimp -zeta only | split))
 
 theorem sync_tick : Pres Sync tick := by unfold tick; pauto
 theorem sync_stuck (m : String) : Pres Sync (stuck m : GM α) := fun _ h => h
@@ -846,7 +839,7 @@ def Post (P : α → Prop) (x : GM α) : Prop := ∀ s a t, x.run.run s = (.ok a
 theorem post_bind {P : β → Prop} {x : GM α} {f : α → GM β} (hf : ∀ a, Post P (f a)) :
     Post P (x >>= f) := by
   intro s a t h
-  rw [run_bind_eq] at h
+  rw [grun_bind] at h
   rcases hxs : x.run.run s with ⟨r, u⟩
   rw [hxs] at h
   cases r with
@@ -875,8 +868,8 @@ theorem sim_bind_item {k : Nat} {x y : GM (Nat × (Nat → GM (Val × Val)))}
     {f g : Nat × (Nat → GM (Val × Val)) → GM β} (hx : GSim k x y) (hp : Post ItemOK x)
     (hf : ∀ a, ItemOK a → GSim k (f a) (g a)) : GSim k (x >>= f) (y >>= g) := by
   refine ⟨fun s h => ?_⟩
-  rw [run_bind_eq] at h ⊢
-  rw [run_bind_eq]
+  rw [grun_bind] at h ⊢
+  rw [grun_bind]
   rcases hxs : x.run.run s with ⟨r, t⟩
   rw [hxs] at h
   cases r with
@@ -891,7 +884,7 @@ theorem pres_bind_item {x : GM (Nat × (Nat → GM (Val × Val)))}
     {f : Nat × (Nat → GM (Val × Val)) → GM β} (hx : Pres Sync x) (hp : Post ItemOK x)
     (hf : ∀ a, ItemOK a → Pres Sync (f a)) : Pres Sync (x >>= f) := by
   intro s hs
-  rw [run_bind_eq]
+  rw [grun_bind]
   rcases hxs : x.run.run s with ⟨r, t⟩
   have ht : Sync t := by have := hx s hs; rw [hxs] at this; exact this
   cases r with
@@ -915,8 +908,6 @@ set_option hygiene false in
 /-- Relating `rangeLoop`'s calls of its iteration function, and proving `ItemOK` of the
     functions it computes. -/
 macro "item_step" : tactic => `(tactic| (first
-  | with_reducible apply sim_bind_item
-  | with_reducible apply pres_bind_item
   | with_reducible exact post_throw _
   | with_reducible exact post_stuck _
   | with_reducible exact post_unsupported _
@@ -1006,8 +997,8 @@ structure SimAll (c : Ctx) (k n n' : Nat) : Prop where
   formatField : ∀ (a0 : Val), GSim k (formatField c n a0) (formatField c n' a0)
 
 set_option hygiene false in
-/-- A recursive call: the induction hypothesis. -/
-macro "gsim_ih" : tactic => `(tactic| (first
+/-- A recursive call, of either bundle: the induction hypothesis's field. -/
+macro "ih_step" : tactic => `(tactic| (first
   | with_reducible apply ih.typeOf?
   | with_reducible apply ih.evalType
   | with_reducible apply ih.underlying
@@ -1081,7 +1072,7 @@ macro "gsim_ih" : tactic => `(tactic| (first
   | with_reducible apply ih.formatField
   ))
 
-macro "gsim_auto" : tactic => `(tactic| repeat' (first | gsim_help | gsim_ih | item_step | gsim_base))
+macro "gsim_auto" : tactic => `(tactic| repeat' (first | gsim_base | gsim_help | ih_step | item_step | dsimp -zeta only | split))
 
 theorem typeOfQ_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) (a1 : Expr) :
     GSim k (typeOf? c (n + 1) a0 a1) (typeOf? c (n' + 1) a0 a1) := by
@@ -1236,7 +1227,6 @@ theorem equalAll_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : List
     GSim k (equalAll c (n + 1) a0 a1) (equalAll c (n' + 1) a0 a1) := by
   rw [equalAll.eq_def, equalAll.eq_def]; dsimp -zeta only; gsim_auto
 
-set_option maxHeartbeats 2000000 in
 theorem evalCall_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) (a1 : Expr) (a2 : List Expr) (a3 : Bool) :
     GSim k (evalCall c (n + 1) a0 a1 a2 a3) (evalCall c (n' + 1) a0 a1 a2 a3) := by
   rw [evalCall.eq_def, evalCall.eq_def]; dsimp -zeta only; gsim_auto
@@ -1265,7 +1255,6 @@ theorem evalArgs_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env)
     GSim k (evalArgs c (n + 1) a0 a1) (evalArgs c (n' + 1) a0 a1) := by
   rw [evalArgs.eq_def, evalArgs.eq_def]; dsimp -zeta only; gsim_auto
 
-set_option maxHeartbeats 4000000 in
 theorem builtin_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) (a1 : String) (a2 : List Expr) (a3 : Bool) :
     GSim k (builtin c (n + 1) a0 a1 a2 a3) (builtin c (n' + 1) a0 a1 a2 a3) := by
   rw [builtin.eq_def, builtin.eq_def]; dsimp -zeta only; gsim_auto
@@ -1286,7 +1275,6 @@ theorem callMethod_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : St
     GSim k (callMethod c (n + 1) a0 a1 a2 a3 a4 a5) (callMethod c (n' + 1) a0 a1 a2 a3 a4 a5) := by
   rw [callMethod.eq_def, callMethod.eq_def]; dsimp -zeta only; gsim_auto
 
-set_option maxHeartbeats 2000000 in
 theorem callBody_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) (a1 : Sig) (a2 : Option (List Stmt)) (a3 : Option (String × Val)) (a4 : List Val) (a5 : Bool) :
     GSim k (callBody c (n + 1) a0 a1 a2 a3 a4 a5) (callBody c (n' + 1) a0 a1 a2 a3 a4 a5) := by
   cases a1 <;> (rw [callBody.eq_def, callBody.eq_def]; dsimp -zeta only; gsim_auto)
@@ -1299,7 +1287,6 @@ theorem execBlock_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env
     GSim k (execBlock c (n + 1) a0 a1) (execBlock c (n' + 1) a0 a1) := by
   rw [execBlock.eq_def, execBlock.eq_def]; dsimp -zeta only; gsim_auto
 
-set_option maxHeartbeats 1000000 in
 theorem execStmt_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) (a1 : Stmt) :
     GSim k (execStmt c (n + 1) a0 a1) (execStmt c (n' + 1) a0 a1) := by
   rw [execStmt.eq_def, execStmt.eq_def]; dsimp -zeta only; gsim_auto
@@ -1324,7 +1311,6 @@ theorem forLoop_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) 
     GSim k (forLoop c (n + 1) a0 a1 a2 a3) (forLoop c (n' + 1) a0 a1 a2 a3) := by
   rw [forLoop.eq_def, forLoop.eq_def]; dsimp -zeta only; gsim_auto
 
-set_option maxHeartbeats 2000000 in
 theorem rangeLoop_step {c : Ctx} {k n n' : Nat} (ih : SimAll c k n n') (a0 : Env) (a1 : Option Expr) (a2 : Option Expr) (a3 : String) (a4 : Expr) (a5 : List Stmt) :
     GSim k (rangeLoop c (n + 1) a0 a1 a2 a3 a4 a5) (rangeLoop c (n' + 1) a0 a1 a2 a3 a4 a5) := by
   rw [rangeLoop.eq_def, rangeLoop.eq_def]; dsimp -zeta only; gsim_auto
@@ -1598,82 +1584,7 @@ structure SyncAll (c : Ctx) (n : Nat) : Prop where
   libCall : ∀ (a0 : String) (a1 : List Val), Pres Sync (libCall c n a0 a1)
   formatField : ∀ (a0 : Val), Pres Sync (formatField c n a0)
 
-set_option hygiene false in
-macro "pres_ih" : tactic => `(tactic| (first
-  | with_reducible apply ih.typeOf?
-  | with_reducible apply ih.evalType
-  | with_reducible apply ih.underlying
-  | with_reducible apply ih.zero
-  | with_reducible apply ih.convert
-  | with_reducible apply ih.conversion
-  | with_reducible apply ih.evalExpr
-  | with_reducible apply ih.evalName
-  | with_reducible apply ih.funcVal
-  | with_reducible apply ih.funcValue?
-  | with_reducible apply ih.composite
-  | with_reducible apply ih.newArray
-  | with_reducible apply ih.stringBytes
-  | with_reducible apply ih.elementKeys
-  | with_reducible apply ih.elements
-  | with_reducible apply ih.staticElement
-  | with_reducible apply ih.literalElement
-  | with_reducible apply ih.constantOperand
-  | with_reducible apply ih.element
-  | with_reducible apply ih.mapKey
-  | with_reducible apply ih.mapIndex
-  | with_reducible apply ih.sliceOf
-  | with_reducible apply ih.selector
-  | with_reducible apply ih.boundMethod
-  | with_reducible apply ih.field?
-  | with_reducible apply ih.operand
-  | with_reducible apply ih.selectOn
-  | with_reducible apply ih.evalAddr
-  | with_reducible apply ih.evalPlace
-  | with_reducible apply ih.elemLoc
-  | with_reducible apply ih.loadPlace
-  | with_reducible apply ih.storePlace
-  | with_reducible apply ih.assertType
-  | with_reducible apply ih.methodOfType
-  | with_reducible apply ih.unary
-  | with_reducible apply ih.binary
-  | with_reducible apply ih.equal
-  | with_reducible apply ih.equalAll
-  | with_reducible apply ih.evalCall
-  | with_reducible apply ih.appendValues
-  | with_reducible apply ih.layout
-  | with_reducible apply ih.genericArgs
-  | with_reducible apply ih.declaredFunc?
-  | with_reducible apply ih.deferCall
-  | with_reducible apply ih.evalArgs
-  | with_reducible apply ih.builtin
-  | with_reducible apply ih.panicText
-  | with_reducible apply ih.callMethod?
-  | with_reducible apply ih.callValue
-  | with_reducible apply ih.callMethod
-  | with_reducible apply ih.callBody
-  | with_reducible apply ih.execStmts
-  | with_reducible apply ih.execBlock
-  | with_reducible apply ih.execStmt
-  | with_reducible apply ih.declValue
-  | with_reducible apply ih.execInit
-  | with_reducible apply ih.switchClauses
-  | with_reducible apply ih.typeClauses
-  | with_reducible apply ih.forLoop
-  | with_reducible apply ih.rangeLoop
-  | with_reducible apply ih.assign
-  | with_reducible apply ih.rhsValues
-  | with_reducible apply ih.errorsNew
-  | with_reducible apply ih.fmtCall
-  | with_reducible apply ih.sprint
-  | with_reducible apply ih.sprintf
-  | with_reducible apply ih.fmtSpec
-  | with_reducible apply ih.fmtArg
-  | with_reducible apply ih.fmtValue
-  | with_reducible apply ih.libCall
-  | with_reducible apply ih.formatField
-  ))
-
-macro "pres_auto" : tactic => `(tactic| repeat' (first | pres_help | pres_ih | item_step | pres_base))
+macro "pres_auto" : tactic => `(tactic| repeat' (first | pres_base | pres_help | ih_step | item_step | dsimp -zeta only | split))
 
 theorem typeOfQ_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Expr) :
     Pres Sync (typeOf? c (n + 1) a0 a1) := by
@@ -1828,7 +1739,6 @@ theorem equalAll_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : List Val) (a1
     Pres Sync (equalAll c (n + 1) a0 a1) := by
   rw [equalAll.eq_def]; dsimp -zeta only; pres_auto
 
-set_option maxHeartbeats 2000000 in
 theorem evalCall_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Expr) (a2 : List Expr) (a3 : Bool) :
     Pres Sync (evalCall c (n + 1) a0 a1 a2 a3) := by
   rw [evalCall.eq_def]; dsimp -zeta only; pres_auto
@@ -1857,7 +1767,6 @@ theorem evalArgs_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Li
     Pres Sync (evalArgs c (n + 1) a0 a1) := by
   rw [evalArgs.eq_def]; dsimp -zeta only; pres_auto
 
-set_option maxHeartbeats 4000000 in
 theorem builtin_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : String) (a2 : List Expr) (a3 : Bool) :
     Pres Sync (builtin c (n + 1) a0 a1 a2 a3) := by
   rw [builtin.eq_def]; dsimp -zeta only; pres_auto
@@ -1878,7 +1787,6 @@ theorem callMethod_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : String) (a1
     Pres Sync (callMethod c (n + 1) a0 a1 a2 a3 a4 a5) := by
   rw [callMethod.eq_def]; dsimp -zeta only; pres_auto
 
-set_option maxHeartbeats 2000000 in
 theorem callBody_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Sig) (a2 : Option (List Stmt)) (a3 : Option (String × Val)) (a4 : List Val) (a5 : Bool) :
     Pres Sync (callBody c (n + 1) a0 a1 a2 a3 a4 a5) := by
   cases a1 <;> (rw [callBody.eq_def]; dsimp -zeta only; pres_auto)
@@ -1891,7 +1799,6 @@ theorem execBlock_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : L
     Pres Sync (execBlock c (n + 1) a0 a1) := by
   rw [execBlock.eq_def]; dsimp -zeta only; pres_auto
 
-set_option maxHeartbeats 1000000 in
 theorem execStmt_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Stmt) :
     Pres Sync (execStmt c (n + 1) a0 a1) := by
   rw [execStmt.eq_def]; dsimp -zeta only; pres_auto
@@ -1916,7 +1823,6 @@ theorem forLoop_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Opt
     Pres Sync (forLoop c (n + 1) a0 a1 a2 a3) := by
   rw [forLoop.eq_def]; dsimp -zeta only; pres_auto
 
-set_option maxHeartbeats 2000000 in
 theorem rangeLoop_sync {c : Ctx} {n : Nat} (ih : SyncAll c n) (a0 : Env) (a1 : Option Expr) (a2 : Option Expr) (a3 : String) (a4 : Expr) (a5 : List Stmt) :
     Pres Sync (rangeLoop c (n + 1) a0 a1 a2 a3 a4 a5) := by
   rw [rangeLoop.eq_def]; dsimp -zeta only; pres_auto

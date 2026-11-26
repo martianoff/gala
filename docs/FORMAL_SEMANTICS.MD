@@ -807,7 +807,7 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   recursive `fact` and `fact(x) + 1`, in the scopes the rewrite really builds. Like step
   2's, this is about GoCore's model of gc, not real gc, which copies every call into a
   temporary; that full hoisting agrees with left to right is carried to M6, which needs
-  a model of that copying (it is not part of step 3d).
+  a model of that copying.
   Step 3b widens `Body3` to IIFEs: the call of a function literal is a call like any
   other, so `x / z + func() int { .. }()` is out (the fixture `eval_order_iife` pins it:
   the literal's body prints before the division panics), and the IIFE's body is checked
