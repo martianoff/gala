@@ -52,6 +52,11 @@ run-time panic.
 `int64` is accepted as a type and means the same as `int`. Every other numeric type is
 outside S1 and reported as unsupported.
 
+galaspec tries a `match`'s arms in order and does not check which arms can be reached, so
+it runs programs GALA rejects with GALA-E0141 or GALA-E0006 (an arm after an unguarded
+arm that matches every value) and never reaches that arm. Such a run says nothing about
+GALA. M3's theorems hold for every list of arms, these included.
+
 ### Printing
 
 A shorthand struct prints as `Pt(1, 2)`, through the `String` method GALA generates for
@@ -141,7 +146,7 @@ pinned that way.
 | `Gala.Spec.alphaCheck_sound`, `alphaCheck_run` | **The renaming checker is sound** (`Gala/AlphaCheck.lean`, `Gala/AlphaProg.lean`). `alphaCheck p p'`, a `Bool` function galaspec runs as `galaspec alpha a.json b.json`, accepts only related programs: `alphaCheck p p' = true → AlphaProgram (alphaPkg …) (alphaPm …) p p'`, with the package-level names and each function's parameter pairing computed from the programs; so, by `run_alpha`, the two run the same way (`alphaCheck_run`). Completeness is not claimed: where the relation leaves a choice (a pattern name kept the same that could also count as a renamed one) the checker makes one. `internal/transpiler/fuzz/alpha_check_test.go` runs it on the metamorphic generator's renamings of local binders (`FuzzAlphaRenaming`'s generator, keeping top-level names, on a fixed batch of programs) and on a capturing renaming, which it must reject; two `example`s in `Gala/AlphaProg.lean` decide one accepted and one rejected pair in the kernel. |
 | `Gala.M3.lowerMatch_correct` | **M3, the `match` lowering against galaspec** (`Gala/MatchLower.lean`). The scoped lowering of `match` into GoCore (`Gala/GoCore.lean`) is correct with respect to galaspec, *given that the subject, guards and bodies are lowered correctly*. "Correct" is `Part`: forward simulation from galaspec's results. From related states (the same output; the same local and package-level names in order, with encoded values; GoCore's temporaries left out) in which the static scope `inScope` is exactly the set of names bound (`ScopeOk`, locals and package-level variables), wherever galaspec's run of the `match` ends with a value or a panic, GoCore's run of the lowering ends with the encoded value or a panic of the same class, in related states, keeping both sides' frames. It says nothing about runs galaspec ends out of fuel, `stuck`, `unsupported`, or with a `return` inside an arm. Hypotheses: the lowered subject, guards and bodies are each `Part` in their scope (they are holes in GoCore, so they may print, panic and assign); a guard leaves galaspec's locals as it found them; and the subject has the static type the lowering was given ([the stated gap](#m3s-stated-gap-the-subject-has-the-static-type-the-transformer-inferred)). Covered pattern forms: `_`, a binder (`_` included), int, bool and string literals, stable identifiers (local or package-level), a bare case without fields, a sealed case's extractor with any number of fields, a struct's extractor, tuples, nested to any depth; guards. The lowering has the transformer's shape up to the normalizations listed in [docs/FORMAL_SEMANTICS.MD, M6](../docs/FORMAL_SEMANTICS.MD#m6-per-program-translation-validation); that it describes what the transformer emits is trusted. |
 | `Gala.M3.lowerPat_correct`, `valEq_enc` | The pattern lowering agrees with galaspec's `matchPat` on a value of the static type: the condition is true exactly when galaspec matches, and then each pattern variable's expression gives the encoding of the value galaspec binds, in galaspec's order. Every read of an `Option`'s value sits after its `IsDefined()` in an `&&`, so GoCore's zero placeholder decides no test. galaspec's `==` (`valEq`) equals GoCore's (`geq`, defined from Go's `==` and the generated `Equal`) on encoded values. |
-| `Gala.M3.part_lit_int`, `part_var`, `part_add`, `part_gt`, `lowerMatch_instance` | **The hypotheses can be met.** `Part` holds of an int literal, of a variable read (local or package-level), and of int `+` and `>` whose operands are `Part` and give ints. `lowerMatch_instance` applies `lowerMatch_correct` to `3 match { case 1 => 10; case x => 20; case _ => 30 }` (a literal, a binder and a wildcard), discharging every hypothesis, so the theorem is not vacuous. It has no guard and no body that reads a pattern variable: those need `Part` of an expression over typed locals, which needs T7 (the counterexample below computes the scoped result instead). |
+| `Gala.M3.part_lit_int`, `part_lit_bool`, `keepsLocals_lit_bool`, `part_var`, `part_add`, `part_gt`, `lowerMatch_instance` | **The hypotheses can be met.** `Part` holds of an int literal, of a bool literal, of a variable read (local or package-level), and of int `+` and `>` whose operands are `Part` and give ints; a bool literal also leaves galaspec's locals as it found them, as a guard must. `lowerMatch_instance` applies `lowerMatch_correct` to `3 match { case 1 => 10; case _ if false => 20; case x => x }` (a literal, a guarded wildcard, and a binder whose body reads the pattern variable), discharging every hypothesis, so the theorem is not vacuous. That the compiler accepts this program and that it prints `3` is tested, not proved: it is `examples/formal_match_witness.gala`. Its guard is a constant: a guard that reads the pattern variable, such as `x > 0`, needs a `>` lemma whose operands are not known to be ints (`part_gt` assumes `IsInt` of both), which is not proved yet; the counterexample below, whose guard does read one, computes its scoped result directly instead. |
 | `Gala.M3.leaky_not_correct` | **#996 against galaspec.** The lowering issue [#996](https://github.com/martianoff/gala/issues/996) reported binds an arm's pattern variables before the arm's `if`, so they stay in scope in the later arms. It is not `Part` for galaspec: on `s match { case Circle(r) if r > 100 => r; case Circle(side) => side + r }` with `s = Circle(3)` and `r = 7`, galaspec gives 10 (`gala_says_10`, computed through galaspec's own equations), the leaky lowering 6 and the scoped lowering 10. The guard fails, so no zero value is involved. |
 | `Gala.M5.eval_pure` | **M5, galaspec's side of a call-free expression** (`Gala/M5/SpecPure.lean`). For an expression of literals, locals, parentheses and unary and binary operators whose names are all locals, galaspec's `eval` runs out of fuel or gives what a step-free program, `pureEval`, gives, and leaves the state the program sees (`Core`) as it was. |
 | `Gala.M5.expr_correct` | **M5, step 2a: call-free expressions against GoCore** (`Gala/M5/Expr.lean`). The reference lowering of a call-free expression into GoCore for whole programs (`Gala/GoCore/*.lean`) is correct with respect to galaspec, in GoCore's order of evaluation (left to right, which is gc's for operands that are not calls). The lowering is type-directed: it is given each local's kind (`int`, `bool`, `string`) and accepts an operator only on the kinds Go type-checks it on. For an expression it accepts and with no constant operator node (what galaspec's constant folding leaves), from related states (`LocRel`: each local the lowering knows is bound on both sides to related values of its kind, GoCore's typed; `Predeclared`: nothing shadows `true` and `false`), galaspec's state is unchanged apart from steps and, at every depth from `gdepth e` on, GoCore's evaluation gives a related value (`VRel`: the same `int`, in int64's range, `bool` or `string`, typed or an untyped constant; so `LocRel` assumes each local `int` is in range, as galaspec's always are) of the expression's kind, or the same run-time panic, leaving GoCore's state as it was. Nothing is claimed when galaspec runs out of fuel or stops `stuck` or `unsupported`. Covered: `int`, `bool` and `string` literals (a negative one as Go's `-` of its magnitude), locals, parentheses, unary `-` `+` `^` `!`, `+ - * / %`, the bitwise `& | ^ &^` and `< <= > >=` on `int`s (galaspec computes the bitwise operators through `Int64`, GoCore exactly and then reduced to `int`; they agree through core's `BitVec` lemmas, `Gala/M5/Bits.lean`), `==` and `!=` on one kind, string `+`, the orderings `< <= > >=` on strings (galaspec and GoCore both by code point; that Go's byte order agrees on UTF-8 is GoCore's model, not proved, tested against `go run` on the strings of the GoCore fixture `string_order`), `&&`, `||`. Shifts `<< >>` of a typed `int` by an `int` count, counts of 64 or more and negative ones included (a negative count panics with Go's text on both sides). Not covered yet: a shift of a literal (Go types the untyped constant from its context), a negative constant count (Go does not compile it), and everything with a call (later M5 steps). An instance in the same file meets every hypothesis, on `x + 1`; `inst_bitwise` and `inst_shift` compute each bitwise operator and shift (a typed count, `>>` of a negative, counts of 64 or more, a negative count) on both sides, with the answers Go gives; `inst_strcmp` computes the four string orderings on both sides, with typed and untyped operands. |
@@ -574,13 +579,13 @@ thing for it, nothing more.
 
 | Verdict | Examples | Generated programs | gala2lean: examples | gala2lean: generated programs |
 |---|---|---|---|---|
-| AGREE | 29 | 1 | 75 | 3 |
+| AGREE | 30 | 1 | 76 | 3 |
 | DISAGREE | 0 | 0 | 0 | 0 |
-| UNSUPPORTED | 480 | 34 | 434 | 32 |
+| UNSUPPORTED | 508 | 34 | 462 | 32 |
 | INCONCLUSIVE | 0 | 0 | 0 | 0 |
 
-Examples that run wholly inside the subset and agree with the spec: **29** (ratchet baseline 29).
-Examples gala2lean translates whose Lean run agrees with Go: **75** (ratchet baseline 75).
+Examples that run wholly inside the subset and agree with the spec: **30** (ratchet baseline 30).
+Examples gala2lean translates whose Lean run agrees with Go: **76** (ratchet baseline 76).
 
 ### Constructs
 
@@ -594,11 +599,11 @@ when run as Lean and compared with Go.
 
 | Construct (Core JSON kind) | Modelled | Tested against the spec | Proved | gala2lean |
 |---|---|---|---|---|
-| `file` | yes | yes: 30 agree | no | translated: 78 agree |
+| `file` | yes | yes: 31 agree | no | translated: 79 agree |
 | `import` | yes | no: 1 agree | no | translated: 29 agree |
 | `val` | yes | yes: 12 agree | no | translated: 53 agree |
 | `var` | yes | yes: 4 agree | no | translated: 7 agree |
-| `func` | yes | yes: 30 agree | no | translated: 78 agree |
+| `func` | yes | yes: 31 agree | no | translated: 79 agree |
 | `receiver` | not seen | no | no | translated: 7 agree |
 | `type-param` | not seen | no | no | translated: 16 agree |
 | `param` | yes | yes: 27 agree | no | translated: 65 agree |
@@ -607,28 +612,28 @@ when run as Lean and compared with Go.
 | `sealed` | yes | yes: 8 agree | no | translated: 27 agree |
 | `variant` | yes | yes: 8 agree | no | translated: 27 agree |
 | `type-name` | yes | yes: 28 agree | no | translated: 71 agree |
-| `block` | yes | yes: 30 agree | no | translated: 78 agree |
+| `block` | yes | yes: 31 agree | no | translated: 79 agree |
 | `if` | yes | yes: 7 agree | no | translated: 11 agree |
 | `return` | yes | yes: 5 agree | no | translated: 19 agree |
 | `assign` | yes | yes: 4 agree | no | translated: 7 agree |
 | `incdec` | not seen | no | no | not translated |
-| `int` | yes | yes: 27 agree | no | translated: 64 agree |
-| `bool` | yes | yes: 8 agree | no | translated: 16 agree |
+| `int` | yes | yes: 28 agree | no | translated: 65 agree |
+| `bool` | yes | yes: 9 agree | no | translated: 17 agree |
 | `string` | yes | yes: 22 agree | no | translated: 62 agree |
-| `name` | yes | yes: 30 agree | no | translated: 78 agree |
+| `name` | yes | yes: 31 agree | no | translated: 79 agree |
 | `unary` | yes | yes: 6 agree | no | translated: 13 agree |
 | `address-of` | not seen | no | no | not translated |
 | `binary` | yes | yes: 23 agree | no | translated: 48 agree |
-| `call` | yes | yes: 30 agree | no | translated: 78 agree |
+| `call` | yes | yes: 31 agree | no | translated: 79 agree |
 | `select` | yes | yes: 4 agree | no | translated: 41 agree |
 | `paren` | yes | no: 2 agree | no | translated: 4 agree |
 | `tuple` | not seen | no | no | translated: 5 agree |
 | `if-expr` | yes | yes: 10 agree | no | translated: 13 agree |
-| `match` | yes | yes: 14 agree | no | translated: 37 agree |
-| `case` | yes | yes: 14 agree | no | translated: 37 agree |
-| `pat-wild` | yes | yes: 8 agree | no | translated: 21 agree |
-| `pat-name` | yes | yes: 8 agree | no | translated: 28 agree |
-| `pat-lit` | yes | yes: 8 agree | no | translated: 14 agree |
+| `match` | yes | yes: 15 agree | no | translated: 38 agree |
+| `case` | yes | yes: 15 agree | no | translated: 38 agree |
+| `pat-wild` | yes | yes: 9 agree | no | translated: 22 agree |
+| `pat-name` | yes | yes: 9 agree | no | translated: 29 agree |
+| `pat-lit` | yes | yes: 9 agree | no | translated: 15 agree |
 | `pat-tuple` | not seen | no | no | translated: 1 agree |
 | `pat-extract` | yes | yes: 4 agree | no | translated: 25 agree |
 | `named-arg` | yes | yes: 5 agree | no | translated: 17 agree |
@@ -644,23 +649,23 @@ The constructs galaspec stopped at, by how many programs it stopped at each (40 
 
 | Construct | Programs |
 |---|---|
-| `import` | 286 |
-| `method-call` | 54 |
-| `generic-type` | 42 |
-| `index` | 38 |
-| `generic-decl` | 15 |
+| `import` | 304 |
+| `method-call` | 57 |
+| `generic-type` | 43 |
+| `index` | 37 |
+| `generic-decl` | 17 |
 | `address-of` | 10 |
-| `unresolved-name` | 9 |
+| `unresolved-name` | 10 |
 | `composite-literal` | 8 |
 | `float-literal` | 7 |
-| `method` | 6 |
+| `method` | 7 |
+| `type-any` | 4 |
+| `for` | 3 |
 | `stuck` | 3 |
 | `by-name-arg` | 2 |
 | `char-literal` | 2 |
-| `for` | 2 |
 | `format-string` | 2 |
 | `type-Value` | 2 |
-| `type-any` | 2 |
 | `typed-pattern` | 2 |
 | `blank-import` | 1 |
 | `defined-type` | 1 |
@@ -671,26 +676,26 @@ The first construct gala2lean did not translate in each program, by how many pro
 
 | Construct | Programs |
 |---|---|
-| `import` | 106 |
-| `generic-type` | 35 |
-| `index` | 31 |
+| `import` | 110 |
+| `generic-type` | 36 |
+| `index` | 32 |
 | `qualified-type` | 24 |
+| `method-call` | 15 |
 | `pointer-type` | 14 |
 | `type-float64` | 14 |
 | `fmt-operand` | 13 |
-| `method-call` | 13 |
+| `untyped-global` | 11 |
+| `for` | 10 |
 | `type-error` | 10 |
-| `for` | 8 |
+| `bind` | 8 |
 | `slice-type` | 8 |
-| `bind` | 7 |
+| `collection-method` | 7 |
+| `composite-literal` | 7 |
 | `partial-function` | 7 |
 | `return-inside-expression` | 7 |
-| `collection-method` | 6 |
-| `composite-literal` | 6 |
 | `extractor` | 6 |
+| `format-string` | 6 |
 | `go-results` | 6 |
-| `untyped-global` | 6 |
-| `expression-pattern` | 5 |
 
 ### Known disagreements
 
@@ -706,25 +711,25 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 
 | GoCore against go run | Examples | Generated programs |
 |---|---|---|
-| AGREE | 354 | 34 |
+| AGREE | 359 | 34 |
 | DISAGREE | 0 | 0 |
-| UNSUPPORTED | 74 | 1 |
+| UNSUPPORTED | 78 | 1 |
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **388** (ratchet baseline 388).
-Examples where GoCore agrees with go run and galaspec agrees with go run: **29** (ratchet baseline 29).
+Programs GoCore agrees with go run on: **393** (ratchet baseline 393).
+Examples where GoCore agrees with go run and galaspec agrees with go run: **30** (ratchet baseline 30).
 
-They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
+They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/formal_match_witness.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
 
-The construct GoCore stopped at in each program it did not run to the end, by how many programs (59 kinds, the top 20 shown):
+The construct GoCore stopped at in each program it did not run to the end, by how many programs (61 kinds, the top 20 shown):
 
 | Construct | Programs |
 |---|---|
+| `map-range-order` | 3 |
 | `recover-runtime-error` | 3 |
 | `fmt.Formatter` | 2 |
 | `io.Reader` | 2 |
-| `map-range-order` | 2 |
 | `net/url.URL` | 2 |
 | `net/url.Values` | 2 |
 | `os.TempDir` | 2 |
@@ -735,12 +740,12 @@ The construct GoCore stopped at in each program it did not run to the end, by ho
 | `strings.ToUpper` | 2 |
 | `sync.OnceValues` | 2 |
 | `time.After` | 2 |
+| `time.Duration` | 2 |
 | `type-complex64` | 2 |
 | `bytes.Buffer` | 1 |
 | `bytes.NewBufferString` | 1 |
 | `context.Background` | 1 |
 | `crypto/sha256.New` | 1 |
-| `dot-import-math` | 1 |
 <!-- difftest:end -->
 
 <!-- ownership:begin -->

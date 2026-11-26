@@ -375,8 +375,10 @@ column lists what each milestone's claim rests on beyond them.
   a call's evaluation order relative to a variable read unobservable (Go fixes the order
   only among calls); M5 has to establish them. A `return` inside an arm is left to M5. By
   M1, "not out of fuel" is a property of the program, so no fuel corollary is needed.
-  `lowerMatch_instance` meets every hypothesis on a match with literal, binder and wildcard
-  patterns (a guard or a body that reads a pattern variable needs typed locals, T7), and
+  `lowerMatch_instance` meets every hypothesis on a match with a literal, a guarded
+  wildcard and a binder whose body reads it (that the compiler accepts it is tested, by
+  `examples/formal_match_witness.gala`, not proved; its guard is a constant, and a guard
+  that reads a pattern variable is not covered yet), and
   `leaky_not_correct` restates #996 against galaspec (10 against 6).
   [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each theorem in full.
 - **Stated gap:** the subject has the static type the transformer inferred (`HasTy`);
@@ -399,7 +401,7 @@ column lists what each milestone's claim rests on beyond them.
     construct outside GoCore is reported by GoCore when a run reaches it.
 - **What it changes:** the link to the real transformer exists; until M6 it is tested.
 - **Status: done (tested, not proved).** Here the S1 corpus is the examples galaspec runs
-  to the end. On all 29 examples where galaspec agrees with `go run`, GoCore run on the
+  to the end. On all 30 examples where galaspec agrees with `go run`, GoCore run on the
   transformer's output agrees with `go run` too, and GoCore disagrees with `go run` on no
   program. Widening GoCore beyond S1 is the GoCore track of
   the [Plan](#plan).
@@ -456,8 +458,8 @@ column lists what each milestone's claim rests on beyond them.
       or through methods). Tested, not proved.
   - **The differential lane is built** (see [Differential harness](#3-differential-harness-go-under-bazel)):
     every compiled program's Go runs through GoCore and is compared with `go run`. In the
-    CI run that set the baselines, GoCore agrees with `go run` on 388 programs that
-    compile (354 examples, 34 generated), and on 29 examples galaspec agrees with
+    CI run that set the baselines, GoCore agrees with `go run` on 393 programs that
+    compile (359 examples, 34 generated), and on 30 examples galaspec agrees with
     `go run` too. It stops `unsupported` on the rest, naming the construct, and none
     disagrees. Tested, not proved. Both counts are ratchets (`gocore_fidelity_agreeing`,
     `gocore_agreeing_examples`); the current numbers are in the "GoCore" part of
@@ -1320,8 +1322,8 @@ galaspec as its oracle) runs alongside; M7 needs it for each family it widens to
 
 GoCore is tested, not proved: the differential run compares it with `go run` on the
 transformer's output for every program that compiles. In the CI run that set the current
-baseline it agrees on 371 programs, disagrees on none, and stops `unsupported` on 80,
-naming the construct; 29 examples agree three ways (GoCore and galaspec each with
+baseline it agrees on 393 programs, disagrees on none, and stops `unsupported` on 79,
+naming the construct; 30 examples agree three ways (GoCore and galaspec each with
 `go run`). [COVERAGE.md](../formal/COVERAGE.md#differential-testing) has the current
 numbers.
 
@@ -1375,7 +1377,7 @@ transpiler emits.
 | 3 | generics and the immutable collections, modelled in the prelude | planned |
 
 **Metrics:**
-- **Primary:** the examples gala2lean translates whose Lean run agrees with Go: 75 in the
+- **Primary:** the examples gala2lean translates whose Lean run agrees with Go: 76 in the
   current baseline. It is a ratchet, and only goes up.
 - **Secondary:** how much of a real GALA code base it translates, measured on the
   galop parser generator's sources: 259 of 604 functions and methods translate at the

@@ -70,6 +70,8 @@ def requiredTheorems : List Name := [
   `Gala.M3.lowerMatch_correct,
   `Gala.M3.leaky_not_correct,
   `Gala.M3.part_lit_int,
+  `Gala.M3.part_lit_bool,
+  `Gala.M3.keepsLocals_lit_bool,
   `Gala.M3.part_var,
   `Gala.M3.part_add,
   `Gala.M3.part_gt,

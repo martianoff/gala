@@ -24,8 +24,10 @@
     `match`.
   * `lowerPat_correct`: the pattern lowering agrees with galaspec's `matchPat`, the core of
     the above; `valEq_enc`: galaspec's `==` is GoCore's on the encoded values.
-  * `part_lit_int`, `part_var`, `part_add`, `part_gt`: `Part` holds of literals, variables
-    and int `+` and `>`, so the hypotheses can be met.
+  * `part_lit_int`, `part_lit_bool`, `keepsLocals_lit_bool`, `part_var`, `part_add`,
+    `part_gt`: `Part` holds of literals, variables and int `+` and `>`, and a bool literal
+    keeps galaspec's locals, so the hypotheses can be met; `lowerMatch_instance` meets
+    them all on one match.
   * `leaky_not_correct`: the lowering #996 reported, which binds the pattern variables
     before the arm's `if`, does not simulate galaspec: on a program with a failing guard,
     galaspec gives 10 and it gives 6 (the scoped lowering gives 10).
@@ -2342,6 +2344,46 @@ theorem part_lit_int (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.G
         injection h with h; subst h
         exact ⟨rfl, FrameS.refl _, FrameL.refl _⟩⟩
 
+/-- One step of galaspec's `eval` on a bool literal. -/
+theorem eval_lit_bool_run (ds : Spec.Decls) (d : Nat) (b : Bool) (s : Spec.St) :
+    (Spec.eval ds (d + 1) (.lit (.bool b))).run.run s =
+      match Spec.tick.run.run s with
+      | (.ok _, s1) => (.ok (.bool b), s1)
+      | (.error e, s1) => (.error e, s1) := by
+  rw [Spec.eval.eq_def ds (d + 1) _]
+  simp only [Spec.run_bind_eq]
+  rcases Spec.tick.run.run s with ⟨r, s1⟩
+  cases r <;> rfl
+
+/-- **A bool literal** lowers correctly. -/
+theorem part_lit_bool (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
+    (pre : Spec.Core → Prop) (b : Bool) :
+    Part pre (fun v => v = .bool b) (Spec.eval ds d (.lit (.bool b)))
+      (GoCore.geval X (.lit (.bool b))) := by
+  refine ⟨fun s g hR _ hnb => ?_⟩
+  cases d with
+  | zero => rw [eval_zero] at hnb; simp [NotBad] at hnb
+  | succ d =>
+    rw [eval_lit_bool_run, tick_run] at hnb ⊢
+    rcases hst : s.steps with _ | k
+    · rw [hst] at hnb; simp [NotBad] at hnb
+    · exact ⟨rfl, hR, fun v h => by
+        injection h with h; subst h
+        exact ⟨rfl, FrameS.refl _, FrameL.refl _⟩⟩
+
+/-- A bool literal leaves galaspec's locals as it found them, so it meets a guard's
+    `KeepsLocals`. -/
+theorem keepsLocals_lit_bool (ds : Spec.Decls) (d : Nat) (b : Bool) :
+    KeepsLocals (Spec.eval ds d (.lit (.bool b))) := by
+  intro s v h
+  cases d with
+  | zero => rw [eval_zero] at h; nomatch h
+  | succ d =>
+    rw [eval_lit_bool_run, tick_run] at h ⊢
+    rcases hst : s.steps with _ | k
+    · rw [hst] at h
+    · rfl
+
 /-- **A local or package-level variable** lowers correctly to the GoCore variable of its
     name, wherever it is bound. -/
 theorem part_var (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal) (x : String) :
@@ -2490,16 +2532,29 @@ theorem Part.mono_post {pre : Spec.Core → Prop} {P Q : Spec.Val → Prop} {x :
     let ⟨hres, hRt, hfr⟩ := h.sim s g hR hp hnb
     ⟨hres, hRt, fun v hv => let ⟨hP, hS, hL⟩ := hfr v hv; ⟨hpq v hP, hS, hL⟩⟩⟩
 
-/-- The arms of `3 match { case 1 => 10; case x => 20; case _ => 30 }`, with literal bodies. -/
+/-- A stronger `pre`. -/
+theorem Part.mono_pre {P Q : Spec.Core → Prop} {post : Spec.Val → Prop} {x : Spec.M Spec.Val}
+    {y : GoCore.GM GoCore.GVal} (h : Part P post x y) (hqp : ∀ c, Q c → P c) :
+    Part Q post x y :=
+  ⟨fun s g hR hq hnb => h.sim s g hR (hqp _ hq) hnb⟩
+
+/-- The arms of `3 match { case 1 => 10; case _ if false => 20; case x => x }`. The
+    wildcard is guarded, so the binder after it is reachable and the compiler accepts the
+    program (it rejects an arm after an unguarded catch-all, GALA-E0141 or GALA-E0006);
+    the binder's body reads the pattern variable, as the compiler requires of a binder.
+    `examples/formal_match_witness.gala` is the same program and tests that the compiler
+    accepts it; nothing checks that the two agree, so change them together. -/
 def instanceArms : List Arm :=
   [⟨.lit (.int 1), none, (.lit (.int 10), .lit (.int 10))⟩,
-   ⟨.name "x", none, (.lit (.int 20), .lit (.int 20))⟩,
-   ⟨.wild, none, (.lit (.int 30), .lit (.int 30))⟩]
+   ⟨.wild, some (.lit (.bool false), .lit (.bool false)), (.lit (.int 20), .lit (.int 20))⟩,
+   ⟨.name "x", none, (.name "x", .var (.user "x"))⟩]
 
 /-- **The theorem's hypotheses can be met all together.** `lowerMatch_correct` applied to
-    `3 match { case 1 => 10; case x => 20; case _ => 30 }` (a literal, a binder and a
-    wildcard pattern): the subject is an int, of static type `other`, and every arm's body
-    is a literal, so each hypothesis follows from `part_lit_int`. -/
+    `3 match { case 1 => 10; case _ if false => 20; case x => x }` (a literal, a guarded
+    wildcard and a binder whose body reads it): the subject is an int, of static type
+    `other`; the literal bodies follow from `part_lit_int`, the guard from `part_lit_bool`
+    and `keepsLocals_lit_bool`, and the body `x` from `part_var`, since the arm's scope
+    holds `x`. -/
 theorem lowerMatch_instance (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal) :
     Part (ScopeOk fun _ => false) (fun _ => True)
       (Spec.eval ds (d + 1) (.mtch (.lit (.int 3)) (instanceArms.map Arm.src)))
@@ -2513,10 +2568,14 @@ theorem lowerMatch_instance (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM G
       rcases ha with rfl | rfl | rfl
       · exact ⟨(fun _ _ h => nomatch h),
           (part_lit_int ds d X _ 10 ⟨by decide, by decide⟩).mono_post fun _ _ => trivial⟩
-      · exact ⟨(fun _ _ h => nomatch h),
+      · refine ⟨fun ge g' h => ?_,
           (part_lit_int ds d X _ 20 ⟨by decide, by decide⟩).mono_post fun _ _ => trivial⟩
-      · exact ⟨(fun _ _ h => nomatch h),
-          (part_lit_int ds d X _ 30 ⟨by decide, by decide⟩).mono_post fun _ _ => trivial⟩)
+        cases h
+        exact ⟨(part_lit_bool ds d X _ false).mono_post fun _ _ => trivial,
+          keepsLocals_lit_bool ds d false⟩
+      · refine ⟨(fun _ _ h => nomatch h), (part_var ds d X "x").mono_pre fun c hc => ?_⟩
+        rw [← hc "x"]
+        simp [armScope, lowerPat, staticCase, Spec.capitalized])
 
 /-! ## The leaky lowering is not correct (#996)
 
