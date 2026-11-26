@@ -6005,14 +6005,18 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// cannot evaluate it as a statement, and `func() T` cannot return it
 	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
 	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
-	// returning nil, as before, with the nil typed as T.
+	// returning nil, as before.
 	if isNilIdent(expr) {
 		if len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0]) {
 			t.typeNilAs(expr, expectedType)
 			return expr, false
 		}
-		if len(ft.Results) == 1 {
-			t.typeNilAs(expr, ft.Results[0])
+		// A concrete result other than a function type: typing the nil as it
+		// changes no decision below (a function-typed nil would read as a
+		// function value, a type-parameter one as an inferable result).
+		if r := ft.Results; len(r) == 1 && !t.hasTypeParams(r[0]) && !t.mentionsUnboundTypeParam(r[0]) &&
+			t.resolveTranspilerTypeAsFuncType(r[0]) == nil {
+			t.typeNilAs(expr, r[0])
 		}
 	}
 

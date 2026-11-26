@@ -509,6 +509,7 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a GALA interface result", "func() Shower", "return nil", ""},
 		{"a Go named map result", "func() http.Header", "return nil", ""},
 		{"a Go interface result", "func() io.Reader", "return nil", ""},
+		{"a function result", "func() func() int", "return nil", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
