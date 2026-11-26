@@ -139,4 +139,134 @@ theorem tmps_sf (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihEF : ExprSF ds cx P 
 
 end TmpsSF
 
+section LoopSF
+open Gala.GoCore.Full
+
+variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat)
+variable (f : String) (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (st : Stmt) (env0 : Env) (n : Nat)
+
+/-- **The loop** (`LoopIH`'s): every iteration takes GoCore a step, which pays for the
+    body's nodes galaspec evaluates in it (`KszOK`), so no size is left over. -/
+def LoopSF (d : Nat) : Prop :=
+  ∀ j, K * d ≤ j → ∀ (s : Spec.St) (g : St) (k : Nat), Inv3 cx P sg (paramKinds xks) s.toCore g env0 →
+    ParamCells n xks env0 g → g.steps < k →
+    SF Q 0 d s g ((Spec.eval ds d F.body).run.run s) ((loopM k env0.push (iterF cx j [st])).run.run g)
+
+/-- **A part of the loop's `if` tree** (`TreeSim`'s). -/
+def TreeSF (d j : Nat) : Prop :=
+  ∀ e ls, lowerLoop K sg f xks ρ (paramKinds xks) e = some ls → ∀ (s : Spec.St) (g : St) (envA : Env) (k : Nat),
+    Inv3 cx P sg (paramKinds xks) s.toCore g envA → (∀ x, envA.lookup x = env0.lookup x) →
+    TmpsFree envA 0 → ParamCells n xks env0 g → g.steps < k → ∀ M, K * d + 5 ≤ M →
+      SF Q (esz e) d s g ((Spec.eval ds d e).run.run s)
+        (afterIter k env0.push (iterF cx j [st]) ((execStmts cx M envA ls).run.run g))
+
+/-- **An `if` of the tree**, its step taken (`IfLSim`'s). -/
+def IfLSF (d j : Nat) : Prop :=
+  ∀ c a b lc ta tb, lowerC K sg (paramKinds xks) c = some (.bool, lc) →
+    lowerLoop K sg f xks ρ (paramKinds xks) a = some ta → lowerLoop K sg f xks ρ (paramKinds xks) b = some tb →
+    ∀ (s : Spec.St) (kk : Nat) (g : St) (envA : Env) (k : Nat), s.steps = kk + 1 →
+    Inv3 cx P sg (paramKinds xks) s.toCore g envA → (∀ x, envA.lookup x = env0.lookup x) →
+    ParamCells n xks env0 g → g.steps < k → ∀ M, K * d + 9 ≤ M →
+      SF Q (esz c + esz a + esz b) d { s with steps := kk } g ((Spec.eval ds (d + 1) (.ifExpr c a b)).run.run s)
+        (afterIter k env0.push (iterF cx j [st]) ((execStmts cx M envA [ifT lc ta tb]).run.run g))
+
+theorem afterIter_fuel (k : Nat) (E : Env) (Fi : Env → GM (Option Env)) {r : Except Stop Env × St}
+    (h : r.1 = .error .fuel) : (afterIter k E Fi r).1 = .error .fuel := by
+  rcases r with ⟨_ | _, _⟩ <;> simp_all [afterIter]
+
+theorem ifLSF_of (d j : Nat) (ihE : ExprSim ds cx P K sg d) (ihEF : ExprSF ds cx P K sg Q d)
+    (ihT : TreeSF ds cx P K sg Q f xks ρ st env0 n d j) : IfLSF ds cx P K sg Q f xks ρ st env0 n d j := by
+  intro c a b lc ta tb hc ha hb s kk g envA k hs hi henv hpc hk M hM
+  obtain ⟨m, rfl⟩ : ∃ m, M = m + 5 := ⟨M - 5, by omega⟩
+  rw [execStmts_single]
+  have hip := inv3_push cx P sg hi
+  have hIC := ihEF (paramKinds xks) c .bool lc hc { s with steps := kk } g envA.push hip (m + 3) (by omega)
+  have hkk : ({ s with steps := kk } : Spec.St).steps = kk := rfl
+  have henv' : ∀ x, envA.push.push.lookup x = env0.lookup x := fun x => by simp [Env.lookup_push, henv]
+  refine ⟨fun hsg => ?_, fun hd hq hf => ?_⟩
+  · have hE := ihE (paramKinds xks) c .bool lc hc { s with steps := kk } g envA.push hip hsg (m + 3) (by omega)
+    have hSC := hIC.1 hsg
+    rcases hr : (Spec.eval ds d c).run.run { s with steps := kk } with ⟨rc, t⟩
+    rw [hr] at hE hSC
+    cases rc with
+    | error er =>
+      rw [eval_ifE_err ds d kk c a b _ (Or.inl rfl) s t er hs hr]
+      cases er with
+      | ret => exact hE.elim
+      | _ => trivial
+    | ok v =>
+    obtain ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hsp⟩ := hE
+    obtain ⟨bv, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+    rw [hg] at hSC
+    simp only [Stut] at hSC
+    rw [eval_ifE_ok ds d kk c a b _ (Or.inl rfl) bv s t hs hr]
+    have hit : Inv3 cx P sg (paramKinds xks) t.toCore g' envA.push.push := inv3_push cx P sg (inv3_frame hip hsf hgf)
+    have hstg : t.steps ≤ g'.steps := spent_le hsp hsg
+    have hpc' := paramCells_mono hpc hgf.2.2.1
+    have hk' : g'.steps < k := Nat.lt_of_le_of_lt hgf.2.2.2.2.1 hk
+    cases bv with
+    | true =>
+      rw [ifT, execStmt_if_true cx (m + 2) envA lc ta _ g g' ty hg, execBlock_run]
+      have h := (ihT a ta ha t g' envA.push.push k hit henv' (tmpsFree_push _ 0) hpc' hk' (m + 2) (by omega)).1 hstg
+      rcases hx : (execStmts cx (m + 2) envA.push.push ta).run.run g' with ⟨rx, gx⟩
+      rw [hx] at h
+      cases rx <;> exact stut_mono Q (by omega) (stut_trans Q hSC h)
+    | false =>
+      rw [ifT, execStmt_if_false cx (m + 2) envA lc ta _ g g' ty hg]
+      simp only
+      rw [execStmt_block, execBlock_run, withEnv_withEnv]
+      have h := (ihT b tb hb t g' envA.push.push k hit henv' (tmpsFree_push _ 0) hpc' hk' (m + 1) (by omega)).1 hstg
+      rcases hx : (execStmts cx (m + 1) envA.push.push tb).run.run g' with ⟨rx, gx⟩
+      rw [hx] at h
+      cases rx <;> exact stut_mono Q (by omega) (stut_trans Q hSC h)
+  · rw [hkk] at hd hq
+    rcases hr : (Spec.eval ds d c).run.run { s with steps := kk } with ⟨rc, t⟩
+    cases rc with
+    | error er =>
+      rw [eval_ifE_err ds d kk c a b _ (Or.inl rfl) s t er hs hr] at hf
+      simp only at hf
+      cases hf
+      have h := hIC.2 (by rw [hkk]; omega) (by rw [hkk]; omega) (by rw [hr])
+      rcases hg : (evalExpr cx (m + 3) envA.push lc).run.run g with ⟨rg, g'⟩
+      rw [hg] at h
+      simp only at h
+      subst h
+      rw [ifT, execStmt_if_err cx (m + 2) envA lc ta _ g g' _ hg]
+      rfl
+    | ok v =>
+    rcases expr_down ds cx P K sg Q ihE ihEF (s := { s with steps := kk }) hc hip (by omega : K * d ≤ m + 3) hr with
+      hgf | ⟨w, g', hg, hvw, hkv, -, hsf, hgf, hbd, hmono⟩
+    · rcases hg : (evalExpr cx (m + 3) envA.push lc).run.run g with ⟨rg, g'⟩
+      rw [hg] at hgf
+      simp only at hgf
+      subst hgf
+      rw [ifT, execStmt_if_err cx (m + 2) envA lc ta _ g g' _ hg]
+      rfl
+    obtain ⟨bv, ty, rfl, rfl, -⟩ := vrel_bool hvw hkv
+    rw [eval_ifE_ok ds d kk c a b _ (Or.inl rfl) bv s t hs hr] at hf
+    have hit : Inv3 cx P sg (paramKinds xks) t.toCore g' envA.push.push := inv3_push cx P sg (inv3_frame hip hsf hgf)
+    have hpc' := paramCells_mono hpc hgf.2.2.1
+    have hk' : g'.steps < k := Nat.lt_of_le_of_lt hgf.2.2.2.2.1 hk
+    rw [hkk] at hbd hmono
+    rw [Nat.mul_succ] at hq
+    cases bv with
+    | true =>
+      rw [ifT, execStmt_if_true cx (m + 2) envA lc ta _ g g' ty hg, execBlock_run]
+      have h := (ihT a ta ha t g' envA.push.push k hit henv' (tmpsFree_push _ 0) hpc' hk' (m + 2) (by omega)).2
+        (by omega) (by rw [Nat.mul_succ]; omega) hf
+      rcases hx : (execStmts cx (m + 2) envA.push.push ta).run.run g' with ⟨rx, gx⟩
+      rw [hx] at h
+      cases rx <;> exact h
+    | false =>
+      rw [ifT, execStmt_if_false cx (m + 2) envA lc ta _ g g' ty hg]
+      simp only
+      rw [execStmt_block, execBlock_run, withEnv_withEnv]
+      have h := (ihT b tb hb t g' envA.push.push k hit henv' (tmpsFree_push _ 0) hpc' hk' (m + 1) (by omega)).2
+        (by omega) (by rw [Nat.mul_succ]; omega) hf
+      rcases hx : (execStmts cx (m + 1) envA.push.push tb).run.run g' with ⟨rx, gx⟩
+      rw [hx] at h
+      cases rx <;> exact h
+
+end LoopSF
+
 end Gala.M5
