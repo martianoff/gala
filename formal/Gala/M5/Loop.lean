@@ -776,4 +776,185 @@ theorem resBP_err {n : Nat} {ρ : Kind} {s : Spec.St} {g : St} {sr : Except Spec
 
 end LoopRel
 
+section LoopCases
+open Gala.GoCore.Full
+
+variable {K : Nat} {sg : Sigs} {f : String} {xks : List (String × Kind)} {ρ : Kind} {κ : String → Option Kind}
+
+theorem lowerLoop_leaf {e : Spec.Expr} (hne : ∀ c a b, e ≠ .ifExpr c a b) :
+    lowerLoop K sg f xks ρ κ e = match selfArgs f xks.length e with
+      | some args =>
+        if args.all noIf then (lowerArgs K sg κ (xks.map (·.2)) args).map (stepOf (xks.map (·.1))) else none
+      | none =>
+        if isCompound e || parenHides e then none
+        else match lowerC K sg κ e with
+          | some (k, le) => if k = ρ then some [.ret [le]] else none
+          | none => none := by
+  cases e <;> first | exact absurd rfl (hne _ _ _) | rfl
+
+theorem selfArgs_some {n : Nat} {e : Spec.Expr} {args : List Spec.Expr} (h : selfArgs f n e = some args) :
+    e = .call (.name f) args ∧ args.length = n := by
+  unfold selfArgs at h
+  split at h
+  · split at h
+    · rename_i g args' hc
+      simp only [Option.some.injEq] at h
+      subst h
+      exact ⟨by rw [hc.1], hc.2⟩
+    · cases h
+  · cases h
+
+/-- What `lowerLoop` lowers: an `if`, a loop step, or `return` of a value. -/
+theorem lowerLoop_cases {e : Spec.Expr} {ls : List Stmt} (h : lowerLoop K sg f xks ρ κ e = some ls) :
+    (∃ c a b lc ta tb, e = .ifExpr c a b ∧ lowerC K sg κ c = some (.bool, lc) ∧
+      lowerLoop K sg f xks ρ κ a = some ta ∧ lowerLoop K sg f xks ρ κ b = some tb ∧ ls = [ifT lc ta tb]) ∨
+    (∃ args las, e = .call (.name f) args ∧ args.length = xks.length ∧
+      lowerArgs K sg κ (xks.map (·.2)) args = some las ∧ ls = stepOf (xks.map (·.1)) las) ∨
+    (∃ le, lowerC K sg κ e = some (ρ, le) ∧ ls = [.ret [le]]) := by
+  by_cases hif : ∃ c a b, e = .ifExpr c a b
+  · obtain ⟨c, a, b, rfl⟩ := hif
+    simp only [lowerLoop] at h
+    split at h
+    · rename_i lc ta tb hc ha hb
+      simp only [Option.some.injEq] at h
+      exact Or.inl ⟨c, a, b, lc, ta, tb, rfl, hc, ha, hb, h.symm⟩
+    · cases h
+  · rw [lowerLoop_leaf (fun c a b he => hif ⟨c, a, b, he⟩)] at h
+    split at h
+    · rename_i args hs
+      split at h
+      · simp only [Option.map_eq_some_iff] at h
+        obtain ⟨las, hlas, rfl⟩ := h
+        obtain ⟨rfl, hl⟩ := selfArgs_some hs
+        exact Or.inr (Or.inl ⟨args, las, rfl, hl, hlas, rfl⟩)
+      · cases h
+    · split at h
+      · cases h
+      · split at h
+        · rename_i k le hle
+          split at h
+          · rename_i hk; subst hk
+            simp only [Option.some.injEq] at h
+            exact Or.inr (Or.inr ⟨le, hle, h.symm⟩)
+          · cases h
+        · cases h
+
+end LoopCases
+
+section LoopNext
+open Gala.GoCore.Full
+
+theorem mkAsg_get (env : Env) : ∀ (i : Nat) (xks : List (String × Kind)) (ws : List Val) (m : Nat) (x : String)
+    (k : Kind) (w : Val), xks[m]? = some (x, k) → ws[m]? = some w →
+    (mkAsg env i xks ws)[m]? = some ⟨x, (env.lookup x).getD 0, kindTy k, tmpName (i + m), defaultVal w,
+      defaultVal (defaultVal w)⟩
+  | _, [], _, _, _, _, _, h, _ => by simp at h
+  | _, _ :: _, [], _, _, _, _, _, h => by simp at h
+  | i, (y, ky) :: xks, w' :: ws, m, x, k, w, hx, hw => by
+    cases m with
+    | zero => simp at hx hw; obtain ⟨rfl, rfl⟩ := hx; subst hw; rfl
+    | succ m =>
+      simp only [mkAsg, List.getElem?_cons_succ]
+      rw [mkAsg_get env (i + 1) xks ws m x k w (by simpa using hx) (by simpa using hw)]
+      simp [Nat.add_assoc, Nat.add_comm 1]
+
+theorem mkAsg_pairwise (env : Env) : ∀ (i : Nat) (xks : List (String × Kind)) (ws : List Val),
+    (xks.map (·.1)).Nodup → (∀ x ∈ xks.map (·.1), (env.lookup x).isSome) →
+    (∀ x y c, x ∈ xks.map (·.1) → y ∈ xks.map (·.1) → env.lookup x = some c → env.lookup y = some c → x = y) →
+    (mkAsg env i xks ws).Pairwise (fun a b => a.cell ≠ b.cell)
+  | _, [], _, _, _, _ => by simp [mkAsg]
+  | _, _ :: _, [], _, _, _ => by simp [mkAsg]
+  | i, (x, k) :: xks, w :: ws, hn, hs, hinj => by
+    simp only [List.map_cons, List.nodup_cons] at hn
+    simp only [mkAsg, List.pairwise_cons]
+    refine ⟨fun b hb => ?_, mkAsg_pairwise env (i + 1) xks ws hn.2 (fun y hy => hs y (by simp [hy]))
+      (fun y z c hy hz => hinj y z c (by simp [hy]) (by simp [hz]))⟩
+    obtain ⟨m, y, ky, wy, hy, -, rfl⟩ := mem_mkAsg env (i + 1) xks ws b hb
+    have hym : y ∈ xks.map (·.1) := List.mem_map.mpr ⟨(y, ky), List.mem_of_getElem? hy, rfl⟩
+    intro he
+    simp only at he
+    obtain ⟨cx', hcx⟩ := Option.isSome_iff_exists.mp (hs x (by simp))
+    obtain ⟨cy, hcy⟩ := Option.isSome_iff_exists.mp (hs y (by simp [hym]))
+    rw [hcx, hcy] at he
+    simp only [Option.getD_some] at he
+    subst he
+    exact hn.1 (hinj x y cx' (by simp) (by simp [hym]) hcx hcy ▸ hym)
+
+theorem vrel_ne_poison {v : Spec.Val} {w : Val} (h : VRel v w) : ∀ what, w ≠ .poison what := by
+  intro what he; subst he; cases h
+
+theorem defaultVal_vrel2 {v : Spec.Val} {w : Val} (h : VRel v w) :
+    VRel v (defaultVal (defaultVal w)) ∧ ¬ UInt (defaultVal (defaultVal w)) ∧
+      (∀ t b, defaultVal (defaultVal w) ≠ .bool (.untyped t) b) ∧ (∀ t s, defaultVal (defaultVal w) ≠ .str (.untyped t) s) :=
+  vrel_default (vrel_default h).1
+
+/-- **The state relation at the next iteration**: galaspec's new frame of the parameters,
+    GoCore's parameters' cells holding the temporaries' values. -/
+theorem inv3_next {cx : Ctx} {P : String} {sg : Sigs} {xks : List (String × Kind)} {F : Spec.Func} {ρ : Kind}
+    {env0 : Env} {n : Nat} (hsig : sigOf F = some (xks, ρ)) (hnames : ParamsOK (xks.map (·.1)))
+    (hpre : Predeclared cx env0) (hpkg : env0.pkg = P) (htenv : env0.tenv = [])
+    (hcl : ∀ x, paramKinds xks x = none → isTmp x = false → env0.lookup x = none)
+    {t : Spec.St} {g' : St} {vs : List Spec.Val} {ws : List Val} (hkr : KRel (xks.map (·.2)) vs ws)
+    (hpc : ParamCells n xks env0 g') (hsz : ∀ x k c, paramKinds xks x = some k → env0.lookup x = some c → c < g'.cells.size)
+    (hglob : ∀ f, (sg f).isSome → Spec.lookup t.globals f = none) (hout : t.out = g'.out)
+    (hsync : g'.cells.size = g'.types.size) :
+    Inv3 cx P sg (paramKinds xks) { t with locals := specFrame F.params vs }.toCore
+      (storeAll g' (mkAsg env0 0 xks ws)) env0 := by
+  obtain ⟨hpn, -, -⟩ := sigOf_facts hsig
+  obtain ⟨hlv, hlw⟩ := krel_len hkr
+  have hrest := storeAll_rest g' (mkAsg env0 0 xks ws)
+  have hnd : (F.params.map (·.name)).Nodup := by rw [hpn]; exact hnames.1
+  have hpu : ∀ p ∈ F.params, p.name ≠ "_" := by
+    intro p hp; exact (hnames.2 p.name (by rw [← hpn]; exact List.mem_map_of_mem hp)).1
+  have hmem : ∀ x ∈ xks.map (·.1), ∃ k, paramKinds xks x = some k := by
+    intro x hx
+    obtain ⟨⟨x', k⟩, hxk, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨m, hm⟩ := List.getElem?_of_mem hxk
+    exact ⟨k, paramKinds_get xks _ hnames.1 m x' k hm⟩
+  refine ⟨⟨?_, ?_, hpre⟩, hpkg, htenv, ?_, hglob, ?_⟩
+  · intro x k hk
+    obtain ⟨m, hm⟩ := paramKinds_some hk
+    have hmk : (xks.map (·.2))[m]? = some k := by simp [hm]
+    obtain ⟨v, w, hv, hw, hvw, hkv⟩ := krel_get hkr m k hmk
+    have hpm : (F.params.map (·.name))[m]? = some x := by rw [hpn]; simp [hm]
+    simp only [List.getElem?_map] at hpm
+    obtain ⟨p, hp, hpx⟩ := Option.map_eq_some_iff.mp hpm
+    obtain ⟨c, hc, -, -⟩ := hpc.1 x k hk
+    have hA := mkAsg_get env0 0 xks ws m x k w hm hw
+    have hcell : (storeAll g' (mkAsg env0 0 xks ws)).cells[c]? = some (defaultVal (defaultVal w)) := by
+      have := storeAll_get g' (mkAsg env0 0 xks ws)
+        (mkAsg_pairwise env0 0 xks ws hnames.1 (fun y hy => by
+            obtain ⟨ky, hky⟩ := hmem y hy
+            obtain ⟨cy, hcy, -⟩ := hpc.1 y ky hky
+            rw [hcy]; rfl)
+          (fun y z c' hy hz hyc hzc => by
+            obtain ⟨ky, hky⟩ := hmem y hy
+            obtain ⟨kz, hkz⟩ := hmem z hz
+            exact hpc.2 y z ky kz c' hky hkz hyc hzc))
+        _ (List.mem_of_getElem? hA) (by simp only [hc, Option.getD_some]; exact hsz x k c hk hc)
+      simpa [hc] using this
+    obtain ⟨h1, h2, h3, h4⟩ := defaultVal_vrel2 hvw
+    refine ⟨⟨v, false⟩, c, v, defaultVal (defaultVal w), ?_, bval_plain _ v (vrel_not_ref hvw), hc, hcell, h1, hkv,
+      h2, h3, h4⟩
+    show Spec.lookup (specFrame F.params vs) x = _
+    unfold specFrame
+    rw [← hpx]
+    exact frame_get F.params vs [] hnd hpu m p v hp hv
+  · show t.out = (storeAll g' (mkAsg env0 0 xks ws)).out
+    rw [hout]
+    have e := congrArg St.out hrest.1
+    exact e.symm
+  · intro x hx
+    refine ⟨?_, hcl x hx⟩
+    show Spec.lookup (specFrame F.params vs) x = none
+    unfold specFrame
+    have hxn : x ∉ F.params.map (·.name) := by
+      rw [hpn]; intro hm; obtain ⟨k, hk⟩ := hmem x hm; rw [hx] at hk; cases hk
+    rw [frame_notin F.params vs [] x hxn]; rfl
+  · have e := congrArg St.types hrest.1
+    simp only at e
+    rw [hrest.2, e, hsync]
+
+end LoopNext
+
 end Gala.M5
