@@ -1983,6 +1983,7 @@ func main() {
 The rules:
 
 - **Alternatives bind no names.** `case Some(n) | None()` is rejected ([GALA-E0071](errors/GALA-E0071.md)), because `n` would have no value when `None()` matched. Use `_`, or give each alternative its own case.
+- **Parentheses in a pattern only group**: `(p)` matches as `p` does, so `case Some((x))` binds `x` as `case Some(x)` does, and `case (k)` is a default case like `case k`.
 - **`|` is always an alternative in a pattern**, also inside parentheses: `case (A | B)` is the same as `case A | B`. To match the bitwise OR of two values, use a guard, `case n if n == (FlagA | FlagB)`, or name the value with a `val` and match the name as a [stable identifier](#stable-identifiers-constants-in-patterns).
 - **`|` cannot be mixed with `+`, `-` or `^` in one alternative without parentheses.** They share its precedence, so `case 1 + 1 | 3` is rejected; write `case (1 + 1) | 3`.
 - **`|` cannot appear inside a comparison or boolean expression of a pattern** (`case Some(1 | 2 > 1)`), and **`_` cannot be an alternative** (`case Some(1) | _`): write the comparison as a guard, and the catch-all as `case _`.

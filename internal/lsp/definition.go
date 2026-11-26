@@ -342,15 +342,27 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		for start <= parenClose {
 			end := start + strings.IndexAny(line[start:parenClose+1], ",)")
 			col := start
-			// Parentheses around a binding only group it: `Some((x))` binds x.
-			for col < end && (line[col] == ' ' || line[col] == '\t' || line[col] == '(') {
-				col++
-			}
 			nameEnd := col
-			for nameEnd < end && isIdentChar(line[nameEnd]) {
-				nameEnd++
+			for {
+				// Parentheses around a binding only group it: `Some((x))`
+				// binds x.
+				for col < end && (line[col] == ' ' || line[col] == '\t' || line[col] == '(') {
+					col++
+				}
+				nameEnd = col
+				for nameEnd < end && isIdentChar(line[nameEnd]) {
+					nameEnd++
+				}
+				// A name followed by `(` or `.` is a constructor or a
+				// qualifier, not a binder: the slot's binder, if any, is
+				// inside its parentheses (`Some(a` in `(Some(a), b)`).
+				if nameEnd > col && nameEnd < end && (line[nameEnd] == '(' || line[nameEnd] == '.') {
+					col = nameEnd + 1
+					continue
+				}
+				break
 			}
-			if line[col:nameEnd] == word {
+			if nameEnd > col && line[col:nameEnd] == word {
 				return &lsp.Location{
 					URI: lsp.DocumentURI(uri),
 					Range: lsp.Range{
