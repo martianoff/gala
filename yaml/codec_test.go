@@ -1028,7 +1028,8 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"blank line holding spaces, strip", "k: |-\n  a\n  \nj: 1", "a"},
 		{"short blank line inside", "k: |\n    a\n  \n    b\nj: 1", "a\n\nb\n"},
 		{"blank line with spaces past the body", "k: |\n  a\n     \n  b\nj: 1", "a\n   \nb\n"},
-		{"keep, comment after","k: |+ # note\n  a\n\nj: 1", "a\n\n"},
+		{"tab past the body indentation is text", "k: |\n  a\n  \t\n  b\nj: 1", "a\n\t\nb\n"},
+		{"keep, comment after", "k: |+ # note\n  a\n\nj: 1", "a\n\n"},
 		{"keep, sequence item", "- |+\n  a\n\n- b", "a\n\n"},
 	}
 	for _, tt := range tests {
@@ -1044,5 +1045,15 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 				t.Errorf("%q => %q, want %q", tt.src, got, tt.want)
 			}
 		})
+	}
+}
+
+// A blank line before the first text line of a literal block may not be
+// wider than the text's indentation (YAML 1.2, section 8.1.1.1).
+func TestDecoder_LiteralBlockWideLeadingBlank(t *testing.T) {
+	src := "k: |\n      \n  a\nj: 1"
+	want := "error: yaml: blank line wider than the literal block's indentation before line 3"
+	if got := parseDump(src); got != want {
+		t.Errorf("%q => %s, want %s", src, got, want)
 	}
 }

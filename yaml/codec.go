@@ -935,14 +935,19 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 	var body []string
 	consumed := 0
 	bodyIndent := -1
-	blanks := 0 // blank lines since the last text line
+	blanks := 0        // blank lines since the last text line
+	widestLeading := 0 // widest blank line before the first text line
 	for i := start; i < len(raw); i++ {
 		line := strings.TrimRight(raw[i], "\r")
 		indent := countLeadingSpaces(line)
 		// A line of only white space is blank, as an editor that keeps the
 		// indentation leaves it, unless it reaches past the body's
-		// indentation: the spaces beyond it are then the line's text.
-		if strings.TrimLeft(line, " \t") == "" && (bodyIndent < 0 || indent <= bodyIndent) {
+		// indentation: what lies beyond it, a tab included, is then the
+		// line's text.
+		if strings.TrimLeft(line, " \t") == "" && (bodyIndent < 0 || len(line) <= bodyIndent) {
+			if bodyIndent < 0 {
+				widestLeading = max(widestLeading, len(line))
+			}
 			blanks++
 			consumed++
 			continue
@@ -952,6 +957,11 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 		}
 		if bodyIndent < 0 {
 			bodyIndent = indent
+			// YAML 1.2 (8.1.1.1): a blank line before the first text line
+			// may not be wider than the text's indentation.
+			if widestLeading > bodyIndent {
+				panic(fmt.Sprintf("yaml: blank line wider than the literal block's indentation before line %d", i+1))
+			}
 		}
 		if indent < bodyIndent {
 			break

@@ -32,9 +32,10 @@ import (
 //   }
 //
 // Supported subset: block-style mappings, block-style sequences, scalars
-// (string/int/float/bool/null), literal block scalars (`|`), comments,
-// nested structures. Out of scope (until needed): anchors, aliases, flow
-// style, custom tags. See docs (coming) for the full grammar.
+// (string/int/float/bool/null), literal block scalars (`|`, `|-`, `|+`, chomped
+// as YAML 1.2 says), comments, nested structures. Out of scope (until
+// needed): anchors, aliases, flow style, custom tags. See docs (coming)
+// for the full grammar.
 type Codec[T any] struct {}
 
 // Apply creates a typed YamlEncoder[T].
