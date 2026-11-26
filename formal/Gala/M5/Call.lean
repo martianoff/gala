@@ -1,9 +1,9 @@
 /-
-  # M5, step 3a: direct calls and `return`
+  # M5, steps 3a and 3b: direct calls, `return`, and `if` used as a value
 
   docs/FORMAL_SEMANTICS.MD, "M5". The reference lowering of calls of a program's functions,
-  `return`, and function bodies into GoCore, and its forward simulation (`calls_correct`,
-  `body_correct`, `stmts3_correct`).
+  `return`, `if` used as a value, and function bodies into GoCore, and its forward
+  simulation (`calls_correct`, `body_correct`, `stmts3_correct`).
 
   * **The calls** are of top-level functions whose parameters and result are `int`, `bool`
     or `string`, with positional arguments, one for each parameter (no named argument, no
@@ -12,18 +12,25 @@
     (`evalCall_fn`, `callValue_fn`, `callBody_ret`; `eval_call_run`, `bindArgs_pos`,
     `callFunc_run`, `runIn_res`). A name the lowering calls is no local (`Inv3`), so
     GoCore resolves it to the package's object before any builtin.
+  * **`if` used as a value** (step 3b) is Go's function literal called at once (an IIFE),
+    as the transformer emits it: `func() T { if c { T(a) } else { T(b) } }()`, each arm a
+    tail (`lowerT`, `tailOf`: statements, then `return` of the last value). A function's
+    last value is its tail too, so an `if` there needs no IIFE. No `return` is lowered
+    inside an IIFE's arms (`ρ = none`): GALA's would leave the function, Go's the literal.
+    GoCore's IIFE is unfolded by `evalExpr_iife` (`callBody0_ret`, `callBody0_panic`).
   * **The state relation** (`Inv3`) is step 2b's with every local known to the lowering;
-    the results (`ERes3`, `ResL3`, `ResU3`, `ResB`) frame GoCore's whole state
-    (`GFrame`: equal but for cells, their types and the steps) and galaspec's
-    (`SFrame`), and match `return`s.
+    the results (`ERes3`, `ResL3`, `ResU3`, `ResB`, and `ResT` for tails) frame GoCore's
+    whole state (`GFrame`: equal but for cells, their types, closures and the steps) and
+    galaspec's (`SFrame`), and match `return`s.
   * **Steps** (`Spent`): GoCore spends no more than galaspec. GoCore takes one step per
     call, in `callBody` after the arguments; galaspec took one at the call node before
-    them, so a galaspec run that ends has paid for each of GoCore's.
+    them (at the `if` node for an IIFE), so a galaspec run that ends has paid for each of
+    GoCore's.
   * **Depth.** A recursive call's GoCore depth is not bounded by the program's text, so
     the claim is for GoCore depths from `K * d` on, `d` galaspec's depth: each galaspec
-    level costs GoCore at most `K` levels when `K` is at least 7 (a call takes seven) and
-    at least the depth of each call-free part (the lowering at `K` checks it; a larger `K`
-    lowers the same, `lowerC_mono`, `lowerBody_mono`).
+    level costs GoCore at most `K` levels when `K` is at least 11 (an IIFE takes the most)
+    and at least the depth of each call-free part (the lowering at `K` checks it; a larger
+    `K` lowers the same, `lowerC_mono`, `lowerBody_mono`).
   * **Order.** Stated for GoCore's evaluator as it is, left to right;
     `Gala/M5/CallOrder.lean` says when GoCore's model of gc's order runs a body as
     written.
@@ -3266,8 +3273,9 @@ theorem sim3_all (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) : ∀ d,
     exact ⟨hE1, bodySim_of ds cx P K sg (d + 1) hT1, hS1, listSim_of ds cx P K sg (d + 1) hS1, hBl1, hI1, hT1,
       tsSim_of ds cx P K sg (d + 1) hS1 hT1, ifTSim_of ds cx P K sg (d + 1) hE1 hT1⟩
 
-/-- **M5, step 3a: direct calls and `return`.** An expression the reference lowering
-    accepts (`lowerC`), calls of the program's functions in it included, evaluated by
+/-- **M5, steps 3a and 3b: direct calls, `return`, `if` used as a value.** An expression the
+    reference lowering accepts (`lowerC`), calls of the program's functions and IIFEs in it
+    included, evaluated by
     galaspec from a state related to GoCore's (`Inv3`) with no more steps than GoCore has:
     wherever galaspec's evaluation ends with a value, GoCore's evaluation of the lowering, at
     every depth from `K * d` on, ends with a related value of the expression's kind; both
@@ -3279,12 +3287,15 @@ theorem sim3_all (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) : ∀ d,
     * **The functions**: `FunRel` says GoCore's package `P` declares every function the
       lowering calls (`sg`) as the lowering of galaspec's: parameters and result of kinds
       `int`, `bool`, `string`; positional arguments, one for each parameter (no named
-      argument, no default); the body `= e` as `return e`, a block body as its statements
-      and `return` of its last element; `return` statements inside.
+      argument, no default); the body as its tail (`tailOf`): `= e` as `return e`, a block
+      body as its statements and its last element's tail, an `if` as `{ if .. }` with a
+      tail in each arm; `return` statements inside.
+    * **`if` used as a value** is Go's IIFE, its value of the arms' kind and type (never an
+      untyped constant: `isLitE` of it is `false`); no `return` inside its arms.
     * **Depth.** A call's depth in GoCore is not bounded by the program's text (a recursive
       call goes as deep as the run), so the bound is `K * d` for galaspec's depth `d` and a
       `K` of the program: each galaspec level costs GoCore at most `K` levels when `K` is at
-      least 7 (a call takes seven) and at least the depth of each call-free part (the
+      least 11 (an IIFE takes eleven) and at least the depth of each call-free part (the
       lowering at `K` accepts only those; `lowerC_mono`: raising `K` loses nothing). The
       claim is for every GoCore depth from `K * d` on: GoCore never runs out of depth there.
     * **Steps.** GoCore takes one step per call, galaspec at least one per evaluation;

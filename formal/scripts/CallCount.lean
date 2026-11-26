@@ -1,16 +1,18 @@
 /-
-  # How much of a corpus step 3a covers
+  # How much of a corpus steps 3a and 3b cover
 
       lake env lean --run scripts/CallCount.lean <file.json or directory>...
 
   For each Core JSON document (as `galacore` exports a `.gala` file), each function is
-  sorted by the first reason step 3a leaves it out, in this order, or counted as lowered:
+  sorted by the first reason the lowering leaves it out, in this order, or counted as lowered:
   `unit-result` (no result), `signature` (a parameter or result not `int`, `bool` or
   `string`), `param-names`, then, for a body the lowering rejects: `reads-package-level`
   (it names a package-level variable), `named-args-or-defaults` (a call of a program
   function names an argument or leaves one out), `calls-outside` (it calls something not
   lowered: another function left out, `Println`, a constructor, a lambda, ...),
-  `body-shape` (anything else). A lowered body is `order-predicate` when `Body3` fails
+  `match-expression` (a `match`, step 4), `return-in-iife` (a `return` inside an arm of an
+  `if` used as a value: Go's would leave the IIFE, GALA's the function), `body-shape`
+  (anything else). A lowered body is `order-predicate` when `Body3` fails
   (`Gala/M5/CallOrder.lean`), else `lowered`. The functions the lowering calls are the
   greatest set whose bodies lower calling only each other. Run on constant-folded
   programs, as galaspec runs them. A development tool for `formal/COVERAGE.md`.
@@ -74,6 +76,10 @@ def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String 
           | .call (.name g) _ => (sg g).isNone
           | .call _ _ => true
           | _ => false) then "calls-outside"
+      else if es.any (fun | .mtch .. => true | _ => false) then "match-expression"
+      else if es.any (fun
+          | .ifExpr _ a b => (subs a ++ subs b).any (fun | .ret _ => true | _ => false)
+          | _ => false) then "return-in-iife"
       else "body-shape"
 
 def main (args : List String) : IO UInt32 := do

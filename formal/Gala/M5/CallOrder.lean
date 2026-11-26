@@ -17,7 +17,9 @@
   call's arguments being a list of their own (`f(x / z) + g()` is allowed: the division is
   in `f`'s arguments; `x / z + f(x)` and `g(x / z, f())` are not). The other half of the
   trigger, a read of a variable a call may change before the call, is ruled out by
-  `FitsSs`, not proved here.
+  `FitsSs`, not proved here. Step 3b's IIFE (a function literal called at once) is a call
+  like any other, and its body is checked the same way, as a level of its own, in the scope
+  the rewrite gives it (`LitsQuiet`).
 
   This is about GoCore's model of gc, not real gc: real gc copies every call into a
   temporary, which agrees with the model only where the model's trigger is right; that full
