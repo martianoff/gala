@@ -324,6 +324,22 @@ struct Hold(var k Keeper)
 `+use)
 		require.ErrorContains(t, err, "GALA-E0113", use)
 	}
+	// A val that must not be copied is GALA-E0053, as `g.Apply(1)` is.
+	_, err = transpileBareVariant(t, `package main
+
+import "sync"
+
+struct Guarded(var mu sync.Mutex, var n int)
+
+func (g *Guarded) Apply(x int) int = g.n + x
+
+func main() {
+    val g = Guarded(sync.Mutex{}, 1)
+    Println(g(1))
+}
+`)
+	require.ErrorContains(t, err, "GALA-E0053")
+
 	// So do they with no arguments.
 	out, err = transpileBareVariant(t, `package main
 

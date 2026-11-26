@@ -3197,8 +3197,9 @@ func (t *galaASTTransformer) valueApplyType(fun ast.Expr) *transpiler.TypeMetada
 
 // valueApplyCallee is `fun.Apply`, the method a call of fun calls when fun is
 // a value whose type has an Apply: a val, var or literal (valueApplyType), a
-// call's result (resultApplyType), and one with type arguments, `v[int](...)`
-// for `v.Apply[int](...)` of a generic Apply. A struct field is found once
+// call's result (resultApplyType), a read of an inout place (`(*k)`), and one
+// with type arguments, `v[int](...)` for `v.Apply[int](...)` of a generic
+// Apply. A struct field is found once
 // its receiver's type is known (fieldApplyType). The call is lowered as
 // `fun.Apply(...)` written out is: Section 3 lowers a generic Apply to its
 // free function, Section 4 calls any other with its parameters' types for
@@ -3548,8 +3549,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 	}
 
 	// --- Section 1.5: a value called through its Apply ---
-	// A value whose type has an Apply (a val, var, literal, struct field or
-	// call result) is called as `v.Apply(...)` written out is
+	// A value whose type has an Apply (a val, var, literal, struct field, call
+	// result or inout place) is called as `v.Apply(...)` written out is
 	// (valueApplyCallee): a generic Apply lowers to its free function (Section
 	// 3), any other is a method call whose arguments take its parameters'
 	// types (Section 4). The zero-argument call does the same in

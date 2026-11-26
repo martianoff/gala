@@ -49,6 +49,15 @@ val sharedCounter = Counter(7)
 
 func lend(inout c Counter) int = c(5)
 
+// Tally adds what it is called with to its total, in place.
+struct Tally(var total int)
+
+// Apply adds x to the total and returns it.
+func (t *Tally) Apply(x int) int {
+    t.total = t.total + x
+    t.total
+}
+
 func main() {
     val p = Plain(10)
     Println(p(_ + 1))
@@ -76,4 +85,10 @@ func main() {
 
     var place = Counter(30)
     Println(lend(&place))
+
+    // A var is called in place, so the change stays.
+    var tally = Tally(0)
+    tally(2)
+    tally(3)
+    Println(tally.total)
 }
