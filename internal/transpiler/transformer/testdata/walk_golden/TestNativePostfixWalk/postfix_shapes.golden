@@ -111,7 +111,12 @@ func Box_Empty[U any, T any](b Box[T]) std.Option[U] {
 //line $DIR/main.gala:34
 func typeArgs(b Box[int], cell std.Immutable[int]) {
 //line $DIR/main.gala:35
-	var e = b.Empty[string]
+	var e = func() func() std.Option[string] {
+		__recv_1 := b
+		return func() std.Option[string] {
+			return Box_Empty[string, int](__recv_1)
+		}
+	}()
 //line $DIR/main.gala:36
 	var get = cell.Get
 //line $DIR/main.gala:37

@@ -766,8 +766,51 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
 			var expr ast.Expr
 			var txErr error
+			// The slot a method value is lowered against, with the
+			// method's own unbound type parameters renamed apart, and
+			// those names: the value's type binds them (see below).
+			var renamedSlot transpiler.Type
+			var renamedParams []string
 			byNameType, sendable := transpiler.UnwrapSendable(substitutedParamType)
-			if ft := t.resolveTranspilerTypeAsFuncType(byNameType); !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesNullaryGenericFunc(v.expr) {
+			if !v.spread && t.isGenericMethodValue(v.expr) {
+				// A method value of a method with type parameters of its
+				// own takes them from the parameter it fills (`b.Pair` in
+				// `xs.Map(b.Pair)`), as transformArgument gives it; this
+				// method's own still unbound give it nothing. They are
+				// renamed apart before the receiver's type arguments go
+				// in: in `func f[U any](xs List[U])`, `xs.Map`'s slot is
+				// `func(U) __mtpc0`, not `func(U) U`, and apart from the receiver's own
+				// placeholders (calleeTypeParamPrefix). The bound ones take
+				// their types after, so neither substitution rewrites
+				// the other's.
+				var unbound []string
+				rename := make(typeSubstMap, len(methodMeta.TypeParams))
+				bound := make(typeSubstMap)
+				for i, tp := range methodMeta.TypeParams {
+					fresh := calleeTypeParamPrefix + itoaInt(i)
+					rename[tp] = transpiler.NamedType{Name: fresh}
+					if typ, isBound := typeSubst[tp]; isBound {
+						bound[fresh] = typ
+					} else {
+						unbound = append(unbound, fresh)
+					}
+				}
+				param := t.substituteTranspilerTypeParams(t.substituteConcreteTypes(t.substituteInType(methodMeta.ParamTypes[pi], rename), typeMeta.TypeParams, recvTypeArgTypes), bound)
+				expr, txErr = withCalleeTypeParams(t, unbound, func() (ast.Expr, error) {
+					return t.transformArgument(v.expr, slot{typ: param, open: true}, false)
+				})
+				// A member named like such a method that is none (a field
+				// `Map`), or one that fails to lower here, is lowered as
+				// any other argument below, never adapted to a slot
+				// naming the renamed placeholders.
+				if txErr == nil && !t.mentionsUnboundTypeParam(t.getExprTypeName(expr)) {
+					renamedSlot, renamedParams = param, unbound
+				}
+			}
+			switch ft := t.resolveTranspilerTypeAsFuncType(byNameType); {
+			case renamedSlot != nil:
+				// Lowered as a method value above.
+			case !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesNullaryGenericFunc(v.expr):
 				// Lift a by-name argument (`func() U`) to its thunk, as
 				// transformArgument does for a generic function; the
 				// thunk's result type (the expression's own type while U
@@ -789,7 +832,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				if txErr != nil {
 					expr, txErr = t.lowerExpr(v.expr)
 				}
-			} else {
+			default:
 				expr, txErr = t.lowerExpr(v.expr)
 			}
 			if txErr != nil {
@@ -872,7 +915,20 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if v.spread {
 				substitutedParamType = spreadArgType(substitutedParamType)
 			}
-			t.unifyGoParam(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+			if renamedSlot != nil {
+				// Against the renamed slot, so a receiver type argument
+				// spelled like one of the method's own (`U` in
+				// `List[U].Map`) binds nothing; the names map back.
+				renamed := make(map[string]transpiler.Type)
+				t.unifyGoParam(renamedSlot, argType, renamedParams, renamed)
+				for i, tp := range methodMeta.TypeParams {
+					if typ, ok := renamed[calleeTypeParamPrefix+itoaInt(i)]; ok {
+						inferredMap[tp] = typ
+					}
+				}
+			} else {
+				t.unifyGoParam(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+			}
 			if err := checkPtrArg(i, expr, v.expr.at(), v.spread); err != nil {
 				return true, nil, err
 			}
@@ -2413,7 +2469,43 @@ func (t *galaASTTransformer) lowerFunctionArg(
 			s.funcResult = maskTypeParamResults(ft.Results, typeParams)[0]
 		}
 	}
-	return t.lowerArg(v, s, strict)
+	lower := func() (ast.Expr, error) {
+		return t.lowerArg(v, s, strict)
+	}
+	if !t.isGenericMethodValue(v.expr) {
+		return lower()
+	}
+	// A method value of a method with type parameters of its own takes
+	// them from its slot, never from the callee's own left unbound there:
+	// a generic function's, a generic struct or variant's, or a companion
+	// Apply's type's.
+	unbound := callCtx.unboundStructTypeParams()
+	if callCtx.funcMeta != nil {
+		for _, tp := range callCtx.funcMeta.TypeParams {
+			if _, isBound := callCtx.inferredTypeSubst[tp]; !isBound {
+				unbound = append(unbound, tp)
+			}
+		}
+	}
+	for _, tp := range callCtx.applyTypeParams {
+		if _, isBound := callCtx.applyTypeSubst[tp]; !isBound {
+			unbound = append(unbound, tp)
+		}
+	}
+	return withCalleeTypeParams(t, unbound, lower)
+}
+
+// withCalleeTypeParams runs lower with names, the type parameters of the
+// callee whose argument is being lowered that the call leaves unbound, as
+// t.calleeTypeParams: a method value's slot may name them (`func(int) U` for
+// `xs.Map(b.Make)`), and none is a type that slot gives (see
+// bindMethodValueTypeArgs), even when the enclosing declaration has a type
+// parameter of the same name.
+func withCalleeTypeParams[T any](t *galaASTTransformer, names []string, lower func() (T, error)) (T, error) {
+	prev := t.calleeTypeParams
+	t.calleeTypeParams = names
+	defer func() { t.calleeTypeParams = prev }()
+	return lower()
 }
 
 // isPlaceholderLambdaArg reports whether e, filling a slot of type
@@ -5532,7 +5624,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// Value thunk: `func() T`. The body mirrors the expression-lambda body
 	// exactly, so the sugar is equivalent to writing `() => expr` by hand.
 	resultType := ft.Results[0]
-	concreteResult := !resultType.IsNil() && !transpiler.IsUnusable(resultType) && !t.hasTypeParams(resultType)
+	concreteResult := !resultType.IsNil() && !transpiler.IsUnusable(resultType) && !t.hasTypeParams(resultType) && !t.mentionsUnboundTypeParam(resultType)
 
 	// Try's thunk: a Go call returning `(T, error)` (or `(A, B, error)`, …, or
 	// only `error`) runs with its error turned into the panic Try catches, so
@@ -5556,7 +5648,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	var retTypeExpr ast.Expr
 	if concreteResult {
 		retTypeExpr = t.typeToExpr(resultType)
-	} else if !exprType.IsNil() && !transpiler.IsUnusable(exprType) && !t.hasTypeParams(exprType) {
+	} else if !exprType.IsNil() && !transpiler.IsUnusable(exprType) && !t.hasTypeParams(exprType) && !t.mentionsUnboundTypeParam(exprType) {
 		retTypeExpr = t.typeToExpr(exprType)
 	}
 	if retTypeExpr == nil {
