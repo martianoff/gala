@@ -37,6 +37,10 @@ const (
 // typedPattern. The zero patSrc is no pattern.
 type patSrc struct {
 	node native.GalaNodeRef
+	// inner is the pattern inside the parentheses of an expression pattern
+	// written `(p)`, the zero patExpr for any other pattern. Parentheses only
+	// group, so p's text and expression stand for the whole pattern.
+	inner patExpr
 }
 
 // nativePat is the pattern n, or the zero patSrc when n is no node.
@@ -44,7 +48,27 @@ func nativePat(n native.GalaNodeRef) patSrc {
 	if !n.Ok() {
 		return patSrc{}
 	}
-	return patSrc{node: n}
+	p := patSrc{node: n}
+	if n.Kind() == native.GalaKIND_expressionPattern {
+		if e := p.expr(); e.ok() {
+			if inner := unparenPattern(e); inner.node != e.node {
+				p.inner = inner
+			}
+		}
+	}
+	return p
+}
+
+// unparenPattern is e with any parentheses around it taken off: `((p))` is
+// p. `(p,)` is a one-element tuple, not a parenthesized pattern.
+func unparenPattern(e patExpr) patExpr {
+	for {
+		elems, single, ok := e.parenthesized()
+		if !ok || !single {
+			return e
+		}
+		e = elems[0]
+	}
 }
 
 // ok reports whether p is a pattern.
@@ -70,14 +94,23 @@ func (p patSrc) kind() patKind {
 // pattern the lowering does not know (patKindUnknown).
 func (p patSrc) ruleName() string { return native.GalaRuleNames[p.node.Rule()] }
 
-// text is p's tokens' text, joined.
-func (p patSrc) text() string { return galaparser.NativeText(p.node) }
+// text is p's tokens' text, joined, without parentheses around the whole
+// pattern (see inner).
+func (p patSrc) text() string {
+	if p.inner.ok() {
+		return p.inner.text()
+	}
+	return galaparser.NativeText(p.node)
+}
 
 // at is where p is written.
 func (p patSrc) at() srcNode { return srcNode{node: p.node} }
 
 // expr is the expression of p, a rest or an expression pattern.
 func (p patSrc) expr() patExpr {
+	if p.inner.ok() {
+		return p.inner
+	}
 	if !p.node.Ok() {
 		return patExpr{}
 	}

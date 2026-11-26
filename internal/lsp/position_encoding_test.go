@@ -339,6 +339,32 @@ func TestDefinition_PatternBindingIsWholeWord(t *testing.T) {
 	assert.Equal(t, strings.Index(line, ", a)")+2, locs[0].Range.Start.Character)
 }
 
+// A binding in parentheses binds as it does without them (`Some((x))` binds
+// x), so its definition is the binding, not an outer `val x`.
+func TestDefinition_ParenthesizedPatternBinding(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"val x = 3\n" +
+		"\n" +
+		"func first(o Option[int]) int = o match {\n" +
+		"\tcase Some((x)) => x\n" +
+		"\tcase None() => 0\n" +
+		"}\n" +
+		"\n" +
+		"func main() {\n" +
+		"\tPrintln(first(Some(5)), x)\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+
+	line := strings.Split(src, "\n")[5]
+	locs, err := h.Definition(uri, 5, strings.LastIndex(line, "x"))
+	require.NoError(t, err)
+	require.NotEmpty(t, locs)
+	assert.Equal(t, 5, locs[0].Range.Start.Line)
+	assert.Equal(t, strings.Index(line, "((x))")+2, locs[0].Range.Start.Character)
+}
+
 // TestNoHandlerReadsWireColumns keeps the conversion layer the only reader of
 // Position.Character. A wire column is in the negotiated encoding, so a handler
 // that reads one directly and indexes the document with it is wrong on any line

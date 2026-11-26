@@ -326,7 +326,8 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		for start <= parenClose {
 			end := start + strings.IndexAny(line[start:parenClose+1], ",)")
 			col := start
-			for col < end && (line[col] == ' ' || line[col] == '\t') {
+			// Parentheses around a binding only group it: `Some((x))` binds x.
+			for col < end && (line[col] == ' ' || line[col] == '\t' || line[col] == '(') {
 				col++
 			}
 			nameEnd := col

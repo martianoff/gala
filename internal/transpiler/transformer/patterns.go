@@ -58,8 +58,9 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 	}
 
 	// Parentheses only group: `(p)` is p, so `(x)` binds as `x` does, as the
-	// coverage check reads it (see parenthesizedPattern).
-	if inner, ok := t.parenthesizedPattern(pat); ok {
+	// coverage check reads it (see unparenPattern; a whole case pattern or an
+	// argument's is already read without them, see nativePat).
+	if inner := unparenPattern(pat); inner.node != pat.node {
 		return t.transformExpressionPatternWithType(inner, objExpr, matchedType)
 	}
 

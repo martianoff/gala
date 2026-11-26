@@ -86,7 +86,7 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []patExpr, objExpr
 	stmts := make([][]ast.Stmt, len(alts))
 	needStmts := false
 	for i, alt := range alts {
-		if isWildcard(alt.text()) {
+		if isWildcard(unparenPattern(alt).text()) {
 			return nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidAlternativePattern,
 				alt.line(), alt.col(),
 				"a wildcard alternative matches everything, so the other alternatives never decide",
