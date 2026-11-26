@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "program": "examples/lambda_generic_branch_result.gala",
+    "issue": 1413,
+    "symptom": "Lean rejected the translation (in main)",
+    "oracle": "gala2lean"
+  }
+]
