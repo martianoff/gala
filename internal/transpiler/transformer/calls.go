@@ -3482,7 +3482,7 @@ func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerT
 	// name: another package's alias names its target as that package does,
 	// which a lookup here could misread, so the walk stops at one.
 	cur := typ
-	for range 16 { // an alias cycle in malformed input cannot loop
+	for range len(t.typeAliases) + 1 { // an alias cycle in malformed input cannot loop
 		pkg, bare := splitPackageQualifier(cur.BaseName())
 		if pkg == "" {
 			pkg = cur.GetPackage()
@@ -3490,7 +3490,9 @@ func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerT
 		if pkg != "" && pkg != t.packageName {
 			return transpiler.PointerType{}, false
 		}
-		target, isAlias := t.typeAliases[bare]
+		// A generic alias's target with its type arguments substituted
+		// (aliasTargetByKey), or none when they are not given.
+		target, isAlias := t.aliasTargetByKey(bare, cur)
 		if !isAlias {
 			return transpiler.PointerType{}, false
 		}

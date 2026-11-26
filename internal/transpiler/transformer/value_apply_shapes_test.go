@@ -406,6 +406,8 @@ type NodeRef *Node
 
 type GenRef *Gen
 
+type PtrOf[T any] *T
+
 struct Hold(var r NodeRef)
 
 struct Box[T any](var v T)
@@ -417,11 +419,12 @@ func main() {
     var g = Gen(1)
     val gr GenRef = &g
     val b = Box[NodeRef](&n)
-    Println(w(2), w(), h.r(3), gr("x"), b.v(5))
+    val pw PtrOf[Node] = &n
+    Println(w(2), w(), h.r(3), gr("x"), b.v(5), pw(6))
 }
 `)
 	require.NoError(t, err)
-	for _, want := range []string{"w.Apply(2)", "w.Apply(4)", "h.r.Apply(3)", `Gen_Apply(gr, "x")`, "b.v.Apply(5)"} {
+	for _, want := range []string{"w.Apply(2)", "w.Apply(4)", "h.r.Apply(3)", `Gen_Apply(gr, "x")`, "b.v.Apply(5)", "pw.Apply(6)"} {
 		require.Contains(t, out, want)
 	}
 
