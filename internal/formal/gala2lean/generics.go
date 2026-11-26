@@ -403,19 +403,6 @@ func splitTop(s, sep string) []string {
 	return append(out, s[start:])
 }
 
-// hasHole reports whether t leaves a part to Lean (`_`).
-func (t ltype) hasHole() bool {
-	if t.head == "_" || t.result != nil && t.result.hasHole() {
-		return true
-	}
-	for _, a := range slices.Concat(t.args, t.params) {
-		if a.hasHole() {
-			return true
-		}
-	}
-	return false
-}
-
 // String writes t back as the translation writes it.
 func (t ltype) String() string {
 	if t.result != nil {

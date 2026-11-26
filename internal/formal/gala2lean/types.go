@@ -696,13 +696,15 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		return g.exprType(e.Right, sc, seen)
 	case *coreexport.IfExpr:
 		return g.exprType(e.Then, sc, seen)
-	case *coreexport.Block:
-		if sc != nil {
-			return g.blockValueType(e, sc)
+	case *coreexport.Block, *coreexport.Match:
+		// A local value; at package level its type is not looked into.
+		if sc == nil {
+			return ""
 		}
-		return ""
-	case *coreexport.Match:
-		return g.matchType(e, sc, seen)
+		if b, ok := e.(*coreexport.Block); ok {
+			return g.blockValueType(b, sc)
+		}
+		return g.matchType(e.(*coreexport.Match), sc, seen)
 	case *coreexport.Name:
 		if gv := g.globalBy[e.Name]; gv != nil && !seen[e.Name] {
 			if gv.typ != nil {
@@ -801,41 +803,32 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 }
 
 // matchType is the Lean type of match m's value: the type every arm whose
-// type is fully plain to see agrees on, else the first arm's type that is
-// partly so (a lambda's with its result `_`); "" when none is or two
-// differ. An arm's pattern binders are of unknown type here, so a name they
-// shadow is not read as the outer one.
+// type is fully plain to see agrees on; "" when none is or two differ. An
+// arm's pattern binders are of unknown type here, so a name they shadow is
+// not read as the outer one.
 func (g *gen) matchType(m *coreexport.Match, sc *scope, seen map[string]bool) string {
-	t, partial := "", ""
+	t := ""
 	for _, cn := range m.Cases {
 		c, ok := cn.(*coreexport.Case)
 		if !ok {
 			return ""
 		}
-		armSc := newScope(sc, 0)
-		if sc != nil {
-			armSc.level = sc.level
-		}
+		armSc := sc.child()
 		binders := map[string]bool{}
 		g.patBinders(c.Pattern, binders)
 		for x := range binders {
 			armSc.bind(x, false, "")
 		}
+		// Each arm's own cycle guard, as instantiate gives each argument.
 		at := g.safeType(func() string { return g.exprType(c.Body, armSc, maps.Clone(seen)) })
 		switch {
-		case at == "":
-		case parseLean(at).hasHole():
-			if partial == "" {
-				partial = at
-			}
+		case at == "" || strings.Contains(at, "_gala_M _)"):
+			// Not plain to see, or a lambda whose result is left to Lean.
 		case t == "":
 			t = at
 		case at != t:
 			return ""
 		}
-	}
-	if t == "" {
-		return partial
 	}
 	return t
 }

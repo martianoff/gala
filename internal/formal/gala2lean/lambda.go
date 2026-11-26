@@ -202,7 +202,9 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 // is e's: e itself, or one reached through parentheses, the branches of an
 // if, the arms of a match and a block's trailing statement. Those lambdas
 // are translated where e's value goes, so they take expect's parameter and
-// result types as a lambda passed directly does.
+// result types as a lambda passed directly does. The positions are the ones
+// expr and stmt (with value) translate as e's value. A lambda node has one
+// such position, so its mark holds wherever it is translated.
 func (g *gen) markTailLambdas(e coreexport.Node, expect *coreexport.TypeFunc) {
 	switch e := e.(type) {
 	case *coreexport.Lambda:
@@ -214,13 +216,13 @@ func (g *gen) markTailLambdas(e coreexport.Node, expect *coreexport.TypeFunc) {
 		g.markTailLambdas(e.Else, expect)
 	case *coreexport.If:
 		// A block's trailing if/else carries its value (stmt).
-		if e.Else != nil {
+		if isValueIf(e) {
 			g.markTailLambdas(e.Then, expect)
 			g.markTailLambdas(e.Else, expect)
 		}
 	case *coreexport.Match:
-		for _, c := range e.Cases {
-			if c, ok := c.(*coreexport.Case); ok {
+		for _, cn := range e.Cases {
+			if c, ok := cn.(*coreexport.Case); ok {
 				g.markTailLambdas(c.Body, expect)
 			}
 		}
