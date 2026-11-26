@@ -277,7 +277,7 @@ The codec emits and parses a focused, predictable subset of YAML:
 - block-style mappings
 - block-style sequences
 - scalars (`string`, `int`, `float`, `bool`, `null`), including `.nan`, `.inf` and `-.inf`
-- literal block scalars (`|`, `|-`, `|+`), chomped as YAML 1.2 says: `|` keeps the final line break (if the block has one), `|-` drops it, `|+` keeps every line break after the text, those of trailing blank lines included
+- literal block scalars (`|`, `|-`, `|+`), chomped as YAML 1.2 says: `|` keeps one final line break (none when the block ends the document without one) and drops the breaks of trailing blank lines, `|-` drops every line break after the text, and `|+` keeps them all. Blank lines before the text are kept.
 - comments
 - nested structures
 - the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List` or `HashMap` so it reads back as empty rather than `null`
