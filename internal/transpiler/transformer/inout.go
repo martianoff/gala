@@ -634,21 +634,45 @@ func (t *galaASTTransformer) goDefinedUnderlying(typ transpiler.Type, free []str
 	}
 	// A generic alias (`type Handler[T any] = func(T) error`) reads as its
 	// target's underlying type, the type arguments substituted, as a generic
-	// defined type does: not a struct's (the placeholder), and not one with
-	// a part go/types could not resolve. A plain alias is left to
-	// unaliasedType.
+	// defined type does: not a struct's (the placeholder), not one with a
+	// part go/types could not resolve, and not one naming a generic Go type
+	// the record spells without its type arguments (`chan Box[T]` recorded
+	// as `chan Box`). A plain alias is left to unaliasedType.
 	if len(data.TypeParams) == 0 || data.Underlying == nil || data.Underlying.IsAny() {
 		return nil
 	}
-	if u := t.instantiateGoType(data.Underlying, data.TypeParams, args); !transpiler.ContainsUnusable(u) {
+	if u := t.instantiateGoType(data.Underlying, data.TypeParams, args); !transpiler.ContainsUnusable(u) && !t.namesBareGoGeneric(u) {
 		return u
 	}
 	return nil
 }
 
+// namesBareGoGeneric reports whether typ mentions a generic Go type with no
+// type arguments, which names no type Go can spell.
+func (t *galaASTTransformer) namesBareGoGeneric(typ transpiler.Type) bool {
+	switch v := typ.(type) {
+	case transpiler.GenericType:
+		return slices.ContainsFunc(v.Params, t.namesBareGoGeneric)
+	case transpiler.NamedType:
+		data := t.goTypeInfo.GetTypeData(t.goTypeLookupName(v))
+		return data != nil && len(data.TypeParams) > 0
+	case transpiler.ArrayType:
+		return t.namesBareGoGeneric(v.Elem)
+	case transpiler.PointerType:
+		return t.namesBareGoGeneric(v.Elem)
+	case transpiler.ChanType:
+		return t.namesBareGoGeneric(v.Elem)
+	case transpiler.MapType:
+		return t.namesBareGoGeneric(v.Key) || t.namesBareGoGeneric(v.Elem)
+	case transpiler.FuncType:
+		return slices.ContainsFunc(v.Params, t.namesBareGoGeneric) || slices.ContainsFunc(v.Results, t.namesBareGoGeneric)
+	}
+	return false
+}
+
 // goUnderlying is typ through aliases (unaliasedType) and then, when that is
-// a type Go defines, its underlying type (goDefinedUnderlying); defined
-// reports the second step.
+// a type Go defines or an instance of a generic Go alias, its underlying type
+// (goDefinedUnderlying); defined reports the second step.
 func (t *galaASTTransformer) goUnderlying(typ transpiler.Type) (under transpiler.Type, defined bool) {
 	under, _ = t.unaliasedType(typ, nil)
 	if u := t.goDefinedUnderlying(under, nil); u != nil {
