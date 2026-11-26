@@ -155,10 +155,10 @@ func (t *galaASTTransformer) isPackageVar(name string) bool {
 // written is the base as written, before its Immutable box, if any, was
 // unwrapped: the node (inside any parentheses) the lowering already asked
 // the type of, so asking again reports nothing new. The type is read through
-// the box and a Go named collection type (url.Values, sort.IntSlice), as for
-// the .Size() sugar.
+// the box and a Go named type (url.Values, sort.IntSlice), one with a Size
+// method of its own included (elementBaseType).
 func (t *galaASTTransformer) markIndex(idx *ast.IndexExpr, written ast.Expr) {
-	switch typ := t.followAliasChain(t.sizeSugarReceiverType(ast.Unparen(written))).(type) {
+	switch typ := t.followAliasChain(t.elementBaseType(ast.Unparen(written))).(type) {
 	case transpiler.ArrayType:
 		if typ.Fixed {
 			return

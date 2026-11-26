@@ -1,0 +1,35 @@
+package main
+
+import . "martianoff/gala/examples/go_bare_named_size"
+import gb "martianoff/gala/examples/go_bare_named_size"
+import "martianoff/gala/go_interop"
+
+// The Size method GALA declares on Tagged, a Go type of another package, is
+// called on a Tagged reached through a dot import or an aliased one, not its
+// length (#1451).
+//
+// An element of such a type, or of Sized, which has a Size method of its own
+// in Go, is still read left to right: a later operand's call that changes it
+// does not change what was read.
+
+func retag(g Tagged) string {
+    g[0] = "z"
+    "c"
+}
+
+func bump(s Sized) int {
+    s[0] = 9
+    5
+}
+
+func main() {
+    Println(NewTagged("t").Size())
+    Println(gb.NewTagged("t").Size())
+    val written Tagged = NewTagged("t")
+    Println(written.Size())
+
+    val g = NewTagged("t")
+    Println(g[0] + retag(g))
+    val s = Sized(go_interop.SliceOf(1, 2))
+    Println(s[0] + bump(s))
+}
