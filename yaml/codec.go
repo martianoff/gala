@@ -815,7 +815,7 @@ func splitSignificantLines(input string) []pLine {
 	// which a literal block kept with "|+" would count as a blank line.
 	// Without it the last line has no break, which a block ending there
 	// must not gain.
-	// A lone carriage return is a line break too.
+	// A carriage return that ends the input ends its last line too.
 	lastHasBreak := strings.HasSuffix(input, "\n") || strings.HasSuffix(input, "\r")
 	rawLines := strings.Split(strings.TrimSuffix(input, "\n"), "\n")
 	var out []pLine
@@ -924,62 +924,39 @@ func itemPrefix(s string) (n, lastDash int) {
 	return n, lastDash
 }
 
-// blockContinuesAfter reports whether the first line from raw[from] on that
-// is not white space only is indented past parentIndent, so a literal block
-// goes on past the white-space lines before it.
-func blockContinuesAfter(raw []string, from, parentIndent int) bool {
-	for j := from; j < len(raw); j++ {
-		if line := strings.TrimRight(raw[j], "\r"); strings.TrimLeft(line, " \t") != "" {
-			return countLeadingSpaces(line) > parentIndent
-		}
-	}
-	return false
-}
-
 // takeLiteralBlock reads the body of a literal block scalar from raw[start:]
 // and returns its text with the chomping that indicator ("|", "|-" or "|+")
-// asks for, and the number of lines it consumed. The body is the lines
-// indented past parentIndent, at the indentation of its first line, with
-// blank lines among them. YAML 1.2 (section 8.1.1.2) chomps the line breaks
-// at the end: "|" (clip) keeps one, "|-" (strip) keeps none and "|+" (keep)
-// keeps them all. Blank lines before the first text line are kept.
-// lastHasBreak says whether the document's last line ends in a line break.
+// asks for, and the number of lines it consumed. YAML 1.2 (section 8.1.1)
+// indents with spaces only: a line of only spaces is blank, and any other
+// line is a text line, its indentation the spaces before its first other
+// character, a tab included. The body is the text lines indented past
+// parentIndent, at the indentation of the first one, with blank lines among
+// them; a blank line that reaches past that indentation holds the spaces
+// beyond it. YAML 1.2 (section 8.1.1.2) chomps the line breaks at the end:
+// "|" (clip) keeps one, "|-" (strip) keeps none and "|+" (keep) keeps them
+// all. Blank lines before the first text line are kept. lastHasBreak says
+// whether the document's last line ends in a line break.
 func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, lastHasBreak bool) (string, int) {
 	var body []string
 	consumed := 0
 	bodyIndent := -1
-	blanks := 0 // white-space-only lines since the last text line
-	// wsText is the text of the white-space-only line raw[j]. Such a line
-	// is blank, as an editor that keeps the indentation leaves it, unless
-	// it reaches past the body's indentation: what lies beyond it, a tab
-	// included, is then its text. Only spaces indent, so a tab within the
-	// indentation leaves a line blank.
-	wsText := func(j int) (string, bool) {
-		line := strings.TrimRight(raw[j], "\r")
-		if len(line) > bodyIndent && countLeadingSpaces(line) >= bodyIndent {
-			return line[bodyIndent:], true
-		}
-		return "", false
-	}
-	wsLines := func(from, to int) {
+	blanks := 0 // blank lines since the last text line
+	// blankLines appends the blank lines raw[from:to] to the body: empty,
+	// or the spaces past the body's indentation.
+	blankLines := func(from, to int) {
 		for j := from; j < to; j++ {
-			text, _ := wsText(j)
-			body = append(body, text)
+			line := strings.TrimRight(raw[j], "\r")
+			if len(line) > bodyIndent {
+				body = append(body, line[bodyIndent:])
+			} else {
+				body = append(body, "")
+			}
 		}
 	}
 	for i := start; i < len(raw); i++ {
 		line := strings.TrimRight(raw[i], "\r")
 		indent := countLeadingSpaces(line)
-		// White-space-only lines are held until the indentation is known,
-		// then read by wsText. A tab can only follow the indentation, so a
-		// white-space line with a tab at or before the parent's indentation
-		// is not one of the block's lines: inside the block it is blank, and
-		// after the block's last text line it ends the block, so chomping
-		// does not count it.
-		if strings.TrimLeft(line, " \t") == "" {
-			if indent < len(line) && indent <= parentIndent && !blockContinuesAfter(raw, i+1, parentIndent) {
-				break
-			}
+		if indent == len(line) {
 			blanks++
 			consumed++
 			continue
@@ -989,10 +966,10 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 		}
 		if bodyIndent < 0 {
 			bodyIndent = indent
-			// YAML 1.2 (8.1.1.1): a line of spaces before the first text
-			// line may not be indented further than the text.
+			// YAML 1.2 (8.1.1.1): a blank line before the first text line
+			// may not be indented further than the text.
 			for j := i - blanks; j < i; j++ {
-				if l := strings.TrimRight(raw[j], "\r"); countLeadingSpaces(l) == len(l) && len(l) > bodyIndent {
+				if len(strings.TrimRight(raw[j], "\r")) > bodyIndent {
 					panic(fmt.Sprintf("yaml: blank line at line %d is indented more than the literal block's text", j+1))
 				}
 			}
@@ -1000,29 +977,19 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 		if indent < bodyIndent {
 			break
 		}
-		wsLines(i-blanks, i)
+		blankLines(i-blanks, i)
 		blanks = 0
 		body = append(body, line[bodyIndent:])
 		consumed++
 	}
+	// The blank lines after the text: those up to the last one that holds
+	// spaces past the body's indentation are body lines, and the rest are
+	// the trailing blank lines that chomping governs.
 	end := start + consumed
-	// A block of only white-space lines takes its indentation from the first
-	// one whose tab falls past the parent's indentation: that tab is text.
-	if bodyIndent < 0 {
-		for j := end - blanks; j < end; j++ {
-			if l := strings.TrimRight(raw[j], "\r"); countLeadingSpaces(l) < len(l) {
-				bodyIndent = countLeadingSpaces(l)
-				break
-			}
-		}
-	}
-	// The white-space-only lines after the text: those up to the last one
-	// that holds text are body lines, and the rest are the trailing blank
-	// lines that chomping governs.
 	if bodyIndent >= 0 {
 		for last := end - 1; last >= end-blanks; last-- {
-			if _, isText := wsText(last); isText {
-				wsLines(end-blanks, last+1)
+			if len(strings.TrimRight(raw[last], "\r")) > bodyIndent {
+				blankLines(end-blanks, last+1)
 				blanks = end - 1 - last
 				break
 			}

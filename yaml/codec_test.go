@@ -1029,12 +1029,11 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"short blank line inside", "k: |\n    a\n  \n    b\nj: 1", "a\n\nb\n"},
 		{"blank line with spaces past the body", "k: |\n  a\n     \n  b\nj: 1", "a\n   \nb\n"},
 		{"tab past the body indentation is text", "k: |\n  a\n  \t\n  b\nj: 1", "a\n\t\nb\n"},
-		{"tabs within the indentation are blank", "k: |\n  a\n\t\t\t\n  b\nj: 1", "a\n\nb\n"},
-		{"leading tabs are blank", "k: |\n\t\t\t\n  a\nj: 1", "\na\n"},
 		{"leading tab past the indentation is text", "k: |\n  \t\n  a\nj: 1", "\t\na\n"},
-		{"spaces and a tab within the indentation, leading", "k: |\n \t\n  a\n  b\nj: 1", "\na\nb\n"},
-		{"tab past the indentation, more indented, leading", "k: |\n    \t\n  a\nj: 1", "  \t\na\n"},
 		{"tab line at the parent's indentation ends a keep block", "k: |+\n  a\n\t\nj: 1", "a\n"},
+		// Only spaces indent, so a line of spaces and a tab is a text line
+		// and sets the block's indentation like any other.
+		{"a tab line sets the indentation", "k: |\n \t\n  a\nj: 1", "\t\n a\n"},
 		{"final carriage return is a line break", "k: |\r\n  a\r", "a\n"},
 		{"only a tab past the indentation, clip", "k: |\n  \t\nj: 1", "\t\n"},
 		{"only a tab past the indentation, strip", "k: |-\n  \t\nj: 1", "\t"},
