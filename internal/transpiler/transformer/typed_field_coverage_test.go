@@ -9,10 +9,12 @@ import (
 )
 
 // TestTypedFieldPatternCoverage pins that a typed sub-pattern covers its field
-// only when the field's type holds no value of another type (#1351). A typed
-// pattern tests the dynamic type, so over an interface field (`error`, `any`)
-// or a type parameter it does not match nil, and a match relying on it is not
-// exhaustive (GALA-E0002) rather than panicking at runtime.
+// only when the field's type is known, from GALA source alone, to hold no value
+// of another type (#1351): a primitive other than `error` and `any`, or a GALA
+// type that is not an interface. A typed pattern tests the dynamic type, so over
+// an interface field or a type parameter it does not match nil. A Go-typed field
+// never counts, so the result does not depend on whether the Go SDK is found.
+// A match relying on such a pattern is not exhaustive (GALA-E0002).
 func TestTypedFieldPatternCoverage(t *testing.T) {
 	wrap := func(src string) string {
 		return "package main\n\n" + src + "\nfunc main() {\n    Println(0)\n}\n"
@@ -72,6 +74,26 @@ func f(h H) string = h match {
 `,
 		},
 		{
+			name: "a concrete Go field",
+			src: `import "time"
+
+func f(o Option[time.Duration]) int = o match {
+    case Some(d: time.Duration) => int(d)
+    case None() => 0
+}
+`,
+		},
+		{
+			name: "a Go struct field",
+			src: `import "time"
+
+func f(o Option[time.Time]) int = o match {
+    case Some(t: time.Time) => t.Year()
+    case None() => 0
+}
+`,
+		},
+		{
 			name: "a type-parameter field",
 			src: `func f[T any](o Option[T]) int = o match {
     case Some(x: T) => s"$x".Size()
@@ -98,22 +120,32 @@ func f(h H) string = h match {
 `,
 		},
 		{
-			name: "a concrete Go field",
-			src: `import "time"
+			name: "a GALA struct field",
+			src: `struct Point(X int, Y int)
 
-func f(o Option[time.Duration]) int = o match {
-    case Some(d: time.Duration) => int(d)
+func f(o Option[Point]) int = o match {
+    case Some(p: Point) => p.X
     case None() => 0
 }
 `,
 		},
 		{
-			name: "a Go struct field",
+			name: "a Go field, matched untyped",
+			src: `import "time"
+
+func f(o Option[time.Duration]) int = o match {
+    case Some(d) => int(d)
+    case None() => 0
+}
+`,
+		},
+		{
+			name: "a Go field with a default",
 			src: `import "time"
 
 func f(o Option[time.Time]) int = o match {
     case Some(t: time.Time) => t.Year()
-    case None() => 0
+    case _ => 0
 }
 `,
 		},

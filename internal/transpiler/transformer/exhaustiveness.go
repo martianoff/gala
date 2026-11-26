@@ -407,14 +407,13 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 		case patKindExpr:
 			fields[i] = patCell(pat.expr())
 		case patKindTyped:
-			// `x: T` of the field's own type matches every value of it, unless
-			// the field may hold a value of another type: a typed pattern over
-			// an interface (`error`, `any` included) or a type parameter does
-			// not match nil. A Go type this file has no type information for may be
-			// an interface, so it does not count either.
-			field := ctor.fields[i]
-			if transpiler.IsUnusable(field) || c.t.holdsAnyType(field) || c.t.isGoTypeWithoutInfo(field) ||
-				!c.t.typedPatternOfType(pat, field) {
+			// `x: T` of the field's own type matches every value of it only
+			// when the type is known, from GALA source alone, to hold no value
+			// of another type: the same rule as an unguarded catch-all arm (see
+			// typedPatternMatchesEveryValue). A typed pattern over an interface
+			// (`error`, `any` included), a type parameter or any Go type does not
+			// count, so the nil or other-type case still needs an arm.
+			if field := ctor.fields[i]; !c.t.typedPatternMatchesEveryValue(pat, field, field) {
 				fields[i] = covRefutable
 			}
 		default:
