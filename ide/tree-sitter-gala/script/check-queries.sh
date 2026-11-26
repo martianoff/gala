@@ -9,6 +9,10 @@
 #
 # A keyword the grammar parses but the query never captures would go
 # unhighlighted without any test failing, so this catches it.
+#
+# It also compiles queries/indents.scm, which `tree-sitter test` does not load
+# (tree-sitter.json names no indents query), so a node it names that the
+# grammar no longer has fails here.
 
 set -euo pipefail
 
@@ -40,7 +44,12 @@ if [[ "$want" != "$have" ]]; then
   status=1
 fi
 
+if ! (cd "$grammar_dir" && tree-sitter query queries/indents.scm test/highlight/basics.gala > /dev/null); then
+  echo "queries/indents.scm does not compile against the grammar" >&2
+  status=1
+fi
+
 if [[ "$status" -eq 0 ]]; then
-  echo "check-queries: highlights.scm covers every gala.g4 keyword and builtin type"
+  echo "check-queries: highlights.scm covers every gala.g4 keyword and builtin type; indents.scm compiles"
 fi
 exit "$status"

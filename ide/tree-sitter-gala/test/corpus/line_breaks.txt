@@ -287,6 +287,8 @@ func f() {
     x
     // why
     *p = 5
+    // own line
+    /* same line */ *p = 6
 }
 
 ---
@@ -309,6 +311,13 @@ func f() {
           (int_literal)))
       (expression_statement
         (identifier))
+      (comment)
+      (assignment_statement
+        (expression_list
+          (unary_expression
+            (identifier)))
+        (expression_list
+          (int_literal)))
       (comment)
       (assignment_statement
         (expression_list

@@ -141,19 +141,13 @@ copy `queries/highlights.scm` and `queries/injections.scm` to
 nvim-treesitter's capture names, which Helix's own scope and indent queries
 do not share, so leave them out.
 
-The highlights need two edits in your copy:
-
-- Helix lets the first matching pattern win, and the query is ordered for
-  editors where the last one does. Move the generic `(identifier) @variable`,
-  `(field_identifier) @variable.member` and `(type_identifier) @type`
-  patterns to the end of the file, or every name is colored as a plain
-  variable, field or type.
-- Helix themes match most capture names by prefix (`@keyword.conditional`
-  falls back to `keyword`), but spell a few differently: rename `@number` to
-  `@constant.numeric`, `@boolean` to `@constant.builtin.boolean`,
-  `@string.escape` to `@constant.character.escape`, `@character` to
-  `@constant.character` and `@module` to `@namespace`, or those stay
-  uncolored.
+Since Helix 25.07 the last matching pattern wins, as in Neovim, which is the
+order the query is written for. Helix themes match most capture names by
+prefix (`@keyword.conditional` falls back to `keyword`), but spell a few
+differently: in your copy, rename `@number` to `@constant.numeric`,
+`@boolean` to `@constant.builtin.boolean`, `@string.escape` to
+`@constant.character.escape`, `@character` to `@constant.character` and
+`@module` to `@namespace`, or those stay uncolored.
 
 ## Zed
 

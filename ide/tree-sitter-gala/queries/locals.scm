@@ -98,7 +98,8 @@
 
 ; Names a pattern binds: `case x`, `case Some(x)`, `case (a, b)`. A pattern is
 ; an expression, so only names at its top level and one extractor deep are
-; caught; a capitalized name is a variant (`case None`), not a binding.
+; caught; a capitalized name is a variant (`case None`), and `_` a wildcard,
+; not a binding.
 ((case_clause
   pattern: [
     (identifier) @local.definition.var
@@ -108,7 +109,7 @@
     (tuple_expression
       (identifier) @local.definition.var)
   ])
-  (#match? @local.definition.var "^[a-z_]"))
+  (#match? @local.definition.var "^([a-z]|_[a-zA-Z0-9_])"))
 
 (import_spec
   name: (package_identifier) @local.definition.import)

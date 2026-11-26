@@ -19,10 +19,11 @@
 // As in newline.go, a comment is not a token but a line break is a line
 // break, including one inside a block comment. When a comment stands between
 // the previous token and the next, the scanner reads through it to see both.
-// If a line break follows the last comment, the scanner declines: the grammar
-// lexes the comment as usual, and the next call still sees that line break.
-// Only a comment with no line break after it, on the token's own line, is
-// read into the token's leading whitespace and so is not in the tree.
+// If a line break follows any of those comments, the scanner declines: the
+// grammar lexes the first comment as usual, and the next call starts after it
+// and still sees that line break. Only comments with no line break after them,
+// on the token's own line, are read into the token's leading whitespace and so
+// are not in the tree.
 
 #include "tree_sitter/parser.h"
 
@@ -55,14 +56,16 @@ void tree_sitter_gala_external_scanner_deserialize(void *payload, const char *bu
 static bool is_space(int32_t c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v'; }
 
 // Skips whitespace and comments, and reports whether they hold a line break
-// and whether one follows the last comment. Returns false if a '/' starts no
+// and whether one follows any comment. Returns false if a '/' starts no
 // comment: the scanner then declines.
 static bool skip_space_and_comments(TSLexer *lexer, bool *newline, bool *comment, bool *newline_after_comment) {
   for (;;) {
     if (is_space(lexer->lookahead)) {
       if (lexer->lookahead == '\n') {
         *newline = true;
-        *newline_after_comment = true;
+        if (*comment) {
+          *newline_after_comment = true;
+        }
       }
       lexer->advance(lexer, true);
       continue;
@@ -98,7 +101,6 @@ static bool skip_space_and_comments(TSLexer *lexer, bool *newline, bool *comment
       return false;
     }
     *comment = true;
-    *newline_after_comment = false;
   }
 }
 
@@ -121,8 +123,8 @@ bool tree_sitter_gala_external_scanner_scan(void *payload, TSLexer *lexer, const
     return false;
   }
   // Decline, so that the grammar keeps the comment in the tree, when it
-  // changes nothing (no line break) or when the line break after it will
-  // still be there for the next call to see.
+  // changes nothing (no line break) or when a line break after a comment will
+  // still be there for a later call to see.
   if (comment && (!newline || newline_after_comment)) {
     return false;
   }
