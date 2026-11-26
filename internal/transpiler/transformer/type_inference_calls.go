@@ -192,20 +192,23 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 }
 
 // namesGoType reports whether fun, a callee spelled `pkg.T`, `pkg.T[...]`,
-// a dot-imported `T` (parenthesized or not),
-// names a Go type of a package the file imports (a Go package, or the .go
-// files of a GALA one, where no GALA type of the name hides it): a call of it is
-// a conversion to that type. A qualifier a local binding shadows is no
-// package here (`x.T(...)` is a method call).
+// or a bare `T` (parenthesized or not), names a Go type: one of a package
+// the file imports (a Go package, or the .go files of a GALA one, where no
+// GALA type of the name hides it), dot-imported when bare, or one of the
+// package's own .go files. A call of it is a conversion to that type. A
+// qualifier a local binding shadows is no package here (`x.T(...)` is a
+// method call).
 func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
 	base, _ := splitCallFunTypeArgs(ast.Unparen(fun))
 	if t.goTypeInfo == nil || t.importManager == nil {
 		return false
 	}
 	// A bare name: a type of a dot-imported Go package (`StringSlice` under
-	// `import . "sort"`) that no binding, type parameter or GALA type hides.
+	// `import . "sort"`) that no binding, type parameter or GALA type hides,
+	// or one the package's own .go files declare (`type Names []string`).
 	if id, isIdent := base.(*ast.Ident); isIdent {
-		return t.dotImportedGoTypeKey(id.Name) != "" && t.shadowingScope(id.Name) == nil
+		name := id.Name
+		return (t.dotImportedGoTypeKey(name) != "" || t.isOwnGoType(name)) && !t.isActiveTypeParam(name) && t.shadowingScope(name) == nil
 	}
 	sel, ok := base.(*ast.SelectorExpr)
 	if !ok {

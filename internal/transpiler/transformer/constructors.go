@@ -376,7 +376,7 @@ func (t *galaASTTransformer) isGoDefinedOverTypeLiteral(typ transpiler.Type) boo
 
 // isNumericSlotType reports whether typ is a numeric type an untyped numeric
 // constant converts to: a predeclared numeric type, a GALA type declared over
-// one (following alias chains), or a package-qualified Go named type whose
+// one (following alias chains), or a Go named type, qualified or bare, whose
 // underlying type is numeric.
 func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
 	// The hop bound stops a declaration chain that refers back to itself.
@@ -387,16 +387,18 @@ func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
 			typ = u
 			continue
 		}
+		// A Go named type, written qualified or bare (dot-imported, or of
+		// the package's own .go files).
+		if u, ok := t.goNamedUnderlying(typ); ok {
+			typ = u
+			continue
+		}
 		var bareName string
 		switch ty := typ.(type) {
 		case transpiler.BasicType:
 			// A bare declared name (`Millis`) parses as a BasicType too.
 			bareName = ty.Name
 		case transpiler.NamedType:
-			if u, ok := t.goNamedUnderlying(ty); ok {
-				typ = u
-				continue
-			}
 			if ty.Package != "" && ty.Package != t.packageName {
 				resolved := t.followAliasChain(ty)
 				if resolved.BaseName() == ty.BaseName() {
