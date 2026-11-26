@@ -1951,8 +1951,10 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 		}
 	}
 	undo()
+	restoreScoped := t.captureScopedState()
 	body, result, takes, err := t.lowerPlaceholderBody(e, shared, nil)
 	if err != nil {
+		restoreScoped()
 		if firstErr != nil {
 			return nil, nil, nil, firstErr
 		}
@@ -2012,19 +2014,19 @@ func nextChoice(choice []int, n int) bool {
 // typing a `_` by another parameter than its own leaves neither the types it
 // could not resolve, warned about or counted as mixed operands, which are no
 // gap of the program, nor the editor hints it recorded, nor the dot imports
-// only it used. Other imports it added are dropped with the file's unused
+// only it used, nor the local vars only it declared. Other imports it added are dropped with the file's unused
 // ones (PruneUnused), and the helpers it declared are kept with theirs.
 func (t *galaASTTransformer) snapshotTrialLowering() func() {
 	unresolved, warnings, hints := len(t.unresolvedTypes), len(t.inferenceWarnings), len(t.lspLambdaParamHints)
 	mismatches := t.operandMismatches
-	usedDot := maps.Clone(t.importManager.usedDotImports)
+	usedDot, mutable := maps.Clone(t.importManager.usedDotImports), maps.Clone(t.mutableVars)
 	return func() {
 		// A copy each time: the lowering after a restore writes to the map.
 		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
 		t.inferenceWarnings = t.inferenceWarnings[:warnings]
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:hints]
 		t.operandMismatches = mismatches
-		t.importManager.usedDotImports = maps.Clone(usedDot)
+		t.importManager.usedDotImports, t.mutableVars = maps.Clone(usedDot), maps.Clone(mutable)
 	}
 }
 
