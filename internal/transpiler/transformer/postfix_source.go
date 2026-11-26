@@ -23,10 +23,14 @@ import (
 // declarations_native.go).
 
 // memberSrc is a member access suffix `.name`; called says the suffix after
-// it is a call, which makes the member a method called.
+// it is a call, which makes the member a method called, and instantiated
+// that it is type arguments (`b.Map[int]`). slot is the type of the slot the
+// member fills when it is the value (see consumesSlotType), nil otherwise.
 type memberSrc struct {
 	suffixSrc
-	called bool
+	called       bool
+	instantiated bool
+	slot         transpiler.Type
 }
 
 // indexSrc is an index or type-argument suffix `[exprs]`.
@@ -191,10 +195,22 @@ func (t *galaASTTransformer) lowerAppliedPartial(p postfixSrc, call suffixSrc) (
 // or type arguments, or a call.
 func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes []suffixSrc, i int) (ast.Expr, error) {
 	s := suffixes[i]
+	next := "" // the opener of the suffix after s, "" when s is the last
+	if i+1 < len(suffixes) {
+		next = suffixes[i+1].opener()
+	}
+	// The type of the slot the value fills, which only its last suffix takes,
+	// and only when it is a method value of a method with type parameters
+	// of its own, member, as written or instantiated (isGenericMethodValue).
+	slotType := func(member string) transpiler.Type {
+		if next != "" || !t.typeParamMethods[member] {
+			return nil
+		}
+		return t.expectedArgTypes.takeFor(p.owner)
+	}
 	if s.ident() != "" {
 		t.suffixShape(s, "selector")
-		called := i+1 < len(suffixes) && suffixes[i+1].opener() == "("
-		return t.lowerMember(base, memberSrc{s, called})
+		return t.lowerMember(base, memberSrc{suffixSrc: s, called: next == "(", instantiated: next == "[", slot: slotType(s.ident())})
 	}
 	if s.childCount() >= 2 {
 		switch s.opener() {
@@ -212,7 +228,23 @@ func (t *galaASTTransformer) lowerSuffix(base ast.Expr, p postfixSrc, suffixes [
 			return t.applyGoCallSuffix(base, c)
 		case "[":
 			t.suffixShape(s, "index")
-			return t.resolveIndexAccess(base, indexSrc{s})
+			// Taken before the type arguments are lowered, so none of
+			// them sees it, and only by a method's type arguments, not an
+			// index into a field named like one.
+			var slot transpiler.Type
+			if sel, isSel := base.(*ast.SelectorExpr); isSel && t.typeParamMethods[sel.Sel.Name] {
+				// Taken whatever the member is, so an index into a field
+				// named like such a method leaves no hint behind for its
+				// index expression.
+				if slot = slotType(sel.Sel.Name); !t.namesGenericMethod(sel) {
+					slot = nil
+				}
+			}
+			idx, err := t.resolveIndexAccess(base, indexSrc{s})
+			if err != nil || next == "(" {
+				return idx, err
+			}
+			return t.instantiatedMethodValue(idx, slot, s.at())
 		}
 	}
 	return nil, semanticErrorAtStart(s.at(), "unknown postfix suffix type")

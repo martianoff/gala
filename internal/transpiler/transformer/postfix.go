@@ -136,9 +136,15 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, m memberSrc) (ast
 			}
 		}
 		// A method the generated Go declares as a function, named without
-		// being called: a closure over the receiver.
-		if !m.called {
-			if value, ok := t.loweredMethodValue(base, xType, selName); ok {
+		// being called: a closure over the receiver. One instantiated
+		// (`b.Map[int]`) is the closure its type arguments give
+		// (instantiatedMethodValue).
+		if !m.called && !m.instantiated {
+			value, ok, err := t.loweredMethodValue(base, xType, selName, nil, m.slot, m.identAt())
+			if err != nil {
+				return nil, err
+			}
+			if ok {
 				return value, nil
 			}
 		}

@@ -113,3 +113,158 @@ func main() {
 		})
 	}
 }
+
+// TestGenericMethodValue: a method value of a method with type parameters of
+// its own (#1300) lowers to a closure over the function the method is, with
+// its type parameters from the written type arguments or from the function
+// type of the slot it fills; with neither, it is GALA-E0067.
+func TestGenericMethodValue(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+
+	const decls = `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Box[T any](V T)
+
+func (b Box[T]) Pair[U any](u U) Tuple[T, U] = (b.V, u)
+
+func (b Box[T]) Empty[U any](t T) Option[U] = None()
+
+func names() List[string] = ListOf("a")
+
+`
+	tests := []struct {
+		name    string
+		decl    string // declarations of the case's own
+		main    string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "argument of a generic method",
+			main: "val b = Box(1)\n    Println(names().Map(b.Pair))",
+			want: "return Box_Pair[string, int](__recv_",
+		},
+		{
+			name: "typed val",
+			main: "val b = Box(1)\n    val f func(string) Tuple[int, string] = b.Pair\n    Println(f(\"x\"))",
+			want: "return Box_Pair[string, int](__recv_",
+		},
+		{
+			name: "Sendable slot",
+			decl: "func spawn(f Sendable[func(int) Option[string]]) Option[string] = f(1)\n\n",
+			main: "val b = Box(1)\n    Println(spawn(b.Empty))",
+			want: "return Box_Empty[string, int](__recv_",
+		},
+		{
+			name:    "Sendable slot of a generic method over a var receiver",
+			decl:    "func (b Box[T]) Run[U any](u U, f Sendable[func(T) Option[U]]) Option[U] = f(b.V)\n\n",
+			main:    "var b = Box(1)\n    b = Box(2)\n    Println(b.Run(\"s\", b.Empty))",
+			wantErr: "GALA-E0037",
+		},
+		{
+			name: "type parameter only the result gives",
+			main: "val b = Box(1)\n    val f func(int) Option[bool] = b.Empty\n    Println(f(2))",
+			want: "return Box_Empty[bool, int](__recv_",
+		},
+		{
+			name: "written type argument",
+			main: "val b = Box(1)\n    val f = b.Pair[bool]\n    Println(f(true))",
+			want: "return Box_Pair[bool, int](__recv_",
+		},
+		{
+			name:    "nothing gives the type parameter",
+			main:    "val b = Box(1)\n    val f = b.Pair\n    Println(f(true))",
+			wantErr: "GALA-E0067",
+		},
+		{
+			name:    "std collection method",
+			main:    "val f = names().GroupBy\n    Println(f)",
+			wantErr: "cannot infer type argument K of the method value List.GroupBy",
+		},
+		{
+			name:    "function type of another arity",
+			main:    "val b = Box(1)\n    val f func(int, int) Tuple[int, string] = b.Pair\n    Println(f(1, 2))",
+			wantErr: "the method value Box.Pair takes 1 argument(s), but the function type it is used as takes 2",
+		},
+		{
+			name:    "function type of another arity with the type arguments written",
+			main:    "val b = Box(1)\n    val f func(int, int) Tuple[int, string] = b.Pair[string]\n    Println(f(1, 2))",
+			wantErr: "the method value Box.Pair takes 1 argument(s), but the function type it is used as takes 2",
+		},
+		{
+			name:    "too many type arguments",
+			main:    "val b = Box(1)\n    val f = b.Pair[bool, int]\n    Println(f(true))",
+			wantErr: "too many type arguments for the method value Box.Pair",
+		},
+		{
+			name: "receiver type argument named like the method's own",
+			decl: "func pairs[U any](b Box[U]) func(string) Tuple[U, string] = b.Pair\n\n",
+			main: "Println(pairs(Box(1))(\"a\"))",
+			want: "return Box_Pair[string, U](__recv_",
+		},
+		{
+			name:    "callee's unbound type parameter named like the enclosing one",
+			decl:    "func makes[U any](b Box[int], u U) int = ListOf(1).Map(b.Empty).Size()\n\n",
+			main:    "Println(makes(Box(1), true))",
+			wantErr: "GALA-E0067",
+		},
+		{
+			name:    "generic function's unbound type parameter named like the enclosing one",
+			decl:    "func apply[A any, B any](g func(A) B, a A) B = g(a)\n\nfunc leak[B any](b Box[int], x B) {\n    Println(apply[int](b.Empty, 3))\n}\n\n",
+			main:    "leak(Box(1), true)",
+			wantErr: "GALA-E0067",
+		},
+		{
+			name: "receiver's type argument named like the callee's own",
+			decl: "func pairsOf[U any](xs List[U], b Box[int]) List[Tuple[int, U]] = xs.Map(b.Pair)\n\n",
+			main: "Println(pairsOf(ListOf(true), Box(1)))",
+			want: "return Box_Pair[U, int](__recv_",
+		},
+		{
+			name: "callee's result inferred apart from a receiver type argument of the same name",
+			decl: "func firsts[U any](xs List[U], b Box[int]) List[int] {\n    val ys = xs.Map(b.Pair)\n    ys.Map((p) => p.V1)\n}\n\n",
+			main: "Println(firsts(ListOf(true), Box(1)))",
+			want: "func(p std.Tuple[int, U]) int",
+		},
+		{
+			name: "receiver's type argument nesting the enclosing type parameter",
+			decl: "func pairsOpt[T any](xs List[Option[T]], b Box[int]) List[Tuple[int, Option[T]]] = xs.Map(b.Pair)\n\n",
+			main: "Println(pairsOpt(ListOf(Some(1)), Box(1)))",
+			want: "return Box_Pair[std.Option[T], int](__recv_",
+		},
+		{
+			name:    "generic struct's unbound type parameter named like the enclosing one",
+			decl:    "struct Wrap[A any](F func(int) Option[A])\n\nfunc wraps[A any](b Box[int], a A) {\n    Println(Wrap(b.Empty))\n}\n\n",
+			main:    "wraps(Box(1), true)",
+			wantErr: "GALA-E0067",
+		},
+		{
+			name: "field named like a generic method in a by-name slot",
+			decl: "struct Cfg(Map int)\n\nfunc (b Box[T]) Lazy[U any](d func() U) U = d()\n\n",
+			main: "val c = Cfg(3)\n    val b = Box(1)\n    Println(b.Lazy(c.Map))",
+			want: "func() int {",
+		},
+		{
+			name: "generic function's slot",
+			decl: "func apply[A any, B any](g func(A) B, a A) B = g(a)\n\n",
+			main: "val b = Box(1)\n    Println(apply(b.Pair[string], \"z\"))",
+			want: "return Box_Pair[string, int](__recv_",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.decl+"func main() {\n    "+tt.main+"\n}", "method_value.gala")
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+}
