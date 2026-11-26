@@ -826,7 +826,7 @@ func splitSignificantLines(input string) []pLine {
 		content := raw[indent:]
 		switch content[0] {
 		case '\t':
-			panic(fmt.Sprintf("yaml: tab used for indentation at line %d; indent with spaces", i+1))
+			tabIndentation(i + 1)
 		case '-', '.':
 			if indent == 0 && isDocumentMarker(content) {
 				panic(fmt.Sprintf("yaml: document marker %q at line %d is not supported", content[:3], i+1))
@@ -1037,7 +1037,7 @@ func countLeadingWhite(s string) int {
 // line of only spaces is blank, and any other line is a text line, its
 // indentation the spaces before its first other character, a tab included.
 // The body is the text lines indented past parentIndent, at the indentation
-// h gives (counted from parentIndent, or from 0 at the document's top) or
+// h gives (counted from parentIndent, which is -1 at the document's top) or
 // else that of the first one, with blank lines among them; a blank line that
 // reaches past that indentation holds the spaces beyond it. Blank lines
 // before the first text line are kept. YAML 1.2 (section 8.1.1.2) chomps the
@@ -1049,7 +1049,7 @@ func takeBlockScalar(raw []string, start, parentIndent int, h blockHeader, lastH
 	consumed := 0
 	bodyIndent := -1
 	if h.indent > 0 {
-		bodyIndent = max(parentIndent, 0) + h.indent
+		bodyIndent = parentIndent + h.indent
 	}
 	blanks := 0 // blank lines since the last text line
 	// blankLines appends the blank lines raw[from:to] to the body: empty,
@@ -1072,7 +1072,10 @@ func takeBlockScalar(raw []string, start, parentIndent int, h blockHeader, lastH
 			consumed++
 			continue
 		}
-		if indent <= parentIndent {
+		// A document marker at column 0 ends a block at the document's top
+		// too, whose text may otherwise start there.
+		if indent <= parentIndent || indent == 0 && isDocumentMarker(line) {
+			blockEndsAt(line, indent, i+1)
 			break
 		}
 		if bodyIndent < 0 {
@@ -1086,6 +1089,7 @@ func takeBlockScalar(raw []string, start, parentIndent int, h blockHeader, lastH
 			}
 		}
 		if indent < bodyIndent {
+			blockEndsAt(line, indent, i+1)
 			break
 		}
 		blankLines(i-blanks, i)
@@ -1132,6 +1136,22 @@ func takeBlockScalar(raw []string, start, parentIndent int, h blockHeader, lastH
 	default:
 		return text + "\n", consumed
 	}
+}
+
+// blockEndsAt checks line, numbered lineNum and indented by indent spaces,
+// where a block scalar ends because it is indented less than the body. A
+// line that is white space only there holds a tab within the indentation,
+// which YAML forbids; outside a block it would be skipped as blank, so the
+// tab is reported here.
+func blockEndsAt(line string, indent, lineNum int) {
+	if strings.TrimLeft(line[indent:], " \t") == "" {
+		tabIndentation(lineNum)
+	}
+}
+
+// tabIndentation fails on a tab used for indentation at line lineNum.
+func tabIndentation(lineNum int) {
+	panic(fmt.Sprintf("yaml: tab used for indentation at line %d; indent with spaces", lineNum))
 }
 
 // foldLines joins the lines of a folded block scalar's body, blank lines
@@ -1271,7 +1291,12 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		// The item's content starts after the dash and the spaces that follow
 		// it: a nested sequence's items, or a mapping's keys, line up there.
 		contentIndent := indent + 1 + countLeadingWhite(line.raw[1:])
+		// A tab may separate the dash from a scalar, but not from a nested
+		// sequence or mapping, whose indentation it would be (YAML 1.2,
+		// section 8.2.1).
+		sep := line.raw[1 : contentIndent-indent]
 		if rest := line.raw[contentIndent-indent:]; isSequenceLine(rest) {
+			tabBeforeItemCollection(sep, line.lineNum)
 			// A nested sequence that starts on the dash's line ("- - x").
 			// This line is rewritten in place as that sequence's first item
 			// and parsed again; the parser reads each line once otherwise.
@@ -1292,6 +1317,7 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		// A "- key: value" item drops its comment while the pair is split,
 		// where a quoted value is known; any other item drops it here.
 		if key, value, ok := tryParseKeyValue(itemPart); ok {
+			tabBeforeItemCollection(sep, line.lineNum)
 			child, np := parseCompactMapping(lines, i, contentIndent, key, value)
 			l.seq = append(l.seq, child)
 			i = np
@@ -1314,6 +1340,15 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		i++
 	}
 	return l, i
+}
+
+// tabBeforeItemCollection fails when sep, the white space between a
+// sequence item's dash and the nested sequence or mapping that starts on
+// the dash's line, holds a tab.
+func tabBeforeItemCollection(sep string, lineNum int) {
+	if strings.IndexByte(sep, '\t') >= 0 {
+		tabIndentation(lineNum)
+	}
 }
 
 // parseCompactMapping parses the mapping whose first pair, key and value,

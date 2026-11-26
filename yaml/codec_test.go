@@ -1035,7 +1035,6 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"blank line with spaces past the body", "k: |\n  a\n     \n  b\nj: 1", "a\n   \nb\n"},
 		{"tab past the body indentation is text", "k: |\n  a\n  \t\n  b\nj: 1", "a\n\t\nb\n"},
 		{"leading tab past the indentation is text", "k: |\n  \t\n  a\nj: 1", "\t\na\n"},
-		{"tab line at the parent's indentation ends a keep block", "k: |+\n  a\n\t\nj: 1", "a\n"},
 		// Only spaces indent, so a line of spaces and a tab is a text line
 		// and sets the block's indentation like any other.
 		{"a tab line sets the indentation", "k: |\n \t\n  a\nj: 1", "\t\n a\n"},
@@ -1076,7 +1075,7 @@ func TestDecoder_LiteralBlockWideLeadingBlank(t *testing.T) {
 // Block scalar forms beyond the plain literal block (#1350): folded blocks,
 // indentation indicators, a header on a line of its own, a scalar on the
 // line below its key or dash, and white space other than one space around
-// a header or after a dash. Each decodes as YAML 1.2 and libyaml decode it.
+// a header or after a dash. Each decodes as YAML 1.2 says.
 func TestDecoder_BlockScalarForms(t *testing.T) {
 	tests := []struct{ name, src, want string }{
 		// Folded blocks.
@@ -1099,7 +1098,7 @@ func TestDecoder_BlockScalarForms(t *testing.T) {
 		{"chomping then indicator", "k: |-2\n    a\nj: 1", "{k:   a, j: 1}"},
 		{"indicator allows a wide leading blank line", "k: |2\n     \n  a\nj: 1", "{k:    \na\n, j: 1}"},
 		{"indicator on a folded block", "k: >1\n  a\n b\nj: 1", "{k:  a\nb\n, j: 1}"},
-		{"indicator at the top", "|1\n  a\n", " a\n"},
+		{"indicator at the top, counted from column -1", "|1\n  a\n", "  a\n"},
 		// A header on a line of its own.
 		{"header below its key", "k:\n  |\n  a\nj: 1", "{k: a\n, j: 1}"},
 		{"header below its dash", "-\n  >\n  a\n  b", "[a b]"},
@@ -1115,7 +1114,6 @@ func TestDecoder_BlockScalarForms(t *testing.T) {
 		{"tab before the header", "k:\t|\n  a", "{k: a}"},
 		{"tab between dash and header", "-\t|\n  a", "[a]"},
 		{"tab after a dash", "-\tx\n-\ty", "[x, y]"},
-		{"tab after a dash, pair", "-\tk: v", "[{k: v}]"},
 		// Text that holds '>', '|' or dashes but is no header or marker.
 		{"'>' inside a value", "k: a > b", "{k: a > b}"},
 		{"quoted '>' value", "k: \">=1.0\"", "{k: >=1.0}"},
@@ -1152,6 +1150,11 @@ func TestDecoder_UnsupportedFormsFail(t *testing.T) {
 		{"document start before a mapping", "---\nk: v", `yaml: document marker "---" at line 1 is not supported`},
 		{"document start with a value", "--- a", `yaml: document marker "---" at line 1 is not supported`},
 		{"document end after a mapping", "k: v\n...\n", `yaml: document marker "..." at line 2 is not supported`},
+		{"document marker after a block at the top", "|\nfoo\n---\nbar: 1\n", `yaml: document marker "---" at line 3 is not supported`},
+		{"tab before a mapping after a dash", "-\tk: v", "yaml: tab used for indentation at line 1; indent with spaces"},
+		{"tab before a nested sequence after a dash", "- \t- x", "yaml: tab used for indentation at line 1; indent with spaces"},
+		{"tab line inside a block", "k: |\n  a\n\t\n  b\n", "yaml: tab used for indentation at line 3; indent with spaces"},
+		{"tab line after a keep block", "k: |+\n  a\n\t\nj: 1", "yaml: tab used for indentation at line 3; indent with spaces"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
