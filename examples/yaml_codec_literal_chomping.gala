@@ -26,11 +26,14 @@ Keep: |+
 
 Next: 1
 `)
-    decoded.ForEach((d) => {
-        ArrayOf(("clip", d.Clip), ("strip", d.Strip), ("keep", d.Keep))
-            .ForEach((p) => p match {
-                case (name, value) => Println(f"${name}: ${value}%q")
-            })
-        Println(s"next: ${d.Next}")
-    })
+    decoded match {
+        case Success(d) => {
+            ArrayOf(("clip", d.Clip), ("strip", d.Strip), ("keep", d.Keep))
+                .ForEach((p) => p match {
+                    case (name, value) => Println(f"${name}: ${value}%q")
+                })
+            Println(s"next: ${d.Next}")
+        }
+        case Failure(err) => Println(s"decode failed: ${err.Error()}")
+    }
 }

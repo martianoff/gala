@@ -1031,6 +1031,8 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"tab past the body indentation is text", "k: |\n  a\n  \t\n  b\nj: 1", "a\n\t\nb\n"},
 		{"tabs within the indentation are blank", "k: |\n  a\n\t\t\t\n  b\nj: 1", "a\n\nb\n"},
 		{"leading tabs are blank", "k: |\n\t\t\t\n  a\nj: 1", "\na\n"},
+		{"leading tab past the indentation is text", "k: |\n  \t\n  a\nj: 1", "\t\na\n"},
+		{"trailing tab past the indentation is text", "k: |\n  a\n  \t\n\nj: 1", "a\n\t\n"},
 		{"keep, comment after", "k: |+ # note\n  a\n\nj: 1", "a\n\n"},
 		{"keep, sequence item", "- |+\n  a\n\n- b", "a\n\n"},
 	}
@@ -1054,7 +1056,7 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 // wider than the text's indentation (YAML 1.2, section 8.1.1.1).
 func TestDecoder_LiteralBlockWideLeadingBlank(t *testing.T) {
 	src := "k: |\n      \n  a\nj: 1"
-	want := "error: yaml: blank line wider than the literal block's indentation before line 3"
+	want := "error: yaml: blank line at line 2 is indented more than the literal block's text"
 	if got := parseDump(src); got != want {
 		t.Errorf("%q => %s, want %s", src, got, want)
 	}

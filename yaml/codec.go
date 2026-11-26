@@ -935,20 +935,26 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 	var body []string
 	consumed := 0
 	bodyIndent := -1
-	blanks := 0        // blank lines since the last text line
-	widestLeading := 0 // widest blank line before the first text line
+	blanks := 0 // white-space-only lines since the last text line
+	// wsLines appends the white-space-only lines raw[from:to] to the body.
+	// Such a line is blank, as an editor that keeps the indentation leaves
+	// it, unless it reaches past the body's indentation: what lies beyond
+	// it, a tab included, is then its text. Only spaces indent, so a tab
+	// within the indentation leaves a line blank.
+	wsLines := func(from, to int) {
+		for j := from; j < to; j++ {
+			line := strings.TrimRight(raw[j], "\r")
+			if len(line) > bodyIndent && countLeadingSpaces(line) >= bodyIndent {
+				body = append(body, line[bodyIndent:])
+			} else {
+				body = append(body, "")
+			}
+		}
+	}
 	for i := start; i < len(raw); i++ {
 		line := strings.TrimRight(raw[i], "\r")
 		indent := countLeadingSpaces(line)
-		// A line of only white space is blank, as an editor that keeps the
-		// indentation leaves it, unless it reaches past the body's
-		// indentation: what lies beyond it, a tab included, is then the
-		// line's text. Only spaces indent, so a tab within the indentation
-		// leaves the line blank, however many tabs follow.
-		if strings.TrimLeft(line, " \t") == "" && (bodyIndent < 0 || len(line) <= bodyIndent || indent < bodyIndent) {
-			if bodyIndent < 0 {
-				widestLeading = max(widestLeading, indent)
-			}
+		if strings.TrimLeft(line, " \t") == "" {
 			blanks++
 			consumed++
 			continue
@@ -958,20 +964,34 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 		}
 		if bodyIndent < 0 {
 			bodyIndent = indent
-			// YAML 1.2 (8.1.1.1): a blank line before the first text line
-			// may not be wider than the text's indentation.
-			if widestLeading > bodyIndent {
-				panic(fmt.Sprintf("yaml: blank line wider than the literal block's indentation before line %d", i+1))
+			// YAML 1.2 (8.1.1.1): a white-space-only line before the first
+			// text line may not be indented further than the text.
+			for j := i - blanks; j < i; j++ {
+				if countLeadingSpaces(raw[j]) > bodyIndent {
+					panic(fmt.Sprintf("yaml: blank line at line %d is indented more than the literal block's text", j+1))
+				}
 			}
 		}
 		if indent < bodyIndent {
 			break
 		}
-		for ; blanks > 0; blanks-- {
-			body = append(body, "")
-		}
+		wsLines(i-blanks, i)
+		blanks = 0
 		body = append(body, line[bodyIndent:])
 		consumed++
+	}
+	// The white-space-only lines after the text: those up to the last one
+	// that holds text are body lines, and the rest are the trailing blank
+	// lines that chomping governs.
+	if bodyIndent >= 0 {
+		end := start + consumed
+		for last := end - 1; last >= end-blanks; last-- {
+			if line := strings.TrimRight(raw[last], "\r"); len(line) > bodyIndent && countLeadingSpaces(line) >= bodyIndent {
+				wsLines(end-blanks, last+1)
+				blanks = end - 1 - last
+				break
+			}
+		}
 	}
 	text := strings.Join(body, "\n")
 	// The line breaks after the text: the last text line's own, then one
