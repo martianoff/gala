@@ -51,6 +51,39 @@ func h(c bool) float64 = c match {
 func main() {
     Println(h(true))
 }`, []string{"func h(c bool) float64 {", "return 2.5"}},
+		{"match with a braced arm ending in a constant", `package main
+
+func main() {
+    val mode = 1
+    val s int64 = mode match {
+        case 1 => {
+            Println("a")
+            1 << 40
+        }
+        case _ => 0
+    }
+    Println(s)
+}`, []string{"func() int64 {"}},
+		{"block lambda ending in a constant for an int64 result", `package main
+
+func widen(f func(int) int64) func(int) int64 = f
+
+func main() {
+    val w = widen((k int) => {
+        Println(k)
+        if (k > 0) 1 << 33 else 0
+    })
+    Println(w(1))
+}`, []string{"func(k int) int64 {"}},
+		{"Go package constant in a branch", `package main
+
+import "math"
+
+func main() {
+    val c = true
+    val x int64 = if (c) math.MaxInt32 else 0
+    Println(x)
+}`, []string{"func() int64 {"}},
 		{"if-expression in a Go named scalar val", `package main
 
 import "time"

@@ -904,7 +904,12 @@ func (t *galaASTTransformer) lowerResultAgainst(e exprSrc, s slot, strict bool) 
 // too. A constant of another kind (a string for an int64) and any other slot
 // leave expr its default type.
 func (t *galaASTTransformer) typeConstAs(expr ast.Expr, typ transpiler.Type) {
-	if transpiler.IsUnusable(typ) || !isUntypedConst(expr) {
+	if transpiler.IsUnusable(typ) || !isUntypedConst(expr) && !t.isUntypedConstArg(expr) {
+		return
+	}
+	// A constant the slot cannot hold (`0.5` for an int64, `300` for an
+	// int8) keeps its type, so the mismatch is reported as before.
+	if t.constMisfit(expr, typ) != "" {
 		return
 	}
 	_, slotKind, opaque := t.resolveScalar(typ)
