@@ -1452,6 +1452,19 @@ gala_exec_test(
     ],
 )
 
+# Folded blocks, indentation indicators, a header or scalar on the line
+# below its dash, and clear errors for tab indentation and document markers
+# (#1350).
+gala_exec_test(
+    name = "yaml_codec_block_forms",
+    src = "yaml_codec_block_forms.gala",
+    expected = "yaml_codec_block_forms.out",
+    deps = [
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 gala_exec_test(
     name = "yaml_codec_collections",
     src = "yaml_codec_collections.gala",

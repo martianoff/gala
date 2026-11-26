@@ -944,12 +944,16 @@ func TestDecoder_LiteralBlockAndComments(t *testing.T) {
 	}
 }
 
-// A tab between an item's dash and a block indicator ("- \t|") does not
-// open a block: the item's text is not decoded as the block's body.
+// A tab between an item's dash and a block indicator ("- \t|") is white
+// space like a space, so it opens the block as "- |" does (#1350).
 func TestDecoder_TabBeforeItemBlockIndicator(t *testing.T) {
-	for _, src := range []string{"- \t|\n  a\n- b", "- - \t|\n    a"} {
-		if got := parseDump(src); !strings.HasPrefix(got, "error: ") {
-			t.Errorf("%q => %s, want an error", src, got)
+	tests := []struct{ src, want string }{
+		{"- \t|\n  a\n- b", "[a\n, b]"},
+		{"- - \t|\n    a", "[[a]]"},
+	}
+	for _, tt := range tests {
+		if got := parseDump(tt.src); got != tt.want {
+			t.Errorf("%q => %q, want %q", tt.src, got, tt.want)
 		}
 	}
 }
@@ -989,8 +993,9 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body\n, c: 1}]"},
 		{"- - 'k # x': |\n      body\n", "[[{k # x: body\n}]]"},
 		{"\"a|b\": | # note\n  body\n", "{a|b: body\n}"},
-		// With no space after a quoted key's colon, "|" is the plain value.
-		{"\"k\":|", "{k: |}"},
+		// With no space after a quoted key's colon, "|" opens no block. It
+		// is then plain text, which YAML does not let start with '|'.
+		{"\"k\":|\n  body", `error: yaml: plain scalar "|" starts with '|'; quote it`},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
@@ -1062,8 +1067,95 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 // wider than the text's indentation (YAML 1.2, section 8.1.1.1).
 func TestDecoder_LiteralBlockWideLeadingBlank(t *testing.T) {
 	src := "k: |\n      \n  a\nj: 1"
-	want := "error: yaml: blank line at line 2 is indented more than the literal block's text"
+	want := "error: yaml: blank line at line 2 is indented more than the block scalar's text"
 	if got := parseDump(src); got != want {
 		t.Errorf("%q => %s, want %s", src, got, want)
+	}
+}
+
+// Block scalar forms beyond the plain literal block (#1350): folded blocks,
+// indentation indicators, a header on a line of its own, a scalar on the
+// line below its key or dash, and white space other than one space around
+// a header or after a dash. Each decodes as YAML 1.2 and libyaml decode it.
+func TestDecoder_BlockScalarForms(t *testing.T) {
+	tests := []struct{ name, src, want string }{
+		// Folded blocks.
+		{"folded, clip", "k: >\n  a\n  b\nj: 1", "{k: a b\n, j: 1}"},
+		{"folded, strip", "k: >-\n  a\n  b\nj: 1", "{k: a b, j: 1}"},
+		{"folded, keep", "k: >+\n  a\n\nj: 1", "{k: a\n\n, j: 1}"},
+		{"folded, blank line between", "k: >\n  a\n\n  b\nj: 1", "{k: a\nb\n, j: 1}"},
+		{"folded, two blank lines between", "k: >\n  a\n\n\n  b\nj: 1", "{k: a\n\nb\n, j: 1}"},
+		{"folded, more-indented line", "k: >\n  a\n    b\n  c\nj: 1", "{k: a\n  b\nc\n, j: 1}"},
+		{"folded, leading blank line", "k: >\n\n  a\nj: 1", "{k: \na\n, j: 1}"},
+		{"folded, empty", "k: >\nj: 1", "{k: , j: 1}"},
+		{"folded item", "- >\n  echo a\n  echo b", "[echo a echo b]"},
+		{"folded, YAML 1.2 example 8.10",
+			">\n\n folded\n line\n\n next\n line\n   * bullet\n\n   * list\n   * lines\n\n last\n line\n\n# Comment\n",
+			"\nfolded line\nnext line\n  * bullet\n\n  * list\n  * lines\n\nlast line\n"},
+		// Indentation indicators.
+		{"indicator on an item", "- |2\n    echo a", "[  echo a]"},
+		{"indicator on a key", "k: |1\n  a\n b\nj: 1", "{k:  a\nb\n, j: 1}"},
+		{"indicator then chomping", "k: |2-\n    a\nj: 1", "{k:   a, j: 1}"},
+		{"chomping then indicator", "k: |-2\n    a\nj: 1", "{k:   a, j: 1}"},
+		{"indicator allows a wide leading blank line", "k: |2\n     \n  a\nj: 1", "{k:    \na\n, j: 1}"},
+		{"indicator on a folded block", "k: >1\n  a\n b\nj: 1", "{k:  a\nb\n, j: 1}"},
+		{"indicator at the top", "|1\n  a\n", " a\n"},
+		// A header on a line of its own.
+		{"header below its key", "k:\n  |\n  a\nj: 1", "{k: a\n, j: 1}"},
+		{"header below its dash", "-\n  >\n  a\n  b", "[a b]"},
+		{"header alone at the top", "|\na\nb\n", "a\nb\n"},
+		// A scalar on the line below its key or dash.
+		{"scalar below a dash", "-\n  x", "[x]"},
+		{"scalar below a key", "k:\n  x\nj: 1", "{k: x, j: 1}"},
+		{"quoted scalar below a key", "k:\n  \"a b\"", "{k: a b}"},
+		// White space around a header and after a dash.
+		{"two spaces before the header", "k:  |\n  a", "{k: a}"},
+		{"tab before the header", "k:\t|\n  a", "{k: a}"},
+		{"tab between dash and header", "-\t|\n  a", "[a]"},
+		{"tab after a dash", "-\tx\n-\ty", "[x, y]"},
+		{"tab after a dash, pair", "-\tk: v", "[{k: v}]"},
+		// Text that holds '>', '|' or dashes but is no header or marker.
+		{"'>' inside a value", "k: a > b", "{k: a > b}"},
+		{"quoted '>' value", "k: \">=1.0\"", "{k: >=1.0}"},
+		{"dashes inside a value", "k: ---", "{k: ---}"},
+		{"dashes and text at the top", "---x", "---x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseDump(tt.src); got != tt.want {
+				t.Errorf("%q => %q, want %q", tt.src, got, tt.want)
+			}
+		})
+	}
+}
+
+// Input outside the supported subset fails with an error that names it,
+// rather than decoding as text or failing on a later line (#1350).
+func TestDecoder_UnsupportedFormsFail(t *testing.T) {
+	tests := []struct{ name, src, want string }{
+		{"indentation indicator 0", "k: |0\n  a", `yaml: invalid block scalar header "|0" at line 1`},
+		{"two-digit indentation indicator", "k: |10\n  a", `yaml: invalid block scalar header "|10" at line 1`},
+		{"two chomping indicators", "k: |-+\n  a", `yaml: invalid block scalar header "|-+" at line 1`},
+		{"plain scalar starting with '>'", "k: >=1.0", `yaml: plain scalar ">=1.0" starts with '>'; quote it`},
+		{"long plain scalar starting with '|'", "k: |abc", `yaml: plain scalar "|abc" starts with '|'; quote it`},
+		{"plain scalar starting with '|'", "k: |x", `yaml: invalid block scalar header "|x" at line 1`},
+		{"item starting with '>'", "- >foo", `yaml: plain scalar ">foo" starts with '>'; quote it`},
+		{"header with a comment", "k: >x # c", `yaml: invalid block scalar header ">x" at line 1`},
+		{"text after a header", "k: | x\n  a", `yaml: invalid block scalar header "| x" at line 1`},
+		{"tab indentation", "a: 1\n\tb: 2", "yaml: tab used for indentation at line 2; indent with spaces"},
+		{"tab after spaces", "a:\n  \tb: 2", "yaml: tab used for indentation at line 2; indent with spaces"},
+		{"tab before a quoted key", "a: 1\n\t\"k\": v", "yaml: tab used for indentation at line 2; indent with spaces"},
+		{"document start", "---", `yaml: document marker "---" at line 1 is not supported`},
+		{"document end", "...", `yaml: document marker "..." at line 1 is not supported`},
+		{"document start before a mapping", "---\nk: v", `yaml: document marker "---" at line 1 is not supported`},
+		{"document start with a value", "--- a", `yaml: document marker "---" at line 1 is not supported`},
+		{"document end after a mapping", "k: v\n...\n", `yaml: document marker "..." at line 2 is not supported`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseDump(tt.src); got != "error: "+tt.want {
+				t.Errorf("%q => %s, want error: %s", tt.src, got, tt.want)
+			}
+		})
 	}
 }
