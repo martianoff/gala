@@ -7097,7 +7097,14 @@ func withoutKeys(subst typeSubstMap, drop map[string]transpiler.Type) typeSubstM
 // an if or match (a function literal called at once), whose constants the
 // slot types.
 func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc) bool {
+	if t.needsExpectedType(expr) {
+		return false
+	}
+	// A trial lowering: what it records (hints, warnings, unresolved types)
+	// is the real lowering's to make.
+	undo := t.snapshotTrialLowering()
 	lowered, err := t.lowerExpr(expr)
+	undo()
 	if err != nil {
 		return false
 	}
