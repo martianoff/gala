@@ -59,7 +59,7 @@ theorem inc_lowerC : lowerC 11 incSg (fun _ => none) incCall = some (.int, incCa
 
 theorem inc_inv3 : Inv3 incCtx "main" incSg (fun _ => none) incCore incSt incEnv := by
   refine ⟨⟨(fun _ _ h => by cases h), rfl, ?_⟩, rfl, rfl, fun x _ => ⟨rfl, fun _ => by simp [incEnv, Env.lookup]⟩,
-    fun _ _ => rfl⟩
+    fun _ _ => rfl, rfl⟩
   refine ⟨rfl, fun x hx => ?_⟩
   have ho : incPkg.objs.get? x = none := by
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hx

@@ -938,10 +938,12 @@ def lowerFun (K : Nat) (sg : Sigs) (f : String) (F : Spec.Func) : Option (List S
 
 /-! ## The relations, with calls -/
 
-/-- **GoCore's state after code ran**: cells, their types and closures only added to; every
-    other part (output, deferred calls, maps, ...) as it was, but the steps. -/
+/-- **GoCore's state after code ran**: cells, their types and closures only added to, as many
+    types as cells; every other part (output, deferred calls, maps, ...) as it was, but the
+    steps. -/
 def GFrame (g g' : St) : Prop :=
   Pre g.cells g'.cells ∧ Pre g.closures g'.closures ∧ Pre g.types g'.types ∧
+    g.cells.size + g'.types.size = g'.cells.size + g.types.size ∧
     { g' with cells := g.cells, types := g.types, steps := g.steps, closures := g.closures } = g
 
 /-- **Steps**: GoCore spends no more than galaspec. -/
@@ -963,6 +965,9 @@ structure Inv3 (cx : Ctx) (P : String) (sg : Sigs) (κ : String → Option Kind)
   tenv : env.tenv = []
   closed : ∀ x, κ x = none → Spec.lookup c.locals x = none ∧ (isTmp x = false → env.lookup x = none)
   globals : ∀ f, (sg f).isSome → Spec.lookup c.globals f = none
+  /-- As many types as cells: true of every state GoCore reaches (`allocAs` pushes both, a
+      store pushes neither, a run starts with neither). -/
+  sync : g.cells.size = g.types.size
 
 /-- galaspec's panic and GoCore's agree, with equal outputs; GoCore's state framed. -/
 def PanOK (s : Spec.St) (g : St) (pc : Spec.PanicClass) (m : String) (s' : Spec.St) :
@@ -1209,23 +1214,29 @@ end NoRet
 section Frames
 open Gala.GoCore.Full
 
-theorem gframe_refl (g : St) : GFrame g g := ⟨pre_refl _, pre_refl _, pre_refl _, by cases g; rfl⟩
+theorem gframe_refl (g : St) : GFrame g g := ⟨pre_refl _, pre_refl _, pre_refl _, by omega, by cases g; rfl⟩
 
 theorem gframe_refl' (g : St) (k : Nat) : GFrame g { g with steps := k } :=
-  ⟨pre_refl _, pre_refl _, pre_refl _, by cases g; rfl⟩
+  ⟨pre_refl _, pre_refl _, pre_refl _, by simp, by cases g; rfl⟩
+
+/-- A cell pushed with its type. -/
+theorem gframe_push (g : St) (v : Val) (t : Ty) :
+    GFrame g { g with cells := g.cells.push v, types := g.types.push t } :=
+  ⟨pre_push _ _, pre_refl _, pre_push _ _, by simp; omega, by cases g; rfl⟩
 
 theorem gframe_trans {g₁ g₂ g₃ : St} (h₁ : GFrame g₁ g₂) (h₂ : GFrame g₂ g₃) : GFrame g₁ g₃ := by
-  refine ⟨pre_trans h₁.1 h₂.1, pre_trans h₁.2.1 h₂.2.1, pre_trans h₁.2.2.1 h₂.2.2.1, ?_⟩
-  have e₁ := h₁.2.2.2; have e₂ := h₂.2.2.2
+  refine ⟨pre_trans h₁.1 h₂.1, pre_trans h₁.2.1 h₂.2.1, pre_trans h₁.2.2.1 h₂.2.2.1,
+    by have := h₁.2.2.2.1; have := h₂.2.2.2.1; omega, ?_⟩
+  have e₁ := h₁.2.2.2.2; have e₂ := h₂.2.2.2.2
   cases g₁; cases g₂; cases g₃
   simp only [St.mk.injEq] at e₁ e₂ ⊢
   simp_all
 
 theorem gframe_out {g g' : St} (h : GFrame g g') : g'.out = g.out := by
-  have e := h.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
+  have e := h.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.1
 
 theorem gframe_defers {g g' : St} (h : GFrame g g') : g'.defers = g.defers := by
-  have e := h.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.2.2.2.2.1
+  have e := h.2.2.2.2; cases g; cases g'; simp only [St.mk.injEq] at e; exact e.2.2.2.2.2.2.2.1
 
 theorem spent_trans {s₁ s₂ s₃ : Spec.St} {g₁ g₂ g₃ : St} (h₁ : Spent s₁ s₂ g₁ g₂) (h₂ : Spent s₂ s₃ g₂ g₃) :
     Spent s₁ s₃ g₁ g₃ := by unfold Spent at *; omega
@@ -1254,10 +1265,11 @@ theorem inv3_frame {cx : Ctx} {P : String} {sg : Sigs} {κ : String → Option K
     {g g' : St} {env : Env} (hi : Inv3 cx P sg κ c g env) (hs : SFrame c c') (hg : GFrame g g') :
     Inv3 cx P sg κ c' g' env := by
   obtain ⟨hl, hgl, ho⟩ := sframe_parts hs
-  refine ⟨⟨locRel_mono hi.inv.loc hs.1 hl hg.1, ?_, hi.inv.pre⟩, hi.pkg, hi.tenv, ?_, ?_⟩
+  refine ⟨⟨locRel_mono hi.inv.loc hs.1 hl hg.1, ?_, hi.inv.pre⟩, hi.pkg, hi.tenv, ?_, ?_, ?_⟩
   · rw [ho, gframe_out hg]; exact hi.inv.out
   · intro x hx; rw [hl]; exact hi.closed x hx
   · intro f hf; rw [hgl]; exact hi.globals f hf
+  · have := hg.2.2.2.1; have := hi.sync; omega
 
 end Frames
 
@@ -2022,7 +2034,7 @@ theorem params_st : ∀ (l : List ((String × Expr) × Val)) (s : Env × St),
     have hstep : GFrame s.2 (paramStep a s).2 ∧ (paramStep a s).2.steps = s.2.steps := by
       rcases a with ⟨⟨x, te⟩, v⟩
       rcases s with ⟨env, g⟩
-      exact ⟨⟨pre_push _ _, pre_refl _, pre_push _ _, by cases g; rfl⟩, rfl⟩
+      exact ⟨gframe_push _ _ _, rfl⟩
     obtain ⟨h1, h2⟩ := params_st l (paramStep a s)
     exact ⟨gframe_trans hstep.1 h1, h2.trans hstep.2⟩
 
@@ -2030,8 +2042,9 @@ theorem params_st : ∀ (l : List ((String × Expr) × Val)) (s : Env × St),
     list popped: only cells added. -/
 theorem call_frame {g₀ pb g₁ : St} (D : List (Val × List Val × Bool)) (hpb : GFrame g₀ pb)
     (hb : GFrame { pb with defers := D :: g₀.defers } g₁) : GFrame g₀ { g₁ with defers := g₀.defers } := by
-  refine ⟨pre_trans hpb.1 hb.1, pre_trans hpb.2.1 hb.2.1, pre_trans hpb.2.2.1 hb.2.2.1, ?_⟩
-  have e₁ := hpb.2.2.2; have e₂ := hb.2.2.2
+  refine ⟨pre_trans hpb.1 hb.1, pre_trans hpb.2.1 hb.2.1, pre_trans hpb.2.2.1 hb.2.2.1,
+    by have h1 := hpb.2.2.2.1; have h2 := hb.2.2.2.1; simp only at h1 h2 ⊢; omega, ?_⟩
+  have e₁ := hpb.2.2.2.2; have e₂ := hb.2.2.2.2
   cases g₀; cases pb; cases g₁
   simp only [St.mk.injEq] at e₁ e₂ ⊢
   simp_all
@@ -2283,7 +2296,8 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
   have hic : Inv3 cx P sg (paramKinds xks) { sa with locals := specFrame F.params vs }.toCore
       { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers }
       (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).1 := by
-    refine ⟨⟨hfr.1, ?_, hepre⟩, hepkg, hetenv, fun x hx => ⟨(hfr.2 x hx).1, fun _ => (hfr.2 x hx).2⟩, ?_⟩
+    refine ⟨⟨hfr.1, ?_, hepre⟩, hepkg, hetenv, fun x hx => ⟨(hfr.2 x hx).1, fun _ => (hfr.2 x hx).2⟩, ?_,
+      by have := hpst'.2.2.2.1; have := hia.sync; simp only [paramsBound] at this ⊢; omega⟩
     · show sa.out = (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2.out
       rw [paramsBound, gframe_out hpst']; exact hia.inv.out
     · intro x hx; exact hia.globals x hx
@@ -2387,7 +2401,7 @@ def BlockSim3 (d : Nat) : Prop :=
 
 theorem inv3_push {κ : String → Option Kind} {c : Spec.Core} {g : St} {env : Env}
     (h : Inv3 cx P sg κ c g env) : Inv3 cx P sg κ c g env.push :=
-  ⟨inv_push h.inv, h.pkg, h.tenv, fun x hx => by rw [Env.lookup_push]; exact h.closed x hx, h.globals⟩
+  ⟨inv_push h.inv, h.pkg, h.tenv, fun x hx => by rw [Env.lookup_push]; exact h.closed x hx, h.globals, h.sync⟩
 
 theorem retOK_trans {ρ : Option Kind} {s s₁ : Spec.St} {g g₁ : St} (hh : Pre s.heap s₁.heap) (hgl : s₁.globals = s.globals)
     (ho : s₁.out = s.out) (hg : GFrame g g₁) (hsp : Spent s s₁ g g₁) {v s' r}
@@ -2543,7 +2557,7 @@ theorem inv3_decl {κ : String → Option Kind} {t : Spec.St} {g : St} {env : En
   obtain ⟨hvd, hnu, hnb, hns⟩ := vrel_default hvw
   have hglob : (declSt m x v t).globals = t.globals := by cases m <;> rfl
   refine ⟨⟨?_, ?_, predeclared_bind hi.inv.pre x _ hx_ hxt hxf⟩, (env_bind_parts env x _).1.trans hi.pkg,
-    (env_bind_parts env x _).2.trans hi.tenv, ?_, ?_⟩
+    (env_bind_parts env x _).2.trans hi.tenv, ?_, ?_, by simp [declG, hi.sync]⟩
   · intro y k' hk'
     unfold upd at hk'
     by_cases hyx : y = x
@@ -2618,7 +2632,7 @@ theorem decl_sim3 (d : Nat) (ihE : ExprSim ds cx P K sg d) (hK : 3 ≤ K) (ρ : 
     obtain ⟨b, hloc, -, hout, hheap⟩ := declSt_facts m x v t hx_ (vrel_not_ref hvw)
     obtain ⟨hl1, hg1, -⟩ := sframe_parts hsf
     refine ⟨_, _, rfl, inv3_decl cx P sg hit m x hx_ hxt hxf v w k hvw hkv, pre_trans hsf.1 hheap, ?_,
-      ⟨[(x, b)], by rw [hloc]; exact congrArg _ hl1⟩, gframe_trans hgf ⟨pre_push _ _, pre_refl _, pre_push _ _, by cases g'; rfl⟩, ?_⟩
+      ⟨[(x, b)], by rw [hloc]; exact congrArg _ hl1⟩, gframe_trans hgf (gframe_push _ _ _), ?_⟩
     · show (declSt m x v t).globals = s.globals
       cases m <;> exact hg1
     · have : (declSt m x v t).steps = t.steps := by cases m <;> rfl
@@ -3247,15 +3261,16 @@ theorem lowerC_ifExpr {κ : String → Option Kind} {c a b : Spec.Expr} {k : Kin
 
 /-- The state relation sees GoCore's cells and output only. -/
 theorem inv3_same {κ : String → Option Kind} {c : Spec.Core} {g g' : St} {env : Env}
-    (hi : Inv3 cx P sg κ c g env) (hc : g'.cells = g.cells) (ho : g'.out = g.out) : Inv3 cx P sg κ c g' env :=
-  ⟨⟨hc ▸ hi.inv.loc, ho ▸ hi.inv.out, hi.inv.pre⟩, hi.pkg, hi.tenv, hi.closed, hi.globals⟩
+    (hi : Inv3 cx P sg κ c g env) (hc : g'.cells = g.cells) (ht : g'.types = g.types) (ho : g'.out = g.out) :
+    Inv3 cx P sg κ c g' env :=
+  ⟨⟨hc ▸ hi.inv.loc, ho ▸ hi.inv.out, hi.inv.pre⟩, hi.pkg, hi.tenv, hi.closed, hi.globals, by rw [hc, ht]; exact hi.sync⟩
 
 /-- An IIFE's frame: a closure added, its body run with a list of deferred calls of its own,
     the list popped: cells and closures added, nothing else changed but the steps. -/
 theorem iife_frame (env : Env) (k : Kind) (st : Stmt) (g : St) (j : Nat) {g1 : St}
     (h : GFrame (iifeSt env k st g j) g1) : GFrame g { g1 with defers := g.defers } := by
-  refine ⟨h.1, pre_trans (pre_push _ _) h.2.1, h.2.2.1, ?_⟩
-  have e := h.2.2.2
+  refine ⟨h.1, pre_trans (pre_push _ _) h.2.1, h.2.2.1, by have := h.2.2.2.1; simpa [iifeSt] using this, ?_⟩
+  have e := h.2.2.2.2
   cases g; cases g1
   simp only [iifeSt, St.mk.injEq] at e ⊢
   simp_all
@@ -3282,7 +3297,7 @@ theorem iife_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ihI : If
   have ho : nameOwner cx env (kindName k) = none :=
     nameOwner_none cx env _ p (by rw [hi.pkg]; exact hpk) (hobjs _ (by cases k <;> simp [kindName]))
       (by cases k <;> decide)
-  have hiI : Inv3 cx P sg κ s.toCore (iifeSt env k st g j) env.push := inv3_same cx P sg (inv3_push cx P sg hi) rfl rfl
+  have hiI : Inv3 cx P sg κ s.toCore (iifeSt env k st g j) env.push := inv3_same cx P sg (inv3_push cx P sg hi) rfl rfl rfl
   have h := ihI none κ c a b k st hst _ (Or.inl rfl) s kk (iifeSt env k st g j) env.push hs hiI
     (by show kk ≤ j; omega) (n + 1) (by rw [Nat.mul_succ] at hN; omega)
   rcases hr : (Spec.eval ds (d + 1) (.ifExpr c a b)).run.run s with ⟨re, s'⟩
