@@ -63,6 +63,17 @@ func f(o Option[int]) int = o match {
 		})
 	}
 
+	t.Run("a case after a parenthesized binding is unreachable, as after `x`", func(t *testing.T) {
+		src := `func f(t Tuple[int, int]) int = t match {
+    case ((a), b) => a + b
+    case (1, _) => 0
+}
+`
+		_, err := newForbiddenBuiltinTranspiler().Transpile(wrap(src), "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(galaerr.CodeUnreachableCase))
+	})
+
 	t.Run("a parenthesized wildcard alternative is rejected like `_`", func(t *testing.T) {
 		src := `func f(n int) string = n match {
     case (_) | 1 => "a"
