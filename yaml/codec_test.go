@@ -1029,6 +1029,8 @@ func TestDecoder_LiteralBlockChomping(t *testing.T) {
 		{"short blank line inside", "k: |\n    a\n  \n    b\nj: 1", "a\n\nb\n"},
 		{"blank line with spaces past the body", "k: |\n  a\n     \n  b\nj: 1", "a\n   \nb\n"},
 		{"tab past the body indentation is text", "k: |\n  a\n  \t\n  b\nj: 1", "a\n\t\nb\n"},
+		{"tabs within the indentation are blank", "k: |\n  a\n\t\t\t\n  b\nj: 1", "a\n\nb\n"},
+		{"leading tabs are blank", "k: |\n\t\t\t\n  a\nj: 1", "\na\n"},
 		{"keep, comment after", "k: |+ # note\n  a\n\nj: 1", "a\n\n"},
 		{"keep, sequence item", "- |+\n  a\n\n- b", "a\n\n"},
 	}

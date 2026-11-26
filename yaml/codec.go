@@ -943,10 +943,11 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 		// A line of only white space is blank, as an editor that keeps the
 		// indentation leaves it, unless it reaches past the body's
 		// indentation: what lies beyond it, a tab included, is then the
-		// line's text.
-		if strings.TrimLeft(line, " \t") == "" && (bodyIndent < 0 || len(line) <= bodyIndent) {
+		// line's text. Only spaces indent, so a tab within the indentation
+		// leaves the line blank, however many tabs follow.
+		if strings.TrimLeft(line, " \t") == "" && (bodyIndent < 0 || len(line) <= bodyIndent || indent < bodyIndent) {
 			if bodyIndent < 0 {
-				widestLeading = max(widestLeading, len(line))
+				widestLeading = max(widestLeading, indent)
 			}
 			blanks++
 			consumed++
