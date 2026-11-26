@@ -17,8 +17,12 @@ import (
 // were reported as failed ("the test did not finish", #1375).
 const framingTests = `
 
+import "os"
 import "strings"
 import . "martianoff/gala/test"
+
+// What asks for the framing is not left for a process the test starts.
+func TestFramingEnvCleared(t T) T = Eq(t, os.Getenv("GALA_TEST_FRAMING"), "")
 
 // An OSC 52 clipboard sequence, as a TUI's yank writes it.
 func TestYank(t T) T {
@@ -58,8 +62,11 @@ func TestFailAfterOutput(t T) T {
 // result, and only the failing one fails.
 func TestRunTests_OutputWithoutTrailingNewline(t *testing.T) {
 	projectDir := newForeignGenGoProject(t, "example.com/framing", map[string]string{
-		"main.gala":         "package main\n\nfunc main() {\n    Println(\"main\")\n}\n",
-		"main_test.gala":    "package main" + framingTests,
+		"main.gala": "package main\n\nfunc main() {\n    Println(\"main\")\n}\n",
+		// A package-main root's test binary runs with no arguments, as a
+		// test that parses os.Args or calls flag.Parse expects.
+		"main_test.gala": "package main" + framingTests +
+			"\nfunc TestNoArguments(t T) T = Eq(t, os.Args.Size(), 1)\n",
 		"sub/sub.gala":      "package sub\n\nfunc Sub() int = 1\n",
 		"sub/sub_test.gala": "package sub" + framingTests,
 	})
@@ -79,19 +86,26 @@ func TestRunTests_OutputWithoutTrailingNewline(t *testing.T) {
 	var doc junitTestSuites
 	require.NoError(t, xml.Unmarshal(data, &doc), string(data))
 	require.Len(t, doc.Suites, 2, string(data))
-	for _, suite := range doc.Suites {
+	for i, suite := range doc.Suites {
 		got := map[string]string{}
 		for _, tc := range suite.TestCases {
-			outcome, message, _ := outcomeOf(tc)
+			outcome, message, out := outcomeOf(tc)
 			got[tc.Name] = outcome + " " + message
+			// test2json drops the marker; none reaches a test's output.
+			assert.NotContains(t, out, "\x16", "%s: %s", suite.Name, tc.Name)
 		}
-		assert.Equal(t, map[string]string{
+		want := map[string]string{
+			"TestFramingEnvCleared":  "pass ",
 			"TestYank":               "pass ",
 			"TestLongLine":           "pass ",
 			"TestIndented":           "pass ",
 			"TestRunAfterOutput":     "pass ",
 			"TestRunAfterOutput/sub": "pass ",
 			"TestFailAfterOutput":    "fail bad",
-		}, got, "%s: %s", suite.Name, data)
+		}
+		if i == 0 { // the package-main root
+			want["TestNoArguments"] = "pass "
+		}
+		assert.Equal(t, want, got, "%s: %s", suite.Name, data)
 	}
 }

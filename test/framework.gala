@@ -78,11 +78,24 @@ func frame(line string) {
     Println(framing + line)
 }
 
-// framing is ^V when the binary runs with -test.v=test2json, as `go test
-// -json` and `gala test` run it, and "" otherwise. test2json takes a ^V as
-// the start of a framing line even mid-line, where a test's unterminated
-// output puts it; Go's testing package marks its framing the same way.
-val framing = if (slices.Contains(os.Args, "-test.v=test2json")) "\x16" else ""
+// framing is ^V when the binary's output goes to test2json, and "" otherwise.
+// test2json takes a ^V as the start of a framing line even mid-line, where a
+// test's unterminated output puts it; Go's testing package marks its framing
+// the same way. `go test -json` passes -test.v=test2json, as it does to any
+// test binary; `gala test` runs a package-main root's test binary with
+// GALA_TEST_FRAMING=test2json instead, which leaves the tests' own os.Args as
+// they were.
+val framing = if (slices.Contains(os.Args, "-test.v=test2json") || framingEnv()) "\x16" else ""
+
+// framingEnv reports whether GALA_TEST_FRAMING asks for test2json framing,
+// and clears it, so a process a test starts does not inherit it.
+func framingEnv() bool {
+    val on = os.Getenv(framingEnvVar) == "test2json"
+    os.Unsetenv(framingEnvVar)
+    on
+}
+
+val framingEnvVar = "GALA_TEST_FRAMING"
 
 // runTest runs a test function with panic recovery.
 // If the function panics, the panic is caught and reported as a test failure.

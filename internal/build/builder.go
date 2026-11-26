@@ -1927,11 +1927,13 @@ func (b *Builder) runTestBinary(testBinary string, report *TestReport) (testErr,
 
 	// The binary's stderr goes through test2json with its stdout, as under
 	// `go test`, so a panic's trace is part of the report.
-	// -test.v=test2json, as `go test -json` passes it, makes the test
-	// framework mark its framing lines for test2json (see framework.gala's
-	// framing), so a result line a test's unterminated output runs into is
-	// still a result.
-	execCmd := exec.Command(testBinary, "-test.v=test2json")
+	execCmd := exec.Command(testBinary)
+	// The test framework marks its framing lines for test2json (see
+	// framework.gala's framing), so a result line a test's unterminated
+	// output runs into is still a result. An environment variable asks for
+	// it where `go test -json` passes -test.v=test2json, so the tests' own
+	// os.Args stay empty.
+	execCmd.Env = append(os.Environ(), "GALA_TEST_FRAMING=test2json")
 	execCmd.Stdin = os.Stdin
 	execCmd.Stdout = in
 	execCmd.Stderr = in
