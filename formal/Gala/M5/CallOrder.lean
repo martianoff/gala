@@ -571,11 +571,12 @@ end
     each IIFE's body. -/
 abbrev Body3 (body : List Stmt) : Prop := body3Ss body = true
 
-theorem noTrigE_spec {s : Scope} {top : Bool} {e : Expr} (h : ccB e && !triggers (canon top e) = true)
-    (hf : FitsE s e) : CC e ∧ triggers (scanE s top e) = false := by
+/-- A `Body3` operand in a scope it fits: a lowered shape whose events (`canon_eq`) fire no trigger. -/
+theorem body3E_spec {s : Scope} {top : Bool} {e : Expr} (h : ccB e && !triggers (canon top e) = true)
+    (hf : FitsE s e) : ccB e = true ∧ CC e ∧ triggers (scanE s top e) = false := by
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
   have hc := ccB_sound e h.1
-  exact ⟨hc, by rw [canon_eq s top e hc hf]; exact h.2⟩
+  exact ⟨h.1, hc, by rw [canon_eq s top e hc hf]; exact h.2⟩
 
 theorem body3S_decl_shape {d : Decl} (h : body3S (.decl d) = true) :
     ∃ x e, d = .value false [.mk [x] none [e]] ∧ (ccB e && !triggers (canon true e)) = true := by
@@ -629,23 +630,19 @@ theorem litsQuietArgs_of (s : Scope) : ∀ (es : List Expr), ccBs es = true → 
 theorem noTrigS_of (s : Scope) : ∀ (st : Stmt), body3S st = true → FitsS s st → NoTrigS s st
   | .decl (.value false [.mk [x] none [e]]), hb, hf => by
     simp only [body3S] at hb
-    have hb' := hb
-    simp only [Bool.and_eq_true] at hb'
-    obtain ⟨hc, ht⟩ := noTrigE_spec hb hf
-    exact ⟨x, e, rfl, hc, litsQuiet_of s e hb'.1 hf, by simpa [scanOperands] using ht⟩
+    obtain ⟨hcb, hc, ht⟩ := body3E_spec hb hf
+    exact ⟨x, e, rfl, hc, litsQuiet_of s e hcb hf, by simpa [scanOperands] using ht⟩
   | .ret [e], hb, hf => by
     simp only [body3S] at hb
-    have hb' := hb
-    simp only [Bool.and_eq_true] at hb'
-    obtain ⟨hc, ht⟩ := noTrigE_spec hb hf.1
-    exact ⟨e, rfl, hc, litsQuiet_of s e hb'.1 hf.1, by simpa [scanOperands] using ht⟩
+    obtain ⟨hcb, hc, ht⟩ := body3E_spec hb hf.1
+    exact ⟨e, rfl, hc, litsQuiet_of s e hcb hf.1, by simpa [scanOperands] using ht⟩
   | .block ss, hb, hf => noTrigSs_of s ss hb hf
   | .if_ init c b els, hb, hf => by
     simp only [body3S, Bool.and_eq_true, Option.isNone_iff_eq_none] at hb
     obtain ⟨⟨⟨hi, hcb⟩, hbb⟩, heb⟩ := hb
     obtain ⟨hfc, hfb, hfe⟩ := hf
-    obtain ⟨hc, ht⟩ := noTrigE_spec (by simpa using hcb) hfc
-    exact ⟨hi, hc, litsQuiet_of s c hcb.1 hfc, ht, noTrigSs_of s b hbb hfb, noTrigOS_of s els heb hfe⟩
+    obtain ⟨hcb', hc, ht⟩ := body3E_spec (by simpa using hcb) hfc
+    exact ⟨hi, hc, litsQuiet_of s c hcb' hfc, ht, noTrigSs_of s b hbb hfb, noTrigOS_of s els heb hfe⟩
   | .decl (.func ..), hb, _ | .decl (.type _), hb, _ | .decl (.unsupported _), hb, _
   | .decl (.value true _), hb, _ | .decl (.value false []), hb, _ | .decl (.value false (_ :: _ :: _)), hb, _
   | .decl (.value false [.mk [] _ _]), hb, _ | .decl (.value false [.mk (_ :: _ :: _) _ _]), hb, _
@@ -672,6 +669,7 @@ abbrev gcScope (p : Program) (pkg : String) (fi : Nat) (recv : Option Field) (tp
     (body : List Stmt) : Scope :=
   let c := buildCtx p
   funcScope c (structFields c) (allMethods c) pkg fi recv tps sig body
+
 /-- **An order step 3a's bodies run as written in**: every `Body3` function body that fits
     the scope gc's rewrite gives it is in its place unchanged. That the lowered programs'
     bodies fit is owed by step 3d (from `FunRel` and `buildCtx`). -/

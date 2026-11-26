@@ -2889,13 +2889,6 @@ theorem ifTSim_of (d : Nat) (ihE : ExprSim ds cx P K sg d) (ihT : TailSim ds cx 
     exact resT_err (fun e g'' h => by simp [h, withEnv])
       (ihT r κ b k tb htb t g' env.push.push hit hstg (n + 1) (by omega))
 
-end Tails
-
-section Tails2
-open Gala.GoCore.Full
-
-variable (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs)
-
 theorem execStmts_ret1 (n : Nat) (env : Env) (le : Expr) (g : St) :
     (execStmts cx (n + 4) env [.ret [le]]).run.run g = match (evalExpr cx (n + 1) env le).run.run g with
       | (.ok w, g') => (.error (.ret w.results), g')
@@ -3077,7 +3070,7 @@ theorem tsSim_of (d : Nat) (ihS : StmtSim ds cx P K sg d) (ihT : TailSim ds cx P
         exact resT_after hh hgl ho hgf hsp hpre
           (ihl κ₁ _ ls' hrest t g'' env' hinv (spent_le hsp hsg) (n + 1) hN)
 
-end Tails2
+end Tails
 
 section Iife
 open Gala.GoCore.Full
