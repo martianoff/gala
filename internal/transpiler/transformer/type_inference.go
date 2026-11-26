@@ -1036,8 +1036,16 @@ func constantsLast(args []ast.Expr, isConst func(ast.Expr) bool) (order []int, f
 // among them, as Go infers it: `cmp.Or(0, 2.5)` binds float64, though its
 // first constant is an int.
 func (t *galaASTTransformer) widenConstBinding(arg ast.Expr, paramType transpiler.Type, typeParams []string, typed, inferred map[string]transpiler.Type) {
-	tp, bare := bareTypeName(unwrapValueMarkers(paramType))
-	if !bare || !slices.Contains(typeParams, tp) {
+	// Spelled bare or, from another package, qualified (`lib.T`), as
+	// unifyForInference matches it.
+	var tp string
+	switch v := unwrapValueMarkers(paramType).(type) {
+	case transpiler.BasicType:
+		tp = v.Name
+	case transpiler.NamedType:
+		tp = v.Name
+	}
+	if !slices.Contains(typeParams, tp) {
 		return
 	}
 	cur, bound := inferred[tp]

@@ -2116,9 +2116,16 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// Then the Apply method's arguments, each against the parameter it
 		// fills: the metadata a codec's Apply takes first is injected after
 		// them. A spread last one is a slice of the variadic parameter's type
-		// (checkSpreads has put it there).
+		// (checkSpreads has put it there). Untyped constants bind last and
+		// widen, as in Go (constantsLast, widenConstBinding).
 		params := t.writtenApplyParams(methodMeta)
-		for i, arg := range args {
+		order, firstConst := constantsLast(args, t.isUntypedConstArg)
+		var typed map[string]transpiler.Type
+		for n, i := range order {
+			if n == firstConst {
+				typed = maps.Clone(inferredMap)
+			}
+			arg := args[i]
 			if pi := methodParamIndex(params, i); pi >= 0 {
 				argType := t.getExprTypeName(arg)
 				if argType != nil && !argType.IsNil() && !argType.IsAny() {
@@ -2129,6 +2136,9 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 						argType = t.followAliasChain(unwrapValueMarkers(argType))
 					}
 					t.unifyGoParam(paramType, argType, typeMeta.TypeParams, inferredMap)
+					if n >= firstConst {
+						t.widenConstBinding(arg, paramType, typeMeta.TypeParams, typed, inferredMap)
+					}
 				}
 			}
 		}
@@ -4083,11 +4093,14 @@ func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.S
 		return fun, nil
 	}
 	inferred := t.writtenTypeArgs(parent.TypeParams, written)
+	var types []transpiler.Type
+	var vals []ast.Expr
 	for i, fieldName := range sv.FieldNames {
 		if val, ok := namedArgs[fieldName]; ok && i < len(sv.FieldTypes) {
-			t.unifyFieldArgForInference(sv.FieldTypes[i], val, parent.TypeParams, inferred)
+			types, vals = append(types, sv.FieldTypes[i]), append(vals, val)
 		}
 	}
+	t.unifyFieldArgsForInference(types, vals, parent.TypeParams, inferred)
 	instantiated, missing := t.completeTypeArgs(base, parent.TypeParams, written, inferred)
 	switch {
 	case missing == nil:

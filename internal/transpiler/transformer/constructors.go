@@ -496,12 +496,18 @@ func (t *galaASTTransformer) isUntypedConstArg(expr ast.Expr) bool {
 	if isUntypedConstExpr(expr) {
 		return true
 	}
-	// So are `true` and `false`, unless a binding shadows them.
-	if id, ok := ast.Unparen(expr).(*ast.Ident); ok && (id.Name == "true" || id.Name == "false") && t.shadowingScope(id.Name) == nil {
+	if t.isUntypedBoolConst(expr) {
 		return true
 	}
 	_, ok := t.untypedNumericConstExprDefault(expr)
 	return ok
+}
+
+// isUntypedBoolConst reports whether expr is `true` or `false`, which no
+// binding shadows.
+func (t *galaASTTransformer) isUntypedBoolConst(expr ast.Expr) bool {
+	id, ok := ast.Unparen(expr).(*ast.Ident)
+	return ok && (id.Name == "true" || id.Name == "false") && t.shadowingScope(id.Name) == nil
 }
 
 // typedPartType is typ, the type of expr, a lowered argument, with every part

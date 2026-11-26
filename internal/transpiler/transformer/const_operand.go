@@ -40,7 +40,9 @@ func (t *galaASTTransformer) checkConstOperand(tok token.Token, leftFrom, leftTo
 	if !isUntypedConstExpr(lit) {
 		from, to, lit, typed = leftFrom, leftTo, e.X, e.Y
 	}
-	if !isUntypedConstExpr(lit) || t.isUntypedConstArg(typed) {
+	// Two constants are Go's to combine; a bool beside a number is still
+	// checked (`1 + true`).
+	if !isUntypedConstExpr(lit) || (t.isUntypedConstArg(typed) && !t.isUntypedBoolConst(typed)) {
 		return nil
 	}
 	typ := t.probeExprType(typed)
