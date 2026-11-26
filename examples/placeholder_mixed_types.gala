@@ -1,0 +1,32 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Each `_` of a placeholder lambda reads the type of its own parameter, so a
+// slot whose parameters have different types takes one as it takes
+// `(acc, r) => acc + r.Lo`: `rs.FoldLeft(0, _ + _.Lo)` sums the fields.
+
+struct R(Lo int, Name string)
+
+func (r R) Twice() int = r.Lo * 2
+
+func main() {
+    val rs = ArrayOf(R(1, "a"), R(2, "b"), R(3, "c"))
+    val nums = ArrayOf(10, 20)
+
+    // An int accumulator and a struct element.
+    Println(rs.FoldLeft(0, _ + _.Lo))
+
+    // A string accumulator and a string field.
+    Println(rs.FoldLeft("", _ + _.Name))
+
+    // A method of the element.
+    Println(rs.FoldLeft(0, _ + _.Twice()))
+
+    // The element first: FoldRight's function takes (T, U).
+    Println(rs.FoldRight(0, _.Lo + _))
+
+    // A nested call takes the `_` between them for its own lambda, so the
+    // outer lambda's second parameter is the third `_` written.
+    Println(rs.FoldLeft(0, _ + nums.Map(_ * 2).Size() + _.Lo))
+}

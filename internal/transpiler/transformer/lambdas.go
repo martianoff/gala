@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -1539,6 +1540,10 @@ type placeholderTakes struct {
 	// argument may be lowered more than once on the way to its final form,
 	// so only the identifiers left in the lambda's body count.
 	reads map[*ast.Ident]int
+	// names, when set, is the name each taken `_` is lowered as, by its
+	// position: the placeholder scope binds each to its own parameter's type
+	// (see lowerPlaceholderBody). Unset, every `_` reads the one `_` binding.
+	names []string
 }
 
 // newPlaceholderTakes is the placeholderTakes of e, a placeholder lambda's
@@ -1563,6 +1568,9 @@ func (p *placeholderTakes) take(ident *ast.Ident, at srcNode) bool {
 	}
 	if i, ok := p.index[id]; ok {
 		p.reads[ident] = i
+		if p.names != nil {
+			ident.Name = p.names[i]
+		}
 		return true
 	}
 	return false
@@ -1573,6 +1581,23 @@ func (p *placeholderTakes) take(ident *ast.Ident, at srcNode) bool {
 // that is read in body, named by fresh. A `_` lowered into body more than
 // once reads the one parameter.
 func (p *placeholderTakes) rename(body ast.Node, fresh func() string) []string {
+	var names []string
+	for _, ids := range p.found(body) {
+		if len(ids) == 0 {
+			continue
+		}
+		name := fresh()
+		for _, id := range ids {
+			id.Name = name
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// found is the identifiers in body, function literals included, that read
+// each `_` written, by its position.
+func (p *placeholderTakes) found(body ast.Node) [][]*ast.Ident {
 	if len(p.reads) == 0 {
 		return nil
 	}
@@ -1585,18 +1610,19 @@ func (p *placeholderTakes) rename(body ast.Node, fresh func() string) []string {
 		}
 		return true
 	})
-	var names []string
-	for _, ids := range found {
-		if len(ids) == 0 {
-			continue
+	return found
+}
+
+// taken is the positions of the `_` written that body reads, in order: the
+// k-th is the `_` that is the lambda's k-th parameter.
+func (p *placeholderTakes) taken(body ast.Node) []int {
+	var taken []int
+	for i, ids := range p.found(body) {
+		if len(ids) > 0 {
+			taken = append(taken, i)
 		}
-		name := fresh()
-		for _, id := range ids {
-			id.Name = name
-		}
-		names = append(names, name)
 	}
-	return names
+	return taken
 }
 
 // tryRewriteAsPlaceholderLambda is the L4 entry point called by
@@ -1613,11 +1639,11 @@ func (p *placeholderTakes) rename(body ast.Node, fresh func() string) []string {
 //  2. The expression contains at least one `_` identifier in a
 //     non-pattern, non-lambda position
 //
-// The rewrite installs fresh `_` bindings of type `any` (or the expected
-// param type) in a new scope so ordinary expression transformation
-// succeeds, then walks the produced Go AST and renames each `_` ident to a
-// fresh `__pN`, finally wrapping the result in a `*ast.FuncLit` whose
-// parameter list matches the expected FuncType.
+// The rewrite binds `_` in a new scope, each `_` typed by the parameter it
+// stands for, so ordinary expression transformation succeeds, then walks the
+// produced Go AST and renames each `_` ident to a fresh `__pN`, finally
+// wrapping the result in a `*ast.FuncLit` whose parameter list matches the
+// expected FuncType.
 func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	e exprSrc,
 	expectedType transpiler.Type,
@@ -1626,8 +1652,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	if !ok {
 		return nil, false, nil
 	}
-	takes := newPlaceholderTakes(e)
-	placeholderCount := len(takes.index)
+	placeholderCount := len(newPlaceholderTakes(e).index)
 	if placeholderCount == 0 {
 		return nil, false, nil
 	}
@@ -1647,43 +1672,54 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		}
 	}
 
-	// Install a fresh scope with `_` bound to the placeholder's parameter type
-	// so the normal expression transformation can resolve the identifier AND
-	// apply the same type-directed rewrites the explicit lambda path uses —
-	// most importantly the Immutable field auto-unwrap (`.Field` -> `.Field.Get()`).
-	// Binding `_` to `any` (as was done previously) hid the struct metadata
-	// from resolveFieldAccess, so `_.Field` diverged from `(p) => p.Field` by
-	// leaking an `Immutable[T]` instead of `T`.
+	// Lower the body in a scope binding `_` to the placeholder's parameter
+	// type, so the normal expression transformation resolves the identifier
+	// AND applies the same type-directed rewrites the explicit lambda path
+	// uses — most importantly the Immutable field auto-unwrap (`.Field` ->
+	// `.Field.Get()`), which a `_` bound to `any` would skip.
 	//
-	// All placeholders share the single `_` scope var during transformation
-	// (they are renamed to distinct `__pN` params afterwards, positionally), so
-	// we can only supply one type here. When every placeholder maps to the same
-	// parameter type we use it; otherwise we fall back to `any` rather than risk
-	// mistyping a heterogeneous placeholder. The renamed params still carry
-	// their correct per-position types via paramTypes below.
+	// When every placeholder maps to the same parameter type, all of them
+	// share the one `_` binding of that type. When they differ (FoldLeft's
+	// `func(U, T) U` in `rs.FoldLeft(0, _ + _.Lo)`), each `_` reads the type
+	// of its own parameter instead (lowerPlaceholderBody).
 	//
 	// The count is of the `_` written, some of which may not be this lambda's
 	// parameters: one a nested call whose own slot takes a function takes
 	// (`if (_.Lo > 1) xs.Map(_ * 2).Size() else 0`), or a discard. A count
 	// past the expected function's parameters is such a `_` (or is rejected
 	// below), so it does not widen the type.
-	scopeType := placeholderScopeType(paramTypes[:min(placeholderCount, len(ft.Params))])
-	t.pushScope()
-	t.currentScope.lambda, t.currentScope.placeholder = true, takes
-	t.addVar("_", scopeType)
-	body, err := t.lowerExpr(e)
-	// Resolve the body's concrete result type while `_` is still bound in scope
-	// (before popScope and before the `_` -> `__pN` rename). This mirrors the
-	// explicit lambda path, which infers its return type from the body rather
-	// than from the expected callback result — the latter is frequently an
-	// unresolved `any` (e.g. `Array.Map`'s `func(T) U` where `U` is a free type
-	// param). Doing it here keeps `_.Name` producing a `string` result, exactly
-	// like `(p) => p.Name`, instead of a widened `any`.
-	var bodyResultType ast.Expr
-	if err == nil {
-		bodyResultType = t.getExprType(body)
+	typed := paramTypes[:min(placeholderCount, len(ft.Params))]
+	scopeType := placeholderScopeType(typed)
+	var byPosition []transpiler.Type
+	if scopeType.IsAny() && slices.ContainsFunc(typed, func(p transpiler.Type) bool { return !p.IsAny() }) {
+		byPosition = paramTypes
 	}
-	t.popScope()
+	unresolved := len(t.unresolvedTypes)
+	body, bodyResultType, takes, err := t.lowerPlaceholderBody(e, scopeType, byPosition)
+	if byPosition != nil {
+		// The k-th parameter is the k-th `_` the lambda took, which is the
+		// k-th `_` written unless a nested call took one before it
+		// (`_ + xs.Map(_ * 2).Size() + _.Lo`). Lowering found which it took;
+		// when it typed one by the wrong parameter, lower again by the
+		// right ones. A lowering that failed may have failed for that, so
+		// the `_` it takes are learnt from one binding them all to `any`,
+		// and the error stands when it typed each by the right one.
+		var taken []int
+		if err == nil {
+			taken = takes.taken(body)
+		} else {
+			shared, _, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil)
+			if sharedErr != nil {
+				return nil, false, sharedErr
+			}
+			taken = sharedTakes.taken(shared)
+		}
+		if !takenInPlace(taken) {
+			// What the discarded lowerings could not type is not the body's.
+			t.unresolvedTypes = t.unresolvedTypes[:unresolved]
+			body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, typesByParameter(paramTypes, taken))
+		}
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -1798,6 +1834,71 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	return funcLit, true, nil
 }
 
+// lowerPlaceholderBody lowers e, a placeholder lambda's argument, in a scope
+// binding the `_` it takes, and returns the body, the body's result type
+// (resolved while the `_` are still bound) and what it took. With byPosition
+// nil every taken `_` reads the one `_` binding, of type shared; otherwise
+// each reads a binding of its own, of byPosition[i] for the i-th `_` written.
+func (t *galaASTTransformer) lowerPlaceholderBody(
+	e exprSrc,
+	shared transpiler.Type,
+	byPosition []transpiler.Type,
+) (ast.Expr, ast.Expr, *placeholderTakes, error) {
+	takes := newPlaceholderTakes(e)
+	t.pushScope()
+	defer t.popScope()
+	t.currentScope.lambda, t.currentScope.placeholder = true, takes
+	t.addVar("_", shared)
+	if byPosition != nil {
+		// Names no GALA identifier can spell, so they shadow nothing; each
+		// taken `_` is renamed to its parameter once lowered.
+		takes.names = make([]string, len(byPosition))
+		for i, typ := range byPosition {
+			takes.names[i] = fmt.Sprintf("_#%d", i)
+			t.currentScope.vals[takes.names[i]] = false
+			t.currentScope.valTypes[takes.names[i]] = typ
+		}
+	}
+	body, err := t.lowerExpr(e)
+	if err != nil {
+		return nil, nil, takes, err
+	}
+	// Resolve the body's concrete result type while `_` is still bound in
+	// scope. This mirrors the explicit lambda path, which infers its return
+	// type from the body rather than from the expected callback result — the
+	// latter is frequently an unresolved `any` (e.g. `Array.Map`'s
+	// `func(T) U` where `U` is a free type param). Doing it here keeps
+	// `_.Name` producing a `string` result, exactly like `(p) => p.Name`,
+	// instead of a widened `any`.
+	return body, t.getExprType(body), takes, nil
+}
+
+// takenInPlace reports whether taken, the positions of the `_` a placeholder
+// lambda took, is each `_` written up to the last: the k-th parameter is the
+// k-th `_` written.
+func takenInPlace(taken []int) bool {
+	for k, i := range taken {
+		if k != i {
+			return false
+		}
+	}
+	return true
+}
+
+// typesByParameter is the type each `_` written reads when the lambda took
+// those at taken: the k-th taken reads paramTypes[k], the type of the k-th
+// parameter; one it did not take reads `any`.
+func typesByParameter(paramTypes []transpiler.Type, taken []int) []transpiler.Type {
+	types := make([]transpiler.Type, len(paramTypes))
+	for i := range types {
+		types[i] = transpiler.BasicType{Name: "any"}
+	}
+	for k, i := range taken {
+		types[i] = paramTypes[k]
+	}
+	return types
+}
+
 // isAnyTypeExpr reports whether a Go type expression is the untyped `any`
 // placeholder that getExprType emits when it cannot resolve a concrete type.
 // Used to decide whether a placeholder-lambda's body yielded a usable result
@@ -1815,13 +1916,13 @@ func isAnyTypeExpr(e ast.Expr) bool {
 	return false
 }
 
-// placeholderScopeType picks the type to bind `_` to while a placeholder-lambda
-// body is transformed. All placeholders share one `_` scope var during
-// transformation, so a single type must serve every occurrence. When every
-// placeholder maps to the same (non-nil) parameter type we return it — this is
-// the common single-placeholder case (`_.Field`, `_.Method()`) and the
-// homogeneous multi-placeholder case (`_ + _`). Otherwise we return `any` so a
-// heterogeneous placeholder is never mistyped. Binding the concrete type is
+// placeholderScopeType picks the type of the one `_` binding every
+// placeholder of a placeholder-lambda body shares. When every placeholder
+// maps to the same (non-nil) parameter type we return it — this is the common
+// single-placeholder case (`_.Field`, `_.Method()`) and the homogeneous
+// multi-placeholder case (`_ + _`). Otherwise we return `any`, and each
+// placeholder whose parameter has a type is bound by its own
+// (tryRewriteAsPlaceholderLambda). Binding the concrete type is
 // what lets resolveFieldAccess apply the Immutable field auto-unwrap, keeping
 // `_.Field` identical to `(p) => p.Field`.
 func placeholderScopeType(paramTypes []transpiler.Type) transpiler.Type {
