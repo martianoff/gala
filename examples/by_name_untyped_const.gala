@@ -8,6 +8,8 @@ struct Box[T any](V T)
 
 func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 
+func (b Box[T]) LazyOr[U any](d func() U, dflt U) U = d()
+
 func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 
 func plain[U any](d U, on bool) Option[U] = if (on) Some(d) else None()
@@ -31,4 +33,7 @@ func main() {
     val b = Box(0)
     val m Option[int64] = b.Lazy(5, true)
     Println(m, typeOf(m))
+    // A typed argument after the constant gives U, as for a bare constant.
+    val x64 int64 = 3
+    Println(b.LazyOr(5, x64) + x64)
 }
