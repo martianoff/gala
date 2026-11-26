@@ -129,13 +129,39 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 	case transpiler.ArrayType, transpiler.MapType:
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
-		// The key Go type info files it under, a bare name's included.
-		if key, _ := t.goTypeDataFor(receiverBase(typ)); t.goTypeInfo.GetMethodSignature(key, "Size") != nil {
+		// The key Go type info files it under, a bare name's included; a type
+		// of the package's own .go files may have one GALA declares.
+		base := receiverBase(typ)
+		if key, _ := t.goTypeDataFor(base); t.goTypeInfo.GetMethodSignature(key, "Size") != nil {
+			return typ
+		}
+		if t.galaDeclaresOwnGoTypeMethod(base, "Size") {
 			return typ
 		}
 		return u
 	}
 	return typ
+}
+
+// galaDeclaresOwnGoTypeMethod reports whether GALA declares method on typ, a
+// type of the package's own .go files, written bare or qualified by the
+// package. Its metadata holds only the methods GALA gives it, filed under the
+// name the analyzer records the receiver by: bare in main and test, qualified
+// by the package elsewhere.
+func (t *galaASTTransformer) galaDeclaresOwnGoTypeMethod(typ transpiler.Type, method string) bool {
+	name, bare := bareTypeName(typ)
+	if nt, isNamed := typ.(transpiler.NamedType); isNamed && nt.Package == t.packageName {
+		name, bare = nt.Name, true
+	}
+	if !bare || !t.isOwnGoType(name) || t.richAST == nil {
+		return false
+	}
+	for _, key := range []string{name, t.packageName + "." + name} {
+		if meta := t.richAST.Types[key]; meta != nil && meta.Methods[method] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, args argsSrc) (ast.Expr, error) {

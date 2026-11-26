@@ -31,6 +31,11 @@ func CountsTwice() int {
     c.Twice()
 }
 
+// A Size method GALA declares on Tagged, a Go type, is called too.
+func (g Tagged) Size() int = 42
+
+func TaggedSize() int = NewTagged("t").Size()
+
 // SizedSize calls the Size method Sized declares, not the length.
 func SizedSize() int = Sized(go_interop.SliceOf(1, 2)).Size()
 

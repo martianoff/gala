@@ -96,9 +96,12 @@ func (t *galaASTTransformer) goBareUnderlying(typ transpiler.Type) (transpiler.T
 	if !bare || transpiler.IsPrimitiveType(name) || t.isActiveTypeParam(name) {
 		return nil, false
 	}
-	// A GALA type of the name hides a dot-imported Go type, which the lookup
-	// already leaves out (dotImportedGoTypeKey), and none of the package's
-	// own is its .go files' too.
+	// A GALA type of the name is none of Go's, though a Go package of the
+	// package's name may declare one so named; a type of the package's own
+	// .go files may have GALA methods, which give it metadata too.
+	if !t.isOwnGoType(name) && t.getTypeMeta(name) != nil {
+		return nil, false
+	}
 	switch td, target := t.goTypeDataThroughAliases(typ); {
 	case td == nil || len(td.TypeParams) > 0:
 	case td.Underlying != nil && td.Underlying.IsAny():

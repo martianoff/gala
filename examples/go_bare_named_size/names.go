@@ -12,5 +12,10 @@ type Sized []int
 
 func (s Sized) Size() int { return 100 + len(s) }
 
+// Tagged gets a Size method from GALA (sizes.gala), which .Size() calls.
+type Tagged []string
+
+func NewTagged(xs ...string) Tagged { return xs }
+
 // Score is a numeric type, which an untyped constant fills.
 type Score float64
