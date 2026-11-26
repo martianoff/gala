@@ -308,7 +308,8 @@ func isPlainSafe(s string) bool {
 		return false
 	}
 	// At column 0, as a root scalar or a top-level key, "..." would read
-	// as a document marker ("---" starts with '-', quoted below).
+	// as a document marker ("---" starts with '-', quoted below). The
+	// encoder does not track the column, so it is quoted everywhere.
 	if s[0] == '.' && isDocumentMarker(s) {
 		return false
 	}

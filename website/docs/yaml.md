@@ -297,7 +297,7 @@ account_id:
 
 Switching a field from one form to the other changes the document shape: `user_id: 42` read into the struct form is `Failure(yaml: expected mapping, got scalar)`. See [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct).
 
-Out of scope: YAML anchors and aliases (`&a`, `*a`), other flow-style collections, custom tags, plain and quoted scalars that span lines, document markers (`---`, `...`). A document marker, or a `|` or `>` header the codec cannot read, is an error. If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
+Out of scope: YAML anchors and aliases (`&a`, `*a`), other flow-style collections, custom tags, plain and quoted scalars that span lines, document markers (`---`, `...`). A document marker is an error, and so is a value that starts with `|` or `>` but is no header the codec can read: a plain value cannot start with either, so quote it (`version: ">=1.0"`). If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
 
 ---
 
