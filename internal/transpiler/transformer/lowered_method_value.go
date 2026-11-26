@@ -101,7 +101,16 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 	if len(mm.TypeParams) > 0 {
 		bound := make(typeSubstMap, len(mm.TypeParams))
 		for i, ta := range typeArgs {
-			bound[ownParams[i]] = t.astTypeToTranspilerType(ta)
+			typ := t.astTypeToTranspilerType(ta)
+			if transpiler.ContainsUnusable(typ) {
+				// A type the closure's signature cannot spell (a variadic
+				// function type, `func(...int) int`) would come out as
+				// `any`: say so rather than emit a different type.
+				return nil, false, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+					"the method value %s.%s cannot take these type arguments: its function type cannot be written with them (a variadic function type is one); call the method instead, or wrap the call in a lambda",
+					stripPackagePrefix(meta.Name), method))
+			}
+			bound[ownParams[i]] = typ
 		}
 		t.bindMethodValueTypeArgs(ft, slot, ownParams, bound)
 		var missing []string
