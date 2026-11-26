@@ -851,16 +851,21 @@ def Spent (s s' : Spec.St) (g g' : St) : Prop := g.steps + s'.steps ≤ g'.steps
     variables and output as they were. -/
 def SFrame (c c' : Spec.Core) : Prop := Pre c.heap c'.heap ∧ { c' with heap := c.heap } = c
 
+/-- A name the transformer gives its temporaries (`_tmp_1`, ...): no GALA name the lowering
+    takes is one (`FunRel`, `lowerFun`). -/
+def isTmp (x : String) : Bool := x.toList.take 5 == ['_', 't', 'm', 'p', '_']
+
 /-- **The state relation with calls**: step 2b's (`Inv`), and: the code runs in package `P`
     with no type parameters; every local galaspec binds is one the lowering knows of, and so
-    is every GoCore local (so a name the lowering calls is no local); and no package-level
-    variable of galaspec is named as a function the lowering calls. -/
+    is every GoCore local but the transformer's temporaries (`isTmp`; so a name the lowering
+    calls is no local); and no package-level variable of galaspec is named as a function the
+    lowering calls. -/
 structure Inv3 (cx : Ctx) (P : String) (sg : Sigs) (κ : String → Option Kind) (c : Spec.Core) (g : St)
     (env : Env) : Prop where
   inv : Inv cx κ c g env
   pkg : env.pkg = P
   tenv : env.tenv = []
-  closed : ∀ x, κ x = none → Spec.lookup c.locals x = none ∧ env.lookup x = none
+  closed : ∀ x, κ x = none → Spec.lookup c.locals x = none ∧ (isTmp x = false → env.lookup x = none)
   globals : ∀ f, (sg f).isSome → Spec.lookup c.globals f = none
 
 /-- galaspec's panic and GoCore's agree, with equal outputs; GoCore's state framed. -/
@@ -934,6 +939,7 @@ def ResB (ρ : Kind) (s : Spec.St) (g : St) : Except Spec.Stop Spec.Val × Spec.
     `sig`, with the lowered signature and body. -/
 structure FunRel (K : Nat) (sg : Sigs) (ds : Spec.Decls) (cx : Ctx) (P : String) : Prop where
   notStd : P ≠ stdPath
+  noTmp : ∀ f, (sg f).isSome → isTmp f = false
   pkg : ∃ p, cx.pkgs.get? P = some p ∧ (∀ x ∈ ["true", "false", "int", "bool", "string"], p.objs.get? x = none) ∧
     ∀ f sig, sg f = some sig → ∃ F xks ρ lb fi, ds.funcs.lookup f = some F ∧ sigOf F = some (xks, ρ) ∧
       sig = (xks.map (·.2), ρ) ∧ lowerBody K sg F = some lb ∧
@@ -2116,6 +2122,7 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
   | zero => rw [eval_fuel _ _ _ _ hs]; trivial
   | succ k1 =>
   obtain ⟨hlocf, henvf⟩ := hi.closed f hκ
+  have henvf := henvf (hF.noTmp f (by rw [hsgf]; rfl))
   have hglob := hi.globals f (by rw [hsgf]; rfl)
   have hresolve : Spec.resolve ds s.locals s.globals f = .func F := by
     simp [Spec.resolve, Spec.lookupVar, hlocf, hglob, hFl]
@@ -2177,7 +2184,7 @@ theorem call_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (ihE : Exp
   have hic : Inv3 cx P sg (paramKinds xks) { sa with locals := specFrame F.params vs }.toCore
       { (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2 with defers := [] :: ga.defers }
       (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).1 := by
-    refine ⟨⟨hfr.1, ?_, hepre⟩, hepkg, hetenv, hfr.2, ?_⟩
+    refine ⟨⟨hfr.1, ?_, hepre⟩, hepkg, hetenv, fun x hx => ⟨(hfr.2 x hx).1, fun _ => (hfr.2 x hx).2⟩, ?_⟩
     · show sa.out = (paramsBound xks ws (calleeEnv P fi).push { ga with steps := k2 }).2.out
       rw [paramsBound, gframe_out hpst']; exact hia.inv.out
     · intro x hx; exact hia.globals x hx
@@ -2463,10 +2470,10 @@ theorem inv3_decl {κ : String → Option Kind} {t : Spec.St} {g : St} {env : En
     · simp [hyx] at hy
     · simp only [hyx, ite_false] at hy
       obtain ⟨h1, h2⟩ := hi.closed y hy
-      refine ⟨?_, ?_⟩
+      refine ⟨?_, fun ht => ?_⟩
       · show Spec.lookup (declSt m x v t).locals y = none
         rw [hloc]; simp only [Spec.lookup, Ne.symm hyx, ite_false]; exact h1
-      · rw [Env.lookup_bind _ _ _ _ hx_]; simp only [hyx, ite_false]; exact h2
+      · rw [Env.lookup_bind _ _ _ _ hx_]; simp only [hyx, ite_false]; exact h2 ht
   · intro f hf
     show Spec.lookup (declSt m x v t).globals f = none
     rw [hglob]; exact hi.globals f hf
@@ -3172,7 +3179,7 @@ theorem iife_sim3 (d : Nat) (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ihI : If
   obtain ⟨n, rfl⟩ : ∃ n, N = n + 6 := ⟨N - 6, by rw [Nat.mul_succ] at hN; omega⟩
   obtain ⟨p, hpk, hobjs, -⟩ := hF.pkg
   have hio : env.iota = none := hi.inv.pre.1
-  have hl' : env.lookup (kindName k) = none := (hi.closed _ hκ).2
+  have hl' : env.lookup (kindName k) = none := (hi.closed _ hκ).2 (by cases k <;> rfl)
   have ho : nameOwner cx env (kindName k) = none :=
     nameOwner_none cx env _ p (by rw [hi.pkg]; exact hpk) (hobjs _ (by cases k <;> simp [kindName]))
       (by cases k <;> decide)

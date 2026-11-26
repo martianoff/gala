@@ -33,7 +33,11 @@ def incPkg : PkgCtx :=
 def incCtx : Ctx := ⟨(∅ : HashMap String PkgCtx).insert "main" incPkg, "main"⟩
 
 theorem inc_funRel : FunRel 11 incSg incDs incCtx "main" := by
-  refine ⟨by decide, incPkg, by simp [incCtx], fun x hx => ?_, fun f sig h => ?_⟩
+  refine ⟨by decide, fun f hf => ?_, incPkg, by simp [incCtx], fun x hx => ?_, fun f sig h => ?_⟩
+  · unfold incSg at hf
+    split at hf
+    · rename_i hf'; subst hf'; rfl
+    · cases hf
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
     rcases hx with rfl | rfl | rfl | rfl | rfl <;> simp [incPkg]
   · unfold incSg at h
@@ -54,7 +58,7 @@ def incCallG : Expr := .call (.ident "inc") [.intLit 5] false
 theorem inc_lowerC : lowerC 11 incSg (fun _ => none) incCall = some (.int, incCallG) := rfl
 
 theorem inc_inv3 : Inv3 incCtx "main" incSg (fun _ => none) incCore incSt incEnv := by
-  refine ⟨⟨(fun _ _ h => by cases h), rfl, ?_⟩, rfl, rfl, fun x _ => ⟨rfl, by simp [incEnv, Env.lookup]⟩,
+  refine ⟨⟨(fun _ _ h => by cases h), rfl, ?_⟩, rfl, rfl, fun x _ => ⟨rfl, fun _ => by simp [incEnv, Env.lookup]⟩,
     fun _ _ => rfl⟩
   refine ⟨rfl, fun x hx => ?_⟩
   have ho : incPkg.objs.get? x = none := by
