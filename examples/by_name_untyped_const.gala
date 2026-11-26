@@ -1,7 +1,5 @@
 package main
 
-import "fmt"
-
 // An untyped constant passed by name (a `func() U` parameter) takes the type
 // the slot the call fills gives U, as a constant passed to a `U` parameter
 // does. With no slot, U is the constant's default type.
@@ -14,7 +12,9 @@ func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 
 func plain[U any](d U, on bool) Option[U] = if (on) Some(d) else None()
 
-func typeOf[U any](o Option[U]) string = fmt.Sprintf("%T", o)
+func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
+
+func typeOf[U any](o Option[U]) string = f"$o%T"
 
 func main() {
     val a Option[int64] = plain(5, true)
@@ -23,6 +23,11 @@ func main() {
     val none Option[uint8] = lazy(7, false)
     Println(a, p, f, none)
     Println(typeOf(p), typeOf(f), typeOf(lazy(5, true)))
+    val s Option[int64] = runS(5)
+    Println(s, typeOf(s))
+    // A companion Apply taking its argument by name: Try's.
+    val tr Try[int64] = Try(5)
+    Println(tr, f"$tr%T")
     val b = Box(0)
     val m Option[int64] = b.Lazy(5, true)
     Println(m, typeOf(m))

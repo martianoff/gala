@@ -2262,6 +2262,23 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}
 
 	// Non-generic Apply method: call Apply on a freshly constructed instance.
+	// A by-name constant takes the type the instance's type arguments give
+	// it (`Try(5)` in a `Try[int64]` slot).
+	if methodMeta != nil {
+		subst := map[string]transpiler.Type{}
+		recvArgs := t.getReceiverTypeArgTypes(t.astTypeToTranspilerType(fun))
+		for i, tp := range typeMeta.TypeParams {
+			if i < len(recvArgs) {
+				subst[tp] = recvArgs[i]
+			}
+		}
+		t.fixConstThunks(args, func(i int) transpiler.Type {
+			if pi := paramIndex(i, methodMeta.ParamTypes, methodMeta.Variadic); pi >= 0 {
+				return methodMeta.ParamTypes[pi]
+			}
+			return nil
+		}, subst)
+	}
 	receiver := &ast.CompositeLit{Type: fun}
 	return true, &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
@@ -6037,9 +6054,9 @@ func (t *galaASTTransformer) constThunkArg(expr ast.Expr) *ast.FuncLit {
 // parameters it fills only as an untyped constant does: it is one
 // (isUntypedConstArg), or a by-name thunk of one (constThunkArg). It is what
 // decides whether the slot's type arguments are spelled over the constant's
-// default; places that look at the constant itself (the order constants are
-// unified in, a lambda lowered over a constant's binding) keep
-// isUntypedConstArg.
+// default, and records a generic method's binding as one only constants make
+// (weakConst); places that look at the constant itself (the order constants
+// are unified in) keep isUntypedConstArg.
 func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
 	return t.isUntypedConstArg(expr) || t.constThunkArg(expr) != nil
 }
@@ -6061,12 +6078,16 @@ func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, paramType func(i in
 		if pt == nil {
 			continue
 		}
-		ft, ok := t.substituteInType(pt, resolved).(transpiler.FuncType)
+		// A Sendable[func() U] parameter takes the thunk itself.
+		unwrapped, _ := transpiler.UnwrapSendable(t.substituteInType(pt, resolved))
+		ft, ok := unwrapped.(transpiler.FuncType)
 		if !ok || len(ft.Params) != 0 || len(ft.Results) != 1 {
 			continue
 		}
+		// A type parameter in scope here (the caller's, spelled from the
+		// slot) can be named; one nothing binds cannot.
 		res := ft.Results[0]
-		if transpiler.IsUnusableOrAny(res) || t.hasTypeParams(res) {
+		if transpiler.IsUnusableOrAny(res) || t.mentionsUnboundTypeParam(res) {
 			continue
 		}
 		lit.Type.Results.List[0].Type = t.typeToExpr(res)

@@ -1,3 +1,5 @@
 Some(5) Some(5) Some(8) None()
 std.Option[int64] std.Option[float64] std.Option[int]
 Some(5) std.Option[int64]
+Success(5) std.Try[int64]
+Some(5) std.Option[int64]

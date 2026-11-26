@@ -21,6 +21,8 @@ func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) e
 
 func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 
+func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
+
 `
 	tests := []struct {
 		name     string
@@ -36,6 +38,16 @@ func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 			name:     "shift constant, float64 slot",
 			main:     "val p Option[float64] = lazy(1 << 3, true)\n    Println(p)",
 			contains: "lazy[float64](func() float64 {\n\t\treturn 1 << 3\n\t}, true)",
+		},
+		{
+			name:     "Sendable thunk",
+			main:     "val s Option[int64] = runS(5)\n    Println(s)",
+			contains: "runS[int64](func() int64 {\n\t\treturn 5\n\t})",
+		},
+		{
+			name:     "companion Apply",
+			main:     "val tr Try[int64] = Try(5)\n    Println(tr)",
+			contains: "std.Try[int64]{}.Apply(func() int64 {\n\t\treturn 5\n\t})",
 		},
 		{
 			name:     "no slot keeps the default type",

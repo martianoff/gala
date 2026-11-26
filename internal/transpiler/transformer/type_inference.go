@@ -1016,11 +1016,11 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 }
 
 // constSlotTypeArgs reports the type parameters of fMeta that only untyped
-// constant arguments bind (isUntypedConstArg) and that fromSlot, the slot the
-// call fills, binds to another type than the constants'. Go infers such a
-// parameter as the constant's default type (`int` for the `0` of `Id(0)` in
-// an `int64` slot), so the call has to spell the slot's. bound is what all
-// the arguments bind (argTypeArgs).
+// constant arguments, bare or passed by name, bind (isWeakConstArg) and that
+// fromSlot, the slot the call fills, binds to another type than the
+// constants'. Go infers such a parameter as the constant's default type
+// (`int` for the `0` of `Id(0)` in an `int64` slot), so the call has to spell
+// the slot's. bound is what all the arguments bind (argTypeArgs).
 func (t *galaASTTransformer) constSlotTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool, bound, fromSlot map[string]transpiler.Type) map[string]bool {
 	if len(fromSlot) == 0 {
 		return nil
