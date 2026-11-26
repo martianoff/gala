@@ -1,0 +1,33 @@
+{
+  "name": "tree-sitter-gala",
+  "version": "0.1.0",
+  "description": "GALA grammar for tree-sitter",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martianoff/gala.git",
+    "directory": "ide/tree-sitter-gala"
+  },
+  "keywords": [
+    "incremental",
+    "parsing",
+    "tree-sitter",
+    "gala"
+  ],
+  "files": [
+    "grammar.js",
+    "tree-sitter.json",
+    "queries/*",
+    "src/**"
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": "0.25.10"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate --abi 14",
+    "test": "tree-sitter test",
+    "parse-all": "bash script/parse-all.sh",
+    "check-queries": "bash script/check-queries.sh"
+  }
+}

@@ -1,0 +1,63 @@
+package main
+// <- keyword.import
+//      ^ module
+
+import . "martianoff/gala/collection_immutable"
+// <- keyword.import
+//     ^ operator
+//        ^ string
+
+sealed type Shape {
+// <- keyword.type
+//     ^ keyword.type
+//          ^ type
+    case Circle(Radius float64)
+    // <- keyword.conditional
+    //   ^ constructor
+    //          ^ variable.member
+    //                 ^ type.builtin
+}
+
+func area(s Shape) float64 = s match {
+// <- keyword.function
+//    ^ function
+//        ^ variable.parameter
+//          ^ type
+//                           ^ variable
+//                             ^ keyword.conditional
+    case Circle(r) if r > 0 => 3.14 * r * r
+    //   ^ constructor
+    //             ^ keyword.conditional
+    //                         ^ number.float
+    case Unit => 1.0
+    //   ^ constructor
+    case _ => 0.0
+    //   ^ variable.builtin
+}
+
+func (c Counter) Next() int = c.n + 1
+//    ^ variable.parameter
+//               ^ function.method
+//                              ^ variable.member
+//                                  ^ number
+
+func apply(f func(Shape) int) int = 0
+//                ^ type
+//                       ^ type.builtin
+
+func main() {
+    val xs = ArrayOf(1, 2, 3)
+    // <- keyword
+    //       ^ function.call
+    val total = xs.Map((x) => x * 2).Size()
+    //             ^ function.method.call
+    //                  ^ variable.parameter
+    //                     ^ operator
+    Println(s"total = ${total} for $xs")
+    //      ^ string.special
+    //                ^ punctuation.special
+    //                  ^ variable
+    //                             ^ punctuation.special
+    val ok = true
+    //       ^ boolean
+}

@@ -53,6 +53,7 @@ Read these files and compare:
 | `ide/intellij/.../GalaAnnotator.kt` | BUILTIN_TYPE_NAMES | types.go IsPrimitiveType |
 | `ide/intellij/.../GalaSyntaxHighlighter.kt` | keyword token list | gala.g4 named lexer tokens |
 | `ide/vscode/syntaxes/gala.tmLanguage.json` | `keywords` patterns | gala.g4 word tokens; enforced by `//ide/vscode:vscode_test` (SYNC.md #6d) |
+| `ide/tree-sitter-gala/grammar.js`, `src/scanner.c`, `queries/highlights.scm` | grammar rules, line-break rule, keyword and builtin-type captures | gala.g4, newline.go, types.go IsPrimitiveType; checked by the `Tree-sitter grammar` workflow (SYNC.md #6e) |
 
 **LSP Server:**
 
@@ -87,6 +88,11 @@ After fixes:
 ```bash
 bazel build //cmd/gala-lsp:gala-lsp //ide/intellij:plugin
 ```
+
+If the tree-sitter grammar changed, regenerate and test it as its
+`ide/tree-sitter-gala/README.md` describes (`tree-sitter generate --abi 14`,
+`tree-sitter test`, `script/parse-all.sh`, `script/check-queries.sh`) and
+commit the regenerated `src/`.
 
 ### Step 6: Report
 

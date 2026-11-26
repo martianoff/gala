@@ -6,3 +6,4 @@ docs/private
 formal/.lake
 ide/vscode/node_modules
 ide/vscode/.vscode-test
+ide/tree-sitter-gala/node_modules

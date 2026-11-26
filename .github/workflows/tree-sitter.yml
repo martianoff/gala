@@ -1,0 +1,82 @@
+name: Tree-sitter grammar
+
+# Checks the tree-sitter grammar in ide/tree-sitter-gala:
+#
+#   - the committed src/ is what `tree-sitter generate` makes from grammar.js
+#     (editors build the parser from src/parser.c, so it must not go stale);
+#   - its corpus and highlight tests pass;
+#   - every .gala file in the repository parses with no ERROR or MISSING node,
+#     except the ones listed in test/parse-all.exclude;
+#   - queries/highlights.scm captures every gala.g4 keyword and exactly the
+#     builtin types of IsPrimitiveType (internal/transpiler/types.go).
+#
+# Runs when the grammar, gala.g4, newline.go, types.go or any .gala file
+# changes: a new construct in GALA code that the grammar cannot parse shows up
+# here.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "ide/tree-sitter-gala/**"
+      - "**/*.gala"
+      - "internal/parser/grammar/gala.g4"
+      - "internal/parser/newline.go"
+      - "internal/transpiler/types.go"
+      - ".github/workflows/tree-sitter.yml"
+  push:
+    branches: [master]
+    paths:
+      - "ide/tree-sitter-gala/**"
+      - "**/*.gala"
+      - "internal/parser/grammar/gala.g4"
+      - "internal/parser/newline.go"
+      - "internal/transpiler/types.go"
+      - ".github/workflows/tree-sitter.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tree-sitter-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grammar:
+    name: Tree-sitter grammar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide/tree-sitter-gala
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the tree-sitter CLI
+        # The version pinned in package.json's devDependencies; the steps below
+        # run package.json's scripts, so the version and the ABI live there.
+        run: npm install --global "tree-sitter-cli@$(node -p "require('./package.json').devDependencies['tree-sitter-cli']")"
+
+      - name: Generated parser is up to date
+        run: |
+          npm run generate
+          if [[ -n "$(git status --porcelain -- src)" ]]; then
+            echo "::error::ide/tree-sitter-gala/src is stale; run 'npm run generate' in ide/tree-sitter-gala and commit the result"
+            git status --short -- src
+            git diff --stat -- src
+            exit 1
+          fi
+
+      - name: Corpus and highlight tests
+        run: npm test
+
+      - name: Parse every .gala file
+        run: npm run parse-all
+
+      - name: Highlights cover every keyword and builtin type
+        run: npm run check-queries

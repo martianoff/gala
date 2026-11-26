@@ -1,0 +1,218 @@
+==================
+Match with extractors and wildcard
+==================
+
+package main
+
+func area(s Shape) float64 = s match {
+    case Circle(r) => 3.14 * r * r
+    case Rect(w, h) => w * h
+    case _ => 0.0
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (match_expression
+      (identifier)
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier)))
+        (expression_statement
+          (binary_expression
+            (binary_expression
+              (float_literal)
+              (identifier))
+            (identifier))))
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier)
+            (identifier)))
+        (expression_statement
+          (binary_expression
+            (identifier)
+            (identifier))))
+      (case_clause
+        (identifier)
+        (expression_statement
+          (float_literal))))))
+
+==================
+Guards, alternatives, typed and rest patterns
+==================
+
+package main
+
+func f(x any) string = x match {
+    case n: int if n > 0 => "positive"
+    case 1 | 2 => "small"
+    case Some("a" | "b") => "letter"
+    case Cons(head, tail...) => "list"
+    case Some(Right((a, b))) => "nested"
+    case _ => {
+        Println("other")
+        "other"
+    }
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (match_expression
+      (identifier)
+      (case_clause
+        (typed_pattern
+          (identifier)
+          (type_identifier))
+        (binary_expression
+          (identifier)
+          (int_literal))
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))
+      (case_clause
+        (binary_expression
+          (int_literal)
+          (int_literal))
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (binary_expression
+              (interpreted_string_literal
+                (string_content))
+              (interpreted_string_literal
+                (string_content)))))
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier)
+            (rest_pattern
+              (identifier))))
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (call_expression
+              (identifier)
+              (argument_list
+                (tuple_expression
+                  (identifier)
+                  (identifier))))))
+        (expression_statement
+          (interpreted_string_literal
+            (string_content))))
+      (case_clause
+        (identifier)
+        (block
+          (expression_statement
+            (call_expression
+              (identifier)
+              (argument_list
+                (interpreted_string_literal
+                  (string_content)))))
+          (expression_statement
+            (interpreted_string_literal
+              (string_content))))))))
+
+==================
+Partial function literal
+==================
+
+package main
+
+val firsts = pairs.Collect({ case (a, "x") => a })
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (call_expression
+      (selector_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (partial_function_literal
+          (case_clause
+            (tuple_expression
+              (identifier)
+              (interpreted_string_literal
+                (string_content)))
+            (expression_statement
+              (identifier))))))))
+
+==================
+Match on a call chain
+==================
+
+package main
+
+val r = strconv.Atoi(s) match {
+    case Success(v) => v
+    case Failure(e) => -1
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (match_expression
+      (call_expression
+        (selector_expression
+          (identifier)
+          (field_identifier))
+        (argument_list
+          (identifier)))
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier)))
+        (expression_statement
+          (identifier)))
+      (case_clause
+        (call_expression
+          (identifier)
+          (argument_list
+            (identifier)))
+        (expression_statement
+          (unary_expression
+            (int_literal)))))))

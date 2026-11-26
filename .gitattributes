@@ -14,3 +14,11 @@ MODULE.bazel text eol=lf
 **/testdata/fuzz/** -text
 # The golden tests' frozen corpus: its byte offsets must not depend on the checkout.
 *.txtar text eol=lf
+# The tree-sitter grammar's generated parser is checked against a fresh
+# `tree-sitter generate` byte for byte, and its corpus tests compare text: keep
+# the whole directory LF on every checkout.
+ide/tree-sitter-gala/** text eol=lf
+ide/tree-sitter-gala/src/parser.c linguist-generated
+ide/tree-sitter-gala/src/grammar.json linguist-generated
+ide/tree-sitter-gala/src/node-types.json linguist-generated
+ide/tree-sitter-gala/src/tree_sitter/** linguist-generated

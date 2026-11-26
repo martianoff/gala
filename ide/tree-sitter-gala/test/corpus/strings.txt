@@ -1,0 +1,202 @@
+==================
+Interpreted strings and escapes
+==================
+
+package main
+
+val a = "hello\tworld\n"
+val b = ""
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (interpreted_string_literal
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence)))
+  (val_declaration
+    (identifier)
+    (interpreted_string_literal)))
+
+==================
+Raw multi-line strings
+==================
+
+package main
+
+val q = `SELECT *
+FROM users
+WHERE id = 1`
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (raw_string_literal)))
+
+==================
+Interpolated strings
+==================
+
+package main
+
+val a = s"hello $name"
+val b = s"total = ${xs.Size() + 1} items"
+val c = s"price: $$9 and 100%"
+val d = s"${m.Get("k")} and ${if (ok) "y" else "n"}"
+val e = s"${keys.MkString(\",\")}"
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (string_content)
+      (interpolation
+        (identifier))))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (string_content)
+      (interpolation
+        (binary_expression
+          (call_expression
+            (selector_expression
+              (identifier)
+              (field_identifier))
+            (argument_list))
+          (int_literal)))
+      (string_content)))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (string_content)
+      (escape_sequence)
+      (string_content)))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (interpolation
+        (call_expression
+          (selector_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (interpreted_string_literal
+              (string_content)))))
+      (string_content)
+      (interpolation
+        (if_expression
+          (identifier)
+          (interpreted_string_literal
+            (string_content))
+          (interpreted_string_literal
+            (string_content))))))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (interpolation
+        (call_expression
+          (selector_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (interpreted_string_literal
+              (string_content))))))))
+
+==================
+Format strings
+==================
+
+package main
+
+val a = f"$price%.2f"
+val b = f"${x * 2}%04d and ${y}"
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (interpolation
+        (identifier))
+      (string_content)))
+  (val_declaration
+    (identifier)
+    (interpolated_string_literal
+      (interpolation
+        (binary_expression
+          (identifier)
+          (int_literal)))
+      (string_content)
+      (interpolation
+        (identifier)))))
+
+==================
+Comments
+==================
+
+package main
+
+// line comment
+/* block
+   comment */
+val a = 1 // trailing
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (comment)
+  (comment)
+  (val_declaration
+    (identifier)
+    (int_literal))
+  (comment))
+
+==================
+An escaped line break in a string
+==================
+
+package main
+
+func f() {
+    val s = "a\
+b"
+    (s, 1)
+}
+
+---
+
+(source_file
+  (package_clause
+    (package_identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list)
+    (block
+      (val_declaration
+        (identifier)
+        (interpreted_string_literal
+          (string_content)
+          (escape_sequence)
+          (string_content)))
+      (expression_statement
+        (tuple_expression
+          (identifier)
+          (int_literal))))))
