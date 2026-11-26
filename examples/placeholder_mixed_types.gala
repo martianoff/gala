@@ -35,4 +35,7 @@ func main() {
     // A placeholder lambda of mixed types inside another: each takes its own.
     val groups = ArrayOf(Group(rs), Group(ArrayOf(R(4, "dd"))))
     Println(groups.FoldLeft(0, _ + _.Items.FoldLeft("", _ + _.Name).Size()))
+
+    // A nested call made on a `_` past a nested call's own `_`.
+    Println(groups.FoldLeft(0, _ + nums.Map(_ * 2).Size() + _.Items.Map(_.Lo).Size()))
 }

@@ -1705,11 +1705,14 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// 2).Size() + _.Lo`). Lowering finds which it took; when it typed one by
 	// another parameter than its own, lower again by the ones it took, until
 	// the two agree: what a nested call takes may depend on the type of a
-	// `_` it is called on. A lowering that failed with more `_` written than
-	// parameters may have failed for that, so the `_` it takes are learnt
-	// from one binding them all to `any`; otherwise its error stands. A
-	// lambda that takes other than one `_` per parameter is rejected below
-	// whatever its `_` are typed by, so it is not lowered again.
+	// `_` it is called on. One typed `any` for being past the parameters
+	// hides the function slot of a nested call made on it, which then
+	// leaves its `_` to this lambda: with more taken than parameters, the
+	// first ones taken are tried. A lowering that failed may have failed for
+	// a `_` typed by another parameter, so the `_` it takes are learnt from
+	// one binding them all to `any`, and its error stands when that types
+	// each by its own. A lambda that takes fewer `_` than parameters is
+	// rejected below whatever they are typed by.
 	for range placeholderCount {
 		if byPosition == nil {
 			break
@@ -1717,16 +1720,19 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		var taken []int
 		if err == nil {
 			taken = takes.taken(body)
-		} else if placeholderCount > len(ft.Params) {
-			shared, sharedResult, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil)
-			if sharedErr == nil {
-				taken = sharedTakes.taken(shared)
-				if len(taken) != len(ft.Params) {
-					body, bodyResultType, takes, err = shared, sharedResult, sharedTakes, nil
-				}
+		} else if shared, sharedResult, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil); sharedErr == nil {
+			taken = sharedTakes.taken(shared)
+			if len(taken) != len(ft.Params) {
+				// Its arity is the error to report, unless a lowering below
+				// finds one `_` per parameter.
+				body, bodyResultType, takes, err = shared, sharedResult, sharedTakes, nil
 			}
 		}
-		if len(taken) != len(ft.Params) || typedAsTaken(byPosition, paramTypes, taken) {
+		if len(taken) < len(ft.Params) {
+			break
+		}
+		taken = taken[:len(ft.Params)]
+		if typedAsTaken(byPosition, paramTypes, taken) {
 			break
 		}
 		// Restoring hands the snapshot itself back, so take another.
