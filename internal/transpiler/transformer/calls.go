@@ -6046,7 +6046,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
 	// left untyped (an open one) is the function itself: no Try or Tuple is.
 	if len(ft.Results) > 1 {
-		if isNilIdent(ast.Unparen(expr)) {
+		if isNilIdent(expr) {
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
@@ -6135,12 +6135,14 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	}
 	// What a Go defined type or alias is declared over: a fixed-length array
 	// (`type ID [16]byte`, as uuid.UUID is) or a complex number, which
-	// resolveScalar does not count as scalars.
+	// resolveScalar does not count as scalars, or a type nil can be. An alias
+	// of a pointer (`type P = *time.Time`) is settled here: the lookup below
+	// would find the struct it points to.
 	switch e := end.(type) {
 	case transpiler.ArrayType:
-		if e.Fixed {
-			return true
-		}
+		return e.Fixed
+	case transpiler.PointerType, transpiler.MapType, transpiler.ChanType, transpiler.FuncType, transpiler.InterfaceType:
+		return false
 	case transpiler.BasicType:
 		if isConstantNumericType(e.Name) {
 			return true

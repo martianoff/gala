@@ -518,6 +518,9 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go alias of a struct result", "func() Stamp", "b(nil, 2)", "return nil"},
 		{"a Go alias of a named map result", "func() Header", "return nil", ""},
 		{"a Go named slice result", "func() Names", "return nil", ""},
+		{"a Go alias of a pointer to a struct result", "func() StampRef", "return nil", ""},
+		{"a Go alias of a pointer to a local struct result", "func() SpotRef", "return nil", ""},
+		{"a Go named complex result", "func() Phase", "b(nil, 2)", "return nil"},
 	}
 	const bridge = `package main
 
@@ -533,6 +536,14 @@ type Stamp = time.Time
 type Header = http.Header
 
 type Names []string
+
+type StampRef = *time.Time
+
+type Spot struct{ X int }
+
+type SpotRef = *Spot
+
+type Phase complex64
 `
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(bridge), 0o600))
