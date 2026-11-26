@@ -289,34 +289,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 	case *ast.FuncLit:
 		// Handle lambda expressions - extract their function type
 		if e.Type != nil {
-			var params []transpiler.Type
-			var results []transpiler.Type
-			if e.Type.Params != nil {
-				for _, field := range e.Type.Params.List {
-					paramType := t.astTypeToTranspilerType(field.Type)
-					// If there are multiple names, repeat the type for each
-					if len(field.Names) > 0 {
-						for range field.Names {
-							params = append(params, paramType)
-						}
-					} else {
-						params = append(params, paramType)
-					}
-				}
-			}
-			if e.Type.Results != nil {
-				for _, field := range e.Type.Results.List {
-					resultType := t.astTypeToTranspilerType(field.Type)
-					if len(field.Names) > 0 {
-						for range field.Names {
-							results = append(results, resultType)
-						}
-					} else {
-						results = append(results, resultType)
-					}
-				}
-			}
-			return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(e.Type.Params)}
+			return t.astTypeToTranspilerType(e.Type)
 		}
 	case *ast.CompositeLit:
 		// Use astTypeToTranspilerType to preserve generic type parameters
@@ -509,7 +482,7 @@ func (t *galaASTTransformer) resolveType(name string) transpiler.Type {
 // Use this when callers need to unify the function's signature against an
 // expected param type to bind both method-level and function-level type params.
 func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) transpiler.FuncType {
-	return signatureType(fm.ParamTypes, fm.InoutParams, fm.ReturnType, fm.GoResults)
+	return signatureType(fm.ParamTypes, fm.InoutParams, fm.Variadic, fm.ReturnType, fm.GoResults)
 }
 
 // signatureType is the FuncType of a declaration with the given parameter
@@ -517,8 +490,8 @@ func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) 
 // declaration with a Go result list (goResults non-nil) has those results
 // instead: its value is a Go function with several results, and a call of
 // that value is lifted as a Go call's is. The parameters are copied.
-func signatureType(paramTypes []transpiler.Type, inout []bool, returnType transpiler.Type, goResults []transpiler.Type) transpiler.FuncType {
-	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...), Inout: inout}
+func signatureType(paramTypes []transpiler.Type, inout []bool, variadic bool, returnType transpiler.Type, goResults []transpiler.Type) transpiler.FuncType {
+	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...), Inout: inout, Variadic: variadic && len(paramTypes) > 0}
 	if goResults != nil {
 		ft.Results = append([]transpiler.Type(nil), goResults...)
 	} else if transpiler.HasResult(returnType) {
@@ -1404,7 +1377,7 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 		for i, r := range v.Results {
 			newResults[i] = t.substituteInTypeDepth(r, paramMap, depth, qualifiedToo)
 		}
-		return transpiler.FuncType{Params: newParams, Results: newResults, Inout: v.Inout}
+		return transpiler.FuncType{Params: newParams, Results: newResults, Inout: v.Inout, Variadic: v.Variadic}
 	default:
 		return typ
 	}
@@ -1785,13 +1758,10 @@ func (t *galaASTTransformer) inferFromGoCoreTypes(sig *transpiler.GoFuncSignatur
 // goFuncValueType is the type of name as a value when it is a Go function the
 // file reaches unqualified (its package's hand-written Go, or a dot import),
 // instantiated with typeArgs when it is generic. NilType otherwise, and for a
-// generic one without its type arguments, which is no value Go can hold, and
-// for a variadic one.
+// generic one without its type arguments, which is no value Go can hold.
 func (t *galaASTTransformer) goFuncValueType(name string, typeArgs []transpiler.Type) transpiler.Type {
 	sig := t.lookupGoIdentSignature(name)
-	// FuncType records no variadic parameter, so a variadic function is left
-	// untyped rather than typed as one taking a slice.
-	if sig == nil || sig.IsVariadic || len(typeArgs) != len(sig.TypeParams) {
+	if sig == nil || len(typeArgs) != len(sig.TypeParams) {
 		return transpiler.NilType{}
 	}
 	params := make([]transpiler.Type, len(sig.Params))
@@ -1802,7 +1772,7 @@ func (t *galaASTTransformer) goFuncValueType(name string, typeArgs []transpiler.
 	if subst := t.inferGoSignatureTypeArgs(sig, nil, typeArgs, false); len(subst) > 0 {
 		params, results = t.substituteGoTypeParamsIn(params, subst), t.substituteGoTypeParamsIn(results, subst)
 	}
-	return transpiler.FuncType{Params: params, Results: results}
+	return transpiler.FuncType{Params: params, Results: results, Variadic: sig.IsVariadic && len(params) > 0}
 }
 
 // instantiateGoSignatureReturn substitutes a Go generic signature's type

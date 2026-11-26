@@ -2514,6 +2514,7 @@ func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typePara
 	// Parse parameters
 	var params []transpiler.Type
 	var inout []bool
+	variadic := false
 	if paramsStr != "" {
 		paramStrs := a.splitTypeList(paramsStr)
 		for i, p := range paramStrs {
@@ -2521,6 +2522,10 @@ func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typePara
 			if rest, isInout := strings.CutPrefix(p, transpiler.InoutPrefix); isInout {
 				p = rest
 				inout = transpiler.WithInout(inout, i)
+			}
+			if rest, isVariadic := strings.CutPrefix(p, transpiler.VariadicPrefix); isVariadic && i == len(paramStrs)-1 {
+				p = rest
+				variadic = true
 			}
 			params = append(params, a.resolveTypeWithParams(p, pkgName, typeParams))
 		}
@@ -2540,7 +2545,7 @@ func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typePara
 		}
 	}
 
-	return transpiler.FuncType{Params: params, Results: results, Inout: inout}
+	return transpiler.FuncType{Params: params, Results: results, Inout: inout, Variadic: variadic}
 }
 
 // splitTypeList splits a comma-separated type list, respecting brackets

@@ -203,6 +203,9 @@ func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 				continue
 			}
 			params[i] = DisplayTypeNamed(p, name)
+			if v.IsVariadicParam(i) {
+				params[i] = VariadicPrefix + params[i]
+			}
 		}
 		s := "func(" + strings.Join(params, ", ") + ")"
 		switch len(v.Results) {
@@ -640,6 +643,9 @@ type FuncType struct {
 	// when none is. A `func(inout T)` and a `func(Ptr[T])` are distinct GALA
 	// types with the same Go type.
 	Inout []bool
+	// Variadic is true when the last parameter is `...T`; its Params entry is
+	// the element type T, as a variadic declaration records it.
+	Variadic bool
 }
 
 func (t FuncType) String() string {
@@ -651,6 +657,9 @@ func (t FuncType) String() string {
 		}
 		if t.IsInout(i) {
 			b.WriteString(InoutPrefix)
+		}
+		if t.IsVariadicParam(i) {
+			b.WriteString(VariadicPrefix)
 		}
 		b.WriteString(p.String())
 	}
@@ -673,6 +682,13 @@ func (t FuncType) String() string {
 // InoutPrefix is how FuncType.String marks an `inout` parameter, and how
 // ParseType reads it back.
 const InoutPrefix = "inout "
+
+// VariadicPrefix is how FuncType.String marks a variadic last parameter, and
+// how ParseType reads it back.
+const VariadicPrefix = "..."
+
+// IsVariadicParam reports whether parameter i is the variadic `...T` one.
+func (t FuncType) IsVariadicParam(i int) bool { return t.Variadic && i == len(t.Params)-1 }
 
 // IsInout reports whether parameter i is `inout`.
 func (t FuncType) IsInout(i int) bool { return i >= 0 && i < len(t.Inout) && t.Inout[i] }
@@ -740,10 +756,15 @@ func parseFuncType(s string) (FuncType, bool) {
 		return FuncType{}, false
 	}
 	var ft FuncType
-	for i, p := range splitTopLevel(s[len("func(") : closeParen]) {
+	params := splitTopLevel(s[len("func(") : closeParen])
+	for i, p := range params {
 		if rest, inout := strings.CutPrefix(strings.TrimSpace(p), InoutPrefix); inout {
 			p = rest
 			ft.Inout = WithInout(ft.Inout, i)
+		}
+		if rest, variadic := strings.CutPrefix(strings.TrimSpace(p), VariadicPrefix); variadic && i == len(params)-1 {
+			p = rest
+			ft.Variadic = true
 		}
 		ft.Params = append(ft.Params, ParseType(p))
 	}
@@ -961,7 +982,7 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 		for i, r := range v.Results {
 			results[i] = SubstituteTypeParams(r, subst)
 		}
-		return FuncType{Params: params, Results: results, Inout: v.Inout}
+		return FuncType{Params: params, Results: results, Inout: v.Inout, Variadic: v.Variadic}
 	}
 	return t
 }

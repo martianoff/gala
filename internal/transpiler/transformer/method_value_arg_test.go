@@ -196,16 +196,16 @@ func names() List[string] = ListOf("a")
 			wantErr: "the method value Box.Pair takes 1 argument(s), but the function type it is used as takes 2",
 		},
 		{
-			// The closure's signature cannot spell a variadic function
-			// type; it used to come out as `func(any) int` (#1407).
-			name:    "variadic function type argument",
-			main:    "val b = Box(1)\n    val f = b.Pair[func(...int) int]\n    Println(f != nil)",
-			wantErr: "the method value Box.Pair cannot be written as a function value",
+			// The closure's signature spells a variadic function type as
+			// written; it used to come out as `func(any) int` (#1407, #1411).
+			name: "variadic function type argument",
+			main: "val b = Box(1)\n    val f = b.Pair[func(...int) int]\n    Println(f != nil)",
+			want: "return Box_Pair[func(...int) int, int](__recv_",
 		},
 		{
-			name:    "variadic function type nested in a type argument",
-			main:    "val b = Box(1)\n    val f = b.Pair[Option[func(...int) int]]\n    Println(f != nil)",
-			wantErr: "the method value Box.Pair cannot be written as a function value",
+			name: "variadic function type nested in a type argument",
+			main: "val b = Box(1)\n    val f = b.Pair[Option[func(...int) int]]\n    Println(f != nil)",
+			want: "std.Option[func(...int) int]",
 		},
 		{
 			name:    "too many type arguments",

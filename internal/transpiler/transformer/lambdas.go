@@ -27,11 +27,12 @@ var ExpectedVoid ast.Expr = &ast.Ident{Name: "__void__"}
 // lambdaExpectation decomposes a function-shaped expected type — a func type,
 // or a named alias of one — into what lowerLambda takes:
 // the expected result type (ExpectedVoid when there is none) and the parameter
-// types. ok is false when typ is not function-shaped.
-func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Expr, params []transpiler.Type, ok bool) {
+// types, and whether the last of them is variadic. ok is false when typ is
+// not function-shaped.
+func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Expr, params []transpiler.Type, variadic, ok bool) {
 	ft := t.resolveTranspilerTypeAsFuncType(typ)
 	if ft == nil {
-		return nil, nil, false
+		return nil, nil, false, false
 	}
 	switch {
 	case len(ft.Results) >= 2:
@@ -49,7 +50,7 @@ func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Exp
 	default:
 		ret = ExpectedVoid
 	}
-	return ret, ft.Params, true
+	return ret, ft.Params, ft.Variadic, true
 }
 
 // lambdaArgCalleeOr is lambdaArgCallee, or fallback when that names no call.
@@ -155,7 +156,7 @@ func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
 // It returns the func literal without the nil checks of its Ptr parameters
 // (entryChecks): finishLambda puts them first in the body, above the line
 // marker of an expression body.
-func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool, goResults *goResultsBody) (lit *ast.FuncLit, entryChecks []ast.Stmt, err error) {
+func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, variadic, requireTypedParams, declaredResult bool, goResults *goResultsBody) (lit *ast.FuncLit, entryChecks []ast.Stmt, err error) {
 	if t.onNativeLambda != nil && l.node.Ok() {
 		t.onNativeLambda(l.node.GalaNodeRef)
 	}
@@ -195,11 +196,18 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			// The slot names this parameter but (part of) its type could not be
 			// resolved: see the check below.
 			unresolvedSlot := expType != nil && transpiler.ContainsUnusable(expType)
+			// The `...T` parameter of a variadic slot: the lambda takes it
+			// so, and its body sees the slice of T.
+			variadicParam := variadic && !p.isInout && i == len(expectedParamTypes)-1 && i == len(params)-1
 			typeApplied := false
 			if !p.typ.ok() {
 				if expType != nil && !unresolvedSlot && !expType.IsAny() {
 					typeExpr := t.typeToExpr(expType)
 					field.Type = typeExpr
+					if variadicParam {
+						field.Type = &ast.Ellipsis{Elt: typeExpr}
+						expType = transpiler.ArrayType{Elem: expType}
+					}
 					ptr, isPtr := expType.(transpiler.PointerType)
 					switch {
 					case p.isInout && isPtr && ptr.NonNull:
@@ -258,6 +266,10 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			}
 			// A parameter filling a slot typed `any` has that type.
 			if !p.typ.ok() && !typeApplied && anySlot {
+				if variadicParam {
+					field.Type = &ast.Ellipsis{Elt: field.Type}
+					expType = transpiler.ArrayType{Elem: expType}
+				}
 				t.addParam(p.name, expType, p.isVar)
 			}
 			fieldList.List = append(fieldList.List, field)

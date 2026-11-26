@@ -2309,10 +2309,15 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 		return transpiler.ChanType{Elem: convertGoType(t.Elem(), exact), Dir: dir}
 
 	case *types.Signature:
-		result := transpiler.FuncType{}
+		result := transpiler.FuncType{Variadic: t.Variadic()}
 		params := t.Params()
 		for i := 0; i < params.Len(); i++ {
-			result.Params = append(result.Params, convertGoType(params.At(i).Type(), exact))
+			pt := params.At(i).Type()
+			// A variadic `...T` is recorded element-wise, as a declaration's is.
+			if s, ok := pt.(*types.Slice); ok && result.Variadic && i == params.Len()-1 {
+				pt = s.Elem()
+			}
+			result.Params = append(result.Params, convertGoType(pt, exact))
 		}
 		results := t.Results()
 		for i := 0; i < results.Len(); i++ {
@@ -2370,8 +2375,7 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 // so that the type names the same Go type: every array length, type
 // argument and interface method is kept. A name only t's own package can
 // write (an unexported field, method or type), a type reached through a
-// package's alias, unsafe.Pointer and a variadic function type have no
-// exact form in the type model.
+// package's alias and unsafe.Pointer have no exact form in the type model.
 func spellsExactly(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic:
@@ -2408,7 +2412,7 @@ func spellsExactly(t types.Type) bool {
 	case *types.Chan:
 		return spellsExactly(t.Elem())
 	case *types.Signature:
-		return !t.Variadic() && spellsExactly(t.Params()) && spellsExactly(t.Results())
+		return spellsExactly(t.Params()) && spellsExactly(t.Results())
 	case *types.Tuple:
 		for i := 0; i < t.Len(); i++ {
 			if !spellsExactly(t.At(i).Type()) {

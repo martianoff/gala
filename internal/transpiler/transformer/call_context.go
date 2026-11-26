@@ -209,7 +209,7 @@ func (t *galaASTTransformer) funcSlotType(ft transpiler.FuncType, typeParams []s
 	case len(ft.Results) == 0 || len(typeParams) == 0:
 		return ft
 	case !funcTypeParamsMentionTypeParams(ft.Params, typeParams):
-		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, typeParams), Inout: ft.Inout}
+		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, typeParams), Inout: ft.Inout, Variadic: ft.Variadic}
 	default:
 		return transpiler.NilType{}
 	}
@@ -266,6 +266,7 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 				Params:  ft.Params,
 				Results: maskTypeParamResults(ft.Results, ctx.applyTypeParams),
 				Inout:   ft.Inout,
+				Variadic: ft.Variadic,
 			}
 		}
 		// A parameter naming none of the type's type parameters is known
@@ -487,7 +488,7 @@ func (t *galaASTTransformer) maskUnboundMethodTypeParams(typ transpiler.Type, ct
 		return typ
 	}
 	if ft, ok := typ.(transpiler.FuncType); ok && !funcTypeParamsMentionTypeParams(ft.Params, unbound) {
-		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, unbound), Inout: ft.Inout}
+		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, unbound), Inout: ft.Inout, Variadic: ft.Variadic}
 	}
 	return transpiler.NilType{}
 }

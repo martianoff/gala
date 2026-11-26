@@ -3,9 +3,8 @@ package main
 import . "martianoff/gala/collection_immutable"
 
 // A method with type parameters of its own, instantiated with a variadic
-// function type. Its method value `b.Pair[func(...int) int]` is an error, as
-// its closure's signature cannot be written with that type; the method is
-// called with it directly, or wrapped in a lambda.
+// function type, called directly and from a lambda. Its method value
+// `b.Pair[func(...int) int]` keeps the `...` too (see variadic_func_type).
 
 struct Box[T any](V T)
 

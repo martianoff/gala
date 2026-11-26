@@ -265,7 +265,11 @@ import (
 // v56: a Go defined type other than a struct or an interface records its
 // underlying type exactly when GALA can spell it (instance type arguments,
 // array lengths). A v55 payload holds the lossy spelling.
-const CacheVersion = "v56"
+//
+// v57: a function type records a variadic last parameter (FuncType.Variadic),
+// so `func(...int) int` and `func(int) int` stay distinct. A v56 payload
+// lacks it.
+const CacheVersion = "v57"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

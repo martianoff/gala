@@ -269,7 +269,7 @@ func (t *galaASTTransformer) interfaceLiteralMethods(lit interfaceLiteral, args 
 // function takes the slice its last parameter is, as a variadic function's
 // body sees it.
 func interfaceMethodFuncType(m *transpiler.MethodMetadata) transpiler.FuncType {
-	ft := signatureType(m.ParamTypes, m.InoutParams, m.ReturnType, m.GoResults)
+	ft := signatureType(m.ParamTypes, m.InoutParams, false, m.ReturnType, m.GoResults)
 	if n := len(ft.Params); m.Variadic && n > 0 {
 		ft.Params[n-1] = transpiler.ArrayType{Elem: ft.Params[n-1]}
 	}

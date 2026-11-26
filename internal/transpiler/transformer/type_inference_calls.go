@@ -133,7 +133,7 @@ func goSignatureFuncType(sig *transpiler.GoFuncSignature) transpiler.FuncType {
 	for _, p := range sig.Params {
 		params = append(params, p.Type)
 	}
-	return transpiler.FuncType{Params: params, Results: sig.Returns}
+	return transpiler.FuncType{Params: params, Results: sig.Returns, Variadic: sig.IsVariadic && len(params) > 0}
 }
 
 // methodValueType is the type of a method value — a GALA method named without
@@ -177,7 +177,7 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 	if mm.IsGeneric || len(mm.TypeParams) > 0 {
 		return nil, false
 	}
-	ft := signatureType(mm.ParamTypes, mm.InoutParams, mm.ReturnType, mm.GoResults)
+	ft := signatureType(mm.ParamTypes, mm.InoutParams, mm.Variadic, mm.ReturnType, mm.GoResults)
 	gen, isGeneric := recvType.(transpiler.GenericType)
 	if len(meta.TypeParams) == 0 && !isGeneric {
 		return ft, true

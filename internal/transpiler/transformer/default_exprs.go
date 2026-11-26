@@ -700,7 +700,7 @@ func (t *galaASTTransformer) recordDefaultLambdaHints(def exprSrc, declared tran
 	if len(params) == 0 {
 		return
 	}
-	_, expected, ok := t.lambdaExpectation(declared)
+	_, expected, _, ok := t.lambdaExpectation(declared)
 	if !ok {
 		return
 	}
