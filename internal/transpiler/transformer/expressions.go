@@ -722,8 +722,9 @@ type slot struct {
 	// only the lambda filling it binds — and this is that result, NilType
 	// where it names a type parameter. A lambda there produces a value of it,
 	// a block lambda its trailing value, as one filling a known `func(A) B`
-	// does. Only lowerLambdaArg reads it: a lambda inside another argument
-	// form (an if, a match) does not get it. Nil for any other slot.
+	// does. lowerLambdaArg reads it, for the argument's lambda or for one in
+	// a parenthesized, if or match value (lowerAgainst passes the slot on).
+	// Nil for any other slot.
 	funcResult transpiler.Type
 }
 
@@ -773,14 +774,16 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	// A result value of a Go-results body is checked where it is written:
 	// each branch of an if or match lowered against the slot is one, with a
 	// slot type or without one (a generic Go callee's).
-	if untyped && s.goResults == nil && s.hoist == "" {
+	// A slot with a function result but no type (slot.funcResult) still
+	// reaches each lambda inside a parenthesized, if or match value.
+	if untyped && s.goResults == nil && s.hoist == "" && s.funcResult == nil {
 		return t.lowerExpr(e)
 	}
 	f := t.classifyExpr(e)
 	if s.goResults != nil && !f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok() {
 		return t.lowerGoResultsValue(e, s, strict)
 	}
-	if untyped && s.goResults == nil && !t.hoistableForm(f) {
+	if untyped && s.goResults == nil && !t.hoistableForm(f) && !(s.funcResult != nil && t.needsExpectedType(e)) {
 		return t.lowerExpr(e)
 	}
 	if e.node.Ok() {
@@ -801,6 +804,9 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 				return nil, err
 			}
 			return t.finishLambda(lit, checks, s.typ, f.lambda.at(), f.lambda.expression(), b)
+		}
+		if s.funcResult != nil {
+			return t.lowerLambdaArg(f.lambda, s, strict)
 		}
 		return t.lowerExpr(e)
 	case f.partial.ok():
