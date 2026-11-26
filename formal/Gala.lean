@@ -31,6 +31,7 @@ import Gala.M5.Loop
 import Gala.M5.CallOrder
 import Gala.M5.CallInst
 import Gala.M5.IifeInst
+import Gala.M5.LoopInst
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems

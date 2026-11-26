@@ -862,14 +862,19 @@ def selfArgs (f : String) (n : Nat) : Spec.Expr → Option (List Spec.Expr)
   | .call (.name g) args => if g = f ∧ args.length = n then some args else none
   | _ => none
 
+mutual
 /-- No `if` used as a value, whose lowering is a function literal: the transformer does not
     loop a tail call with a closure in an argument (`containsFuncLit`, tco.go). -/
 def noIf : Spec.Expr → Bool
   | .ifExpr .. => false
   | .paren e | .unary _ e => noIf e
   | .binary _ l r => noIf l && noIf r
-  | .call _ args => args.attach.all fun ⟨a, _⟩ => noIf a
+  | .call _ args => noIfs args
   | _ => true
+def noIfs : List Spec.Expr → Bool
+  | [] => true
+  | a :: as => noIf a && noIfs as
+end
 
 /-- A leaf whose parentheses could hide a self-call or an `if` from the gate: not lowered. -/
 def parenHides : Spec.Expr → Bool
@@ -914,7 +919,7 @@ def lowerLoop (K : Nat) (sg : Sigs) (f : String) (xks : List (String × Kind)) (
   | e =>
     match selfArgs f xks.length e with
     | some args =>
-      if args.all noIf then (lowerArgs K sg κ (xks.map (·.2)) args).map (stepOf (xks.map (·.1))) else none
+      if noIfs args then (lowerArgs K sg κ (xks.map (·.2)) args).map (stepOf (xks.map (·.1))) else none
     | none =>
       if isCompound e || parenHides e then none
       else match lowerC K sg κ e with

@@ -784,7 +784,7 @@ variable {K : Nat} {sg : Sigs} {f : String} {xks : List (String × Kind)} {ρ : 
 theorem lowerLoop_leaf {e : Spec.Expr} (hne : ∀ c a b, e ≠ .ifExpr c a b) :
     lowerLoop K sg f xks ρ κ e = match selfArgs f xks.length e with
       | some args =>
-        if args.all noIf then (lowerArgs K sg κ (xks.map (·.2)) args).map (stepOf (xks.map (·.1))) else none
+        if noIfs args then (lowerArgs K sg κ (xks.map (·.2)) args).map (stepOf (xks.map (·.1))) else none
       | none =>
         if isCompound e || parenHides e then none
         else match lowerC K sg κ e with
