@@ -7092,9 +7092,10 @@ func withoutKeys(subst typeSubstMap, drop map[string]transpiler.Type) typeSubstM
 
 // hasOwnByNameType reports whether expr, an argument passed by name, has a
 // type of its own rather than one the slot gives it: an untyped constant
-// (weak, see constThunkArg), or a name, field, index or call of a type known
-// here (`x64`, `f()`), not a call that takes its type arguments from the slot
-// (`None()`) nor an if or match, whose constants the slot types.
+// (weak, see constThunkArg), or an expression of a type known here (`x64`,
+// `x64 + 1`, `f()`), not one that takes its type from the slot (`None()`) nor
+// an if or match (a function literal called at once), whose constants the
+// slot types.
 func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc) bool {
 	lowered, err := t.lowerExpr(expr)
 	if err != nil {
@@ -7103,14 +7104,13 @@ func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc) bool {
 	if t.isUntypedConstArg(lowered) {
 		return true
 	}
-	switch e := lowered.(type) {
-	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr:
+	switch e := ast.Unparen(lowered).(type) {
+	case *ast.FuncLit:
+		return false
 	case *ast.CallExpr:
 		if _, lit := ast.Unparen(e.Fun).(*ast.FuncLit); lit {
 			return false
 		}
-	default:
-		return false
 	}
 	typ := t.probeExprType(lowered)
 	return !transpiler.ContainsUnusable(typ) && !typ.IsAny() && !t.mentionsUnboundTypeParam(typ)

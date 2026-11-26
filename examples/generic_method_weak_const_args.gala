@@ -19,9 +19,12 @@ func main() {
     val c = Cell(0)
     // U is int64, from x64.
     Println(c.Both(5, x64) + x64)
+    Println(c.Both(5, x64 + 1) + x64)
     // U widens to float64.
     Println(c.Both(5, 2.5))
     Println(c.Or(0, 2.5))
+    // A narrower by-name constant takes the wider binding.
+    Println(c.Or(2.5, 0))
     // U is float32, from x32.
     Println(c.Or(0, x32) + x32)
     // The int slot fixes U, though the first constant is a float.

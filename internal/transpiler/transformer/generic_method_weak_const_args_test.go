@@ -47,6 +47,17 @@ func (c Cell[T]) Pick[U any](a U, b U) U = a
 			contains: "0, func() float64 {\n\t\treturn 2.5\n\t})",
 		},
 		{
+			name: "typed operator expression after a by-name constant",
+			main: `val x64 int64 = 3
+    Println(Cell(0).Both(5, x64 + 1))`,
+			contains: "func() int64 {\n\t\treturn 5\n\t}, func() int64 {\n\t\treturn x64 + 1\n\t})",
+		},
+		{
+			name:     "narrower by-name constant after a wider bare one",
+			main:     `Println(Cell(0).Or(2.5, 0))`,
+			contains: "2.5, func() float64 {\n\t\treturn 0\n\t})",
+		},
+		{
 			name: "slot spelled when an earlier constant differs from it",
 			main: `val n int = Cell(0).Pick(1.0, 2)
     Println(n)`,
