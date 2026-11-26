@@ -31,5 +31,5 @@ func main() {
     // A field of a dot-imported Go type, filled from another package: the
     // declaration records it as that Go type, not as one of its package's.
     val w = go_bare_named_size.Wait(D = 6)
-    Println(w.Copy(D = 7).D.Nanoseconds() + w.D.Nanoseconds())
+    Println(int64(w.D) + 7)
 }
