@@ -38,6 +38,24 @@ func main() {
 
     Println(pick(1)(3), pick(2)(3))
 
+    // A match whose value no typed slot fixes, one arm a block ending in
+    // the lambda.
+    val n = 2
+    val matched = run(n match {
+        case 1 => (k int) => {
+            val q = k + 1
+            q * q
+        }
+        case _ => {
+            Println("other arm")
+            (k int) => {
+                val q = k * n
+                q + 1
+            }
+        }
+    })
+    Println(matched(3))
+
     val wide = widen(if (up) (k int) => {
         Println(s"widen $k")
         1 << 40

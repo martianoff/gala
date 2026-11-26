@@ -766,7 +766,10 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 // with a function result (slot.funcResult) is filled by: a lambda, or a
 // parenthesized, if or match value, whose lambdas lowerAgainst reaches.
 func (t *galaASTTransformer) carriesLambda(f exprForm) bool {
-	return f.grouped.ok() || f.lambda.ok() || f.ifExpr.ok() || f.match.ok()
+	if f.grouped.ok() {
+		return t.carriesLambda(t.classifyExpr(f.grouped))
+	}
+	return f.lambda.ok() || f.ifExpr.ok() || f.match.ok()
 }
 
 // lowerAgainst lowers e in check mode against the slot it fills. A lambda
