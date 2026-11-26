@@ -234,7 +234,7 @@ func TestDecoder_LiteralBlockScalar(t *testing.T) {
 	d.StartObject()
 	d.ReadKey() // personality
 	got := d.ReadString()
-	want := "Calm and\ndecisive."
+	want := "Calm and\ndecisive.\n"
 	if got != want {
 		t.Fatalf("personality = %q, want %q", got, want)
 	}
@@ -906,20 +906,20 @@ func TestDecoder_BareLiteralBlockIsAString(t *testing.T) {
 // ends where the item's next key starts (#1320).
 func TestDecoder_BlocksOnSequenceItemLine(t *testing.T) {
 	tests := []struct{ name, src, want string }{
-		{"literal item", "script:\n- |\n  echo hi\n  echo bye\n- make", "{script: [echo hi\necho bye, make]}"},
+		{"literal item", "script:\n- |\n  echo hi\n  echo bye\n- make", "{script: [echo hi\necho bye\n, make]}"},
 		{"literal item, strip", "- |-\n  a\n- b", "[a, b]"},
-		{"literal item, indented", "script:\n  - |\n    echo hi\n  - make", "{script: [echo hi, make]}"},
-		{"literal on the first key", "- run: |\n    echo hi\n  name: x", "[{run: echo hi, name: x}]"},
+		{"literal item, indented", "script:\n  - |\n    echo hi\n  - make", "{script: [echo hi\n, make]}"},
+		{"literal on the first key", "- run: |\n    echo hi\n  name: x", "[{run: echo hi\n, name: x}]"},
 		{"empty literal on the first key", "- run: |\n  name: x", "[{run: , name: x}]"},
-		{"literal on a later key", "- name: x\n  run: |\n    echo hi\n  shell: sh", "[{name: x, run: echo hi, shell: sh}]"},
+		{"literal on a later key", "- name: x\n  run: |\n    echo hi\n  shell: sh", "[{name: x, run: echo hi\n, shell: sh}]"},
 		{"nested sequence", "- - x\n  - y\n- z", "[[x, y], z]"},
 		{"nested sequence of mappings", "- - a: 1\n    b: 2\n  - a: 3", "[[{a: 1, b: 2}, {a: 3}]]"},
 		{"nested sequence under a key", "m:\n- - 1\n  - 2\n- - 3", "{m: [[1, 2], [3]]}"},
 		{"nested bare dash", "- -\n  - x", "[[<null>, x]]"},
 		{"three levels", "- - - x", "[[[x]]]"},
-		{"literal item one level down", "- - |\n    a\n- b", "[[a], b]"},
+		{"literal item one level down", "- - |\n    a\n- b", "[[a\n], b]"},
 		{"literal on a nested item's first key", "- - run: |\n    name: x", "[[{run: , name: x}]]"},
-		{"literal on a nested item's first key, with body", "- - run: |\n      echo hi\n    name: x", "[[{run: echo hi, name: x}]]"},
+		{"literal on a nested item's first key, with body", "- - run: |\n      echo hi\n    name: x", "[[{run: echo hi\n, name: x}]]"},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
@@ -932,8 +932,8 @@ func TestDecoder_BlocksOnSequenceItemLine(t *testing.T) {
 // ends in ": |" does not open a block.
 func TestDecoder_LiteralBlockAndComments(t *testing.T) {
 	tests := []struct{ src, want string }{
-		{"script: | # shell\n  echo hi", "{script: echo hi}"},
-		{"- | # note\n  a", "[a]"},
+		{"script: | # shell\n  echo hi\n", "{script: echo hi\n}"},
+		{"- | # note\n  a\n", "[a\n]"},
 		{"parent: # list: |\n  child: 1", "{parent: {child: 1}}"},
 		{"- k: v # ex: |\n  j: w", "[{k: v, j: w}]"},
 	}
@@ -986,9 +986,9 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		{"k: [a, \"b: | # c\"]\nm: 1", `{k: [a, "b: | # c"], m: 1}`},
 		{"k: 'x: | # y'\nm: 1", "{k: x: | # y, m: 1}"},
 		{"- 'a: | # b'\n- c", "[a: | # b, c]"},
-		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body, c: 1}]"},
-		{"- - 'k # x': |\n      body", "[[{k # x: body}]]"},
-		{"\"a|b\": | # note\n  body", "{a|b: body}"},
+		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body\n, c: 1}]"},
+		{"- - 'k # x': |\n      body\n", "[[{k # x: body\n}]]"},
+		{"\"a|b\": | # note\n  body\n", "{a|b: body\n}"},
 		// With no space after a quoted key's colon, "|" is the plain value.
 		{"\"k\":|", "{k: |}"},
 	}
@@ -996,5 +996,74 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		if got := parseDump(tt.src); got != tt.want {
 			t.Errorf("%q => %s, want %s", tt.src, got, tt.want)
 		}
+	}
+}
+
+// ----- Literal block chomping ------------------------------------------------
+
+// A literal block's final line breaks follow its chomping indicator (YAML
+// 1.2, section 8.1.1.2, #1349): "|" keeps one, "|-" none and "|+" all, the
+// blank lines after the text included. Blank lines before the text are
+// kept.
+func TestDecoder_LiteralBlockChomping(t *testing.T) {
+	tests := []struct{ name, src, want string }{
+		{"clip", "k: |\n  a\n  b\nj: 1", "a\nb\n"},
+		{"clip, blank lines after", "k: |\n  a\n\n\nj: 1", "a\n"},
+		{"clip, end of document", "k: |\n  a\n", "a\n"},
+		// A block that ends the document without a line break gains none.
+		{"clip, no final line break", "k: |\n  a", "a"},
+		{"keep, no final line break", "k: |+\n  a", "a"},
+		{"keep, final line break", "k: |+\n  a\n", "a\n"},
+		{"keep, two blank lines at the end", "k: |+\n  a\n\n\n", "a\n\n\n"},
+		{"strip", "k: |-\n  a\n  b\nj: 1", "a\nb"},
+		{"strip, blank lines after", "k: |-\n  a\n\n\nj: 1", "a"},
+		{"keep", "k: |+\n  a\nj: 1", "a\n"},
+		{"keep, blank lines after", "k: |+\n  a\n\n\nj: 1", "a\n\n\n"},
+		{"keep, end of document", "k: |+\n  a\n\n", "a\n\n"},
+		{"blank lines inside", "k: |\n  a\n\n  b\nj: 1", "a\n\nb\n"},
+		{"blank lines before", "k: |\n\n\n  a\nj: 1", "\n\na\n"},
+		{"empty, clip", "k: |\nj: 1", ""},
+		{"empty, keep", "k: |+\n\n\nj: 1", "\n\n"},
+		{"blank line holding spaces, clip", "k: |\n  a\n  \nj: 1", "a\n"},
+		{"blank line holding spaces, strip", "k: |-\n  a\n  \nj: 1", "a"},
+		{"short blank line inside", "k: |\n    a\n  \n    b\nj: 1", "a\n\nb\n"},
+		{"blank line with spaces past the body", "k: |\n  a\n     \n  b\nj: 1", "a\n   \nb\n"},
+		{"tab past the body indentation is text", "k: |\n  a\n  \t\n  b\nj: 1", "a\n\t\nb\n"},
+		{"leading tab past the indentation is text", "k: |\n  \t\n  a\nj: 1", "\t\na\n"},
+		{"tab line at the parent's indentation ends a keep block", "k: |+\n  a\n\t\nj: 1", "a\n"},
+		// Only spaces indent, so a line of spaces and a tab is a text line
+		// and sets the block's indentation like any other.
+		{"a tab line sets the indentation", "k: |\n \t\n  a\nj: 1", "\t\n a\n"},
+		{"final carriage return is a line break", "k: |\r\n  a\r", "a\n"},
+		{"only a tab past the indentation, clip", "k: |\n  \t\nj: 1", "\t\n"},
+		{"only a tab past the indentation, strip", "k: |-\n  \t\nj: 1", "\t"},
+		{"only a tab past the indentation, keep", "k: |+\n  \t\n\nj: 1", "\t\n\n"},
+		{"trailing tab past the indentation is text", "k: |\n  a\n  \t\n\nj: 1", "a\n\t\n"},
+		{"keep, comment after", "k: |+ # note\n  a\n\nj: 1", "a\n\n"},
+		{"keep, sequence item", "- |+\n  a\n\n- b", "a\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewYamlDecoder(tt.src)
+			if d.root.kind == ySeq {
+				d.StartArray()
+			} else {
+				d.StartObject()
+				d.ReadKey()
+			}
+			if got := d.ReadString(); got != tt.want {
+				t.Errorf("%q => %q, want %q", tt.src, got, tt.want)
+			}
+		})
+	}
+}
+
+// A blank line before the first text line of a literal block may not be
+// wider than the text's indentation (YAML 1.2, section 8.1.1.1).
+func TestDecoder_LiteralBlockWideLeadingBlank(t *testing.T) {
+	src := "k: |\n      \n  a\nj: 1"
+	want := "error: yaml: blank line at line 2 is indented more than the literal block's text"
+	if got := parseDump(src); got != want {
+		t.Errorf("%q => %s, want %s", src, got, want)
 	}
 }

@@ -32,9 +32,12 @@ import (
 //   }
 //
 // Supported subset: block-style mappings, block-style sequences, scalars
-// (string/int/float/bool/null), literal block scalars (`|`), comments,
-// nested structures. Out of scope (until needed): anchors, aliases, flow
-// style, custom tags. See docs (coming) for the full grammar.
+// (string/int/float/bool/null), literal block scalars (`|`, `|-`, `|+`, chomped
+// as YAML 1.2 says), comments, nested structures. Out of scope: anchors,
+// aliases, flow-style collections other than [] and {}, custom tags, folded
+// blocks (>), indentation indicators (|2) and document markers (--- and ...).
+// Literal blocks are read only: the encoder writes a multi-line string
+// double-quoted. See https://martianov.dev/docs/yaml/.
 type Codec[T any] struct {}
 
 // Apply creates a typed YamlEncoder[T].

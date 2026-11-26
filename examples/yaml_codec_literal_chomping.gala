@@ -1,0 +1,39 @@
+package main
+
+// A literal block scalar keeps its final line breaks as its chomping
+// indicator says (YAML 1.2, #1349): "|" (clip) keeps one, "|-" (strip)
+// none, "|+" (keep) all of them, blank lines after the text included.
+
+import (
+    "martianoff/gala/yaml"
+    . "martianoff/gala/collection_immutable"
+)
+
+struct Doc(Clip string, Strip string, Keep string, Next int)
+
+val docs = yaml.Codec[Doc](yaml.AsIs())
+
+func main() {
+    val decoded = docs.Decode(`Clip: |
+  echo a
+  echo b
+
+Strip: |-
+  echo a
+
+Keep: |+
+  echo a
+
+Next: 1
+`)
+    decoded match {
+        case Success(d) => {
+            ArrayOf(("clip", d.Clip), ("strip", d.Strip), ("keep", d.Keep))
+                .ForEach((p) => p match {
+                    case (name, value) => Println(f"${name}: ${value}%q")
+                })
+            Println(s"next: ${d.Next}")
+        }
+        case Failure(err) => Println(s"decode failed: ${err.Error()}")
+    }
+}
