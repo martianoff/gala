@@ -209,6 +209,19 @@ def shadowF : Spec.Func :=
 
 theorem paramShadow_not_lowered : lowerBody 11 shapeSg shadowF = none := rfl
 
+/-- `scopeOK` rejects what Go rejects: `var t` twice in one `if` arm (one Go scope). -/
+theorem scopeOK_redecl_in_arm :
+    scopeOK [] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]),
+      .decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]] [.ret [.intLit 0]]] = false :=
+  rfl
+
+/-- ... and accepts what Go accepts: one `var t` in each arm, and a `t` outside both
+    (each arm is a scope of its own). -/
+theorem scopeOK_sibling_arms :
+    scopeOK ["t"] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]), .ret [.ident "t"]]
+      [.decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]]] = true :=
+  rfl
+
 /-! ## A typed IIFE, run: `(if (true) 1 else 2) + 3`
 
 Its arms are literals, but the IIFE's value has the arms' type (`int`), so the `+` is on

@@ -568,8 +568,10 @@ column lists what each milestone's claim rests on beyond them.
   function, Go's would leave only the literal (`retInArm_not_lowered`). A body that would declare
   a name twice in one Go scope is not lowered either: a block whose last element is a
   block (`nestedBlock_not_lowered`), or a `val` named as a parameter at the body's top
-  (`paramShadow_not_lowered`); `lowerBody_scopeOK` proves no lowered body does, which Go
-  rejects and GoCore does not check. The statement
+  (`paramShadow_not_lowered`): the lowering checks that no Go scope declares a name twice
+  (`scopeOK`), which Go rejects and GoCore does not check, and refuses bodies that do. The
+  check rejects a second `t` in one `if` arm and accepts one `t` in each of two arms
+  (`scopeOK_redecl_in_arm`, `scopeOK_sibling_arms`). The statement
   lowering takes the kind `return` may have, none inside an IIFE. GoCore's IIFE adds a
   closure to the state and takes one step for the call, which galaspec's step at the `if`
   pays for. On five functions the lowering gives exactly the transpiler's Go

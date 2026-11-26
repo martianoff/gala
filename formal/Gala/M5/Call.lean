@@ -836,24 +836,6 @@ def lowerBody (K : Nat) (sg : Sigs) (F : Spec.Func) : Option (List Stmt) :=
       | none => none
     else none
 
-/-- **A lowered body declares no name twice in one Go scope**, its parameters included. -/
-theorem lowerBody_scopeOK {K : Nat} {sg : Sigs} {F : Spec.Func} {lb : List Stmt} (h : lowerBody K sg F = some lb) :
-    ∃ xks ρ, sigOf F = some (xks, ρ) ∧ scopeOK (xks.map (·.1)) lb = true := by
-  unfold lowerBody at h
-  split at h
-  · cases h
-  · rename_i xks ρ hs
-    split at h
-    · split at h
-      · split at h
-        · rename_i hk
-          simp only [Option.some.injEq] at h
-          subst h
-          exact ⟨xks, ρ, hs, hk.2⟩
-        · cases h
-      · cases h
-    · cases h
-
 /-! ## The relations, with calls -/
 
 /-- **GoCore's state after code ran**: cells (and their types) only added to; every other

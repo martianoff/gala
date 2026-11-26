@@ -720,8 +720,15 @@ theorem paramShadow_not_lowered : lowerBody 11 shapeSg shadowF = none :=
   Gala.M5.paramShadow_not_lowered
 
 open Gala Gala.M5 GoCore.Full in
-theorem lowerBody_scopeOK : ∀ {K : Nat} {sg : Sigs} {F : Spec.Func} {lb : List Stmt}, lowerBody K sg F = some lb →
-    ∃ xks ρ, sigOf F = some (xks, ρ) ∧ scopeOK (xks.map (·.1)) lb = true :=
-  Gala.M5.lowerBody_scopeOK
+theorem scopeOK_redecl_in_arm :
+    scopeOK [] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]),
+      .decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]] [.ret [.intLit 0]]] = false :=
+  Gala.M5.scopeOK_redecl_in_arm
+
+open Gala Gala.M5 GoCore.Full in
+theorem scopeOK_sibling_arms :
+    scopeOK ["t"] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]), .ret [.ident "t"]]
+      [.decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]]] = true :=
+  Gala.M5.scopeOK_sibling_arms
 
 end Gala.Statements
