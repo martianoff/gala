@@ -391,7 +391,41 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "b.p.Apply(3)")
 
-	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)", "Gen(mkG()).g[int]()"} {
+	// Through a pointer alias too (#1461), as `w.Apply(...)` written out.
+	out, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int = 4) int = n.v + x
+
+struct Gen(var v int)
+
+func (g *Gen) Apply[U any](u U) U = u
+
+type NodeRef *Node
+
+type GenRef *Gen
+
+struct Hold(var r NodeRef)
+
+struct Box[T any](var v T)
+
+func main() {
+    var n = Node(1)
+    val w NodeRef = &n
+    val h = Hold(&n)
+    var g = Gen(1)
+    val gr GenRef = &g
+    val b = Box[NodeRef](&n)
+    Println(w(2), w(), h.r(3), gr("x"), b.v(5))
+}
+`)
+	require.NoError(t, err)
+	for _, want := range []string{"w.Apply(2)", "w.Apply(4)", "h.r.Apply(3)", `Gen_Apply(gr, "x")`, "b.v.Apply(5)"} {
+		require.Contains(t, out, want)
+	}
+
+	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)", "Gen(mkG()).g[int]()", "wr(1)"} {
 		_, err = transpileBareVariant(t, `package main
 
 struct Node(var v int)
@@ -414,6 +448,8 @@ struct Gen(var g *G)
 
 func mkG() *G = nil
 
+type NodeRef *Node
+
 func mk() *Node = nil
 
 func mkZero() *Zero = nil
@@ -421,6 +457,7 @@ func mkZero() *Zero = nil
 func main() {
     val r = mk()
     val z = mkZero()
+    val wr NodeRef = mk()
     Println(`+call+`)
 }
 `)

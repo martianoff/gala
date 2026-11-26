@@ -58,6 +58,9 @@ func (t *Tally) Apply(x int) int {
     t.total
 }
 
+// TallyRef names a pointer to a Tally.
+type TallyRef *Tally
+
 func main() {
     val p = Plain(10)
     Println(p(_ + 1))
@@ -95,5 +98,10 @@ func main() {
     // A pointer is called through the Apply of the type it points to.
     val tallyRef = &tally
     tallyRef(10)
+    Println(tally.total)
+
+    // So is one typed by an alias of the pointer.
+    val tallyAlias TallyRef = &tally
+    tallyAlias(1)
     Println(tally.total)
 }
