@@ -51,6 +51,15 @@ func h(c bool) float64 = c match {
 func main() {
     Println(h(true))
 }`, []string{"func h(c bool) float64 {", "return 2.5"}},
+		{"if-expression in a Go named scalar val", `package main
+
+import "time"
+
+func main() {
+    val c = true
+    val d time.Duration = if (c) 2 else 3
+    Println(d)
+}`, []string{"func() time.Duration {"}},
 		{"if-expression as an int64 lambda result", `package main
 
 func widen(f func(int) int64) func(int) int64 = f
