@@ -1339,6 +1339,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "go_results_named_order",
+    src = "go_results_named_order.gala",
+    expected = "go_results_named_order.out",
+)
+
+gala_exec_test(
     name = "use_lib_chained_generic",
     src = "use_lib_chained_generic.gala",
     expected = "use_lib_chained_generic.out",

@@ -27,11 +27,14 @@ import (
 // the generated Go is the call wrapped once and the helper's type arguments
 // are left to Go's inference.
 //
-// The conversion is made where the call is built (applyPostfixSuffix), so
+// The conversion is made where the call is built (applyCallSuffix), so
 // every single-value position sees the GALA value: a binding, a match
 // subject, an argument, a lambda or function result, a branch, a receiver.
 // The few positions that take the call's results one by one read the raw call
-// back out of the wrapper (rawGoCall):
+// back out of the wrapper (rawGoCall). When the call's arguments are evaluated
+// into temporaries to keep their written order, the raw call is the call of
+// the function literal holding them, which returns the Go call's results
+// (sequenceGoResults; goCallee gives the Go call's callee):
 //
 //   - a multi-name binding, `val a, err = goCall()` (also var, := and `=`),
 //   - `Try(goCall())` / `Try(() => goCall())`, which already mean "run this and
@@ -49,9 +52,10 @@ import (
 // goResult records one Go call converted to a GALA value.
 type goResult struct {
 	transpiler.GoResultValue
-	raw  *ast.CallExpr // the Go call itself, yielding every result
-	site callSrc       // the call, for quoting the callee in a diagnostic
-	via  string        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
+	raw    *ast.CallExpr // the Go call itself, or the call of the function literal sequencing its arguments (sequenceGoResults), yielding every result
+	callee ast.Expr      // the Go call's callee as lowered, before sequencing may read it into a temporary
+	site   callSrc       // the call, for quoting the callee in a diagnostic
+	via    string        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
 }
 
 // count is the number of the call's results, a trailing error included.
@@ -115,7 +119,7 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, c callSrc) (ast.Expr, 
 	value, _ := transpiler.GoResultValueOf(returns)
 	// The call's source is kept by position (site): diagnostics quote the
 	// callee (source) or, for a hint to paste, the whole call (text).
-	res := &goResult{GoResultValue: value, raw: call, site: callSrc{post: c.post, suffix: c.suffix}}
+	res := &goResult{GoResultValue: value, raw: call, callee: calleeCopy(call.Fun), site: callSrc{post: c.post, suffix: c.suffix}}
 	if value.Values > transpiler.MaxGoResultValues {
 		line, col := c.start()
 		return nil, galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, line, col,
@@ -269,11 +273,14 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 			}
 			return nil
 		}
-		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
+		recvType, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
 		if meta := t.getTypeMeta(key); meta != nil {
 			if m := meta.Methods[f.Sel.Name]; m != nil {
 				if m.GoResults != nil {
-					return goResultsSignature(m.ParamTypes, m.ParamNames, m.GoResults, m.TypeParams)
+					// The receiver's type arguments in place of its
+					// type's parameters (`T` of a `Box[int]`).
+					subst := t.receiverTypeArgSubst(recvType, meta)
+					return goResultsSignature(t.substituteGoTypeParamsIn(m.ParamTypes, subst), m.ParamNames, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
 				}
 				return nil
 			}
@@ -287,6 +294,22 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 		return goResultsSignature(ft.Params, nil, ft.Results, nil)
 	}
 	return nil
+}
+
+// receiverTypeArgSubst maps the type parameters of meta, the type of a method's
+// receiver, to the type arguments of recvType, the receiver's type.
+func (t *galaASTTransformer) receiverTypeArgSubst(recvType transpiler.Type, meta *transpiler.TypeMetadata) map[string]transpiler.Type {
+	subst := map[string]transpiler.Type{}
+	if meta == nil {
+		return subst
+	}
+	args := t.getReceiverTypeArgTypes(recvType)
+	for i, tp := range meta.TypeParams {
+		if i < len(args) {
+			subst[tp] = args[i]
+		}
+	}
+	return subst
 }
 
 // goResultsSignature is the signature of a callee with these parameters
@@ -338,9 +361,10 @@ func immutableGetReceiver(expr ast.Expr) *ast.SelectorExpr {
 	return sel
 }
 
-// rawGoCall returns the Go call inside a converted value, yielding every
-// result, and expr itself otherwise. Positions that take a call's results one
-// by one read it back through here.
+// rawGoCall returns the call inside a converted value, yielding every result
+// (the Go call, or the function literal sequencing its arguments: goCallee
+// gives the Go call's callee), and expr itself otherwise. Positions that take a
+// call's results one by one read it back through here.
 func (t *galaASTTransformer) rawGoCall(expr ast.Expr) ast.Expr {
 	if call, ok := expr.(*ast.CallExpr); ok {
 		if res := t.goResults[call]; res != nil {
@@ -679,6 +703,36 @@ func (t *galaASTTransformer) tryThunkIIFE(expr ast.Expr) ast.Expr {
 func asCall(expr ast.Expr) *ast.CallExpr {
 	call, _ := expr.(*ast.CallExpr)
 	return call
+}
+
+// calleeCopy is fun with its selector copied, through any type arguments and
+// parentheses around it, so that reading a receiver into a temporary
+// (evaluateInOrder) leaves the copy as written.
+func calleeCopy(fun ast.Expr) ast.Expr {
+	switch f := fun.(type) {
+	case *ast.SelectorExpr:
+		return &ast.SelectorExpr{X: f.X, Sel: f.Sel}
+	case *ast.IndexExpr:
+		return &ast.IndexExpr{X: calleeCopy(f.X), Index: f.Index}
+	case *ast.IndexListExpr:
+		return &ast.IndexListExpr{X: calleeCopy(f.X), Indices: f.Indices}
+	case *ast.ParenExpr:
+		return &ast.ParenExpr{X: calleeCopy(f.X)}
+	}
+	return fun
+}
+
+// goCallee is the callee of the Go call expr converts to one GALA value
+// (goResult.callee), or of expr itself when it is a call converting none; nil
+// otherwise.
+func (t *galaASTTransformer) goCallee(expr ast.Expr) ast.Expr {
+	if res := t.goResults[asCall(expr)]; res != nil {
+		return res.callee
+	}
+	if call := asCall(expr); call != nil {
+		return call.Fun
+	}
+	return nil
 }
 
 // isTryThunkParam reports whether argument argIdx of the call is the thunk of a

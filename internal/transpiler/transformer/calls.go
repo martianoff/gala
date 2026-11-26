@@ -113,10 +113,13 @@ func (t *galaASTTransformer) checkForbiddenGoBuiltinCall(fun ast.Expr, line, col
 	return err
 }
 
-// applyCallSuffix lowers the call of base with the arguments of c, and puts
-// its receiver, arguments and defaults in GALA's evaluation order (see
-// call_order.go).
+// applyCallSuffix lowers the call of base with the arguments of c, presents a
+// call of a Go function with several results as one GALA value
+// (liftGoResults), and puts its receiver, arguments and defaults in GALA's
+// evaluation order (see call_order.go). GALA's own Println and Print are
+// statements, not Go calls, and keep their plain form.
 func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr, error) {
+	lift := !t.isBuiltinPrint(base)
 	frame := &callFrame{}
 	t.callFrames = append(t.callFrames, frame)
 	expr, err := t.lowerCallSuffix(base, c)
@@ -128,6 +131,23 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		return nil, err
 	}
 	line, col := c.start()
+	if lift {
+		// The call is lifted before it is sequenced, while it is still
+		// the call itself; sequencing then orders the raw call's values
+		// inside the conversion (sequenceGoResults).
+		lifted, err := t.liftGoResults(expr, c)
+		if err != nil {
+			return nil, err
+		}
+		if wrapper := asCall(lifted); lifted != expr && wrapper != nil {
+			if res := t.goResults[wrapper]; res != nil {
+				if err := t.sequenceGoResults(wrapper, res, base, frame, line, col); err != nil {
+					return nil, err
+				}
+				return lifted, nil
+			}
+		}
+	}
 	return t.sequenceCall(expr, base, frame, line, col)
 }
 
@@ -1109,14 +1129,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		// Reuse pre-transformed expression if available, recorded where
 		// it is written as lowerArg records the others, so the call
-		// evaluates its arguments in written order (call_order.go). Nor
-		// is a call of a method declaring Go results reordered: its lift
-		// to one GALA value does not see through the function literal
-		// sequencing wraps it in, as for any method (#1365).
+		// evaluates its arguments in written order (call_order.go).
 		if expr, ok := preTransformed[i]; ok {
-			if methodMeta.GoResults == nil {
-				t.recordCallArg(v, expr)
-			}
+			t.recordCallArg(v, expr)
 			mArgs = append(mArgs, expr)
 			continue
 		}
@@ -1467,20 +1482,31 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 // lifted to one GALA value as other calls of such functions are: the
 // receiver's type arguments substituted, and the receiver its first parameter.
 func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvType transpiler.Type, baseName string, m *transpiler.MethodMetadata) {
-	subst := map[string]transpiler.Type{}
-	if meta := t.getTypeMeta(baseName); meta != nil {
-		args := t.getReceiverTypeArgTypes(recvType)
-		for i, tp := range meta.TypeParams {
-			if i < len(args) {
-				subst[tp] = args[i]
+	subst := t.receiverTypeArgSubst(recvType, t.getTypeMeta(baseName))
+	// A receiver type argument spelled like one of the method's own type
+	// parameters (`U` of an enclosing `Box[U]`) must not be taken for it when
+	// the call instantiates them: the method's are then renamed in the same
+	// pass.
+	typeParams := m.TypeParams
+	if slices.ContainsFunc(m.TypeParams, func(tp string) bool {
+		for _, arg := range subst {
+			if typeNameMatches(arg, func(name string) bool { return name == tp }) {
+				return true
 			}
+		}
+		return false
+	}) {
+		typeParams = make([]string, len(m.TypeParams))
+		for i, tp := range m.TypeParams {
+			typeParams[i] = freshMethodTypeParamName(i)
+			subst[tp] = transpiler.NamedType{Name: typeParams[i]}
 		}
 	}
 	if t.genericGoResultCalls == nil {
 		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
 	}
 	params := append([]transpiler.Type{loweredReceiverType(recvType, m)}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
-	t.genericGoResultCalls[call] = goResultsSignature(params, nil, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
+	t.genericGoResultCalls[call] = goResultsSignature(params, nil, t.substituteGoTypeParamsIn(m.GoResults, subst), typeParams)
 }
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
@@ -6864,6 +6890,14 @@ func (t *galaASTTransformer) resolveGoCallReturnTypes(expr ast.Expr) []transpile
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return nil
+	}
+	// A Go call whose arguments sequencing evaluated into temporaries is
+	// the call of a function literal (sequenceGoResults): its results are
+	// those the Go call was lifted with, not the literal's spelled types.
+	if _, sequenced := callExpr.Fun.(*ast.FuncLit); sequenced {
+		if types := t.goCallResults(callExpr); types != nil {
+			return types
+		}
 	}
 	sig := t.resolveGoCallSignature(callExpr)
 	if sig == nil {
