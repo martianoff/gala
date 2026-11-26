@@ -3478,17 +3478,31 @@ func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerT
 	if transpiler.IsUnusable(typ) || t.isActiveTypeParam(typ.BaseName()) {
 		return transpiler.PointerType{}, false
 	}
-	// This package's alias, by its bare or its own qualified name; another
-	// package's alias names its target as that package does, which a bare
-	// lookup here could misread.
-	if pkg := typ.GetPackage(); pkg != "" && pkg != t.packageName {
-		return transpiler.PointerType{}, false
+	// This package's aliases only, each by its bare or its own qualified
+	// name: another package's alias names its target as that package does,
+	// which a lookup here could misread, so the walk stops at one.
+	cur := typ
+	for range 16 { // an alias cycle in malformed input cannot loop
+		pkg, bare := splitPackageQualifier(cur.BaseName())
+		if pkg == "" {
+			pkg = cur.GetPackage()
+		}
+		if pkg != "" && pkg != t.packageName {
+			return transpiler.PointerType{}, false
+		}
+		target, isAlias := t.typeAliases[bare]
+		if !isAlias {
+			return transpiler.PointerType{}, false
+		}
+		cur = unwrapValueMarkers(target)
+		if ptr, isPtr := cur.(transpiler.PointerType); isPtr {
+			return ptr, true
+		}
+		if transpiler.IsUnusable(cur) {
+			return transpiler.PointerType{}, false
+		}
 	}
-	if _, isAlias := t.typeAliases[stripPackagePrefix(typ.BaseName())]; !isAlias {
-		return transpiler.PointerType{}, false
-	}
-	ptr, isPtr := unwrapValueMarkers(t.followAliasChain(typ)).(transpiler.PointerType)
-	return ptr, isPtr
+	return transpiler.PointerType{}, false
 }
 
 // pointeeApplyType is the metadata lookup finds for elem, a pointer's element
