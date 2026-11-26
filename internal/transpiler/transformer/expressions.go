@@ -783,7 +783,8 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	if s.goResults != nil && !f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok() {
 		return t.lowerGoResultsValue(e, s, strict)
 	}
-	if untyped && s.goResults == nil && !t.hoistableForm(f) && !(s.funcResult != nil && t.needsExpectedType(e)) {
+	carriesLambda := f.grouped.ok() || f.lambda.ok() || f.ifExpr.ok() || f.match.ok()
+	if untyped && s.goResults == nil && !t.hoistableForm(f) && !(s.funcResult != nil && carriesLambda) {
 		return t.lowerExpr(e)
 	}
 	if e.node.Ok() {
