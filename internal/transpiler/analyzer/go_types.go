@@ -1845,6 +1845,8 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		} else {
 			data.Underlying = convertGoType(under, true)
 		}
+	} else if _, isIface := typ.Underlying().(*types.Interface); !isIface && forceKind != "alias" {
+		data.Underlying = definedUnderlying(typ.Underlying())
 	} else {
 		data.Underlying = goTypeToTranspilerType(typ.Underlying())
 	}
@@ -2032,6 +2034,20 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 		}
 	}
 	return false
+}
+
+// definedUnderlying is the underlying type of a Go defined type other than a
+// struct or an interface, as its record keeps it. A value of the defined type
+// is written as one of it (a lambda for `type WithBox[T any] func(*Box[T])
+// error` is a `func(*Box[int]) error`), so it is spelled exactly: an instance
+// keeps its type arguments and an array its length. One GALA cannot spell
+// exactly (a variadic function, an unexported name) keeps the lossy
+// spelling, which still reads its elements and results.
+func definedUnderlying(under types.Type) transpiler.Type {
+	if spellsExactly(under) {
+		return convertGoType(under, true)
+	}
+	return goTypeToTranspilerType(under)
 }
 
 // inexactGoType reports whether goTypeToTranspilerType may lose part of t: a

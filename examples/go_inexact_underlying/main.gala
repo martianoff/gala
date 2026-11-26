@@ -1,0 +1,16 @@
+package main
+
+import "martianoff/gala/examples/go_inexact_underlying_bridge"
+
+// A lambda typed by a Go defined function type whose signature names a
+// generic struct instance (`func(*Box[T]) error`) or a fixed-length array
+// (`func([2]T) T`) is spelled with that instance and that length, so Go
+// accepts it (#1431).
+
+func main() {
+    val h go_inexact_underlying_bridge.WithBox[int] = (b) => nil
+    Println(h(nil) == nil)
+
+    val first go_inexact_underlying_bridge.WithPair[string] = (xs) => xs[0] + xs[1]
+    Println(first != nil)
+}
