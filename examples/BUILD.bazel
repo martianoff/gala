@@ -1326,6 +1326,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "method_value_variadic_func_type",
+    src = "method_value_variadic_func_type.gala",
+    expected = "method_value_variadic_func_type.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "use_lib_chained_generic",
     src = "use_lib_chained_generic.gala",
     expected = "use_lib_chained_generic.out",

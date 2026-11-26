@@ -101,7 +101,11 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 	if len(mm.TypeParams) > 0 {
 		bound := make(typeSubstMap, len(mm.TypeParams))
 		for i, ta := range typeArgs {
-			bound[ownParams[i]] = t.astTypeToTranspilerType(ta)
+			typ := t.astTypeToTranspilerType(ta)
+			if transpiler.ContainsUnusable(typ) {
+				return nil, false, unspellableMethodValueError(meta.Name, method, line, col)
+			}
+			bound[ownParams[i]] = typ
 		}
 		t.bindMethodValueTypeArgs(ft, slot, ownParams, bound)
 		var missing []string
@@ -130,6 +134,11 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 		}
 		// Substituting into a function type gives a function type.
 		ft = t.substituteTranspilerTypeParams(ft, bound).(transpiler.FuncType)
+	}
+	if transpiler.ContainsUnusable(ft) {
+		// A receiver type argument or a declared parameter the closure's
+		// signature cannot spell either.
+		return nil, false, unspellableMethodValueError(meta.Name, method, line, col)
 	}
 
 	// The receiver as the function takes it: `&c` for a pointer receiver,
@@ -213,6 +222,16 @@ func (t *galaASTTransformer) slotFuncType(slot transpiler.Type) *transpiler.Func
 	}
 	slot, _ = transpiler.UnwrapSendable(t.followAliasChain(slot))
 	return t.resolveTranspilerTypeAsFuncType(slot)
+}
+
+// unspellableMethodValueError reports a method value of typeName.method whose
+// closure signature has a part the generated Go cannot be given as written:
+// a variadic function type (`func(...int) int`) would come out as `any`, a
+// different type, so it is an error rather than wrong Go.
+func unspellableMethodValueError(typeName, method string, line, col int) error {
+	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"the method value %s.%s cannot be written as a function value: its function type has a part that cannot be spelled here (such as a variadic function type); call the method instead, or wrap the call in a lambda",
+		stripPackagePrefix(typeName), method))
 }
 
 // methodValueTypeParamPrefix starts the name a method value's own type

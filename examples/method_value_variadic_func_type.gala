@@ -1,0 +1,22 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A method with type parameters of its own, instantiated with a variadic
+// function type. Its method value `b.Pair[func(...int) int]` is an error, as
+// its closure's signature cannot be written with that type; the method is
+// called with it directly, or wrapped in a lambda.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Pair[U any](u U) Tuple[T, U] = (b.V, u)
+
+func sum(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (acc, x) => acc + x)
+
+func main() {
+    val b = Box("sum")
+    val direct = b.Pair[func(...int) int](sum)
+    Println(direct.V1, direct.V2(1, 2, 3))
+    val wrapped = (f func(...int) int) => b.Pair[func(...int) int](f).V2(4, 5)
+    Println(wrapped(sum))
+}
