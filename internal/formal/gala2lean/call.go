@@ -530,6 +530,8 @@ func (g *gen) stdCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
 		return term{code: head, pure: true}
 	}
 	positional(e.Args[0])
+	// A type parameter's slot: whether it takes a function is not plain.
+	g.placeholderArg(e.Args[0], nil)
 	v := g.expr(e.Args[0], sc)
 	return wrap("("+head+" "+v.val()+")", v)
 }

@@ -51,6 +51,8 @@ type gen struct {
 	// placeholders are the lambdas lowerPlaceholders made of placeholder
 	// arguments.
 	placeholders map[*coreexport.Lambda]bool
+	// inPlaceholder is how many of those lambdas the translation is inside.
+	inPlaceholder int
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).

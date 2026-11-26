@@ -164,6 +164,7 @@ func (g *gen) safeType(f func() string) string {
 // expression passed for a `func() T` parameter becomes a thunk (a by-name
 // argument).
 func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) term {
+	g.placeholderArg(e, expect)
 	ft, isFunc := expect.(*coreexport.TypeFunc)
 	if l, ok := e.(*coreexport.Lambda); ok {
 		if !isFunc {
@@ -187,6 +188,40 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 	return g.expr(e, sc)
 }
 
+// placeholderArg stops the translation of e, an argument for a slot of
+// type expect (nil when unknown), when it reads a parameter of a
+// placeholder lambda around it (placeholders.go) and the slot is not known
+// to want something other than a function: the transformer would make a
+// lambda of e, and the `_` would be its parameter, not the outer lambda's.
+// That lambda itself is the argument it was made for.
+func (g *gen) placeholderArg(e coreexport.Node, expect coreexport.Node) {
+	if l, ok := e.(*coreexport.Lambda); g.inPlaceholder == 0 || ok && g.placeholders[l] {
+		return
+	}
+	if !g.nonFuncSlot(expect) && hasPlaceholderParam(e) {
+		unsup(posOf(e), "placeholder-lambda")
+	}
+}
+
+// nonFuncSlot reports whether t is a type that is plainly not a function
+// type: a basic type, a declared struct or sealed type, or one of std's
+// generic types, none of them a type parameter in scope.
+func (g *gen) nonFuncSlot(t coreexport.Node) bool {
+	n, ok := t.(*coreexport.TypeName)
+	if !ok || n.Package != "" {
+		return false
+	}
+	if _, param := g.tparams[n.Name]; param {
+		return false
+	}
+	switch n.Name {
+	case "int", "int64", "string", "bool", "any":
+		return true
+	}
+	_, std := stdGeneric[n.Name]
+	return g.declaredType(n.Name) || std || hashTypes[n.Name]
+}
+
 // isFuncValue reports whether e plainly names a function value: a declared
 // function.
 func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
@@ -197,10 +232,16 @@ func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
 // lambda translates a lambda; expect is the function type the context wants,
 // or nil.
 func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFunc) term {
-	if g.placeholders[l] && (expect == nil || len(expect.Params) != 1) {
-		// The transformer makes a lambda of `_` only for a function type,
-		// of one parameter per `_` (placeholders.go).
-		unsup(l.Pos, "placeholder-lambda")
+	if g.placeholders[l] {
+		if expect == nil || len(expect.Params) != len(l.Params) {
+			// The transformer makes a lambda of `_` only for a function
+			// type, of one parameter per `_` (placeholders.go).
+			unsup(l.Pos, "placeholder-lambda")
+		}
+		// Its parameters may be read in nested call arguments only where
+		// no inner lambda takes them (placeholderArg).
+		g.inPlaceholder++
+		defer func() { g.inPlaceholder-- }()
 	}
 	ls := newScope(sc, 0)
 	var ps []string

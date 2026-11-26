@@ -79,6 +79,7 @@ func (g *gen) seqCtorAt(head, x string, e *coreexport.Call, sc *scope) term {
 	subs := make([]term, len(e.Args))
 	for i, a := range e.Args {
 		positional(a)
+		g.placeholderArg(a, nil) // a type parameter's slot
 		subs[i] = g.expr(a, sc)
 		parts[i] = subs[i].val()
 	}

@@ -235,6 +235,7 @@ func (g *gen) stdFuncCall(x string, e *coreexport.Call, sc *scope) term {
 	args := make([]term, len(e.Args))
 	vals := make([]string, len(e.Args))
 	for i, a := range e.Args {
+		g.placeholderArg(a, nil) // which parameter takes a function is not plain here
 		args[i] = g.expr(a, sc)
 		vals[i] = args[i].val()
 	}
