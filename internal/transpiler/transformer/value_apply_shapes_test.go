@@ -372,30 +372,26 @@ func main() {
 	for _, w := range []string{"h.p.Apply(1)", "h.q.Apply(3)", "r.Apply(5)", "ptrOf(Node{v: 7}).Apply(1)"} {
 		require.Contains(t, out, w)
 	}
-	// Through an alias of the pointer, and through a generic struct's field
-	// typed by a pointer to its type parameter.
+	// Through a generic struct's field typed by a pointer to its type
+	// parameter.
 	out, err = transpileBareVariant(t, `package main
 
 struct Node(var v int)
 
 func (n *Node) Apply(x int) int = n.v + x
 
-type NodeRef *Node
-
 struct Box[T any](var p *T)
 
 func main() {
     var n = Node(1)
-    val w NodeRef = &n
     val b = Box[Node](&n)
-    Println(w(2), b.p(3))
+    Println(b.p(3))
 }
 `)
 	require.NoError(t, err)
-	require.Contains(t, out, "w.Apply(2)")
 	require.Contains(t, out, "b.p.Apply(3)")
 
-	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "w(1)"} {
+	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)"} {
 		_, err = transpileBareVariant(t, `package main
 
 struct Node(var v int)
@@ -406,9 +402,9 @@ struct Zero(var v int)
 
 func (z Ptr[Zero]) Apply() int = z.v
 
-type NodeRef *Node
-
 struct Hold(var p *Node)
+
+struct Box[T any](var p *T)
 
 func mk() *Node = nil
 
@@ -417,7 +413,6 @@ func mkZero() *Zero = nil
 func main() {
     val r = mk()
     val z = mkZero()
-    val w NodeRef = mk()
     Println(`+call+`)
 }
 `)
