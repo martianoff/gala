@@ -342,8 +342,6 @@ func (g *gen) apply(s *sig, args []string, subs ...term) term {
 	return actUnit(c, s.unit)
 }
 
-// call translates a call: of a declared function, struct or variant, of
-// Println/Print, of an Option/Either constructor, or of a function value.
 // call translates call e, then checks that every argument of it that may
 // hold a placeholder lambda's `_` went through placeholderArg (uncheckedArgs).
 func (g *gen) call(e *coreexport.Call, sc *scope) term {
@@ -352,6 +350,8 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 	return t
 }
 
+// callInner translates a call: of a declared function, struct or variant,
+// of Println/Print, of an Option/Either constructor, or of a function value.
 func (g *gen) callInner(e *coreexport.Call, sc *scope) term {
 	if u, ok := e.Callee.(*coreexport.Unsupported); ok {
 		unsup(u.Pos, "%s", u.What)
@@ -480,7 +480,7 @@ func (g *gen) print(x string, e *coreexport.Call, sc *scope) term {
 	for i, a := range e.Args {
 		positional(a)
 		g.printable(a, sc)
-		g.placeholderArg(a, &coreexport.TypeName{Name: "any"})
+		g.placeholderArg(a, anyType)
 		subs[i] = g.expr(a, sc)
 		shown[i] = "garg " + subs[i].val()
 	}

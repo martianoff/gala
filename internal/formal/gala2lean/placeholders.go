@@ -3,7 +3,6 @@ package gala2lean
 import (
 	"cmp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"martianoff/gala/internal/formal/coreexport"
@@ -53,8 +52,11 @@ import (
 // (placeholder-lambda).
 
 // placeholderParam starts the name of each parameter placeholderLambda
-// makes; no GALA name starts with `_gala_` (GALA-E0097).
+// makes (freshName); no GALA name starts with `_gala_` (GALA-E0097).
 const placeholderParam = "_gala_placeholder"
+
+// anyType is the slot type of Println's and Print's arguments.
+var anyType = &coreexport.TypeName{Name: "any"}
 
 // isPlaceholder reports whether n is the exporter's mark of a `_`.
 func isPlaceholder(n coreexport.Node) bool {
@@ -120,6 +122,9 @@ func hasPlaceholderParam(n coreexport.Node) bool {
 // itself, holds `_` marks. It is made once per argument, so the translation
 // and the type queries see the same one.
 func (g *gen) placeholderLambda(a coreexport.Node, expect coreexport.Node) (*coreexport.Lambda, bool) {
+	if !g.hasMarks {
+		return nil, false
+	}
 	a = argNode(a)
 	if _, isFunc := expect.(*coreexport.TypeFunc); !isFunc {
 		return nil, false
@@ -140,8 +145,7 @@ func (g *gen) placeholderLambda(a coreexport.Node, expect coreexport.Node) (*cor
 	names := map[*coreexport.Unsupported]string{}
 	params := make([]coreexport.Node, len(marks))
 	for i, m := range marks {
-		g.placeholderSeq++
-		names[m] = placeholderParam + strconv.Itoa(g.placeholderSeq)
+		names[m] = g.freshName("placeholder")
 		params[i] = &coreexport.Param{Meta: coreexport.Meta{Kind: "param", Pos: pos}, Name: names[m]}
 	}
 	var subst func(n coreexport.Node) coreexport.Node
@@ -177,6 +181,9 @@ func (g *gen) argExpect(a coreexport.Node, sc *scope, expect coreexport.Node) te
 // neither a function type nor known not to be one.
 func (g *gen) placeholderArg(e coreexport.Node, expect coreexport.Node) {
 	e = argNode(e)
+	if !g.hasMarks || g.argChecked[e] {
+		return
+	}
 	g.argChecked[e] = true
 	if l, ok := e.(*coreexport.Lambda); ok && g.placeholders[l] || g.nonFuncSlot(expect) {
 		return
@@ -217,6 +224,9 @@ func (g *gen) nonFuncSlot(t coreexport.Node) bool {
 // unknown). TestPlaceholderArgsChecked keeps this construct out of every
 // program the tests translate.
 func (g *gen) uncheckedArgs(e *coreexport.Call) {
+	if !g.hasMarks {
+		return
+	}
 	for _, a := range e.Args {
 		n := argNode(a)
 		if sp, ok := n.(*coreexport.Spread); ok {

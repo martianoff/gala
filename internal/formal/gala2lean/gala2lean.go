@@ -170,6 +170,7 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	g.library = opts.Library
 	g.ns = opts.Namespace
 	g.unsup = depUnsup
+	g.hasMarks = slices.ContainsFunc(p.Files, func(f *coreexport.File) bool { return hasPlaceholder(f) })
 	g.collect(p)
 	g.findBoxes(p)
 	// Every declaration is translated even after one failed, so that every

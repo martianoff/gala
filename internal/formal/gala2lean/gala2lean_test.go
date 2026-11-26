@@ -96,8 +96,6 @@ func TestCommittedTranslation(t *testing.T) {
 		"formal/Gala/Gala2Lean/Examples/Match.lean is not the translator's output; regenerate it (see this test's comment)")
 }
 
-// TestUnsupportedIsNamed checks that a construct outside the translated
-// subset is reported by name, and that nothing is translated then.
 // TestPlaceholderArgsChecked translates every program the tests stage and
 // checks that no call argument that may hold a placeholder lambda's `_` was
 // translated without placeholderArg's check (placeholder-unchecked-arg): a
@@ -116,6 +114,8 @@ func TestPlaceholderArgsChecked(t *testing.T) {
 	}
 }
 
+// TestUnsupportedIsNamed checks that a construct outside the translated
+// subset is reported by name, and that nothing is translated then.
 func TestUnsupportedIsNamed(t *testing.T) {
 	cases := []struct {
 		name, src, want string
@@ -212,7 +212,7 @@ func TestUnsupportedIsNamed(t *testing.T) {
 		{"a placeholder for a type parameter's slot", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val ys = ArrayOf(1).Map(Some(_))\n Println(ys) }\n", "placeholder-lambda"},
 		{"a placeholder under a function-typed val in the argument", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val ys = ArrayOf(1).Map(if (true) {\n val f func(int) int = _\n f(1)\n } else 0)\n Println(ys) }\n", "placeholder-lambda"},
 		{"a placeholder under a function-typed field in the argument", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nstruct Box(F func(int) int)\nfunc main() { val ys = ArrayOf(1).Map(Box(_).F(1))\n Println(ys) }\n", "placeholder-lambda"},
-		{"one placeholder for a function of two parameters","package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val t = ListOf(1, 2).FoldLeft(0, _ + 1)\n Println(t) }\n", "placeholder-lambda"},
+		{"one placeholder for a function of two parameters", "package main\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc main() { val t = ListOf(1, 2).FoldLeft(0, _ + 1)\n Println(t) }\n", "placeholder-lambda"},
 		{"fmt.Println of an Option", "package main\nimport \"fmt\"\n\nfunc main() { fmt.Println(Some(1)) }\n", "fmt-operand"},
 		{"fmt.Println as a value", "package main\nimport \"fmt\"\n\nfunc main() { val r = fmt.Println(1)\n Println(r.IsSuccess()) }\n", "fmt-value"},
 		{"fmt.Println through an alias of another package", "package main\nimport fmt \"strings\"\n\nfunc main() { fmt.Println(1) }\n", "import"},

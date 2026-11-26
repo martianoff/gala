@@ -50,13 +50,13 @@ type gen struct {
 	ownPtrs map[string]bool
 	// Placeholder lambdas (placeholders.go): those made, by the argument
 	// each was made of; their set; how many of them the translation is
-	// inside; the arguments placeholderArg checked; and the count that
-	// names their parameters.
-	placeholderOf  map[coreexport.Node]*coreexport.Lambda
-	placeholders   map[*coreexport.Lambda]bool
-	inPlaceholder  int
-	argChecked     map[coreexport.Node]bool
-	placeholderSeq int
+	// inside; the arguments placeholderArg checked; and whether the program
+	// holds a `_` mark at all (else none of it runs).
+	placeholderOf map[coreexport.Node]*coreexport.Lambda
+	placeholders  map[*coreexport.Lambda]bool
+	inPlaceholder int
+	argChecked    map[coreexport.Node]bool
+	hasMarks      bool
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).
