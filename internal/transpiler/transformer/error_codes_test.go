@@ -1248,6 +1248,18 @@ func main() {
 			expectContains: "error_codes_test.gala:5:16 the constant 1.5 cannot be an int, the type of the other operand of *: it is not a whole number",
 		},
 		{
+			// `true` is an untyped constant, but a number beside it is
+			// still reported, not left to go build.
+			name: "GALA-E0091 number constant beside true",
+			input: `package main
+
+func main() {
+    Println(1 + true)
+}`,
+			expectCode:     galaerr.CodeConstantMisfit,
+			expectContains: "the constant 1 cannot be a bool",
+		},
+		{
 			// The constant on the left, compared with a val field.
 			name: "GALA-E0091 constant on the left of a comparison",
 			input: `package main

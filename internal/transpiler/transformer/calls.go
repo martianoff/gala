@@ -986,19 +986,33 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				return true, nil, err
 			}
 			// An untyped constant leaves the slot's binding in place.
+			isConst := t.isUntypedConstArg(expr)
 			for tp, inferred := range inferredMap {
-				if slot, slotted := fromSlot[tp]; slotted && t.isUntypedConstArg(expr) {
+				if slot, slotted := fromSlot[tp]; slotted && isConst {
 					// Go would infer the constant's default type, so the
 					// slot's is spelled when it differs
 					// (resultOnlyMethodTypeArgs).
 					slotTyped[tp] = slot.String() != inferred.String()
 					continue
 				}
-				if _, alreadySet := typeSubst[tp]; !alreadySet {
+				// A binding only constants made is weak, as in Go: a typed
+				// argument replaces it, and a constant of a larger kind
+				// widens it (`Pick(0, 2.5, f)` binds float64).
+				weak, isWeak := weakConst[tp]
+				_, alreadySet := typeSubst[tp]
+				switch {
+				case !alreadySet:
 					typeSubst[tp] = inferred
-					if t.isUntypedConstArg(expr) {
+					if isConst {
 						weakConst[tp] = inferred
 					}
+				case !isWeak:
+				case !isConst:
+					typeSubst[tp] = inferred
+					delete(weakConst, tp)
+				case numericConstRank(weak.String()) >= 0 && numericConstRank(inferred.String()) > numericConstRank(weak.String()):
+					typeSubst[tp] = inferred
+					weakConst[tp] = inferred
 				}
 			}
 		}
@@ -2115,9 +2129,16 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// Then the Apply method's arguments, each against the parameter it
 		// fills: the metadata a codec's Apply takes first is injected after
 		// them. A spread last one is a slice of the variadic parameter's type
-		// (checkSpreads has put it there).
+		// (checkSpreads has put it there). Untyped constants bind last and
+		// widen, as in Go (constantsLast, widenConstBinding).
 		params := t.writtenApplyParams(methodMeta)
-		for i, arg := range args {
+		order, firstConst := constantsLast(args, t.isUntypedConstArg)
+		var typed map[string]transpiler.Type
+		for n, i := range order {
+			if n == firstConst {
+				typed = maps.Clone(inferredMap)
+			}
+			arg := args[i]
 			if pi := methodParamIndex(params, i); pi >= 0 {
 				argType := t.getExprTypeName(arg)
 				if argType != nil && !argType.IsNil() && !argType.IsAny() {
@@ -2128,6 +2149,9 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 						argType = t.followAliasChain(unwrapValueMarkers(argType))
 					}
 					t.unifyGoParam(paramType, argType, typeMeta.TypeParams, inferredMap)
+					if n >= firstConst {
+						t.widenConstBinding(arg, paramType, typeMeta.TypeParams, typed, inferredMap)
+					}
 				}
 			}
 		}
@@ -4109,11 +4133,14 @@ func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.S
 		return fun, nil
 	}
 	inferred := t.writtenTypeArgs(parent.TypeParams, written)
+	var types []transpiler.Type
+	var vals []ast.Expr
 	for i, fieldName := range sv.FieldNames {
 		if val, ok := namedArgs[fieldName]; ok && i < len(sv.FieldTypes) {
-			t.unifyFieldArgForInference(sv.FieldTypes[i], val, parent.TypeParams, inferred)
+			types, vals = append(types, sv.FieldTypes[i]), append(vals, val)
 		}
 	}
+	t.unifyFieldArgsForInference(types, vals, parent.TypeParams, inferred)
 	instantiated, missing := t.completeTypeArgs(base, parent.TypeParams, written, inferred)
 	switch {
 	case missing == nil:
@@ -4251,14 +4278,17 @@ func (t *galaASTTransformer) inferTypeArgsFromPositionalArgs(
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
 	return t.structLiteralType(fun, typeName, resolvedTypeName, slotType, line, col,
 		func(typeParams []string, inferred map[string]transpiler.Type) {
+			var types []transpiler.Type
+			var vals []ast.Expr
 			for i, fieldName := range fields {
 				if i >= len(args) {
 					break
 				}
 				if fieldType, ok := fieldTypes[fieldName]; ok {
-					t.unifyFieldArgForInference(fieldType, args[i], typeParams, inferred)
+					types, vals = append(types, fieldType), append(vals, args[i])
 				}
 			}
+			t.unifyFieldArgsForInference(types, vals, typeParams, inferred)
 		})
 }
 
@@ -4275,13 +4305,16 @@ func (t *galaASTTransformer) inferTypeArgsFromNamedArgs(
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
 	return t.structLiteralType(fun, typeName, resolvedTypeName, slotType, line, col,
 		func(typeParams []string, inferred map[string]transpiler.Type) {
+			var types []transpiler.Type
+			var vals []ast.Expr
 			for _, fieldName := range fields {
 				if val, ok := namedArgs[fieldName]; ok {
 					if fieldType, ok := fieldTypes[fieldName]; ok {
-						t.unifyFieldArgForInference(fieldType, val, typeParams, inferred)
+						types, vals = append(types, fieldType), append(vals, val)
 					}
 				}
 			}
+			t.unifyFieldArgsForInference(types, vals, typeParams, inferred)
 		})
 }
 
@@ -4808,6 +4841,25 @@ func (t *galaASTTransformer) writtenTypeArgs(typeParams []string, written []ast.
 		bound[typeParams[i]] = t.astTypeToTranspilerType(arg)
 	}
 	return bound
+}
+
+// unifyFieldArgsForInference binds the struct type parameters that the values
+// vals supplied for fields of types fieldTypes determine (see
+// unifyFieldArgForInference), untyped constants last and widened as Go
+// binds them (constantsLast, widenConstBinding): `Two(0, 2.5)` is a
+// Two[float64], and `Two(0, x)` for a float32 x a Two[float32].
+func (t *galaASTTransformer) unifyFieldArgsForInference(fieldTypes []transpiler.Type, vals []ast.Expr, typeParams []string, inferred map[string]transpiler.Type) {
+	order, firstConst := constantsLast(vals, t.isUntypedConstArg)
+	var typed map[string]transpiler.Type
+	for n, i := range order {
+		if n == firstConst {
+			typed = maps.Clone(inferred)
+		}
+		t.unifyFieldArgForInference(fieldTypes[i], vals[i], typeParams, inferred)
+		if n >= firstConst {
+			t.widenConstBinding(vals[i], fieldTypes[i], typeParams, typed, inferred)
+		}
+	}
 }
 
 // unifyFieldArgForInference binds the struct type parameters that the value
@@ -6312,6 +6364,8 @@ func (t *galaASTTransformer) callArgs(list argsSrc, paramNames []string) []callA
 // typedPartType).
 func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, variadic bool, args []callArg, typed map[string]transpiler.Type) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
+	var lowered []ast.Expr
+	var slotTypes []transpiler.Type
 	for _, a := range args {
 		pi := paramIndex(a.slot, paramTypes, variadic)
 		if a.lambda.ok() || pi < 0 || t.isPlaceholderLambdaArg(a.expr, paramTypes[pi]) {
@@ -6331,11 +6385,25 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if err != nil {
 			continue
 		}
+		lowered = append(lowered, expr)
+		slotTypes = append(slotTypes, paramType)
+	}
+	// Untyped constants bind last, as in Go (constantsLast).
+	order, firstConst := constantsLast(lowered, t.isUntypedConstArg)
+	var bound map[string]transpiler.Type
+	for n, i := range order {
+		if n == firstConst {
+			bound = maps.Clone(inferredMap)
+		}
+		expr, paramType := lowered[i], slotTypes[i]
 		argType := t.getExprTypeNameManual(expr)
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
 		t.unifyGoParam(paramType, argType, typeParams, inferredMap)
+		if n >= firstConst {
+			t.widenConstBinding(expr, paramType, typeParams, bound, inferredMap)
+		}
 		if typed != nil {
 			t.unifyGoParam(paramType, t.typedPartType(expr, argType), typeParams, typed)
 		}

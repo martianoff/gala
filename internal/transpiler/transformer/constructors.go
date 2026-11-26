@@ -488,15 +488,26 @@ func (t *galaASTTransformer) untypedNumericConstExprDefault(expr ast.Expr) (stri
 }
 
 // isUntypedConstArg reports whether expr, a lowered call argument, is an
-// untyped constant: a literal, or one of a Go package (`math.MaxInt8`). Go
+// untyped constant: a literal, `true` or `false`, or one of a Go package
+// (`math.MaxInt8`). Go
 // infers a type parameter only such arguments bind as the constant's default
 // type, whatever the slot the call fills.
 func (t *galaASTTransformer) isUntypedConstArg(expr ast.Expr) bool {
 	if isUntypedConstExpr(expr) {
 		return true
 	}
+	if t.isUntypedBoolConst(expr) {
+		return true
+	}
 	_, ok := t.untypedNumericConstExprDefault(expr)
 	return ok
+}
+
+// isUntypedBoolConst reports whether expr is `true` or `false`, which no
+// binding shadows.
+func (t *galaASTTransformer) isUntypedBoolConst(expr ast.Expr) bool {
+	id, ok := ast.Unparen(expr).(*ast.Ident)
+	return ok && (id.Name == "true" || id.Name == "false") && t.shadowingScope(id.Name) == nil
 }
 
 // typedPartType is typ, the type of expr, a lowered argument, with every part

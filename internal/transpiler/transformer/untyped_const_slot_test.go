@@ -63,3 +63,62 @@ func TestUntypedConstGenericSlot(t *testing.T) {
 		})
 	}
 }
+
+// TestUntypedConstKinds pins that a type parameter only untyped constants
+// bind takes the default type of the largest kind among them (int < rune <
+// float64), and that `true` and `false` are untyped constants
+// that bind after a typed argument, as Go infers them (#1360). The lambda's
+// result type shows the binding.
+func TestUntypedConstKinds(t *testing.T) {
+	const decls = `package main
+
+import "cmp"
+
+opaque type MyBool bool
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Pick[U any](a U, b U) U = b
+
+struct Two[V any](A V, B V)
+
+sealed type Pair[V any] {
+    case Both(A V, B V)
+}
+
+struct Two3[V any](A V, B V, F func(V) V)
+
+func (c Cell[T]) Pick3[U any](a U, b U, f func(U) U) U = f(b)
+
+func Same[U any](a U, b U) U = b
+
+func order(a int, b int) int = cmp.Compare(a, b)
+`
+	trans := newAliasExpectedTranspiler()
+	tests := []struct {
+		name, input, want string
+	}{
+		{"Go callee, int then float", "func g() float64 {\n    val z = cmp.Or(0, 2.5)\n    val w = () => z\n    w()\n}", "func() float64"},
+		{"GALA callee, int then float", "func g() float64 {\n    val w = () => Same(0, 2.5)\n    w()\n}", "func() float64"},
+		{"GALA callee, int then rune", "func g() rune {\n    val w = () => Same(1, 'a')\n    w()\n}", "func() rune"},
+		{"GALA method, int then float", "func g() float64 {\n    val w = () => Cell(1).Pick(0, 2.5)\n    w()\n}", "func() float64"},
+		{"GALA method with a lambda, int then float", "func g() {\n    val r = Cell(1).Pick3(0, 2.5, (u) => u)\n    Println(r)\n}", "func(u float64) float64"},
+		{"GALA method with a lambda, a typed argument after a constant", "func g(x float32) {\n    val r = Cell(1).Pick3(0, x, (u) => u)\n    Println(r)\n}", "func(u float32) float32"},
+		{"sealed variant, int then float", "func g() {\n    val p = Both(0, 2.5)\n    Println(p)\n}", "Both[float64]"},
+		{"sealed variant, named fields, int then float", "func g() {\n    val p = Both(A = 0, B = 2.5)\n    Println(p)\n}", "Both[float64]"},
+		{"sealed variant, a typed argument after a constant", "func g(x float32) {\n    val p = Both(0, x)\n    Println(p)\n}", "Both[float32]"},
+		{"struct, int then float", "func g() float64 = Two(0, 2.5).B", "Two[float64]"},
+		{"struct, named fields, int then float", "func g() float64 = Two(A = 0, B = 2.5).B", "Two[float64]"},
+		{"struct, a typed argument after a constant", "func g(x float32) float32 = Two(0, x).B", "Two[float32]"},
+		{"struct with a lambda, int then float", "func g() float64 = Two3(0, 2.5, (v) => v).B", "Two3[float64]"},
+		{"a typed argument still wins", "func g(x float32) float32 {\n    val w = () => Same(1, x)\n    w()\n}", "func() float32"},
+		{"bool constant before a typed argument", "func g(flag MyBool) MyBool {\n    val w = () => Same(true, flag)\n    w()\n}", "func() MyBool"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+}

@@ -1,0 +1,35 @@
+package main
+
+import "cmp"
+
+// A type parameter that only untyped constants bind takes the default type
+// of the largest kind among them (int < rune < float64), and `true` /
+// `false` are untyped constants that bind after a typed argument, as in Go
+// (#1360).
+
+opaque type Flag bool
+
+struct Two[V any](A V, B V)
+
+func (t Two[V]) Pick[U any](a U, b U, f func(U) U) U = f(b)
+
+func Same[T any](a T, b T) T = b
+
+func main() {
+    val z = cmp.Or(0, 2.5)
+    val w = () => z
+    Println(w() / 2)
+
+    val f = () => Same(0, 2.5)
+    Println(f() * 2)
+
+    val r = () => Same(1, 'a')
+    Println(r())
+
+    val on = Flag(true)
+    val pick = () => Same(false, on)
+    Println(pick())
+
+    Println(Two(0, 2.5).B * 2)
+    Println(Two(1, 2).Pick(0, 2.5, (u) => u / 2))
+}
