@@ -9,6 +9,7 @@
   parameters (in-place assignment without the temporaries would give `0`).
 -/
 import Gala.M5.IifeInst
+import Gala.M5.Prog
 
 namespace Gala.M5
 
@@ -124,23 +125,51 @@ def swPkg : PkgCtx :=
 
 def swCtx : Ctx := ⟨(∅ : HashMap String PkgCtx).insert "main" swPkg, "main"⟩
 
+def swFs : List (String × Sig × List Stmt) :=
+  [("sw", lowerSigOf [("a", .int), ("b", .int), ("n", .int)] .int, swGo)]
+
+theorem sw_buildCtx : buildCtx (progOf swFs) = swCtx := by
+  simp [buildCtx, progOf, swFs, swCtx, swPkg, buildPkg, funDecl, Std.HashMap.fold_eq_foldl_toList]
+
+theorem sw_progSigs : progSigs swDs = swSg := by
+  funext f; unfold progSigs swSg; by_cases h : f = "sw"
+  · subst h; rfl
+  · have h' : (f == "sw") = false := by simp [h]
+    simp [h, h', swDs, List.lookup]
+
+open Hoist in
+theorem sw_lowerOne : lowerOne 11 swSg "sw" swF = some ("sw", lowerSigOf [("a", .int), ("b", .int), ("n", .int)] .int, swGo) := by
+  have h1 : sigOf swF = some ([("a", .int), ("b", .int), ("n", .int)], .int) := rfl
+  have h3 : body3Ss swGo = true := by
+    simp [body3Ss, body3S, body3OS, ccB, ccBs, canon, canonArgs, canonOps, triggers,
+      isNonzeroLit, isLit, isIdentE, swGo]
+  simp [lowerOne, h1, sw_lowerFun, h3]
+
+theorem sw_lowerFuns : lowerFuns 11 swDs = some swFs := by
+  have h1 : (sigOf swF).isSome = true := rfl
+  have hf : swDs.funcs = [("sw", swF)] := rfl
+  unfold lowerFuns
+  rw [sw_progSigs, hf]
+  simp [h1, sw_lowerOne, swFs]
+
+open Hoist in
+theorem sw_lowerProg : lowerProg 11 swDs = some (progOf swFs) := by
+  have hn : namesOK swDs = true := by decide
+  have hfit : fitsAll swFs = true := by
+    simp [fitsAll, swFs, fitsSs, fitsS, fitsOS, fitsE, fitsEs, fieldListNames, swGo, afterS,
+      gcScope, funcScope, changeableName,
+      Scope.isLocal, Scope.isLType, Scope.ltype?, Scope.obj?, Scope.env, nameOwner,
+      Scope.enter, Scope.withIfaces, Scope.bind, sigNames, lowerSigOf, kindName, chSs, chS, chE,
+      chEs, chOS, chOE, isVarObj, buildCtx, buildPkg, progOf, funDecl, Id.run, List.forIn_cons,
+      List.forIn_nil, List.foldl_cons, List.foldl_nil, id_pure, idb,
+      Std.HashMap.getElem?_insert, declaredBy, sw_tmps.1, sw_tmps.2.1, sw_tmps.2.2]
+  simp [lowerProg, hn, sw_lowerFuns, hfit]
+
+/-- `sw`'s `FunRel`, from the context of the lowered program (`lowerProg_funRel`), which is
+    the context above (`sw_buildCtx`). -/
 theorem sw_funRel : FunRel 11 swSg swDs swCtx "main" := by
-  refine ⟨by decide, fun f hf => ?_, swPkg, by simp [swCtx], fun x hx => ?_, fun f sig h => ?_⟩
-  · unfold swSg at hf
-    split at hf
-    · rename_i hf'; subst hf'; rfl
-    · cases hf
-  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
-    rcases hx with rfl | rfl | rfl | rfl | rfl <;> simp [swPkg]
-  · unfold swSg at h
-    split at h
-    · rename_i hf
-      subst hf
-      simp only [Option.some.injEq] at h
-      subst h
-      exact ⟨swF, [("a", .int), ("b", .int), ("n", .int)], .int, swGo, 0, rfl, rfl, rfl, sw_lowerFun,
-        by simp [swPkg]⟩
-    · cases h
+  have h := lowerProg_funRel sw_lowerProg
+  rwa [sw_buildCtx, sw_progSigs] at h
 
 def swCall : Spec.Expr := .call (.name "sw") [.lit (.int 1), .lit (.int 2), .lit (.int 2)]
 def swCallG : Expr := .call (.ident "sw") [.intLit 1, .intLit 2, .intLit 2] false

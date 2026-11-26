@@ -556,7 +556,7 @@ column lists what each milestone's claim rests on beyond them.
   `calls_correct_instance` meets every hypothesis on `inc(5)`, and `inc_gocore_ok` shows
   GoCore's run of it ends with a related value, galaspec's having been computed to end
   with `6`. The order result (`gc_runs3`) holds for bodies that fit the scope gc's
-  rewrite gives them; that lowered programs' bodies fit is owed by step 3d (see
+  rewrite gives them; step 3d's `lowerProg` checks that each lowered body fits (see
   [Evaluation order](#evaluation-order)).
   Step 3b is proved: `if` used as a value (the same theorems, the lowering widened). The
   transformer emits such an `if` as Go's function literal called at once (an IIFE),
@@ -621,6 +621,25 @@ column lists what each milestone's claim rests on beyond them.
   maps keyed by strings, whose hash it does not compute), so these are pinned on step
   3c's run of `sw(1, 2, 2)` (`sw_gocore_more`, `sw_gocore_sync`); for concrete whole
   programs, `runProgramAt_adequate`'s hypothesis is discharged by step 5's instances.
+  Step 3d's second part is proved: the lowering of a whole program. `lowerProg K ds`
+  lowers every function of the lowered kinds into one package `main`, with the program's
+  own signatures (`progSigs`); a function whose signature is of no lowered kind (`main`,
+  one returning nothing) is skipped, and step 5 widens that to `main`. It refuses a
+  program whose function names repeat, or whose declared functions are named as the
+  lowering's constants and types (`true`, `false`, `int`, `bool`, `string`), `init` or a
+  temporary, or whose lowered bodies are not `Body3`; and `lowerProg` checks that each
+  body fits gc's scope (`fitsSs`, proved sound by `fitsSs_sound`) and refuses bodies that
+  don't. For what it
+  lowers, the context GoCore builds (`buildCtx`) meets every side condition of `FunRel`
+  (`lowerProg_funRel`, through `buildPkg`'s tables, not a hand-built context), and gc's
+  model leaves the program as written (`lowerProg_gc : Order.gc p = p`). The hand-built
+  contexts of 3a and 3c are now what `buildCtx` gives (`sw_buildCtx`, `inc_buildCtx`), and
+  their `FunRel` follows from `lowerProg_funRel`; `isEven` and `isOdd`, calling each other,
+  meet it too (`evenOdd_funRel`, `evenOdd_gc`). Of the 93 example files with a function
+  of the lowered kinds, `lowerProg` lowers 21 whole; the 72 others each have a function
+  that does not lower yet (none is refused for its names or for a body that does not
+  fit). `Inv3`'s hypothesis that no galaspec global is named after a lowered
+  function stays a hypothesis, which step 5 discharges from the initial state.
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
   order](#evaluation-order)); fuel adequacy is step 3d's, above.
@@ -804,8 +823,9 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   the two agree there: a scope fits when no name the body reads may be changed by a call
   and every name it calls is a call of a single-result function. `gc_runs3` shows
   `Order.gc` leaves in place every `Body3` body that fits the scope the rewrite gives it;
-  that lowered programs' bodies fit is owed by step 3d, from `FunRel` and the program's
-  tables (it excludes bodies that read a package-level name). `ordProg_gc` meets it on a
+  `lowerProg` (step 3d) checks that each lowered body fits gc's scope (`fitsSs`, proved
+  sound) and refuses bodies that don't, so `lowerProg_gc` shows gc's model leaves a lowered
+  program as written. `ordProg_gc` meets it on a
   recursive `fact` and `fact(x) + 1`, in the scopes the rewrite really builds. Like step
   2's, this is about GoCore's model of gc, not real gc, which copies every call into a
   temporary; that full hoisting agrees with left to right is carried to M6, which needs
@@ -845,11 +865,11 @@ Each step is its own pull request with a theorem.
    are proved, and 3c (the self-tail-call loop); 3d is GoCore's M1 with the lock-step lemma
    and the whole-program theorems. 3d also owes what 3a to 3c leave open. Proved: fuel
    adequacy, and that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s
-   states. Open: that the GoCore context of the lowered program (`buildCtx`) meets
-   `FunRel` and that lowered bodies fit gc's scope (`FitsSs`), and the divergence theorem
-   for the tail loop: a galaspec run that diverges at every depth is a GoCore run that
-   does not end normally. That full hoisting agrees with left to right is M6's, not
-   3d's: it needs a model of real gc's copying of every call.
+   states, and the whole-program lowering (`lowerProg`), whose context meets `FunRel` and
+   whose bodies fit gc's scope. Open: the divergence theorem for the tail loop: a
+   galaspec run that diverges at every depth is a GoCore run that does not end normally.
+   That full hoisting agrees with left to right is M6's, not 3d's: it needs a model of
+   real gc's copying of every call.
 4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
    M3 fragment retired.
 5. Package-level initialization (galaspec's `mentions` order against GoCore's
@@ -880,6 +900,9 @@ Each step is its own pull request with a theorem.
   with the construct named. Its soundness needs alpha-invariance of GoCore for
   temporaries and a correctness lemma for each normalization rule; both are part of
   M6's size.
+- **The lowering's shapes fit gc's scope.** M5's `lowerProg` checks each lowered body
+  against gc's scope (`fitsSs`); that every body the lowering produces passes, as a theorem
+  about the lowering's shapes, is M6's: the validator needs the same shape facts.
 - **Real gc's order.** M5's order results are about GoCore's model of gc's order
   (`Order.gc`), which hoists only where its trigger fires. Real gc copies every call, and
   every `&&` or `||` operand, into a temporary before the statement. That this full
@@ -1276,7 +1299,8 @@ below; this is their order and where they stand.
     divergence theorem: in progress; 3a (direct calls and `return`), 3b (`if` used as a
     value, Go's IIFE) and 3c (the self-tail-call loop, for as many iterations as
     galaspec's depth allows; divergence is 3d's) are proved, and of 3d, GoCore's fuel
-    adequacy (`runProgramAt_adequate`) and `Inv3.sync` for every state a run reaches.
+    adequacy (`runProgramAt_adequate`), `Inv3.sync` for every state a run reaches, and
+    the whole-program lowering (`lowerProg_funRel`, `lowerProg_gc`).
     The order obligations steps 2a and 2b left open (gc's `&&`/`||` temporaries,
     `untriggered_orders_agree`) are M6's.
   - Step 4: structs and sealed values on the flat layout; `match` re-proved against

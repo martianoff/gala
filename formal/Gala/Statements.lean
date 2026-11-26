@@ -27,6 +27,7 @@ import Gala.M5.StmtOrder
 import Gala.M5.IifeInst
 import Gala.M5.LoopInst
 import Gala.M5.GoFuelInst
+import Gala.M5.ProgInst
 
 namespace Gala.Statements
 
@@ -811,6 +812,61 @@ open Gala Gala.M5 GoCore.Full in
 theorem sw_gocore_sync : ∀ (N : Nat),
     Sync ((evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 }).2 :=
   Gala.M5.sw_gocore_sync
+
+open Gala Gala.M5 GoCore.Full in
+theorem fitsSs_sound : ∀ (s : Hoist.Scope) (ss : List Stmt), fitsSs s ss = true → FitsSs s ss :=
+  Gala.M5.fitsSs_sound
+
+open Gala Gala.M5 GoCore.Full in
+theorem lowerProg_funRel : ∀ {K : Nat} {ds : Spec.Decls} {p : Program}, lowerProg K ds = some p →
+    FunRel K (progSigs ds) ds (buildCtx p) "main" :=
+  Gala.M5.lowerProg_funRel
+
+open Gala Gala.M5 GoCore.Full in
+theorem lowerProg_gc : ∀ {K : Nat} {ds : Spec.Decls} {p : Program}, lowerProg K ds = some p →
+    Order.gc p = p :=
+  Gala.M5.lowerProg_gc
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_lowerProg : lowerProg 11 swDs = some (progOf swFs) :=
+  Gala.M5.sw_lowerProg
+
+open Gala Gala.M5 GoCore.Full in
+theorem inc_lowerProg : lowerProg 11 incDs = some (progOf incFs) :=
+  Gala.M5.inc_lowerProg
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_buildCtx : buildCtx (progOf swFs) = swCtx :=
+  Gala.M5.sw_buildCtx
+
+open Gala Gala.M5 GoCore.Full in
+theorem inc_buildCtx : buildCtx (progOf incFs) = incCtx :=
+  Gala.M5.inc_buildCtx
+
+open Gala Gala.M5 GoCore.Full in
+theorem evenOdd_lowerProg : lowerProg 11 evenOddDs = some (progOf evenOddFs) :=
+  Gala.M5.evenOdd_lowerProg
+
+open Gala Gala.M5 GoCore.Full in
+theorem evenOdd_funRel : FunRel 11 evenOddSg evenOddDs (buildCtx (progOf evenOddFs)) "main" :=
+  Gala.M5.evenOdd_funRel
+
+open Gala Gala.M5 GoCore.Full in
+theorem evenOdd_gc : Order.gc (progOf evenOddFs) = progOf evenOddFs :=
+  Gala.M5.evenOdd_gc
+
+open Gala Gala.M5 GoCore.Full in
+theorem dup_not_lowered :
+    lowerProg 11 { evenOddDs with funcs := [("isEven", isEvenF), ("isEven", isOddF)] } = none :=
+  Gala.M5.dup_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem int_not_lowered : lowerProg 11 { evenOddDs with funcs := [("int", isEvenF)] } = none :=
+  Gala.M5.int_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem changeable_not_fits : fitsSs chScope [.ret [.binary "+" (.ident "x") (.intLit 1)]] = false :=
+  Gala.M5.changeable_not_fits
 
 open Gala Gala.M5 GoCore.Full in
 theorem swProg_gc : declAt (Order.gc swProg) 0 0 0 = some (.func "sw" none [] swSig (some swGo)) :=
