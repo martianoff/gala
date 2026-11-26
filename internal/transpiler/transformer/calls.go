@@ -312,8 +312,13 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// Section 1.5 of transformCallWithArgsCtx), unless that Apply takes
 		// parameters and is no generic one: such a call is left as written,
 		// as it was before Apply took every value call.
+		bl, bc, _ := c.calleePos()
 		if callee, ok := t.valueApplyCallee(base); ok && !takesArgs(t.calleeApplyType(base)) {
-			base = callee
+			addressed, err := t.addressedApplyCallee(callee, bl, bc)
+			if err != nil {
+				return nil, err
+			}
+			base = addressed
 		}
 
 		// Check for zero-argument generic method call (e.g., p.Swap())
@@ -332,13 +337,19 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 			// A struct field whose type has an Apply is called through it.
 			if callee, ok := t.fieldApplyCallee(base, zeroArgRecvType, zeroArgLookupBase, sel.Sel.Name); ok && !t.isImportIdent(sel.X) && !takesArgs(t.fieldApplyType(zeroArgRecvType, zeroArgLookupBase, sel.Sel.Name)) {
-				base = callee
+				addressed, err := t.addressedApplyCallee(callee, bl, bc)
+				if err != nil {
+					return nil, err
+				}
+				base = addressed
 				zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel, "Apply")
 			}
 		} else if inner, typeArgs := splitCallFunTypeArgs(base); len(typeArgs) > 0 {
 			// So is one given type arguments for its generic Apply.
 			if sel, ok := inner.(*ast.SelectorExpr); ok && !t.isImportIdent(sel.X) {
 				recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
+				// A generic Apply lowers to a free function, which addresses
+				// its receiver itself (loweredMethodReceiver).
 				if callee, ok := t.fieldApplyCallee(base, recvType, lookupBaseName, sel.Sel.Name); ok {
 					base = callee
 				}
@@ -3278,13 +3289,31 @@ func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetad
 	if _, ok := fun.(*ast.CallExpr); !ok {
 		return nil
 	}
-	meta := t.applyTypeOf(t.getExprTypeName(fun))
-	// Go calls no pointer method on a call's result (a val field's unwrap too),
-	// which it cannot address.
-	if meta != nil && meta.Methods["Apply"].PointerReceiver {
-		return nil
+	return t.applyTypeOf(t.getExprTypeName(fun))
+}
+
+// addressedApplyCallee is callee, `recv.Apply` (valueApplyCallee,
+// fieldApplyCallee), with recv given an address when Apply has a pointer
+// receiver and recv is a field or a call's result: Go calls a pointer method
+// only on an addressable operand, so recv becomes a pointer to a copy, as a
+// written-out `recv.Apply(...)` gets (addressableReceiver), or the call is
+// GALA-E0110 when Apply can change its receiver. A val's or literal's Apply
+// is called on it as before.
+func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, line, col int) (ast.Expr, error) {
+	base, typeArgs := splitCallFunTypeArgs(callee)
+	sel, ok := base.(*ast.SelectorExpr)
+	if !ok || t.valueApplyType(sel.X) != nil {
+		return callee, nil
 	}
-	return meta
+	recvType := t.getExprTypeName(sel.X)
+	if !t.hasPointerReceiverMethod(recvType, "Apply") {
+		return callee, nil
+	}
+	recv, err := t.addressableReceiver(sel.X, recvType, "Apply", line, col)
+	if err != nil {
+		return nil, err
+	}
+	return applySelector(recv, typeArgs), nil
 }
 
 // fieldApplyType is the metadata of the type of field of recvType, the
@@ -3494,7 +3523,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 		}
-		fun = callee
+		addressed, err := t.addressedApplyCallee(callee, fl, fc)
+		if err != nil {
+			return nil, err
+		}
+		fun = addressed
 	}
 
 	// --- Section 2: Method/function dispatch prelude ---
@@ -3517,7 +3550,11 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 		}
-		fun = callee
+		addressed, err := t.addressedApplyCallee(callee, fl, fc)
+		if err != nil {
+			return nil, err
+		}
+		fun = addressed
 		receiver, method, typeArgs = t.splitCallTarget(fun)
 		recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
 	}

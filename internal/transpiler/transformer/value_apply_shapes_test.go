@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -207,6 +208,79 @@ func main() {
 `)
 	require.NoError(t, err)
 	require.Contains(t, out, "b.v.Apply(func(x int) int")
+
+	// A pointer-receiver Apply of a field of a call's result, or of a call's
+	// result, is called on an addressed copy, as `recv.Apply(...)` written
+	// out is (#1389); one that can change its receiver is GALA-E0110.
+	const counter = `package main
+
+struct Counter(var n int)
+
+func (c *Counter) Apply(x int) int = c.n + x
+
+struct Box(var h Counter)
+
+func mkBox() Box = Box(Counter(1))
+
+func mkCounter() Counter = Counter(1)
+
+func main() {
+`
+	out, err = transpileBareVariant(t, counter+"    Println(mkBox().h(3), mkCounter()(3), mkBox().h.Apply(3))\n}\n")
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(out, "std.AddrOfCopy(mkBox().h).Apply(3)"))
+	require.Contains(t, out, "std.AddrOfCopy(mkCounter()).Apply(3)")
+	// So is one called with no arguments, its defaults filled.
+	out, err = transpileBareVariant(t, `package main
+
+struct Counter(var n int)
+
+func (c *Counter) Apply(x int = 5) int = c.n + x
+
+func mkCounter() Counter = Counter(1)
+
+struct Box(var h Counter)
+
+func mkBox() Box = Box(Counter(1))
+
+struct Wrap[T any](var v T)
+
+func mkWrap() Wrap[Counter] = Wrap(Counter(1))
+
+func main() {
+    Println(mkCounter()(), mkBox().h(), mkWrap().v(3))
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "std.AddrOfCopy(mkCounter()).Apply(5)")
+	require.Contains(t, out, "std.AddrOfCopy(mkBox().h).Apply(5)")
+	require.Contains(t, out, "std.AddrOfCopy(mkWrap().v).Apply(3)")
+
+	// A lambda argument still takes Apply's parameter type through the copy.
+	out, err = transpileBareVariant(t, `package main
+
+struct Gen[T any](var v T)
+
+func (g *Gen[T]) Apply(f func(T) T) T = f(g.v)
+
+func mk() Gen[int] = Gen(1)
+
+struct Shelf(var g Gen[int])
+
+func main() {
+    Println(mk()((x) => x + 1), Shelf(mk()).g((x) => x * 2))
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "std.AddrOfCopy(mk()).Apply(func(x int) int")
+	require.Contains(t, out, ".g).Apply(func(x int) int")
+	mutating := strings.Replace(counter, "= c.n + x", "{\n    c.n = c.n + x\n    c.n\n}", 1)
+	_, err = transpileBareVariant(t, mutating+"    Println(mkCounter()(3))\n}\n")
+	require.ErrorContains(t, err, "GALA-E0110")
+	// A field reached through a val is the val's, which no Apply may change,
+	// as `b.h.Apply(3)` written out may not.
+	_, err = transpileBareVariant(t, mutating+"    val b = mkBox()\n    Println(b.h(3))\n}\n")
+	require.ErrorContains(t, err, "GALA-E0110")
 
 	// A misplaced spread names the field's type too.
 	_, err = transpileBareVariant(t, `package main
