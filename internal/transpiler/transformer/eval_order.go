@@ -526,16 +526,12 @@ func (o *operandOrder) sequence(slots []*ast.Expr, copyable func(*ast.Expr) bool
 		if vars, pointers := o.readsChangeable(*slot); !vars && !(pointers && laterExact[i]) {
 			continue
 		}
-		if counts := o.t.untypedShiftCounts(*slot); counts != nil {
-			// An untyped constant expression with shifts by values
-			// (`1 << n`) takes its type where it is used, which
-			// EvalOperand's type parameter would not give it: its shift
-			// counts, all it reads, are wrapped instead.
-			with := make(map[ast.Expr]ast.Expr, len(counts))
-			for _, c := range counts {
-				with[c] = o.t.evalOperand(c)
-			}
-			*slot = copyUntypedReplacing(*slot, with)
+		// An untyped constant expression with shifts by values (`1 << n`)
+		// takes its type where it is used, which EvalOperand's type
+		// parameter would not give it: its shift counts, all it reads, are
+		// wrapped instead.
+		if wrapped, ok := o.t.withShiftCountsMapped(*slot, o.t.evalOperand); ok {
+			*slot = wrapped
 			continue
 		}
 		*slot = o.t.evalOperand(*slot)

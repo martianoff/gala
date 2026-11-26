@@ -100,12 +100,10 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr) ast.Expr {
 	if frame == nil {
 		return arg
 	}
-	if counts := t.untypedShiftCounts(arg); counts != nil {
-		with := make(map[ast.Expr]ast.Expr, len(counts))
-		for _, c := range counts {
-			with[c] = t.boundArgValue(c)
-		}
-		return copyUntypedReplacing(arg, with)
+	// A shift count is never itself such an expression, so boundArgValue
+	// gives it the inert check and a temporary.
+	if read, ok := t.withShiftCountsMapped(arg, t.boundArgValue); ok {
+		return read
 	}
 	for _, tmp := range frame.temps {
 		if tmp.expr == arg {
@@ -151,11 +149,24 @@ func (t *galaASTTransformer) sequenceCall(expr, fun ast.Expr, frame *callFrame, 
 	slices.SortStableFunc(args, func(a, b frameArg) int {
 		return cmp.Or(cmp.Compare(a.line, b.line), cmp.Compare(a.col, b.col))
 	})
+	// An untyped constant expression with shifts by values (`1 << n`) takes
+	// its type where it is used, which a temporary would not give it: it
+	// stays in place, and its shift counts, which have types of their own and
+	// are all it evaluates, are its operands.
+	addOperand := func(e ast.Expr) {
+		if counts := t.untypedShiftCounts(e); counts != nil {
+			for _, c := range counts {
+				ops = append(ops, callOperand{expr: c})
+			}
+			return
+		}
+		ops = append(ops, callOperand{expr: e})
+	}
 	for _, a := range args {
-		ops = append(ops, callOperand{expr: a.expr})
+		addOperand(a.expr)
 	}
 	for _, d := range frame.defaults {
-		ops = append(ops, callOperand{expr: d})
+		addOperand(d)
 	}
 	for _, tmp := range frame.temps {
 		for i := range ops {
@@ -268,27 +279,8 @@ func (t *galaASTTransformer) evaluateInOrder(expr ast.Expr, ops []callOperand, a
 			throughP, method = sel.X, call.Fun
 		}
 	}
-	tempOf := make(map[ast.Expr]string, len(temps))
-	for _, tmp := range temps {
-		tempOf[tmp.expr] = tmp.name
-	}
 	for _, op := range ops {
 		if _, placed := at[op.expr]; !placed {
-			continue
-		}
-		if counts := t.untypedShiftCounts(op.expr); counts != nil {
-			// An untyped constant expression with shifts by values
-			// (`1 << n`) takes its type where it is used, as Go types it
-			// in place; a temporary would give it its default type. It
-			// stays where it is, and its shift counts, which have types
-			// of their own and are all it evaluates, are evaluated here.
-			for _, c := range counts {
-				if name := tempOf[c]; name != "" {
-					bind(name, c)
-				} else if !t.inert(c) {
-					bind(t.nextTempVar(), c)
-				}
-			}
 			continue
 		}
 		switch {
@@ -349,6 +341,23 @@ func (t *galaASTTransformer) untypedShiftCounts(expr ast.Expr) []ast.Expr {
 	}
 	walk(expr)
 	return counts
+}
+
+// withShiftCountsMapped returns a copy of e, when it is an untyped constant
+// expression with shifts by values (see untypedShiftCounts), with each shift
+// count c replaced by f(c), and true; false when e is none. e itself is left
+// as it is: unlike replaceExprs, which rewrites in place, the copy can be
+// read beside it.
+func (t *galaASTTransformer) withShiftCountsMapped(e ast.Expr, f func(ast.Expr) ast.Expr) (ast.Expr, bool) {
+	counts := t.untypedShiftCounts(e)
+	if counts == nil {
+		return nil, false
+	}
+	with := make(map[ast.Expr]ast.Expr, len(counts))
+	for _, c := range counts {
+		with[c] = f(c)
+	}
+	return copyUntypedReplacing(e, with), true
 }
 
 // copyUntypedReplacing copies expr, an untyped constant expression (see
