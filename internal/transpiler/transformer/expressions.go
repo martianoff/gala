@@ -723,8 +723,9 @@ type slot struct {
 	// where it names a type parameter. A lambda there produces a value of it,
 	// a block lambda its trailing value, as one filling a known `func(A) B`
 	// does. lowerLambdaArg reads it, for the argument's lambda or for one in
-	// a parenthesized, if or match value (lowerAgainst passes the slot on).
-	// Nil for any other slot.
+	// a parenthesized, if or match value: lowerAgainst passes the slot on,
+	// and so does lowerBlockTail for a branch block ending in such a value
+	// (carriesLambda). Nil for any other slot.
 	funcResult transpiler.Type
 }
 
@@ -761,6 +762,13 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 	return f.lambda.ok() || f.partial.ok() || f.ifExpr.ok() || f.match.ok()
 }
 
+// carriesLambda reports whether a value of form f can hold the lambda a slot
+// with a function result (slot.funcResult) is filled by: a lambda, or a
+// parenthesized, if or match value, whose lambdas lowerAgainst reaches.
+func (t *galaASTTransformer) carriesLambda(f exprForm) bool {
+	return f.grouped.ok() || f.lambda.ok() || f.ifExpr.ok() || f.match.ok()
+}
+
 // lowerAgainst lowers e in check mode against the slot it fills. A lambda
 // takes its parameter and result types from a function type (strict is
 // lowerLambda's untyped-parameter policy), and so does a
@@ -783,8 +791,7 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	if s.goResults != nil && !f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok() {
 		return t.lowerGoResultsValue(e, s, strict)
 	}
-	carriesLambda := f.grouped.ok() || f.lambda.ok() || f.ifExpr.ok() || f.match.ok()
-	if untyped && s.goResults == nil && !t.hoistableForm(f) && !(s.funcResult != nil && carriesLambda) {
+	if untyped && s.goResults == nil && !t.hoistableForm(f) && !(s.funcResult != nil && t.carriesLambda(f)) {
 		return t.lowerExpr(e)
 	}
 	if e.node.Ok() {
