@@ -766,7 +766,7 @@ func (t *galaASTTransformer) lowerBlockTail(b blockSrc, dst []ast.Stmt, st stmtS
 	} else if !transpiler.IsUnusable(lastValueExpected.typ) &&
 		(t.needsExpectedType(value) || t.consumesSlotType(value, t.followAliasChain(lastValueExpected.typ)) ||
 			value.isNil() || lastValueExpected.goResults != nil) ||
-		lastValueExpected.funcResult != nil && t.carriesLambda(t.classifyExpr(value)) {
+		(lastValueExpected.funcResult != nil && t.carriesLambda(t.classifyExpr(value))) {
 		// The block's value fills a typed slot: a lambda, if or match tail is
 		// lowered against it, and so is a tuple literal, construction or call
 		// that takes the slot's type (consumesSlotType), and a `nil`, which
