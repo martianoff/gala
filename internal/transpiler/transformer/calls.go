@@ -3184,9 +3184,9 @@ func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMeta
 		return nil
 	}
 	// A pointer is called through the Apply of the type it points to
-	// (applyTypeOf).
-	if elem, isPtr := t.pointee(b.typ); isPtr {
-		return t.pointeeApplyType(t.applyTypeByName, elem)
+	// (applyTypeOf), looked up as a val of that type is.
+	if p, isPtr := t.pointee(b.typ); isPtr {
+		return t.pointeeApplyType(t.applyTypeMeta, p)
 	}
 	return t.applyTypeMeta(b.typ.BaseName())
 }
@@ -3388,20 +3388,24 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 		return nil
 	}
 	fieldType = unwrapValueMarkers(fieldType)
-	if i := slices.Index(meta.TypeParams, fieldType.BaseName()); i >= 0 {
-		if args := t.getReceiverTypeArgTypes(recvType); i < len(args) {
-			return t.applyTypeOf(args[i])
+	// A pointer is looked up by the type it points to (applyTypeOf).
+	named := fieldType
+	p, isPtr := t.pointee(fieldType)
+	if isPtr {
+		named = p.elem
+	}
+	if i := slices.Index(meta.TypeParams, named.BaseName()); i >= 0 {
+		args := t.getReceiverTypeArgTypes(recvType)
+		switch {
+		case i >= len(args):
+			return nil
+		case isPtr:
+			return t.pointeeApplyType(t.applyTypeByName, pointeeType{elem: unwrapValueMarkers(args[i]), viaAlias: p.viaAlias})
 		}
-		return nil
+		return t.applyTypeOf(args[i])
 	}
 	// Another package's struct names its field's type as that package does:
-	// a bare name is its own type, never a same-named one of this package. A
-	// pointer is looked up by the type it points to (applyTypeOf).
-	named := fieldType
-	elem, isPtr := t.pointee(fieldType)
-	if isPtr {
-		named = elem
-	}
+	// a bare name is its own type, never a same-named one of this package.
 	if meta.Package != "" && meta.Package != t.packageName && named.GetPackage() == "" &&
 		!strings.Contains(named.BaseName(), ".") && !transpiler.IsPrimitiveType(named.BaseName()) {
 		name := named.BaseName()
@@ -3412,7 +3416,7 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 			own = registry.StdPackageName + "." + name
 		}
 		if isPtr {
-			return t.pointeeApplyType(t.applyTypeByName, transpiler.NamedType{Name: own})
+			return t.pointeeApplyType(t.applyTypeByName, pointeeType{elem: transpiler.NamedType{Name: own}, viaAlias: p.viaAlias})
 		}
 		return t.applyTypeByName(own)
 	}
@@ -3437,23 +3441,37 @@ func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMe
 
 // pointee is the type typ points to, through aliases and value markers, and
 // false when typ is no pointer.
-func (t *galaASTTransformer) pointee(typ transpiler.Type) (transpiler.Type, bool) {
-	ptr, isPtr := t.followAliasChain(unwrapValueMarkers(typ)).(transpiler.PointerType)
+func (t *galaASTTransformer) pointee(typ transpiler.Type) (pointeeType, bool) {
+	typ = unwrapValueMarkers(typ)
+	ptr, isPtr := typ.(transpiler.PointerType)
+	viaAlias := false
 	if !isPtr {
-		return nil, false
+		ptr, isPtr = t.followAliasChain(typ).(transpiler.PointerType)
+		viaAlias = true
 	}
-	return unwrapValueMarkers(ptr.Elem), true
+	if !isPtr {
+		return pointeeType{}, false
+	}
+	return pointeeType{elem: unwrapValueMarkers(ptr.Elem), viaAlias: viaAlias}, true
 }
 
-// pointeeApplyType is the metadata lookup finds for elem, a pointer's element
-// type, unless elem is an interface: Go selects no method through a pointer
-// to one.
-func (t *galaASTTransformer) pointeeApplyType(lookup func(string) *transpiler.TypeMetadata, elem transpiler.Type) *transpiler.TypeMetadata {
-	if transpiler.IsUnusable(elem) {
+// pointeeType is the type a pointer points to, and whether the pointer's own
+// type is an alias of it (`type NodeRef *Node`).
+type pointeeType struct {
+	elem     transpiler.Type
+	viaAlias bool
+}
+
+// pointeeApplyType is the metadata lookup finds for p's element type, unless
+// it is an interface (Go selects no method through a pointer to one), or the
+// pointer is an alias and the Apply generic: its free function takes its
+// receiver by the alias, which it does not see through.
+func (t *galaASTTransformer) pointeeApplyType(lookup func(string) *transpiler.TypeMetadata, p pointeeType) *transpiler.TypeMetadata {
+	if transpiler.IsUnusable(p.elem) {
 		return nil
 	}
-	meta := lookup(elem.BaseName())
-	if meta == nil || meta.IsInterface {
+	meta := lookup(p.elem.BaseName())
+	if meta == nil || meta.IsInterface || p.viaAlias && genericApply(meta) {
 		return nil
 	}
 	return meta
