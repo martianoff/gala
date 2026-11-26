@@ -389,6 +389,18 @@ theorem part_lit_int : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM Go
   Gala.M3.part_lit_int
 
 open Gala Gala.M3 in
+theorem part_lit_bool : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal)
+    (pre : Spec.Core → Prop) (b : Bool),
+    Part pre (fun v => v = .bool b) (Spec.eval ds d (.lit (.bool b)))
+      (GoCore.geval X (.lit (.bool b))) :=
+  Gala.M3.part_lit_bool
+
+open Gala Gala.M3 in
+theorem keepsLocals_lit_bool : ∀ (ds : Spec.Decls) (d : Nat) (b : Bool),
+    KeepsLocals (Spec.eval ds d (.lit (.bool b))) :=
+  Gala.M3.keepsLocals_lit_bool
+
+open Gala Gala.M3 in
 theorem part_var : ∀ (ds : Spec.Decls) (d : Nat) (X : Nat → GoCore.GM GoCore.GVal) (x : String),
     Part (fun c => (Spec.lookupVar c.locals c.globals x).isSome) (fun _ => True)
       (Spec.eval ds d (.name x)) (GoCore.geval X (.var (.user x))) :=

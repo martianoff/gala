@@ -375,8 +375,10 @@ column lists what each milestone's claim rests on beyond them.
   a call's evaluation order relative to a variable read unobservable (Go fixes the order
   only among calls); M5 has to establish them. A `return` inside an arm is left to M5. By
   M1, "not out of fuel" is a property of the program, so no fuel corollary is needed.
-  `lowerMatch_instance` meets every hypothesis on a match with literal, binder and wildcard
-  patterns (a guard or a body that reads a pattern variable needs typed locals, T7), and
+  `lowerMatch_instance` meets every hypothesis on a match with a literal, a wildcard under
+  a constant guard, and a binder whose body reads it, a program the compiler accepts (checked
+  with the CLI; a guard that reads a pattern variable needs a `>` lemma for operands not
+  known to be ints, not proved yet), and
   `leaky_not_correct` restates #996 against galaspec (10 against 6).
   [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each theorem in full.
 - **Stated gap:** the subject has the static type the transformer inferred (`HasTy`);
