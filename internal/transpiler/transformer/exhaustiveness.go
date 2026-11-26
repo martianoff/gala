@@ -411,8 +411,9 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 			// when the type is known, from GALA source alone, to hold no value
 			// of another type: the same rule as an unguarded catch-all arm (see
 			// typedPatternMatchesEveryValue). A typed pattern over an interface
-			// (`error`, `any` included), a type parameter or any Go type does not
-			// count, so the nil or other-type case still needs an arm.
+			// (`error`, `any` included) or a type parameter misses nil and other
+			// types; a function, slice, map or Go type is not known concrete from
+			// GALA source alone. None of them counts.
 			if field := ctor.fields[i]; !c.t.typedPatternMatchesEveryValue(pat, field, field) {
 				fields[i] = covRefutable
 			}

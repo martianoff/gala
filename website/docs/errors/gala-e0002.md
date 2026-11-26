@@ -109,7 +109,7 @@ error[GALA-E0002]: non-exhaustive match: missing cases: Some(...)
 
 Cover the rest of the variant with a case that matches all of it, such as `case Some(_) => "other"`. Nested patterns count together: `Some(Some(_))`, `Some(None())` and `None()` cover every `Option[Option[int]]`.
 
-A typed sub-pattern counts only when it names the field's own type and that type is a predeclared type other than `error` or `any`, or a GALA type that is not an interface. Over any other field type (an interface such as `error`, a type parameter, a function, slice or map type, or a Go type) a typed pattern tests the dynamic type, which misses a nil field, so `Ok(e: error)` or `Some(d: time.Duration)` leaves the variant missing. Add `case Ok(_)` for the nil field, write the field untyped (`case Some(d)`), or add a default.
+A typed sub-pattern counts only when it names the field's own type and that type is a predeclared type other than `error` or `any`, or a GALA type that is not an interface. Over an interface field (`error` included) or a type parameter, a typed pattern tests the dynamic type and misses a nil field, so `Ok(e: error)` leaves `Ok` missing: add `case Ok(_)` for the nil field, or a default. A function, slice, map or Go-typed field is not counted either, because GALA source alone does not show that the type is concrete, so `Some(d: time.Duration)` leaves `Some` missing: write the field untyped (`case Some(d)`), or add a default.
 
 ## Why the rule exists
 

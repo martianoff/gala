@@ -118,6 +118,15 @@ func f(o Option[time.Time]) int = o match {
 			missing: "Some(...)",
 		},
 		{
+			name: "a map field",
+			src: `func f(o Option[map[string]int]) int = o match {
+    case Some(m: map[string]int) => m.Size()
+    case None() => 0
+}
+`,
+			missing: "Some(...)",
+		},
+		{
 			name: "a type-parameter field",
 			src: `func f[T any](o Option[T]) int = o match {
     case Some(x: T) => s"$x".Size()
