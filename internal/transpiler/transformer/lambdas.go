@@ -1906,12 +1906,24 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 	paramTypes []transpiler.Type,
 	params int,
 ) (ast.Expr, ast.Expr, *placeholderTakes, error) {
+	// A parameter type not yet resolved throughout (a type parameter
+	// nothing has bound) types its `_` as `any`, as it would one shared
+	// binding; one that is taken is GALA-E0033 below.
+	paramTypes = slices.Clone(paramTypes)
+	for i, typ := range paramTypes {
+		if transpiler.ContainsUnusable(typ) {
+			paramTypes[i] = transpiler.BasicType{Name: "any"}
+		}
+	}
 	undo := t.snapshotTrialLowering()
 	lowerTaking := func(taken []int) (ast.Expr, ast.Expr, *placeholderTakes, error) {
 		undo()
-		// Restoring hands the snapshot itself back, so take another.
-		undo = t.snapshotTrialLowering()
-		return t.lowerPlaceholderBody(e, shared, typesByParameter(paramTypes, taken))
+		restoreScoped := t.captureScopedState()
+		body, result, takes, err := t.lowerPlaceholderBody(e, shared, typesByParameter(paramTypes, taken))
+		if err != nil {
+			restoreScoped()
+		}
+		return body, result, takes, err
 	}
 	var firstErr error
 	choice := make([]int, params)
@@ -1921,12 +1933,12 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 	// Each try lowers the placeholder lambdas nested in the body again, with
 	// their own tries, so a nested one tries fewer.
 	limit := maxPlaceholderChoices
-	for s := t.currentScope; s != nil && limit > 1; s = s.parent {
+	for s := t.currentScope; s != nil; s = s.parent {
 		if s.placeholder != nil {
-			limit /= 8
+			limit = max(limit/4, minPlaceholderChoices)
 		}
 	}
-	for tries := 0; params <= len(paramTypes) && tries < max(limit, 1); tries++ {
+	for tries := 0; params <= len(paramTypes) && tries < limit; tries++ {
 		body, result, takes, err := lowerTaking(choice)
 		if err == nil && slices.Equal(takes.taken(body), choice) {
 			return body, result, takes, nil
@@ -1971,9 +1983,13 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 }
 
 // maxPlaceholderChoices bounds the choices of `_` lowerMixedPlaceholderBody
-// tries, divided by 8 for each placeholder lambda it is nested in; a body
-// with that many has a lambda with named parameters to spare.
-const maxPlaceholderChoices = 32
+// tries, divided by 4 for each placeholder lambda it is nested in, down to
+// minPlaceholderChoices: each try lowers the nested ones again with their
+// own. A body with that many has a lambda with named parameters to spare.
+const (
+	maxPlaceholderChoices = 32
+	minPlaceholderChoices = 4
+)
 
 // nextChoice advances choice, an increasing choice of len(choice) of 0..n-1,
 // to the next in lexicographic order, and reports whether there is one.
@@ -2003,11 +2019,12 @@ func (t *galaASTTransformer) snapshotTrialLowering() func() {
 	mismatches := t.operandMismatches
 	usedDot := maps.Clone(t.importManager.usedDotImports)
 	return func() {
+		// A copy each time: the lowering after a restore writes to the map.
 		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
 		t.inferenceWarnings = t.inferenceWarnings[:warnings]
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:hints]
 		t.operandMismatches = mismatches
-		t.importManager.usedDotImports = usedDot
+		t.importManager.usedDotImports = maps.Clone(usedDot)
 	}
 }
 
