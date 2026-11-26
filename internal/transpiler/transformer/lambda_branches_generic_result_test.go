@@ -86,6 +86,51 @@ func main() {
     }))
     Println(b(3))
 }`, map[string]int{"func(k int) int {": 3, "return q * q": 3}},
+		{"match arm block ending in a nested match of lambdas", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func main() {
+    val n = 2
+    val m = 1
+    val b = run(n match {
+        case 1 => (k int) => {
+            val q = k
+            q * q
+        }
+        case _ => {
+            Println("nested")
+            m match {
+                case 1 => (k int) => {
+                    val q = k + 1
+                    q * q
+                }
+                case _ => (k int) => {
+                    val q = k + 2
+                    q * q
+                }
+            }
+        }
+    })
+    Println(b(3))
+}`, map[string]int{"func(k int) int {": 3, "return q * q": 3}},
+		{"if and match of function values", `package main
+
+func run[A any, B any](f func(A) B) func(A) B = f
+
+func inc(k int) int = k + 1
+
+func dec(k int) int = k - 1
+
+func main() {
+    val c = true
+    val b = run(if (c) inc else dec)
+    val d = run(c match {
+        case true => dec
+        case _ => inc
+    })
+    Println(b(3), d(3))
+}`, map[string]int{"func() func(int) int {": 2}},
 		{"match of block lambdas", `package main
 
 func run[A any, B any](f func(A) B) func(A) B = f

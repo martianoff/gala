@@ -726,7 +726,9 @@ type slot struct {
 	// a parenthesized, if or match value: lowerAgainst passes the slot on,
 	// and so does lowerBlockTail for a branch block ending in such a value
 	// (carriesLambda). A branch lowerBranches retries gets a typed slot
-	// instead, without it. Nil for any other slot.
+	// instead, without it. It is set only when the call binds no type
+	// argument, so such a slot is never open, and a Try thunk, which takes no
+	// parameter, never has it. Nil for any other slot.
 	funcResult transpiler.Type
 }
 
