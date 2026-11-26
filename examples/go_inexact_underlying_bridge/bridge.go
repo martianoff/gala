@@ -11,3 +11,9 @@ type WithBox[T any] func(*Box[T]) error
 
 // WithPair is a generic defined function type over a fixed-length array.
 type WithPair[T any] func([2]T) T
+
+// IntBox is a defined function type over a generic struct instance.
+type IntBox func(*Box[int]) error
+
+// Use takes a Box[int].
+func Use(b *Box[int]) error { return nil }

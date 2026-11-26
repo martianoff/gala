@@ -13,4 +13,7 @@ func main() {
 
     val first go_inexact_underlying_bridge.WithPair[string] = (xs) => xs[0] + xs[1]
     Println(first != nil)
+
+    val pass go_inexact_underlying_bridge.IntBox = (b) => go_inexact_underlying_bridge.Use(b)
+    Println(pass(nil) == nil)
 }
