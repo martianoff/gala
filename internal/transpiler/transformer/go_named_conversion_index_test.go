@@ -137,6 +137,15 @@ func main() {
     Println(f())
 }
 `, []string{"func() UserID"}},
+		{"lambda in a parenthesized conversion to a Go function type", `package main
+
+import "net/http"
+
+func main() {
+    val h = (http.HandlerFunc)((w, r) => w.WriteHeader(204))
+    Println(h != nil)
+}
+`, []string{"func(w http.ResponseWriter, r *http.Request)"}},
 		{"index of a string", `package main
 
 func main() {

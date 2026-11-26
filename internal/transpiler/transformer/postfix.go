@@ -29,7 +29,7 @@ func (t *galaASTTransformer) lowerMember(base ast.Expr, m memberSrc) (ast.Expr, 
 // plain form.
 func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, c callSrc) (ast.Expr, error) {
 	isPrint := t.isBuiltinPrint(base)
-	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
+	if id, ok := ast.Unparen(base).(*ast.Ident); ok && t.typeParamValue(id.Name) {
 		if err := t.checkTypeParamConversion(id.Name, c); err != nil {
 			return nil, err
 		}
@@ -379,7 +379,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 	if res := t.goResultOf(base); res != nil {
 		return nil, t.goResultMisuseAt(res, "it cannot be indexed", ix.at())
 	}
-	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
+	if id, ok := ast.Unparen(base).(*ast.Ident); ok && t.typeParamValue(id.Name) {
 		return nil, t.typeParamMisuseErrorAt(ix.at(), id.Name, "takes no type arguments")
 	}
 	if err := t.checkVariantTypeArgs(base, ix.exprs()); err != nil {

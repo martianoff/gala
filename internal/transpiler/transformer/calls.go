@@ -2727,7 +2727,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, args argsS
 	// converted to an instantiated generic alias (`Conv[int, string]((x) =>
 	// …)`) by the alias's signature with the type arguments substituted.
 	if ctx.funcMeta == nil && !shadowed && ctx.goFuncParamTypes == nil {
-		if ft := t.conversionFuncType(fun); ft != nil {
+		if ft := t.conversionFuncType(ast.Unparen(fun)); ft != nil {
 			ctx.goFuncParamTypes = []transpiler.Type{*ft}
 		}
 	}

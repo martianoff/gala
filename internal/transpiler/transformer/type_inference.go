@@ -94,15 +94,15 @@ func (t *galaASTTransformer) goOperandUnderlying(typ transpiler.Type) (transpile
 	if u, ok := t.goNamedUnderlying(typ); ok {
 		return u, true
 	}
-	if _, bare := bareTypeName(typ); !bare {
+	if name, bare := bareTypeName(typ); !bare || transpiler.IsPrimitiveType(name) {
 		return nil, false
 	}
 	switch td, target := t.goTypeDataThroughAliases(typ); {
-	case td == nil:
-	case td.Kind == "named" && td.Underlying != nil && len(td.TypeParams) == 0:
+	case td == nil || len(td.TypeParams) > 0:
+	case (td.Kind == "named" || td.Kind == "alias") && td.Underlying != nil:
 		return td.Underlying, true
-	case td.Kind == "alias" && target != nil:
-		// An alias of an unnamed type (`= map[string][]string`).
+	case target != nil:
+		// An alias whose target Go type info does not describe.
 		return target, true
 	}
 	return nil, false

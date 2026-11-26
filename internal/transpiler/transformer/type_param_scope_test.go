@@ -282,6 +282,14 @@ func h[Wrap any](w Wrap, x any) int = x match {
 			want: "'Try' is a type parameter of the enclosing declaration and cannot be called: a conversion to it takes exactly one value, not a lambda",
 		},
 		{
+			name: "called with a lambda, parenthesized",
+			input: `func g[Try any](x Try) Try {
+    val t = (Try)(() => 1)
+    x
+}`,
+			want: "'Try' is a type parameter of the enclosing declaration and cannot be called: a conversion to it takes exactly one value, not a lambda",
+		},
+		{
 			name:  "called with two values",
 			input: `func g[Tuple any](x Tuple) Tuple = Tuple(1, 2)`,
 			want:  "'Tuple' is a type parameter of the enclosing declaration and cannot be called",
