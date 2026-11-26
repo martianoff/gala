@@ -109,6 +109,15 @@ REQUIRED_THEOREMS = [
     "Gala.M5.body3_div_call",
     "Gala.M5.body3_div_arg_call",
     "Gala.M5.body3_div_inside_call",
+    "Gala.M5.tailIf_lowerBody",
+    "Gala.M5.armNest_lowerBody",
+    "Gala.M5.retInArm_not_lowered",
+    "Gala.M5.iife_correct_instance",
+    "Gala.M5.if_spec_ok",
+    "Gala.M5.iife_gocore_ok",
+    "Gala.M5.iifeProg_gc",
+    "Gala.M5.body3_div_iife",
+    "Gala.M5.body3_iife_div_inside",
 ]
 
 # The modules under Gala/, in dependency order: a module may import only the
@@ -175,6 +184,7 @@ GALA_SRCS = [
     "Gala/M5/Call.lean",
     "Gala/M5/CallOrder.lean",
     "Gala/M5/CallInst.lean",
+    "Gala/M5/IifeInst.lean",
     "Gala/Statements.lean",
     "Gala.lean",
 ]

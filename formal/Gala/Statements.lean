@@ -24,7 +24,7 @@ import Gala.AlphaEval
 import Gala.AlphaProg
 import Gala.M5.Expr
 import Gala.M5.StmtOrder
-import Gala.M5.CallInst
+import Gala.M5.IifeInst
 
 namespace Gala.Statements
 
@@ -661,5 +661,51 @@ theorem body3_div_inside_call :
     Body3 [.ret [.binary "+" (.call (.ident "f") [.binary "/" (.ident "x") (.ident "z")] false)
       (.call (.ident "g") [] false)]] :=
   Gala.M5.body3_div_inside_call
+
+open Gala Gala.M5 GoCore.Full in
+theorem tailIf_lowerBody : lowerBody 11 shapeSg tailIfF = some tailIfG :=
+  Gala.M5.tailIf_lowerBody
+
+open Gala Gala.M5 GoCore.Full in
+theorem armNest_lowerBody : lowerBody 11 shapeSg armNestF = some armNestG :=
+  Gala.M5.armNest_lowerBody
+
+open Gala Gala.M5 GoCore.Full in
+theorem retInArm_not_lowered :
+    lowerC 11 shapeSg (fun _ => none) (.ifExpr (.lit (.bool true)) (.block [.ret (some (iL 1)), iL 2]) (iL 3)) = none :=
+  Gala.M5.retInArm_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem iife_correct_instance : ∀ (steps d : Nat), steps ≤ 10 →
+    ∀ N ≥ 11 * d, ERes3 .int false { incCore with steps } incSt
+      ((Spec.eval incDs d ifCall).run.run { incCore with steps })
+      ((evalExpr incCtx N incEnv ifCallG).run.run incSt) :=
+  Gala.M5.iife_correct_instance
+
+open Gala Gala.M5 GoCore.Full in
+theorem if_spec_ok : (Spec.eval incDs 3 ifCall).run.run { incCore with steps := 10 } =
+    (.ok (.int 4), { incCore with steps := 5 }) :=
+  Gala.M5.if_spec_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem iife_gocore_ok : ∀ (N : Nat), N ≥ 33 →
+    ∃ w g', (evalExpr incCtx N incEnv ifCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 4) w ∧ ¬ UInt w :=
+  Gala.M5.iife_gocore_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem iifeProg_gc : declAt (Order.gc iifeProg) 0 0 1 = some (.func "pick" none [] pickSig (some pickG)) :=
+  Gala.M5.iifeProg_gc
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_div_iife :
+    ¬ Body3 [.ret [.binary "+" (.binary "/" (.ident "x") (.ident "z"))
+      (iife .int (ifT (.ident "b") [.ret [.intLit 1]] [.ret [.intLit 2]]))]] :=
+  Gala.M5.body3_div_iife
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_iife_div_inside :
+    Body3 [.ret [.binary "+" (.ident "x")
+      (iife .int (ifT (.ident "b") [.ret [.binary "/" (.ident "x") (.ident "z")]] [.ret [.intLit 2]]))]] :=
+  Gala.M5.body3_iife_div_inside
 
 end Gala.Statements
