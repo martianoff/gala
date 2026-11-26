@@ -19,7 +19,7 @@ func TestTypedFieldPatternCoverage(t *testing.T) {
 	wrap := func(src string) string {
 		return "package main\n\n" + src + "\nfunc main() {\n    Println(0)\n}\n"
 	}
-	rejected := []struct{ name, src string }{
+	rejected := []struct{ name, src, missing string }{
 		{
 			name: "an error field",
 			src: `sealed type R {
@@ -32,6 +32,7 @@ func f(r R) string = r match {
     case Other() => "other"
 }
 `,
+			missing: "Ok(...)",
 		},
 		{
 			name: "an any field",
@@ -40,6 +41,7 @@ func f(r R) string = r match {
     case None() => 0
 }
 `,
+			missing: "Some(...)",
 		},
 		{
 			name: "a GALA interface field",
@@ -57,6 +59,7 @@ func f(h H) string = h match {
     case Empty() => ""
 }
 `,
+			missing: "Holder(...)",
 		},
 		{
 			name: "a Go interface field",
@@ -72,6 +75,7 @@ func f(h H) string = h match {
     case Empty() => ""
 }
 `,
+			missing: "Holder(...)",
 		},
 		{
 			name: "a concrete Go field",
@@ -82,6 +86,7 @@ func f(o Option[time.Duration]) int = o match {
     case None() => 0
 }
 `,
+			missing: "Some(...)",
 		},
 		{
 			name: "a Go struct field",
@@ -92,6 +97,16 @@ func f(o Option[time.Time]) int = o match {
     case None() => 0
 }
 `,
+			missing: "Some(...)",
+		},
+		{
+			name: "a function field",
+			src: `func f(o Option[func(int) int]) int = o match {
+    case Some(g: func(int) int) => g(1)
+    case None() => 0
+}
+`,
+			missing: "Some(...)",
 		},
 		{
 			name: "a type-parameter field",
@@ -100,6 +115,7 @@ func f(o Option[time.Time]) int = o match {
     case None() => 0
 }
 `,
+			missing: "Some(...)",
 		},
 	}
 	for _, tc := range rejected {
@@ -107,6 +123,7 @@ func f(o Option[time.Time]) int = o match {
 			_, err := newForbiddenBuiltinTranspiler().Transpile(wrap(tc.src), "")
 			require.Error(t, err)
 			require.Contains(t, err.Error(), string(galaerr.CodeNonExhaustiveMatch))
+			require.Contains(t, err.Error(), "missing cases: "+tc.missing)
 		})
 	}
 
@@ -125,6 +142,24 @@ func f(o Option[time.Time]) int = o match {
 
 func f(o Option[Point]) int = o match {
     case Some(p: Point) => p.X
+    case None() => 0
+}
+`,
+		},
+		{
+			name: "a generic GALA field",
+			src: `func f(o Option[Option[int]]) int = o match {
+    case Some(i: Option[int]) => i.GetOrElse(0)
+    case None() => 0
+}
+`,
+		},
+		{
+			name: "a GALA collection field",
+			src: `import . "martianoff/gala/collection_immutable"
+
+func f(o Option[Array[int]]) int = o match {
+    case Some(a: Array[int]) => a.Size()
     case None() => 0
 }
 `,
