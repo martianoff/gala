@@ -186,7 +186,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | Head/Tail after empty check | `if !list.IsEmpty() { list.Head(); list.Tail() }` | `list match { case Cons(h, t) => ... }` |
 | Unused extractors | Defining `Unapply` extractors but using if-else internally | Use your own extractors! |
 | Get(0) after length check | `if x.Length() > 0 { x.Get(0) }` | `x.HeadOption()` or pattern match |
-| Unnecessary default on sealed | `case _ =>` when all sealed variants are covered | Remove `case _ =>`; exhaustive match is verified by the transpiler |
+| Unnecessary default on sealed | `case _ =>` when all sealed variants are covered | Remove `case _ =>`; exhaustive match is verified by the transpiler. Keep it when a variant is matched only through a typed sub-pattern of a field that is not a primitive (other than `error`/`any`) or a GALA non-interface type, e.g. `Some(d: time.Duration)`: that case does not cover the variant |
 | IsXxx() chains on sealed type | `if s.IsCircle() { ... } else if s.IsRectangle() { ... }` | `s match { case Circle(r) => ... case Rectangle(w, h) => ... }` |
 | If-err-nil on Go error return | `val x, err = f(); if err == nil { ... }` | Wrap with `Try(f)` (if f takes no args) or `Try(f(args))` then use `.Map`, `.GetOrElse`, or `match` |
 | Sequential if-err-nil fallback | Multiple `val x, err = f(); if err == nil { return x }` in sequence | `Try(f1).OrElse(Try(f2))` chain (or `Try(f1(args)).OrElse(Try(f2(args)))` if args needed) |

@@ -407,8 +407,14 @@ func (c *coverage) fieldPatterns(args argsSrc, ctor covCtor) []covCell {
 		case patKindExpr:
 			fields[i] = patCell(pat.expr())
 		case patKindTyped:
-			// `x: T` of the field's own type matches every value of it.
-			if !c.t.typedPatternOfType(pat, ctor.fields[i]) {
+			// `x: T` of the field's own type matches every value of it only
+			// when the type is known, from GALA source alone, to hold no value
+			// of another type: the same rule as an unguarded catch-all arm (see
+			// typedPatternMatchesEveryValue). A typed pattern over an interface
+			// (`error`, `any` included) or a type parameter misses nil and other
+			// types. Any other type without a GALA declaration (a pointer,
+			// function, slice, map or Go type) does not count either.
+			if field := ctor.fields[i]; !c.t.typedPatternMatchesEveryValue(pat, field, field) {
 				fields[i] = covRefutable
 			}
 		default:

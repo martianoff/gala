@@ -406,6 +406,7 @@ go_test(
         "type_param_constraint_test.go",
         "type_param_scope_test.go",
         "type_switch_match_test.go",
+        "typed_field_coverage_test.go",
         "typed_partial_function_test.go",
         "unexported_method_cross_pkg_test.go",
         "unknown_method_test.go",
