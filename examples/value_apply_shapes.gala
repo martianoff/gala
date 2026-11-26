@@ -91,4 +91,9 @@ func main() {
     tally(2)
     tally(3)
     Println(tally.total)
+
+    // A pointer is called through the Apply of the type it points to.
+    val tallyRef = &tally
+    tallyRef(10)
+    Println(tally.total)
 }

@@ -314,7 +314,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// as it was before Apply took every value call.
 		bl, bc, _ := c.calleePos()
 		if callee, ok := t.valueApplyCallee(base); ok && !takesArgs(t.calleeApplyType(base)) {
-			addressed, err := t.addressedApplyCallee(callee, bl, bc)
+			addressed, err := t.addressedApplyCallee(callee, c, bl, bc)
 			if err != nil {
 				return nil, err
 			}
@@ -337,7 +337,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 			// A struct field whose type has an Apply is called through it.
 			if callee, ok := t.fieldApplyCallee(base, zeroArgRecvType, zeroArgLookupBase, sel.Sel.Name); ok && !t.isImportIdent(sel.X) && !takesArgs(t.fieldApplyType(zeroArgRecvType, zeroArgLookupBase, sel.Sel.Name)) {
-				addressed, err := t.addressedApplyCallee(callee, bl, bc)
+				addressed, err := t.addressedApplyCallee(callee, c, bl, bc)
 				if err != nil {
 					return nil, err
 				}
@@ -3183,7 +3183,13 @@ func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMeta
 	if !ok || b.typ.IsNil() {
 		return nil
 	}
-	return t.applyTypeMeta(b.typ.BaseName())
+	typ := b.typ
+	// A pointer is called through the Apply of the type it points to
+	// (applyTypeOf).
+	if ptr, isPtr := unwrapValueMarkers(typ).(transpiler.PointerType); isPtr {
+		typ = ptr.Elem
+	}
+	return t.applyTypeMeta(typ.BaseName())
 }
 
 // valueApplyType is the metadata of the type whose Apply a call of fun calls
@@ -3330,13 +3336,25 @@ func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetad
 // literal), recv becomes a pointer to a copy (addressableReceiver), or the
 // call is GALA-E0110 when Apply can change its receiver; an inout place
 // whose address Apply could keep is GALA-E0113 (checkInoutReceiverUse).
-func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, c callSrc, line, col int) (ast.Expr, error) {
 	base, typeArgs := splitCallFunTypeArgs(callee)
 	sel, ok := base.(*ast.SelectorExpr)
 	if !ok {
 		return callee, nil
 	}
 	recvType := t.getExprTypeName(sel.X)
+	// A pointer that may be nil fills no Ptr receiver (GALA-E0080).
+	source := func() (srcNode, srcNode, string) {
+		at := c.post.primaryAt()
+		text := c.calleeText()
+		if text == "" {
+			text = "this value"
+		}
+		return at, at, text
+	}
+	if err := t.checkPtrReceiverIn(sel.X, recvType, "Apply", source); err != nil {
+		return nil, err
+	}
 	recv := sel.X
 	if t.hasPointerReceiverMethod(recvType, "Apply") {
 		var err error
@@ -3393,13 +3411,16 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 }
 
 // applyTypeOf is the metadata of typ, a value's type, when it has an Apply
-// method; nil for a pointer or a type not known.
+// method; nil for a type not known. A pointer is called through the Apply of
+// the type it points to, as `p.Apply(...)` written out is (Go selects it
+// through the pointer); one that may be nil is GALA-E0080 for an Apply on a
+// Ptr receiver (addressedApplyCallee).
 func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMetadata {
 	typ = unwrapValueMarkers(typ)
-	if transpiler.IsUnusable(typ) {
-		return nil
+	if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
+		typ = unwrapValueMarkers(ptr.Elem)
 	}
-	if _, isPtr := typ.(transpiler.PointerType); isPtr {
+	if transpiler.IsUnusable(typ) {
 		return nil
 	}
 	return t.applyTypeByName(typ.BaseName())
@@ -3563,7 +3584,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 		}
-		addressed, err := t.addressedApplyCallee(callee, fl, fc)
+		addressed, err := t.addressedApplyCallee(callee, c, fl, fc)
 		if err != nil {
 			return nil, err
 		}
@@ -3590,7 +3611,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 		}
-		addressed, err := t.addressedApplyCallee(callee, fl, fc)
+		addressed, err := t.addressedApplyCallee(callee, c, fl, fc)
 		if err != nil {
 			return nil, err
 		}

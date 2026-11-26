@@ -340,6 +340,55 @@ func main() {
 `)
 	require.ErrorContains(t, err, "GALA-E0053")
 
+	// A pointer is called through the Apply of the type it points to, as
+	// `p.Apply(...)` written out is; one that may be nil fills no Ptr
+	// receiver (GALA-E0080, #1445).
+	out, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int) int = n.v + x
+
+struct Plain(var v int)
+
+func (n Plain) Apply(x int) int = n.v + x
+
+struct Hold(var p *Node, var q *Plain)
+
+func ptrOf(n Node) *Node {
+    var c = n
+    &c
+}
+
+func main() {
+    var n = Node(1)
+    var m = Plain(2)
+    val h = Hold(&n, &m)
+    val r = &n
+    Println(h.p(1), h.q(3), r(5), ptrOf(Node(7))(1))
+}
+`)
+	require.NoError(t, err)
+	for _, w := range []string{"h.p.Apply(1)", "h.q.Apply(3)", "r.Apply(5)", "ptrOf(Node{v: 7}).Apply(1)"} {
+		require.Contains(t, out, w)
+	}
+	_, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n Ptr[Node]) Apply(x int) int = n.v + x
+
+struct Hold(var p *Node)
+
+func mk() *Node = nil
+
+func main() {
+    val h = Hold(mk())
+    Println(h.p(1))
+}
+`)
+	require.ErrorContains(t, err, "GALA-E0080")
+
 	// So do they with no arguments.
 	out, err = transpileBareVariant(t, `package main
 
