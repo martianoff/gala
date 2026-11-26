@@ -8,6 +8,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // Argument order
@@ -89,7 +90,8 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 // boundArgValue is what a default reads for the earlier parameter, of type
 // typ (nil when unknown), whose argument is arg: arg itself when reading it
 // again is the same as reading it once (it is inert), or else a temporary the
-// innermost call evaluates arg into. An untyped constant expression with
+// innermost call evaluates arg into. An inert untyped constant is read at the
+// parameter's type, as a value (atParamType). An untyped constant expression with
 // shifts by values (`1 << n`) takes its type where it is passed, which a
 // temporary would not give it: it is read again over its shift counts' bound
 // values, converted to typ when the parameter is declared with a predeclared
@@ -139,13 +141,23 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 // to spell, or a type parameter, whose type Go infers) leaves read as it is.
 func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, constant bool) ast.Expr {
 	basic, ok := typ.(transpiler.BasicType)
-	if !ok || !isConstantNumericType(basic.Name) || shadowedAt(t.currentScope, basic.Name) {
+	if !ok || !isConstantNumericType(basic.Name) || t.namesSomethingElse(basic.Name) {
 		return read
 	}
 	if constant {
+		if t.namesSomethingElse(registry.StdPackageName) || t.namesSomethingElse("EvalOperand") {
+			return read
+		}
 		return &ast.CallExpr{Fun: &ast.IndexExpr{X: t.stdIdent("EvalOperand"), Index: ast.NewIdent(basic.Name)}, Args: []ast.Expr{read}}
 	}
 	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
+}
+
+// namesSomethingElse reports whether name, a predeclared type or a package
+// the generated read spells, is bound to something else where the default is
+// read: a local of the use site, or a binding or type of this package.
+func (t *galaASTTransformer) namesSomethingElse(name string) bool {
+	return shadowedAt(t.currentScope, name) || t.isTopLevelBinding(name) || t.packageDeclaresType(name)
 }
 
 // isConstantNumericType reports whether name is a predeclared type an untyped

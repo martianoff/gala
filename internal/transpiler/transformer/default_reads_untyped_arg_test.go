@@ -16,6 +16,11 @@ import (
 func TestDefaultReadsUntypedArg(t *testing.T) {
 	const decls = `package main
 
+import "math"
+
+// Every case refers to math.
+func maxI8() int = math.MaxInt8
+
 func narrow(u uint8, z int = int(u)) int = z
 
 func half(u int64, z float64 = float64(u / 2)) float64 = z
@@ -39,6 +44,23 @@ func pick[U any](u U, z U = u) U = z
 			main: `val n = 8
     Println(narrow(u = 1 << n))`,
 			contains: "narrow(1<<n, int(std.EvalOperand[uint8](1<<n)))",
+		},
+		{
+			name: "shift by a var",
+			main: `var n = 8
+    Println(narrow(u = 1 << n))`,
+			contains: "return narrow(1<<_tmp_1, int(uint8(1<<_tmp_1)))",
+		},
+		{
+			name:     "Go package constant",
+			main:     `Println(kind(math.MaxInt8))`,
+			contains: "kind(math.MaxInt8, std.EvalOperand[int64](math.MaxInt8))",
+		},
+		{
+			name: "caller local named like the type keeps the plain read",
+			main: `val int64 = 2
+    Println(int64, kind(5))`,
+			contains: "kind(5, 5)",
 		},
 		{
 			name:     "constant in a conversion",

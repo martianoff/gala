@@ -8,13 +8,11 @@ func narrow(u uint8, z int = int(u)) int = z
 
 func half(u int64, z float64 = float64(u / 2)) float64 = z
 
-func kind(u int64, z any = u) string = f"$z%T"
-
 func scaled(u int64, z float64 = float64(u) / 2) float64 = z
 
 func neg(u uint8, z int = int(-u)) int = z
 
-func kindC(u complex128, z any = u) string = f"$z%T"
+func widen(u complex64, z complex128 = complex128(u)) complex128 = z
 
 func main() {
     val n = 8
@@ -22,12 +20,12 @@ func main() {
     Println(narrow(u = 1 << n))
     // int64 division: 7 / 2 is 3, though the constant is written 7.0.
     Println(half(7.0))
-    Println(kind(5))
     // The shift is computed in int64, then converted.
     Println(scaled(u = 1 << n))
     // -uint8(1) wraps to 255 as the parameter's value does.
     Println(neg(1))
-    Println(kindC(5))
+    // complex64(0.1) widened, not the constant 0.1.
+    Println(widen(0.1))
     // Written as the parameter's type already.
-    Println(narrow(200), half(9), kind(int64(1)))
+    Println(narrow(200), half(9))
 }
