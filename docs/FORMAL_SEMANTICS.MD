@@ -606,7 +606,7 @@ column lists what each milestone's claim rests on beyond them.
   Step 3d's first part is proved: GoCore's fuel adequacy, its M1. Every function of
   GoCore's evaluator, started with `k` more steps and at any larger depth, ends a run that
   does not run out of either the same way, in the same state, with `k` more steps left
-  (`simAll`: one induction over the 71 functions of the mutual block in
+  (`simAll`: one induction over the 71 functions of the mutual block that take a depth in
   `formal/Gala/GoCore/Eval.lean`; `tick` and `forLoop`'s bound on its iterations are the
   only readers of the steps, every handler of a `Stop` passes `fuel` on, and `recover`
   reads how many deferred-call frames are open, not the evaluator's depth). For a whole
@@ -614,7 +614,9 @@ column lists what each milestone's claim rests on beyond them.
   and prints the same output with any larger depth and fuel; `runProgram_adequate` is the
   same for `runProgram`, whose depth is the fuel capped. The same kind of induction shows
   that every state a run reaches from a state with as many cell types as cells has as
-  many (`syncAll`), so `Inv3.sync` holds of `runProgram`'s states, which start empty.
+  many (`syncAll`), and so do package initialization and the run as a whole
+  (`initPkg_sync`, `runProgramAt_sync`): `Inv3.sync` holds of `runProgram`'s states,
+  which start empty.
   Lean's kernel does not evaluate a whole program's GoCore run (`buildCtx` builds hash
   maps keyed by strings, whose hash it does not compute), so these are pinned on step
   3c's run of `sw(1, 2, 2)` (`sw_gocore_more`, `sw_gocore_sync`); for concrete whole
@@ -878,6 +880,12 @@ Each step is its own pull request with a theorem.
   with the construct named. Its soundness needs alpha-invariance of GoCore for
   temporaries and a correctness lemma for each normalization rule; both are part of
   M6's size.
+- **Real gc's order.** M5's order results are about GoCore's model of gc's order
+  (`Order.gc`), which hoists only where its trigger fires. Real gc copies every call, and
+  every `&&` or `||` operand, into a temporary before the statement. That this full
+  hoisting agrees with left to right on the statements the model leaves alone
+  (`untriggered_orders_agree`, carried from M5 steps 2a to 3) is M6's: it needs a model
+  of that copying, which GoCore does not have; the differential run tests it meanwhile.
 - **Normalizations M3 left to prove.** M3's reference lowering of `match` differs from what
   the transformer emits in six deliberate ways. Each is a normalization lemma M6 has to
   prove against the transformer's actual code; they are where #996- and #998-class bugs
@@ -1259,8 +1267,7 @@ below; this is their order and where they stand.
 - **M1–M4: done.** M4's claim is tested, not proved.
 - **M5: in progress.** Its [steps](#steps):
   - Step 1: the uncapped run (`runProgramAt`) and the order parameter are in place, with
-    GoCore running gc's order of evaluation (#1264). Fuel adequacy for GoCore's mutual
-    block is not proved yet.
+    GoCore running gc's order of evaluation (#1264). Fuel adequacy is proved in step 3d.
   - Step 2a, call-free expressions (`expr_correct`, #1249): proved, for every operator in
     the subset, the bitwise operators and shifts (#1278) and the string orderings (#1282)
     included.
@@ -1276,8 +1283,9 @@ below; this is their order and where they stand.
     GoCore for whole programs; M3's fragment retired.
   - Step 5: package-level initialization and printing, then the theorems for whole
     programs.
-- **M6:** per-program translation validation, with the six normalization lemmas M3 left
-  and the temporaries' renaming M5 step 3c adds.
+- **M6:** per-program translation validation, with the six normalization lemmas M3 left,
+  the temporaries' renaming M5 step 3c adds, and the order obligations M5 leaves (real
+  gc's copying, below).
 - **M7:** widening, S2 first, each construct family in galaspec, GoCore, the reference
   lowering and the validator together.
 

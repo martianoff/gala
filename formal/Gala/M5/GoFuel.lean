@@ -2062,6 +2062,30 @@ def initSt (fuel : Nat) : St := { cells := #[], closures := #[], out := "", step
 theorem runProgramAt_eq (ord : Order) (prog : Program) (d f : Nat) :
     runProgramAt ord prog d f = finish ((runGo (buildCtx (ord prog)) d).run.run (initSt f)) := rfl
 
+/-- Package initialization keeps `Sync`: it allocates each package-level variable's cell
+    with its type (`allocAs`) and calls functions `syncAll` covers. -/
+theorem initPkg_sync (c : Ctx) (d : Nat) (path : String) : Pres Sync (initPkg c d path) := by
+  have ih := syncAll c d
+  unfold initPkg; pres_auto
+
+/-- A whole run keeps `Sync`: package initialization, `main`, and a panic's text. -/
+theorem runGo_sync (c : Ctx) (d : Nat) : Pres Sync (runGo c d) := by
+  have ih := syncAll c d
+  have ihP := fun p => initPkg_sync c d p
+  unfold runGo
+  refine pres_tryCatch ?_ (fun e => ?_)
+  · refine pres_bind (pres_forIn _ _ fun p _ => pres_bind (ihP p) fun _ => pres_pure _) fun _ => ?_
+    pres_auto
+  · pres_auto
+
+/-- **`Inv3.sync` for whole programs.** A program's run starts with no cells and no cell
+    types, and every part of it keeps their numbers equal (`runGo_sync`, from `syncAll`
+    and `initPkg_sync`), so the state it ends in, at any depth and fuel, has as many cell
+    types as cells, as has every state a function of the run starts from. -/
+theorem runProgramAt_sync (ord : Order) (prog : Program) (d f : Nat) :
+    Sync ((runGo (buildCtx (ord prog)) d).run.run (initSt f)).2 :=
+  runGo_sync _ d _ rfl
+
 theorem runGo_sim (c : Ctx) (k : Nat) {d d' : Nat} (h : d ≤ d') :
     GSim k (runGo c d) (runGo c d') := by
   have ih := simAll c k d d' h

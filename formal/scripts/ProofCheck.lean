@@ -109,6 +109,7 @@ def requiredTheorems : List Name := [
   `Gala.M5.sw_lowerFun,
   `Gala.M5.simAll,
   `Gala.M5.syncAll,
+  `Gala.M5.runProgramAt_sync,
   `Gala.M5.runProgramAt_adequate,
   `Gala.M5.runProgram_adequate,
   `Gala.M5.sw_gocore_more,

@@ -786,6 +786,11 @@ theorem syncAll : ∀ (c : Ctx) (n : Nat), SyncAll c n :=
   Gala.M5.syncAll
 
 open Gala Gala.M5 GoCore.Full in
+theorem runProgramAt_sync : ∀ (ord : Order) (prog : Program) (d f : Nat),
+    Sync ((runGo (buildCtx (ord prog)) d).run.run (initSt f)).2 :=
+  Gala.M5.runProgramAt_sync
+
+open Gala Gala.M5 GoCore.Full in
 theorem runProgramAt_adequate : ∀ (ord : Order) (prog : Program) {d d' f f' : Nat},
     d ≤ d' → f ≤ f' → (runProgramAt ord prog d f).1 ≠ .fuel →
     runProgramAt ord prog d' f' = runProgramAt ord prog d f :=
