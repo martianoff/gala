@@ -218,30 +218,43 @@ jobs:
         run: |
           set -euo pipefail
           # The analyzer keeps its cache in the directory of the module whose
-          # file a transpile action reads: gala_team's actions run in Bazel's
-          # execution root (<execroot>/.gala/cache), the overridden modules'
-          # in their checkouts. Entries are <...>.bin (the binary codec); the
-          # step used to look for *.gob in the gala_team checkout and so
-          # measured nothing.
-          execroot=$(bazel info execution_root \
-            --override_module=gala=$GITHUB_WORKSPACE/gala_simple \
-            --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui \
-            --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/ \
-            --registry=https://bcr.bazel.build)
+          # file a transpile action reads: gala_team's in Bazel's execution
+          # root (<execroot>/.gala/cache), every other module's in its
+          # repository under <output_base>/external. Entries are <...>.bin
+          # (the binary codec); the step used to look for *.gob in the
+          # gala_team checkout and so measured nothing.
+          bazel_flags=(
+            --override_module=gala=$GITHUB_WORKSPACE/gala_simple
+            --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui
+            --registry=https://raw.githubusercontent.com/martianoff/rules-gala/main/
+            --registry=https://bcr.bazel.build
+          )
+          execroot=$(bazel info execution_root "${bazel_flags[@]}")
+          output_base=$(bazel info output_base "${bazel_flags[@]}")
           caches=()
-          for d in "$execroot/.gala/cache" "$GITHUB_WORKSPACE/gala_simple/.gala/cache" "$GITHUB_WORKSPACE/gala_tui/.gala/cache"; do
+          for d in "$execroot/.gala/cache" "$output_base"/external/*/.gala/cache; do
             if [ -d "$d" ]; then caches+=("$d"); fi
           done
           sizes=""
           if [ "${#caches[@]}" -gt 0 ]; then
-            sizes=$(find "${caches[@]}" -type f -name '*.bin' -printf '%s %p\n' | sort -nr)
+            # An entry a worker's eviction removes mid-walk is no error;
+            # any other find error is.
+            errs=$(mktemp)
+            sizes=$(find "${caches[@]}" -type f -name '*.bin' -printf '%s %p\n' 2>"$errs" | sort -nr) || true
+            if grep -v 'No such file or directory' "$errs" >&2; then
+              echo "::error::could not list the analyzer caches"
+              exit 1
+            fi
           fi
           entries=$(printf '%s' "$sizes" | grep -c . || true)
-          echo "Analyzer cache entries: ${entries} in ${caches[*]:-<none>}"
+          echo "Analyzer cache entries: ${entries}"
+          for d in "${caches[@]}"; do
+            echo "  $(printf '%s\n' "$sizes" | grep -cF " $d/" || true) in $d"
+          done
           # A budget over no entries checks nothing: fail rather than pass
           # when the cache moved or its entries were renamed again.
           if [ "$entries" -eq 0 ]; then
-            echo "::error::no analyzer cache entries (*.bin) under ${execroot}/.gala/cache or the module checkouts — the size budget below would check nothing"
+            echo "::error::no analyzer cache entries (*.bin) under ${execroot}/.gala/cache or ${output_base}/external/*/.gala/cache — the size budget below would check nothing"
             exit 1
           fi
           # Each individual analyzer cache entry should stay tiny; the
