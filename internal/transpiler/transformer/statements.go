@@ -1332,6 +1332,9 @@ func (t *galaASTTransformer) lowerForStatement(f forSrc) (ast.Stmt, error) {
 		if err := t.rangeOverGalaTypeError(rangeClause.expr, rangeType); err != nil {
 			return nil, err
 		}
+		if err := t.rangeOverTypeParamError(rangeClause.expr, rangeType); err != nil {
+			return nil, err
+		}
 
 		// Infer key/value types from range expression
 		keyType, valueType := t.inferRangeTypes(rangeType)

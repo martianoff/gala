@@ -1202,6 +1202,14 @@ const (
 	// never run. A match used to move its catch-all last, so a later case won
 	// over it without a diagnostic.
 	CodeUnreachableCase ErrorCode = "GALA-E0141"
+
+	// E0142: a range over a value of a type parameter whose constraint has
+	// no core type: `any`, `comparable`, a method-only interface, or a Go
+	// constraint whose types differ in underlying type (`~int | ~int64`).
+	// Go ranges over a type parameter only through a core type; the loop
+	// used to pass every GALA check with an int key and fail `go build`
+	// with "cannot range over n (variable of type T constrained by ...)".
+	CodeRangeOverTypeParamNoCore ErrorCode = "GALA-E0142"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
