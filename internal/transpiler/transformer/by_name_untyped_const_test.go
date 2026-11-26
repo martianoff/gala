@@ -21,6 +21,8 @@ func (b Box[T]) Lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) e
 
 func lazy[U any](d func() U, on bool) Option[U] = if (on) Some(d()) else None()
 
+func (b Box[T]) LazyOr[U any](d func() U, dflt U) U = d()
+
 func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
 
 `
@@ -64,6 +66,12 @@ func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
 			main: `val m Option[int64] = Box(0).Lazy(5, true)
     Println(m)`,
 			contains: "Box_Lazy[int64, int](Box[int]{V: std.NewImmutable(0)}, func() int64 {\n\t\treturn 5\n\t}, true)",
+		},
+		{
+			name: "typed argument after the constant gives U",
+			main: `val x64 int64 = 3
+    Println(Box(0).LazyOr(5, x64))`,
+			contains: "func() int64 {\n\t\treturn 5\n\t}, x64)",
 		},
 	}
 	for _, tt := range tests {
