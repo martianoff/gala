@@ -3343,6 +3343,9 @@ func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, line, col int
 			return nil, err
 		}
 	}
+	// Outside the test above: a generic pointer Apply, which
+	// hasPointerReceiverMethod leaves to its free function, may keep the
+	// place's address too.
 	if err := t.checkInoutReceiverUse(recv, recvType, "Apply", true, line, col); err != nil {
 		return nil, err
 	}
