@@ -1,5 +1,5 @@
 /-
-  # M5, step 3d (c): divergence, the induction
+  # M5, step 3d (c): divergence, expressions
 -/
 import Gala.M5.DivBase
 namespace Gala.M5
@@ -551,9 +551,6 @@ def BodySF (d : Nat) : Prop :=
           ((execStmts cx N env lb).run.run g)) ∧
         (s.steps ≤ d → Q * (g.steps + 1) + esz F.body ≤ s.steps → ((Spec.eval ds d F.body).run.run s).1 = .error .fuel →
           ((execStmts cx N env lb).run.run g).1 = .error .fuel)
-
-theorem paramCells_shift {n : Nat} {xks : List (String × Kind)} {env : Env} {g : St} (k : Nat) :
-    ParamCells n xks env (shift k g) ↔ ParamCells n xks env g := Iff.rfl
 
 /-- The callee's state: related to galaspec's frame of the arguments. -/
 theorem callee_setup {f : String} {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind}

@@ -142,10 +142,6 @@ theorem calls_fuel (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (hQ : KszOK ds Q) 
     ∀ N ≥ K * d, ((evalExpr cx N env le).run.run g).1 = .error .fuel :=
   fun N hN => ((sf_all ds cx P K sg Q hF hK hQ d).1 d (Nat.le_refl _) κ e k le hl s g env hi N hN).2 hsd hq hf
 
-theorem inv3_steps {κ : String → Option Kind} {c : Spec.Core} {g : St} {env : Env} (m : Nat)
-    (h : Inv3 cx P sg κ c g env) : Inv3 cx P sg κ c { g with steps := m } env :=
-  ⟨⟨h.inv.loc, h.inv.out, h.inv.pre⟩, h.pkg, h.tenv, h.closed, h.globals, h.sync⟩
-
 theorem shift_zero (g : St) : shift 0 g = g := by cases g; rfl
 
 /-- **M5, step 3d (c): divergence.** If galaspec diverges on an expression the reference
@@ -167,7 +163,7 @@ theorem calls_diverge (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (κ : String �
   intro N m
   let n := kszOf ds * (m + 1) + esz e
   have hbig := calls_fuel ds cx P K sg (kszOf ds) hF hK (kszOf_ok ds) κ e k le hl { toCore := c, steps := n }
-    { g with steps := m } env (inv3_steps cx P sg m hi) n (Nat.le_refl _) (Nat.le_refl _) (hdiv n)
+    { g with steps := m } env (inv3_same cx P sg hi rfl rfl rfl) n (Nat.le_refl _) (Nat.le_refl _) (hdiv n)
     (max N (K * n)) (Nat.le_max_right _ _)
   rcases hr : (evalExpr cx N env le).run.run { g with steps := m } with ⟨r, g'⟩
   cases r with

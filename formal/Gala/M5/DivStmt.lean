@@ -1,5 +1,5 @@
 /-
-  # M5, step 3d (c): divergence, statements, tails and bodies
+  # M5, step 3d (c): divergence, statements
 -/
 import Gala.M5.DivExpr
 namespace Gala.M5

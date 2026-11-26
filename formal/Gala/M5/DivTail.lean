@@ -1,5 +1,5 @@
 /-
-  # M5, step 3d (c): divergence, tails, bodies and loops
+  # M5, step 3d (c): divergence, tails
 -/
 import Gala.M5.DivStmt
 namespace Gala.M5

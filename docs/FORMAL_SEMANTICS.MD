@@ -1328,11 +1328,13 @@ below; this is their order and where they stand.
     galaspec's depth allows) and 3d: GoCore's fuel adequacy (`runProgramAt_adequate`),
     `Inv3.sync` for every state a run reaches, the whole-program lowering
     (`lowerProg_funRel`, `lowerProg_gc`) and divergence (`calls_diverge`: galaspec
-    diverging on a lowered expression, GoCore never ends normally).
+    diverging on a lowered expression, GoCore never ends normally). Of `examples/`, 49
+    of 194 functions of the lowered kinds lower, and 21 of 93 files lower whole.
     The order obligations steps 2a and 2b left open (gc's `&&`/`||` temporaries,
-    `untriggered_orders_agree`) are M6's.
-  - Step 4: structs and sealed values on the flat layout; `match` re-proved against
-    GoCore for whole programs; M3's fragment retired.
+    `untriggered_orders_agree`) and full hoisting are M6's.
+  - Step 4 (next): structs and sealed values on the flat layout; `match` re-proved
+    against GoCore for whole programs (22 of the functions above wait on `match` as a
+    value); M3's fragment retired.
   - Step 5: package-level initialization and printing, then the theorems for whole
     programs.
 - **M6:** per-program translation validation, with the six normalization lemmas M3 left,

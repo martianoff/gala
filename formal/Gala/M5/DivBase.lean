@@ -16,6 +16,7 @@
   part, or ends it as with more, the same number of steps fewer (`down`).
 -/
 import Gala.M5.Loop
+import Gala.M5.Prog
 import Gala.M5.GoFuel
 namespace Gala.M5
 open Gala.GoCore.Full
@@ -75,19 +76,10 @@ theorem foldl_max_mem : ∀ (l : List (String × Spec.Func)) (m : Nat) (p : Stri
     · exact Nat.le_trans (Nat.le_max_right _ _) (foldl_max_ge l _)
     · exact foldl_max_mem l _ p h
 
-theorem lookup_mem' : ∀ (l : List (String × Spec.Func)) (f : String) (F : Spec.Func),
-    l.lookup f = some F → (f, F) ∈ l
-  | [], _, _, h => nomatch h
-  | (a, b) :: l, f, F, h => by
-    simp only [List.lookup] at h
-    split at h
-    · rename_i hb; cases h; simp only [beq_iff_eq] at hb; subst hb; exact List.mem_cons_self
-    · exact List.mem_cons_of_mem _ (lookup_mem' l f F h)
-
 /-- `kszOf` is such a constant. -/
 theorem kszOf_ok (ds : Spec.Decls) : KszOK ds (kszOf ds) :=
   ⟨Nat.succ_le_succ (Nat.zero_le _), fun f F h =>
-    Nat.succ_le_succ (foldl_max_mem ds.funcs 0 (f, F) (lookup_mem' _ f F h))⟩
+    Nat.succ_le_succ (foldl_max_mem ds.funcs 0 (f, F) (lookup_mem h))⟩
 
 /-! ## The call-free parts' cost -/
 
@@ -178,8 +170,8 @@ theorem eval_spend (ds : Spec.Decls) : ∀ (e : Spec.Expr) (d : Nat), CFShape e 
     all_goals first
       | with_reducible exact spend_mono (spend_liftM _) (Nat.zero_le _)
       | with_reducible exact spend_bind ih fun _ => spend_liftM _
-      | (exfalso; simp_all; done)
       | (rename_i hh; obtain ⟨rfl, rfl⟩ := hh; exact spend_bind ih fun _ => spend_liftM _)
+      | (exfalso; simp_all; done)
   | .binary op l r, d + 1, h => by
     have ihl := eval_spend ds l d h.1
     have ihr := eval_spend ds r d h.2
@@ -235,8 +227,8 @@ theorem eval_fuelLt (ds : Spec.Decls) : ∀ (e : Spec.Expr) (d : Nat), CFShape e
     all_goals first
       | with_reducible exact fuelLt_mono (fuelLt_liftM (hnf_intLit _)) (Nat.zero_le _)
       | with_reducible exact fuelLt_bind ihs ih fun _ => fuelLt_liftM (hnf_unop _ _)
-      | (exfalso; simp_all; done)
       | (rename_i hh; obtain ⟨rfl, rfl⟩ := hh; exact fuelLt_bind ihs ih fun _ => fuelLt_liftM (hnf_unop _ _))
+      | (exfalso; simp_all; done)
   | .binary op l r, d + 1, h, hd => by
     have ihsl := eval_spend ds l d h.1
     have ihsr := eval_spend ds r d h.2
@@ -299,18 +291,13 @@ theorem down {x : GM α} {k : Nat} (hx : GSim k x x) (g : St) {r : Except Stop �
 
 theorem inv3_shift {cx : Ctx} {P : String} {sg : Sigs} {κ : String → Option Kind} {c : Spec.Core}
     {g : St} {env : Env} (k : Nat) : Inv3 cx P sg κ c (shift k g) env ↔ Inv3 cx P sg κ c g env :=
-  ⟨fun h => ⟨⟨h.inv.loc, h.inv.out, h.inv.pre⟩, h.pkg, h.tenv, h.closed, h.globals, h.sync⟩,
-   fun h => ⟨⟨h.inv.loc, h.inv.out, h.inv.pre⟩, h.pkg, h.tenv, h.closed, h.globals, h.sync⟩⟩
+  ⟨fun h => inv3_same cx P sg h rfl rfl rfl, fun h => inv3_same cx P sg h rfl rfl rfl⟩
 
 theorem gframe_shift {g g' : St} (k : Nat) : GFrame (shift k g) (shift k g') ↔ GFrame g g' := by
   rcases g with ⟨⟩; rcases g' with ⟨⟩
   simp only [GFrame, shift, St.mk.injEq]
   constructor <;> rintro ⟨h1, h2, h3, h4, h5, h6⟩ <;> exact ⟨h1, h2, h3, h4, by omega, h6⟩
 
-theorem gframeP_shift {n : Nat} {g g' : St} (k : Nat) : GFrameP n (shift k g) (shift k g') ↔ GFrameP n g g' := by
-  rcases g with ⟨⟩; rcases g' with ⟨⟩
-  simp only [GFrameP, shift, St.mk.injEq]
-  constructor <;> rintro ⟨h0, h1, h2, h3, h4, h5, h6⟩ <;> exact ⟨h0, h1, h2, h3, h4, by omega, h6⟩
 
 /-! ## GoCore runs out of fuel -/
 
