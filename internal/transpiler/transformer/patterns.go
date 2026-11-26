@@ -57,6 +57,12 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(pat patExpr, obj
 		return ast.NewIdent("true"), nil, nil
 	}
 
+	// Parentheses only group: `(p)` is p, so `(x)` binds as `x` does, as the
+	// coverage check reads it (see parenthesizedPattern).
+	if inner, ok := t.parenthesizedPattern(pat); ok {
+		return t.transformExpressionPatternWithType(inner, objExpr, matchedType)
+	}
+
 	// A sub-pattern naming a variant of its value's sealed view tests the
 	// view (see subPatternView). A whole case pattern is already matched
 	// against the view when it reads one (see sealedViewForCases).

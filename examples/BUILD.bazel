@@ -1907,6 +1907,12 @@ gala_exec_test(
 
 # A '(' that starts a line begins a new statement instead of calling the line before
 gala_exec_test(
+    name = "parenthesized_pattern",
+    src = "parenthesized_pattern.gala",
+    expected = "parenthesized_pattern.out",
+)
+
+gala_exec_test(
     name = "newline_paren_statement",
     src = "newline_paren_statement.gala",
     expected = "newline_paren_statement.out",
