@@ -84,11 +84,12 @@ func frame(line string) {
 // the same way. `go test -json` passes -test.v=test2json, as it does to any
 // test binary; `gala test` runs a package-main root's test binary with
 // GALA_TEST_FRAMING=test2json instead, which leaves the tests' own os.Args as
-// they were.
-val framing = if (slices.Contains(os.Args, "-test.v=test2json") || framingEnv()) "\x16" else ""
+// they were. The variable is read, and cleared, first, whichever asks.
+val framing = if (framingEnv() || slices.Contains(os.Args, "-test.v=test2json")) "\x16" else ""
 
 // framingEnv reports whether GALA_TEST_FRAMING asks for test2json framing,
-// and clears it, so a process a test starts does not inherit it.
+// and clears it, so a process a test starts does not inherit it. The init of
+// a package that initializes before this one still sees it.
 func framingEnv() bool {
     val on = os.Getenv(framingEnvVar) == "test2json"
     os.Unsetenv(framingEnvVar)

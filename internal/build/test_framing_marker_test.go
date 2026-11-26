@@ -71,6 +71,9 @@ func TestRunTests_OutputWithoutTrailingNewline(t *testing.T) {
 		"sub/sub_test.gala": "package sub" + framingTests,
 	})
 	chdirForTest(t, projectDir)
+	// Set where `gala test` runs too, so the `go test` route, which asks for
+	// the framing with -test.v=test2json, also shows the variable cleared.
+	setEnvForTest(t, "GALA_TEST_FRAMING", "test2json")
 
 	b, err := NewBuilder(projectDir, "test", false)
 	require.NoError(t, err)
