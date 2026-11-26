@@ -578,7 +578,7 @@ theorem leftToRight_runsStep2 : RunsStep2AsWritten Order.leftToRight :=
 
 open Gala Gala.M5 GoCore.Full in
 theorem calls_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
-    FunRel K sg ds cx P → 7 ≤ K → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind) (le : Expr),
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind) (le : Expr),
     lowerC K sg κ e = some (k, le) → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
     ∀ N ≥ K * d, ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) :=
@@ -586,7 +586,7 @@ theorem calls_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) 
 
 open Gala Gala.M5 GoCore.Full in
 theorem body_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
-    FunRel K sg ds cx P → 7 ≤ K → ∀ (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (lb : List Stmt),
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (lb : List Stmt),
     sigOf F = some (xks, ρ) → lowerBody K sg F = some lb → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg (paramKinds xks) s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
     ∀ N ≥ K * d + 3, ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g) :=
@@ -594,7 +594,7 @@ theorem body_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (
 
 open Gala Gala.M5 GoCore.Full in
 theorem stmts3_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
-    FunRel K sg ds cx P → 7 ≤ K → ∀ (ρ : Kind) (κ κ' : String → Option Kind) (ss : List Spec.Expr)
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (ρ : Kind) (κ κ' : String → Option Kind) (ss : List Spec.Expr)
     (ls : List Stmt), lowerSs3 K sg ρ κ ss = some (κ', ls) → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
     ∀ N ≥ K * d + 1, ResL3 cx P sg ρ κ' s g ((Spec.evalBlock ds d ss).run.run s)
@@ -625,7 +625,7 @@ theorem leftToRight_runs3 : RunsAsWritten3 Order.leftToRight :=
 
 open Gala Gala.M5 GoCore.Full in
 theorem calls_correct_instance : ∀ (steps d : Nat), steps ≤ 10 →
-    ∀ N ≥ 8 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
+    ∀ N ≥ 11 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
       ((Spec.eval incDs d incCall).run.run { incCore with steps })
       ((evalExpr incCtx N incEnv incCallG).run.run incSt) :=
   Gala.M5.calls_correct_instance
@@ -636,7 +636,7 @@ theorem inc_spec_ok : (Spec.eval incDs 4 incCall).run.run { incCore with steps :
   Gala.M5.inc_spec_ok
 
 open Gala Gala.M5 GoCore.Full in
-theorem inc_gocore_ok : ∀ (N : Nat), N ≥ 32 →
+theorem inc_gocore_ok : ∀ (N : Nat), N ≥ 44 →
     ∃ w g', (evalExpr incCtx N incEnv incCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 6) w :=
   Gala.M5.inc_gocore_ok
 

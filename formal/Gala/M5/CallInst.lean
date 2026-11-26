@@ -24,7 +24,7 @@ def incSg : Sigs := fun f => if f = "inc" then some ([.int], .int) else none
 
 def incBody : List Stmt := [.ret [.binary "+" (.ident "x") (.intLit 1)]]
 
-theorem inc_lowerBody : lowerBody 8 incSg incF = some incBody := rfl
+theorem inc_lowerBody : lowerBody 11 incSg incF = some incBody := rfl
 
 def incPkg : PkgCtx :=
   ⟨"main", "main", #[[]], (∅ : HashMap String Obj).insert "inc" (.func 0 [] (lowerSigOf [("x", .int)] .int) (some incBody)),
@@ -32,7 +32,7 @@ def incPkg : PkgCtx :=
 
 def incCtx : Ctx := ⟨(∅ : HashMap String PkgCtx).insert "main" incPkg, "main"⟩
 
-theorem inc_funRel : FunRel 8 incSg incDs incCtx "main" := by
+theorem inc_funRel : FunRel 11 incSg incDs incCtx "main" := by
   refine ⟨by decide, incPkg, by simp [incCtx], fun x hx => ?_, fun f sig h => ?_⟩
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
     rcases hx with rfl | rfl | rfl | rfl | rfl <;> simp [incPkg]
@@ -51,7 +51,7 @@ def incSt : St := { cells := #[], closures := #[], out := "", steps := 10 }
 def incCall : Spec.Expr := .call (.name "inc") [.lit (.int 5)]
 def incCallG : Expr := .call (.ident "inc") [.intLit 5] false
 
-theorem inc_lowerC : lowerC 8 incSg (fun _ => none) incCall = some (.int, incCallG) := rfl
+theorem inc_lowerC : lowerC 11 incSg (fun _ => none) incCall = some (.int, incCallG) := rfl
 
 theorem inc_inv3 : Inv3 incCtx "main" incSg (fun _ => none) incCore incSt incEnv := by
   refine ⟨⟨(fun _ _ h => by cases h), rfl, ?_⟩, rfl, rfl, fun x _ => ⟨rfl, by simp [incEnv, Env.lookup]⟩,
@@ -68,10 +68,10 @@ theorem inc_inv3 : Inv3 incCtx "main" incSg (fun _ => none) incCore incSt incEnv
 
 /-- **`calls_correct` on `inc(5)`**, every hypothesis discharged. -/
 theorem calls_correct_instance (steps d : Nat) (hs : steps ≤ 10) :
-    ∀ N ≥ 8 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
+    ∀ N ≥ 11 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
       ((Spec.eval incDs d incCall).run.run { incCore with steps })
       ((evalExpr incCtx N incEnv incCallG).run.run incSt) :=
-  calls_correct incDs incCtx "main" 8 incSg inc_funRel (by omega) (fun _ => none) incCall .int incCallG
+  calls_correct incDs incCtx "main" 11 incSg inc_funRel (by omega) (fun _ => none) incCall .int incCallG
     inc_lowerC { incCore with steps } incSt incEnv inc_inv3 hs d
 
 
@@ -120,8 +120,8 @@ theorem inc_spec_ok : (Spec.eval incDs 4 incCall).run.run { incCore with steps :
     (.ok (.int 6)) { incCore with steps := 5 } (by rw [runIn_res]; erw [inc_eval_body]) (by simp)]
 
 /-- **What `calls_correct` then says**: GoCore's run of the lowering, at every depth from
-    `8 * 4` on, ends with a related `int`. -/
-theorem inc_gocore_ok (N : Nat) (hN : N ≥ 32) :
+    `11 * 4` on, ends with a related `int`. -/
+theorem inc_gocore_ok (N : Nat) (hN : N ≥ 44) :
     ∃ w g', (evalExpr incCtx N incEnv incCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 6) w := by
   have h := calls_correct_instance 10 4 (by decide) N hN
   rw [inc_spec_ok] at h
@@ -150,8 +150,8 @@ def ordPkg : Package :=
     Decl.func "g" none [] gSig (some gBody)]⟩]⟩
 def ordProg : Program := ⟨[ordPkg]⟩
 
-theorem fact_body3 : Body3 factBody := by simp [Body3, body3Ss, body3S, body3OS, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, factBody]
-theorem g_body3 : Body3 gBody := by simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, gBody]
+theorem fact_body3 : Body3 factBody := by simp [Body3, body3Ss, body3S, body3OS, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, factBody]
+theorem g_body3 : Body3 gBody := by simp [Body3, body3Ss, body3S, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, gBody]
 
 theorem fact_fits : FitsSs (gcScope ordProg "main" 0 none [] factSig factBody) factBody := by
   simp [FitsSs, FitsS, FitsOS, FitsE, FitsEs, fieldListNames, factBody, afterS, gcScope, funcScope, changeableName, callKind,
@@ -188,16 +188,16 @@ level); inside a call's arguments it does not (`f(x / z) + g()`). -/
 
 theorem body3_div_call :
     ¬ Body3 [.ret [.binary "+" (.binary "/" (.ident "x") (.ident "z")) (.call (.ident "f") [.ident "x"] false)]] := by
-  simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, PK.differs]
+  simp [Body3, body3Ss, body3S, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, PK.differs]
 
 theorem body3_div_arg_call :
     ¬ Body3 [.ret [.call (.ident "g") [.binary "/" (.ident "x") (.ident "z"), .call (.ident "f") [] false] false]] := by
-  simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, PK.differs]
+  simp [Body3, body3Ss, body3S, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, PK.differs]
 
 theorem body3_div_inside_call :
     Body3 [.ret [.binary "+" (.call (.ident "f") [.binary "/" (.ident "x") (.ident "z")] false)
       (.call (.ident "g") [] false)]] := by
-  simp [Body3, body3Ss, body3S, noTrigE, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, PK.differs]
+  simp [Body3, body3Ss, body3S, ccB, ccBs, canon, canonArgs, triggers, mkNode, innerEffect, innerPanics, isNonzeroLit, isLit, PK.differs]
 
 end OrderInstance
 

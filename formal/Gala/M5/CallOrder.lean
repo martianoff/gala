@@ -531,9 +531,6 @@ def body3OS : Option Stmt → Bool
   | some st => body3S st
 end
 
-/-- A lowered expression on which gc's trigger does not fire, read without a scope. -/
-def noTrigE (top : Bool) (e : Expr) : Bool := ccB e && !triggers (canon top e)
-
 mutual
 theorem ccB_sound : ∀ (e : Expr), ccB e = true → CC e
   | .ident _, _ | .intLit _, _ | .strLit _, _ => trivial
