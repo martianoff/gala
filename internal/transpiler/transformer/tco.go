@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"slices"
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the parse tree
@@ -50,8 +51,8 @@ func (t *galaASTTransformer) tailResultSlot(tc *tailCtx) slot {
 //			if n <= 0 {
 //				return acc
 //			} else {
-//				_tmp_1 := n - 1   // temp names come from the transformer's gensym
-//				_tmp_2 := n * acc
+//				var _tmp_1 int = n - 1   // temp names come from the transformer's gensym
+//				var _tmp_2 int = n * acc
 //				n, acc = _tmp_1, _tmp_2
 //				continue
 //			}
@@ -303,7 +304,10 @@ func (t *galaASTTransformer) buildTailCallStep(
 		return nil, false, nil
 	}
 
-	tmpNames := make([]string, len(args))
+	rhsExprs := make([]ast.Expr, len(args)) // what each parameter is assigned
+	// The parameter names that hide a type or package in the body: those
+	// name hygiene does not rename (an `int` parameter becomes `_gala_int`).
+	hiding := slices.DeleteFunc(slices.Clone(tc.paramNames), shadowsGeneratedName)
 	stmts := make([]ast.Stmt, 0, len(args)+2)
 	for i, a := range args {
 		// Named arguments (name = expr) are not supported for the rewrite.
@@ -328,7 +332,15 @@ func (t *galaASTTransformer) buildTailCallStep(
 		if err := t.checkSlotFill(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
 			return nil, false, err
 		}
-		arg = t.wrapWithAssertion(arg, tc.paramTypes[i])
+		hidden := namesAny(tc.paramTypes[i], hiding)
+		if asserted := t.wrapWithAssertion(arg, tc.paramTypes[i]); asserted != arg {
+			// The assertion spells the parameter's type in the body; where a
+			// parameter hides it, keep the real recursion.
+			if hidden {
+				return nil, false, nil
+			}
+			arg = asserted
+		}
 		// A closure inside a tail-call argument would capture the loop-carried
 		// parameter by reference; once that parameter is reassigned on the next
 		// iteration, the escaped closure observes the mutated value — diverging
@@ -339,16 +351,32 @@ func (t *galaASTTransformer) buildTailCallStep(
 		}
 		// Use the package gensym so temps can't collide with a user identifier
 		// and participate in the shared `_tmp_*` internal-temp convention.
+		// The temporary has the parameter's type: `:=` would give an
+		// untyped constant argument (`5`, `1 << i`) its default type, which
+		// the parameter may not accept (#1426). The type is spelled inside
+		// the body, where it cannot be when it names any parameter (a
+		// parameter hides a type or package of its name: `state state`,
+		// `time time.Duration`, or `fmt int` beside `s fmt.Stringer`). Such
+		// an argument goes straight into the parameter assignment when it is
+		// a literal (it neither panics nor depends on when it runs);
+		// otherwise it keeps a `:=` temporary.
+		if hidden {
+			if isLiteralExpr(arg) {
+				rhsExprs[i] = arg
+				continue
+			}
+			tmp := t.nextTempVar()
+			rhsExprs[i] = ast.NewIdent(tmp)
+			stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(tmp)}, Tok: token.DEFINE, Rhs: []ast.Expr{arg}})
+			continue
+		}
 		tmp := t.nextTempVar()
-		tmpNames[i] = tmp
-		stmts = append(stmts, &ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent(tmp)},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{arg},
-		})
+		rhsExprs[i] = ast.NewIdent(tmp)
+		stmts = append(stmts, seqVarDecl(tmp, tc.paramTypes[i], arg))
 	}
 
-	// Simultaneous reassignment of every parameter from its temporary.
+	// Simultaneous reassignment of every parameter from its temporary (or
+	// its literal argument).
 	lhs := make([]ast.Expr, len(tc.paramNames))
 	rhs := make([]ast.Expr, len(tc.paramNames))
 	for i := range tc.paramNames {
@@ -357,11 +385,55 @@ func (t *galaASTTransformer) buildTailCallStep(
 			t.recordLocalRef(param)
 		}
 		lhs[i] = param
-		rhs[i] = ast.NewIdent(tmpNames[i])
+		rhs[i] = rhsExprs[i]
 	}
 	stmts = append(stmts, &ast.AssignStmt{Lhs: lhs, Tok: token.ASSIGN, Rhs: rhs})
 	stmts = append(stmts, &ast.BranchStmt{Tok: token.CONTINUE})
 	return stmts, true, nil
+}
+
+// isLiteralExpr reports whether e is a basic literal, possibly signed or
+// parenthesized, or nil: `5`, `-1`, `(0.5)`, `nil`.
+func isLiteralExpr(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.BasicLit:
+		return true
+	case *ast.Ident:
+		return e.Name == "nil"
+	case *ast.ParenExpr:
+		return isLiteralExpr(e.X)
+	case *ast.UnaryExpr:
+		return (e.Op == token.SUB || e.Op == token.ADD) && isLiteralExpr(e.X)
+	}
+	return false
+}
+
+// namesAny reports whether the type expression typ refers to any of names: a
+// type or package name in it, not a selected name (`x.Sel`) or a parameter
+// or field name of a function or struct type inside it.
+func namesAny(typ ast.Expr, names []string) bool {
+	found := false
+	var walk func(ast.Node) bool
+	walk = func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.Ident:
+			found = slices.Contains(names, n.Name)
+		case *ast.SelectorExpr:
+			ast.Inspect(n.X, walk)
+			return false
+		case *ast.Field:
+			if n.Type != nil {
+				ast.Inspect(n.Type, walk)
+			}
+			return false
+		}
+		return !found
+	}
+	ast.Inspect(typ, walk)
+	return found
 }
 
 // containsFuncLit reports whether e contains a function literal (closure)

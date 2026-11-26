@@ -2213,6 +2213,13 @@ gala_exec_test(
     expected = "range_type_param_int_constraint.out",
 )
 
+# #1426: a self tail call passing an untyped constant to a non-int parameter.
+gala_exec_test(
+    name = "tail_call_untyped_const",
+    src = "tail_call_untyped_const.gala",
+    expected = "tail_call_untyped_const.out",
+)
+
 # #1317: range over a Go defined integer type (time.Duration) binds that type.
 gala_exec_test(
     name = "range_go_defined_int",

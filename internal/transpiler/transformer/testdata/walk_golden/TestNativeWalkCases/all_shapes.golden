@@ -280,8 +280,8 @@ func Fact(n int, acc int) int {
 			return acc
 		} else {
 //line $DIR/main.gala:80
-			_tmp_1 := n - 1
-			_tmp_2 := acc * n
+			var _tmp_1 int = n - 1
+			var _tmp_2 int = acc * n
 			n, acc = _tmp_1, _tmp_2
 			continue
 		}

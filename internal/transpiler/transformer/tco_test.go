@@ -30,6 +30,103 @@ func TestSelfTailCallOptimization(t *testing.T) {
 		mustMiss []string
 	}{
 		{
+			// #1426: an untyped constant argument is held in a temporary of
+			// the parameter's type, not the constant's default type.
+			name: "untyped constant arguments to non-int parameters",
+			input: `package main
+
+func loop(i int, acc int64, b uint8) int64 = if (i == 0) acc + int64(b) else loop(i - 1, 5, 1 << i)
+
+func main() {
+    Println(loop(3, 0, 0))
+}
+`,
+			mustHave: []string{"var _tmp_2 int64 = 5", "var _tmp_3 uint8 = 1 << i"},
+			mustMiss: []string{"_tmp_2 := 5"},
+		},
+		{
+			// A parameter hides a type of the same name inside the body, so
+			// that temporary is not spelled with its type.
+			name: "a parameter named like its type",
+			input: `package main
+
+struct state(n int)
+
+func run(state state, k int) int = if (k == 0) state.n else run(state, k - 1)
+
+func main() {
+    Println(run(state(7), 2))
+}
+`,
+			mustHave: []string{"_tmp_1 := state", "var _tmp_2 int = k - 1"},
+			mustMiss: []string{"var _tmp_1 state"},
+		},
+		{
+			// A parameter hides the package its own type is spelled with:
+			// an inert untyped constant argument goes straight into the
+			// parameter assignment, where it takes the parameter's type.
+			name: "a parameter named like the package of its type",
+			input: `package main
+
+import "time"
+
+func wait(time time.Duration, n int) time.Duration = if (n == 0) time else wait(5, n - 1)
+
+func main() {
+    Println(wait(time.Second, 2))
+}
+`,
+			mustHave: []string{"var _tmp_1 int = n - 1", "time, n = 5, _tmp_1"},
+			mustMiss: []string{"var _tmp_1 time.Duration", "_tmp_1 := 5"},
+		},
+		{
+			// nil for a parameter whose type a parameter hides goes straight
+			// into the assignment, where it takes the parameter's type.
+			name: "nil for a parameter named like its type",
+			input: `package main
+
+struct state(n int)
+
+func p(state *state, n int) int = if (n == 0) 1 else p(nil, n - 1)
+
+func main() {
+    Println(p(nil, 2))
+}
+`,
+			mustHave: []string{"state, n = nil, _tmp_1"},
+			mustMiss: []string{":= nil"},
+		},
+		{
+			// A parameter named like a predeclared type is renamed
+			// (`_gala_byte`), so it hides nothing: the temporary is typed.
+			name: "a parameter named like a predeclared type",
+			input: `package main
+
+func f(byte byte, n int) byte = if (n == 0) byte else f(1 << n, n - 1)
+
+func main() {
+    Println(f(0, 3))
+}
+`,
+			mustHave: []string{"var _tmp_1 byte = 1 << n"},
+			mustMiss: []string{"_tmp_1 := 1 << n"},
+		},
+		{
+			// An argument that is no literal keeps an untyped temporary there.
+			name: "a non-literal argument for a parameter named like its type's package",
+			input: `package main
+
+import "time"
+
+func wait(time time.Duration, n int) time.Duration = if (n == 0) time else wait(time + time, n - 1)
+
+func main() {
+    Println(wait(time.Second, 2))
+}
+`,
+			mustHave: []string{"_tmp_1 := time + time", "var _tmp_2 int = n - 1", "time, n = _tmp_1, _tmp_2"},
+		},
+		{
 			// Positive: the tail self-call becomes a loop; the else branch does
 			// NOT contain a self-call to factorial( anymore.
 			name: "factorial tail recursion becomes a loop",

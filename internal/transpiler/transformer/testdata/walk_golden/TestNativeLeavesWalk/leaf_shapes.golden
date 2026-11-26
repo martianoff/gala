@@ -395,8 +395,8 @@ func fact(n int, acc int) int {
 			return acc
 		} else {
 //line $DIR/main.gala:65
-			_tmp_24 := n - 1
-			_tmp_25 := acc * n
+			var _tmp_24 int = n - 1
+			var _tmp_25 int = acc * n
 			n, acc = _tmp_24, _tmp_25
 			continue
 		}
@@ -414,8 +414,8 @@ func steps(n int, acc int) int {
 //line $DIR/main.gala:67
 			if n%2 == 0 {
 //line $DIR/main.gala:67
-				_tmp_26 := n / 2
-				_tmp_27 := acc + 1
+				var _tmp_26 int = n / 2
+				var _tmp_27 int = acc + 1
 				n, acc = _tmp_26, _tmp_27
 				continue
 			} else {

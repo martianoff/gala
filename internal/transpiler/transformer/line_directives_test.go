@@ -438,9 +438,9 @@ func TestLineDirectives_ExpressionBodyMarked(t *testing.T) {
 			name: "self-tail-call loop with its branches on separate lines",
 			src:  "package main\n\nfunc f(n int, acc int) int =\n    if (n == 0)\n        100 / acc\n    else\n        f(n - 1, acc)\n\nfunc main() {\n    println(f(2, 1))\n}\n",
 			wants: map[string]string{
-				"if n == 0 {":      "4",
-				"return 100 / acc": "5",
-				"_tmp_1 := n - 1":  "7",
+				"if n == 0 {":            "4",
+				"return 100 / acc":       "5",
+				"var _tmp_1 int = n - 1": "7",
 			},
 		},
 		{
