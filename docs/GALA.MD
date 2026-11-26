@@ -3652,7 +3652,7 @@ An alias field and an [opaque type](#opaque-types) field are written as their
 underlying value; a single-field struct is a nested
 object — see [Alias or single-field struct](#alias-or-single-field-struct).
 
-Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List` or `HashMap` in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
+Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List`, `HashMap` or struct in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
 
 ### Yaml
 
