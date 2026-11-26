@@ -36,6 +36,15 @@ func f(s string) int = s.Length
 func main() {
     Println(f("abc"))
 }`, "string has no field or method Length"},
+		{"declared parameter, a name some Go type has", `package main
+
+import "time"
+
+func f(s string) = Println(s.Seconds, time.Second)
+
+func main() {
+    f("a")
+}`, "string has no field or method Seconds"},
 		{"annotated lambda parameter", `package main
 
 func main() {
@@ -55,10 +64,11 @@ func main() {
 	}
 }
 
-// TestMembersOfGoNamedTypesStayAccepted pins what #1396 must leave alone: a
-// value whose GALA type is a basic type only by inference from Go values
-// (`math.MaxInt8 * time.Second` is typed `int`, Go has a time.Duration), and
-// a Go type defined over a basic type, keep their member reads; they compile.
+// TestMembersOfGoNamedTypesStayAccepted pins what #1396 must leave alone:
+// member reads that compile. A val whose GALA type is a basic type only by
+// inference from Go values is not judged: GALA wrongly types
+// `math.MaxInt8 * time.Second` as `int` where Go has a time.Duration (#1440).
+// A Go type defined over a basic type keeps its members.
 func TestMembersOfGoNamedTypesStayAccepted(t *testing.T) {
 	trans := newUnknownMethodTranspiler()
 	cases := []struct {
