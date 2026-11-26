@@ -722,8 +722,13 @@ type slot struct {
 	// only the lambda filling it binds — and this is that result, NilType
 	// where it names a type parameter. A lambda there produces a value of it,
 	// a block lambda its trailing value, as one filling a known `func(A) B`
-	// does. Only lowerLambdaArg reads it: a lambda inside another argument
-	// form (an if, a match) does not get it. Nil for any other slot.
+	// does. lowerLambdaArg reads it, for the argument's lambda or for one in
+	// a parenthesized, if or match value: lowerAgainst passes the slot on,
+	// and so does lowerBlockTail for a branch block ending in such a value
+	// (carriesLambda). A branch lowerBranches retries gets a typed slot
+	// instead, without it. It is set only when the call binds no type
+	// argument, so such a slot is never open, and a Try thunk, which takes no
+	// parameter, never has it. Nil for any other slot.
 	funcResult transpiler.Type
 }
 
@@ -757,7 +762,19 @@ func (t *galaASTTransformer) needsExpectedType(e exprSrc) bool {
 	if f.grouped.ok() {
 		return t.needsExpectedType(f.grouped)
 	}
-	return f.lambda.ok() || f.partial.ok() || f.ifExpr.ok() || f.match.ok()
+	return f.partial.ok() || t.carriesLambda(f)
+}
+
+// carriesLambda reports whether a value of form f is one whose lambdas
+// lowerAgainst reaches with a slot that has a function result
+// (slot.funcResult): a lambda, or a parenthesized, if or match value. It
+// reads the form only: an if or match whose branches are plain values counts
+// too, and those branches lower as before.
+func (t *galaASTTransformer) carriesLambda(f exprForm) bool {
+	if f.grouped.ok() {
+		return t.carriesLambda(t.classifyExpr(f.grouped))
+	}
+	return f.lambda.ok() || f.ifExpr.ok() || f.match.ok()
 }
 
 // lowerAgainst lowers e in check mode against the slot it fills. A lambda
@@ -773,14 +790,16 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 	// A result value of a Go-results body is checked where it is written:
 	// each branch of an if or match lowered against the slot is one, with a
 	// slot type or without one (a generic Go callee's).
-	if untyped && s.goResults == nil && s.hoist == "" {
+	// A slot with a function result but no type (slot.funcResult) still
+	// reaches each lambda inside a parenthesized, if or match value.
+	if untyped && s.goResults == nil && s.hoist == "" && s.funcResult == nil {
 		return t.lowerExpr(e)
 	}
 	f := t.classifyExpr(e)
 	if s.goResults != nil && !f.grouped.ok() && !f.ifExpr.ok() && !f.match.ok() {
 		return t.lowerGoResultsValue(e, s, strict)
 	}
-	if untyped && s.goResults == nil && !t.hoistableForm(f) {
+	if untyped && s.goResults == nil && !t.hoistableForm(f) && !(s.funcResult != nil && t.carriesLambda(f)) {
 		return t.lowerExpr(e)
 	}
 	if e.node.Ok() {
@@ -801,6 +820,9 @@ func (t *galaASTTransformer) lowerAgainst(e exprSrc, s slot, strict bool) (ast.E
 				return nil, err
 			}
 			return t.finishLambda(lit, checks, s.typ, f.lambda.at(), f.lambda.expression(), b)
+		}
+		if s.funcResult != nil {
+			return t.lowerLambdaArg(f.lambda, s, strict)
 		}
 		return t.lowerExpr(e)
 	case f.partial.ok():

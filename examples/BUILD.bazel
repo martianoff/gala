@@ -299,6 +299,14 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# The same, for a lambda parenthesized or in a branch of an if or match
+# argument (#1339)
+gala_exec_test(
+    name = "lambda_generic_branch_result",
+    src = "lambda_generic_branch_result.gala",
+    expected = "lambda_generic_branch_result.out",
+)
+
 gala_exec_test(
     name = "bind_notation_user_monad",
     src = "bind_notation_user_monad.gala",
