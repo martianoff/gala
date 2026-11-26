@@ -521,6 +521,8 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go alias of a pointer to a struct result", "func() StampRef", "return nil", ""},
 		{"a Go alias of a pointer to a local struct result", "func() SpotRef", "return nil", ""},
 		{"a Go named complex result", "func() Phase", "b(nil, 2)", "return nil"},
+		{"a Go alias of a named array result", "func() IDAlias", "b(nil, 2)", "return nil"},
+		{"a Go alias of an anonymous struct result", "func() Unit", "b(nil, 2)", "return nil"},
 	}
 	const bridge = `package main
 
@@ -544,10 +546,28 @@ type Spot struct{ X int }
 type SpotRef = *Spot
 
 type Phase complex64
+
+type IDAlias = ID
+
+type Unit = struct{}
+
+func Run(f func() struct{}, n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+
+func Pair(f func() (int, error), n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
 `
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(bridge), 0o600))
-	body := func(t *testing.T, param, arg string) string {
+	body := func(t *testing.T, param, call string) string {
 		input := `package main
 
 import "io"
@@ -577,7 +597,7 @@ var _h http.Header = nil
 func b(f ` + param + `, n int) int = if (f == nil) n else 0
 
 func main() {
-    Println(b(` + arg + `, 2))
+    Println(` + call + `)
 }`
 		mainPath := filepath.Join(dir, "main.gala")
 		require.NoError(t, os.WriteFile(mainPath, []byte(input), 0o600))
@@ -587,17 +607,25 @@ func main() {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := body(t, c.param, "nil")
+			got := body(t, c.param, "b(nil, 2)")
 			assert.Contains(t, got, c.want)
 			if c.notWant != "" {
 				assert.NotContains(t, got, c.notWant)
 			}
 		})
 	}
-	// #1466: `(nil)` is the same nil.
-	t.Run("a parenthesized nil", func(t *testing.T) {
-		got := body(t, "func() state", "(nil)")
-		assert.Contains(t, got, "b((nil), 2)")
-		assert.NotContains(t, got, "func() state")
-	})
+	// #1466: `(nil)` is the same nil, and a Go signature's `struct{}`
+	// result is a struct.
+	calls := []struct{ name, call, want, notWant string }{
+		{"a parenthesized nil", "b((nil), 2)", "b((nil), 2)", "func() state"},
+		{"a parenthesized nil for several results", "Pair((nil), 2)", "Pair((nil), 2)", "func() ("},
+		{"a Go anonymous struct result", "Run(nil, 2)", "Run(nil, 2)", "return nil"},
+	}
+	for _, c := range calls {
+		t.Run(c.name, func(t *testing.T) {
+			got := body(t, "func() state", c.call)
+			assert.Contains(t, got, c.want)
+			assert.NotContains(t, got, c.notWant)
+		})
+	}
 }

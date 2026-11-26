@@ -963,14 +963,16 @@ func (t *galaASTTransformer) typeNilAs(expr ast.Expr, typ transpiler.Type) {
 }
 
 // holdsNil reports whether typ is a type `nil` can have: a pointer, slice,
-// map, function, or an interface other than `any`. A Ptr is a struct, never
-// nil.
+// map, function, or an interface other than `any`. A Ptr is a struct, and a
+// fixed-length array an array, never nil.
 func (t *galaASTTransformer) holdsNil(typ transpiler.Type) bool {
 	if typeHasMaskedPart(typ) || typ.IsAny() {
 		return false
 	}
-	switch t.followAliasChain(typ).(type) {
-	case transpiler.PointerType, transpiler.ArrayType, transpiler.MapType, transpiler.FuncType:
+	switch b := t.followAliasChain(typ).(type) {
+	case transpiler.ArrayType:
+		return !b.Fixed
+	case transpiler.PointerType, transpiler.MapType, transpiler.FuncType:
 		return true
 	}
 	return t.isInterfaceType(typ)

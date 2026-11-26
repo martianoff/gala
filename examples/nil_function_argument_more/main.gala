@@ -6,12 +6,15 @@ import (
 )
 
 // `nil` for a zero-argument function parameter whose result nil cannot be is
-// the function itself (#1448), also for a Go named array, a Go alias of a
-// struct, a complex number, and a parenthesized `(nil)` (#1466).
+// the function itself (#1448), also for a Go named array or an alias of one,
+// a Go alias of a struct, a complex number, a Go `struct{}`, and a
+// parenthesized `(nil)` (#1466).
 
 struct state(n int)
 
 func viaArray(f func() nil_function_argument_bridge.ID, n int) int = if (f == nil) n else 0
+
+func viaArrayAlias(f func() nil_function_argument_bridge.IDAlias, n int) int = if (f == nil) n else 0
 
 func viaAlias(f func() nil_function_argument_bridge.Stamp, n int) int = if (f == nil) n else f().Year()
 
@@ -21,9 +24,12 @@ func viaParen(f func() state, n int) int = if (f == nil) n else f().n
 
 func main() {
     Println(viaArray(nil, 1))
-    Println(viaAlias(nil, 2))
-    Println(viaAlias(time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), 2))
-    Println(viaComplex(nil, 3))
-    Println(viaParen((nil), 4))
-    Println(viaParen(state(5), 4))
+    Println(viaArrayAlias(nil, 2))
+    Println(viaAlias(nil, 3))
+    Println(viaAlias(time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), 3))
+    Println(viaComplex(nil, 4))
+    Println(nil_function_argument_bridge.Run(nil, 5))
+    Println(viaParen((nil), 6))
+    Println(viaParen(state(7), 6))
+    Println(nil_function_argument_bridge.Pair((nil), 8))
 }

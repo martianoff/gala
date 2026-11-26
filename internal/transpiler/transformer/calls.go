@@ -6046,7 +6046,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
 	// left untyped (an open one) is the function itself: no Try or Tuple is.
 	if len(ft.Results) > 1 {
-		if isNilIdent(expr) {
+		if isNilIdent(ast.Unparen(expr)) {
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
@@ -6129,20 +6129,22 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if t.hasTypeParams(base) || t.mentionsUnboundTypeParam(base) {
 		return false
 	}
+	// A Go alias is the type it names, as Go spells it (`type P = *time.Time`
+	// a pointer, `type IDAlias = ID` the named array): its own record keeps
+	// neither a pointer nor an array's length.
+	if target, isAlias := t.goAliasTarget(base); isAlias {
+		return target != nil && t.nilCannotBe(target)
+	}
 	end, kind, via := t.resolveScalar(base)
 	if kind != scalarNone || via != nil {
 		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
 	}
-	// What a Go defined type or alias is declared over: a fixed-length array
-	// (`type ID [16]byte`, as uuid.UUID is) or a complex number, which
-	// resolveScalar does not count as scalars, or a type nil can be. An alias
-	// of a pointer (`type P = *time.Time`) is settled here: the lookup below
-	// would find the struct it points to.
+	// What a Go defined type is declared over, which resolveScalar does not
+	// count as a scalar: a fixed-length array (`type ID [16]byte`, as
+	// uuid.UUID is) or a complex number.
 	switch e := end.(type) {
 	case transpiler.ArrayType:
 		return e.Fixed
-	case transpiler.PointerType, transpiler.MapType, transpiler.ChanType, transpiler.FuncType, transpiler.InterfaceType:
-		return false
 	case transpiler.BasicType:
 		if isConstantNumericType(e.Name) {
 			return true
@@ -6150,6 +6152,8 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	}
 	var nt transpiler.NamedType
 	switch b := base.(type) {
+	case transpiler.StructType: // a Go signature's `struct{}`
+		return true
 	case transpiler.NamedType:
 		nt = b
 	case transpiler.BasicType: // a local type by its bare name
@@ -6157,9 +6161,8 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	default:
 		return false
 	}
-	// A Go type of this or another package: its kind is known from Go, an
-	// alias's (`type Stamp = time.Time`) from its target's.
-	if data, _ := t.goTypeDataThroughAliases(nt); data != nil && data.Kind != transpiler.GoKindMethodsOnly {
+	// A Go type of this or another package: its kind is known from Go.
+	if _, data := t.goTypeDataFor(nt); data != nil && data.Kind != transpiler.GoKindMethodsOnly {
 		return data.Kind == "struct"
 	}
 	if t.isGoTyped(nt) {
@@ -6172,6 +6175,31 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	meta := t.getTypeMeta(nt.BaseName())
 	return meta != nil && !meta.IsInterface &&
 		(meta.IsSealed || meta.IsShorthand || meta.DefinedIn != "" || len(meta.FieldNames) > 0)
+}
+
+// goAliasTarget is the type typ, a Go alias (`type Stamp = time.Time`),
+// names, through further aliases, as Go type info records it; isAlias is
+// false when typ is no Go alias. target is nil when the alias's target is
+// not recorded, or the chain refers back to itself.
+func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type) (target transpiler.Type, isAlias bool) {
+	for hop := 0; hop < 16; hop++ {
+		var key string
+		var data *transpiler.GoTypeData
+		switch typ.(type) {
+		case transpiler.NamedType, transpiler.BasicType: // a pointer's lookup would find what it points to
+			key, data = t.goTypeDataFor(typ)
+		}
+		if data == nil || data.Kind != "alias" {
+			if hop == 0 {
+				return nil, false
+			}
+			return typ, true
+		}
+		if typ = t.goTypeInfo.ResolveTypeAlias(key); typ == nil || typ.IsNil() {
+			return nil, true
+		}
+	}
+	return nil, true
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose
