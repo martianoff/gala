@@ -148,12 +148,38 @@ func (g *gen) placeholderLambda(a coreexport.Node, expect coreexport.Node) (*cor
 		names[m] = g.freshName("placeholder")
 		params[i] = &coreexport.Param{Meta: coreexport.Meta{Kind: "param", Pos: pos}, Name: names[m]}
 	}
+	// Only the nodes on a path to a mark are copied: the rest is shared
+	// with the original tree, so what the passes before the translation
+	// keyed by node (findBoxes's cells, the constant folds) still applies.
+	onPath := map[coreexport.Node]bool{}
+	var find func(n coreexport.Node) bool
+	find = func(n coreexport.Node) bool {
+		m, isMark := n.(*coreexport.Unsupported)
+		found := isMark && names[m] != ""
+		walkChildren(n, func(c coreexport.Node) { found = find(c) || found })
+		onPath[n] = found
+		return found
+	}
+	find(a)
 	var subst func(n coreexport.Node) coreexport.Node
 	subst = func(n coreexport.Node) coreexport.Node {
 		if m, ok := n.(*coreexport.Unsupported); ok && names[m] != "" {
 			return &coreexport.Name{Meta: coreexport.Meta{Kind: "name", Pos: m.Pos}, Name: names[m]}
 		}
-		return mapChildren(n, subst)
+		if !onPath[n] {
+			return n
+		}
+		c := mapChildren(n, subst)
+		if v, ok := n.(*coreexport.Var); ok {
+			// `var x = _`, copied: the copy binds x in a cell when the
+			// original does.
+			for _, x := range v.Names {
+				if g.boxed[boxKey{n, x}] {
+					g.boxed[boxKey{c, x}] = true
+				}
+			}
+		}
+		return c
 	}
 	l := &coreexport.Lambda{Meta: coreexport.Meta{Kind: "lambda", Pos: pos}, Params: params, Body: subst(a)}
 	g.placeholderOf[a], g.placeholders[l] = l, true
@@ -181,9 +207,12 @@ func (g *gen) argExpect(a coreexport.Node, sc *scope, expect coreexport.Node) te
 // neither a function type nor known not to be one.
 func (g *gen) placeholderArg(e coreexport.Node, expect coreexport.Node) {
 	e = argNode(e)
-	if !g.hasMarks || g.argChecked[e] {
+	if !g.hasMarks {
 		return
 	}
+	// Checked on every visit: the same argument is reached for different
+	// slots (a type query, then its translation) and inside or outside a
+	// placeholder lambda's body; argChecked only records that it was.
 	g.argChecked[e] = true
 	if l, ok := e.(*coreexport.Lambda); ok && g.placeholders[l] || g.nonFuncSlot(expect) {
 		return
@@ -239,4 +268,36 @@ func (g *gen) uncheckedArgs(e *coreexport.Call) {
 			unsup(posOf(n), "placeholder-unchecked-arg")
 		}
 	}
+}
+
+// markedArg reports whether a, a call argument or a parameter's default
+// value, holds `_` marks (argMarks): the translation may make a placeholder
+// lambda of it (argExpect). The passes that run before the translation
+// (findBoxes, receiverUses) do not know the slot's type yet, so they take
+// every such argument for a lambda: when its `_` go to a lambda nested in
+// it instead, or to none, they only box or report more than they need to.
+func (g *gen) markedArg(a coreexport.Node) bool {
+	if !g.hasMarks || a == nil {
+		return false
+	}
+	marks, _ := argMarks(argNode(a))
+	return len(marks) > 0
+}
+
+// walkArgs calls f on each direct child of n (walkChildren), with lambda
+// true for an argument of call n that markedArg says may be a placeholder
+// lambda.
+func (g *gen) walkArgs(n coreexport.Node, f func(c coreexport.Node, lambda bool)) {
+	var marked map[coreexport.Node]bool
+	if c, ok := n.(*coreexport.Call); ok && g.hasMarks {
+		for _, a := range c.Args {
+			if g.markedArg(a) {
+				if marked == nil {
+					marked = map[coreexport.Node]bool{}
+				}
+				marked[a] = true
+			}
+		}
+	}
+	walkChildren(n, func(c coreexport.Node) { f(c, marked[c]) })
 }

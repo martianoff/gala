@@ -53,3 +53,36 @@ func TestArgMarks(t *testing.T) {
 		})
 	}
 }
+
+// TestPlaceholderArgRechecks checks that placeholderArg judges an argument
+// on each visit, by the slot and context of that visit: an argument first
+// accepted is reported when it is reached again for an unknown slot, or
+// inside a placeholder lambda's body.
+func TestPlaceholderArgRechecks(t *testing.T) {
+	mark := &coreexport.Unsupported{What: coreexport.UnsupportedPlaceholder}
+	param := &coreexport.Name{Name: placeholderParam + "1"}
+	one := &coreexport.Int{Text: "1"}
+	check := func(g *gen, e, expect coreexport.Node) *unsupportedPanic {
+		_, u := attempt(func() struct{} { g.placeholderArg(e, expect); return struct{}{} })
+		return u
+	}
+	t.Run("a mark, for an int slot then an unknown one", func(t *testing.T) {
+		g := newGen()
+		g.hasMarks = true
+		e := &coreexport.Binary{Op: "+", Left: mark, Right: one}
+		require.Nil(t, check(g, e, &coreexport.TypeName{Name: "int"}))
+		u := check(g, e, nil)
+		require.NotNil(t, u)
+		require.Equal(t, "placeholder-lambda", u.construct)
+	})
+	t.Run("a parameter read, outside then inside a placeholder body", func(t *testing.T) {
+		g := newGen()
+		g.hasMarks = true
+		e := &coreexport.Binary{Op: "+", Left: param, Right: one}
+		require.Nil(t, check(g, e, nil))
+		g.inPlaceholder++
+		u := check(g, e, nil)
+		require.NotNil(t, u)
+		require.Equal(t, "placeholder-lambda", u.construct)
+	})
+}

@@ -381,7 +381,8 @@ galaspec models them, except as listed below):
   lambdas, case clauses and interpolated strings), in source order, where no other slot
   could take one. Every argument around it, up to the nearest lambda or case clause,
   has a slot known not to be a function type (a basic type, a declared struct or sealed
-  type, std's collections, `Option` or `Either`, `any`), and so has every argument
+  type, std's `Option`, `Either`, `Tuple`, `Tuple3`, `Tuple4`, `Array`, `List`, `HashMap`
+  or `HashSet`, the name of a `HashMap` or `HashSet` constructor, `any`), and so has every argument
   between it and each `_`, so the innermost function slot around each `_` is its own.
   Everything else is reported (`placeholder-lambda`): a `_` a nested function slot would
   take, one under a slot whose type is not known (a type parameter, say), one in a case

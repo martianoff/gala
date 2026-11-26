@@ -462,13 +462,14 @@ func (g *gen) receiverUses(f *coreexport.Func, name string, whole bool) {
 			}
 			return
 		}
-		walkChildren(n, func(c coreexport.Node) { visit(c, inLambda) })
+		// An argument holding `_` marks may be a placeholder lambda.
+		g.walkArgs(n, func(c coreexport.Node, lambda bool) { visit(c, inLambda || lambda) })
 	}
 	visit(f.Body, false)
 	// A parameter's default sees the receiver and the parameters before it.
 	for _, pn := range f.Params {
 		if p, ok := pn.(*coreexport.Param); ok {
-			visit(p.Default, false)
+			visit(p.Default, g.markedArg(p.Default))
 		}
 	}
 }

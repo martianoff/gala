@@ -188,6 +188,14 @@ func (g *gen) callSig(s *sig, e *coreexport.Call, sc *scope) term {
 // statement), so an argument that calls a pointer method writes its
 // receiver back there, in argument order (`x.m(x.n())`).
 func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]string, term) {
+	items, t := g.callItemsInner(s, e, sc, hoist)
+	// A pointer method's call as a statement or a val's value reaches here
+	// without g.call.
+	g.uncheckedArgs(e)
+	return items, t
+}
+
+func (g *gen) callItemsInner(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]string, term) {
 	if s.variadic {
 		e = packCall(s, e)
 	}

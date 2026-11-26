@@ -362,6 +362,15 @@ func (g *gen) findBoxes(p *coreexport.Program) {
 		}
 	}
 	var visit func(n coreexport.Node)
+	// lambdaLevel visits n, one lambda deeper when it may be a placeholder
+	// lambda (markedArg).
+	lambdaLevel := func(n coreexport.Node, lambda bool) {
+		if lambda {
+			depth++
+			defer func() { depth-- }()
+		}
+		visit(n)
+	}
 	visit = func(n coreexport.Node) {
 		switch n := n.(type) {
 		case nil:
@@ -399,7 +408,7 @@ func (g *gen) findBoxes(p *coreexport.Program) {
 			push()
 			for _, pn := range n.Params {
 				if p, ok := pn.(*coreexport.Param); ok {
-					visit(p.Default)
+					lambdaLevel(p.Default, g.markedArg(p.Default))
 					declare(p, p.Name, false)
 				}
 			}
@@ -431,7 +440,7 @@ func (g *gen) findBoxes(p *coreexport.Program) {
 			pop()
 			return
 		}
-		walkChildren(n, visit)
+		g.walkArgs(n, lambdaLevel)
 	}
 	push()
 	for _, f := range p.Files {

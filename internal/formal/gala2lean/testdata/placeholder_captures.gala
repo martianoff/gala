@@ -1,0 +1,41 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A placeholder lambda captures a var by reference, like any lambda: a
+// write after the lambda is made is seen when it runs, and a write in its
+// body is seen outside. A var its body declares, captured by a lambda
+// nested in it, is shared with that lambda too.
+struct Box(F func(int) int)
+
+func main() {
+    var t = 1
+    val b = Box(_ + t)
+    t = 10
+    Println(b.F(1))
+
+    var count = 0
+    val nums = ArrayOf(1, 2, 3)
+    val doubled = nums.Map(if (true) {
+        count = count + 1
+        _ * 2
+    } else 0)
+    Println(doubled)
+    Println(count)
+
+    val bumped = nums.Map(if (true) {
+        var acc = _
+        val add = (k int) => { acc = acc + k }
+        add(10)
+        acc
+    } else 0)
+    Println(bumped)
+
+    val shifted = nums.Map(if (true) {
+        var acc = 100
+        val add = (k int) => { acc = acc + k }
+        add(_)
+        acc
+    } else 0)
+    Println(shifted)
+}
