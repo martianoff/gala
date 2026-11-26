@@ -21,8 +21,10 @@ trap 'rm -rf "$work"' EXIT
 # Repository-relative paths, one per line; `#` starts a comment.
 sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$exclude_file" | sort -u > "$work/excluded"
 
-(cd "$repo_root" && find . -name '*.gala' \
-    -not -path './bazel-*' -not -path '*/node_modules/*' -not -path './.claude/worktrees/*' \
+# Prune the skipped trees instead of filtering their files out: a local
+# checkout's .claude/worktrees holds whole copies of the repository.
+(cd "$repo_root" && find . \( -path './bazel-*' -o -path './.claude/worktrees' -o -path './.git' -o -name node_modules \) -prune \
+    -o -name '*.gala' -print \
   | sed 's|^\./||' | sort) > "$work/all"
 
 # An exclusion that names no file is stale: the file moved or was deleted.

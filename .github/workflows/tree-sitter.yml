@@ -58,24 +58,25 @@ jobs:
           node-version: "22"
 
       - name: Install the tree-sitter CLI
-        # Keep in step with devDependencies in ide/tree-sitter-gala/package.json.
-        run: npm install --global tree-sitter-cli@0.25.10
+        # The version pinned in package.json's devDependencies; the steps below
+        # run package.json's scripts, so the version and the ABI live there.
+        run: npm install --global "tree-sitter-cli@$(node -p "require('./package.json').devDependencies['tree-sitter-cli']")"
 
       - name: Generated parser is up to date
         run: |
-          tree-sitter generate --abi 14
+          npm run generate
           if [[ -n "$(git status --porcelain -- src)" ]]; then
-            echo "::error::ide/tree-sitter-gala/src is stale; run 'tree-sitter generate --abi 14' in ide/tree-sitter-gala and commit the result"
+            echo "::error::ide/tree-sitter-gala/src is stale; run 'npm run generate' in ide/tree-sitter-gala and commit the result"
             git status --short -- src
             git diff --stat -- src
             exit 1
           fi
 
       - name: Corpus and highlight tests
-        run: tree-sitter test
+        run: npm test
 
       - name: Parse every .gala file
-        run: script/parse-all.sh
+        run: npm run parse-all
 
       - name: Highlights cover every keyword and builtin type
-        run: script/check-queries.sh
+        run: npm run check-queries
