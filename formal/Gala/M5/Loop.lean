@@ -14,7 +14,7 @@
   iteration is a galaspec call one level deeper, and GoCore's loop takes no depth per
   iteration, so the claim covers the runs galaspec ends within its depth. That a galaspec
   run diverging at every depth is a GoCore run that does not end normally (the divergence
-  theorem) is step 3d's.
+  theorem) is step 3d's (`calls_diverge`, `Gala/M5/DivMain.lean`).
 -/
 import Std.Data.String.ToNat
 import Gala.M5.Call
@@ -1540,7 +1540,7 @@ theorem stmts3_correct (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (ρ : Kind) (�
     A tail loop is proved to agree for as many iterations as galaspec's depth allows: an
     iteration costs galaspec one level (its call), GoCore none, so the claim is for GoCore
     depths from `K * d + 3` on. That galaspec diverging at every depth means GoCore does
-    not end normally is step 3d's. -/
+    not end normally is step 3d's (`calls_diverge`). -/
 theorem loop_correct (hF : FunRel K sg ds cx P) (hK : 11 ≤ K) (f : String) (F : Spec.Func)
     (xks : List (String × Kind)) (ρ : Kind) (lb : List Stmt) (hFl : ds.funcs.lookup f = some F)
     (hs : sigOf F = some (xks, ρ)) (hl : lowerFun K sg f F = some lb) (s : Spec.St) (g : St) (env : Env) (n : Nat)
