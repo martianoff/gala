@@ -58,28 +58,37 @@ func keys() map[int64]int = go_interop.MapEmpty[int64, int]()
 			contains: "_tmp_2 := mk64()\n\t\t_tmp_3 := t(\"s\", 3)\n\t\treturn List_FoldLeft(_tmp_1, 1<<_tmp_3, _tmp_2)",
 		},
 		{
-			name:     "read by a default, U inferred by Go from another argument",
-			main:     "var n = 2\n    Println(Box(0).Fold(f = mk64(), u = 1 << n))",
+			name: "read by a default, U inferred by Go from another argument",
+			main: `var n = 2
+    Println(Box(0).Fold(f = mk64(), u = 1 << n))`,
 			contains: "_tmp_2 := mk64()\n\t\t_tmp_1 := n\n\t\treturn Box_Fold(Box[int]{V: std.NewImmutable(0)}, 1<<_tmp_1, _tmp_2, 1<<_tmp_1)",
 		},
 		{
-			name:     "read by a default",
-			main:     "val bx = Box(0)\n    var n = 2\n    val r int64 = bx.Pick(w = t(\"w\", 1), u = 1 << n)\n    Println(r)",
+			name: "read by a default",
+			main: `val bx = Box(0)
+    var n = 2
+    val r int64 = bx.Pick(w = t("w", 1), u = 1 << n)
+    Println(r)`,
 			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := n\n\t\treturn Box_Pick[int64, int](bx, 1<<_tmp_1, _tmp_2, 1<<_tmp_1)",
 		},
 		{
-			name:     "shift by a call inside a sum, read by a default",
-			main:     "val bx = Box(0)\n    val r int64 = bx.Pick(w = t(\"w\", 1), u = (1 << t(\"s\", 2)) + 1)\n    Println(r)",
+			name: "shift by a call inside a sum, read by a default",
+			main: `val bx = Box(0)
+    val r int64 = bx.Pick(w = t("w", 1), u = (1 << t("s", 2)) + 1)
+    Println(r)`,
 			contains: "_tmp_2 := t(\"w\", 1)\n\t\t_tmp_1 := t(\"s\", 2)\n\t\treturn Box_Pick[int64, int](bx, (1<<_tmp_1)+1, _tmp_2, (1<<_tmp_1)+1)",
 		},
 		{
-			name:     "read by a default in another type's context",
-			main:     "var n = 2\n    Println(half(w = t(\"w\", 1), u = 1 << n))",
+			name: "read by a default in another type's context",
+			main: `var n = 2
+    Println(half(w = t("w", 1), u = 1 << n))`,
 			contains: "return half(1<<_tmp_1, _tmp_2, float64(int64(1<<_tmp_1))/2)",
 		},
 		{
-			name:     "map key read ahead of the right side's call",
-			main:     "val m = keys()\n    m[1 << shift] += bumpInt()\n    Println(m)",
+			name: "map key read ahead of the right side's call",
+			main: `val m = keys()
+    m[1 << shift] += bumpInt()
+    Println(m)`,
 			contains: "m[1<<std.EvalOperand(shift)]",
 		},
 		{
