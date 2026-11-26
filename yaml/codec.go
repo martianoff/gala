@@ -796,14 +796,10 @@ func parseYAML(input string) *yNode {
 		// struct is expected.
 		return &yNode{kind: yMap, nullish: true}
 	}
-	// A one-line document that is neither a sequence item nor a "key: value"
-	// pair is a bare scalar ("42", "abc", null) or an empty flow container
-	// ("[]", "{}") — the forms the encoder writes for a non-struct root.
-	if len(lines) == 1 && !isSequenceLine(lines[0].raw) {
-		if _, _, isPair := tryParseKeyValue(lines[0].raw); !isPair {
-			return parseInlineScalar(withoutComment(lines[0].raw))
-		}
-	}
+	// A document whose first line is neither a sequence item nor a
+	// "key: value" pair is a bare scalar ("42", "abc", null) or an empty
+	// flow container ("[]", "{}"), the forms the encoder writes for a
+	// non-struct root; parseBlock reads it as a scalar.
 	node, pos := parseBlock(lines, 0, lines[0].indent)
 	if pos != len(lines) {
 		panic(fmt.Sprintf("yaml: unexpected content at line %d", lines[pos].lineNum))
@@ -840,7 +836,7 @@ func splitSignificantLines(input string) []pLine {
 			out = append(out, pLine{indent: indent, raw: content, lineNum: i + 1})
 			continue
 		}
-		if before, parent, h, ok := blockScalarHeader(content, indent, i+1); ok {
+		if before, parent, h, ok := blockScalarHeader(content, indent); ok {
 			if before == "" {
 				// A header on a line of its own belongs to the key or dash
 				// on the line before it, and so does its body.
@@ -880,9 +876,10 @@ func countLeadingSpaces(s string) int {
 // isDocumentMarker reports whether content, a line at column 0, is a YAML
 // document marker: "---" or "..." alone or followed by white space.
 func isDocumentMarker(content string) bool {
-	// The caller has checked that content starts with '-' or '.'.
-	return len(content) >= 3 && content[1] == content[0] && content[2] == content[0] &&
-		(len(content) == 3 || content[3] == ' ' || content[3] == '\t')
+	if !strings.HasPrefix(content, "---") && !strings.HasPrefix(content, "...") {
+		return false
+	}
+	return len(content) == 3 || content[3] == ' ' || content[3] == '\t'
 }
 
 // blockHeader is a block scalar's header: its style ('|' literal or '>'
@@ -896,12 +893,12 @@ type blockHeader struct {
 }
 
 // parseBlockHeader reads a block scalar header from s, a value without its
-// comment. ok is false when s does not start with '|' or '>'. A '|' or '>'
-// followed by anything but one chomping indicator and one indentation
-// indicator from 1 to 9, in either order, is an error: YAML does not let a
-// plain scalar start with either.
-func parseBlockHeader(s string, lineNum int) (blockHeader, bool) {
-	if s == "" || (s[0] != '|' && s[0] != '>') {
+// comment: '|' or '>', then at most one chomping indicator and one
+// indentation indicator from 1 to 9, in either order. ok is false for any
+// other s. Text that starts with '|' or '>' but is no header is left to
+// parseInlineScalar, which rejects it.
+func parseBlockHeader(s string) (blockHeader, bool) {
+	if s == "" || !isHeaderStart(s[0]) {
 		return blockHeader{}, false
 	}
 	h := blockHeader{style: s[0]}
@@ -912,7 +909,7 @@ func parseBlockHeader(s string, lineNum int) (blockHeader, bool) {
 		case c >= '1' && c <= '9' && h.indent == 0:
 			h.indent = int(c - '0')
 		default:
-			panic(fmt.Sprintf("yaml: invalid block scalar header %q at line %d", s, lineNum))
+			return blockHeader{}, false
 		}
 	}
 	return h, true
@@ -922,22 +919,17 @@ func parseBlockHeader(s string, lineNum int) (blockHeader, bool) {
 // content can hold a block scalar header. A header is at most three bytes
 // ("|2-") and ends the line unless a comment follows it, so a line without
 // a '#' needs a '|' or '>' among its last three bytes. A line with a '#'
-// must also hold a '|' or '>'.
-// content is never empty.
+// must also hold a '|' or '>'. content is never empty.
 func mayHoldBlockHeader(content string) bool {
 	n := len(content)
 	return isHeaderStart(content[n-1]) ||
 		n > 1 && isHeaderStart(content[n-2]) ||
 		n > 2 && isHeaderStart(content[n-3]) ||
-		strings.IndexByte(content, '#') >= 0 && headerAfterComment(content)
+		strings.IndexByte(content, '#') >= 0 && strings.ContainsAny(content, "|>")
 }
 
+// isHeaderStart reports whether c starts a block scalar header.
 func isHeaderStart(c byte) bool { return c == '|' || c == '>' }
-
-// headerAfterComment is mayHoldBlockHeader's test for a line with a '#'.
-func headerAfterComment(content string) bool {
-	return strings.IndexByte(content, '|') >= 0 || strings.IndexByte(content, '>') >= 0
-}
 
 // blockScalarHeader reports whether content, a line without its
 // indentation, opens a block scalar: a header alone on the line ("|", ">"),
@@ -952,10 +944,10 @@ func headerAfterComment(content string) bool {
 // or flow value, or inside a quoted key, is never taken for a comment or a
 // block indicator. Only a line that mayHoldBlockHeader can open a block, so
 // the caller asks that first and only such a line pays for the split.
-func blockScalarHeader(content string, indent, lineNum int) (string, int, blockHeader, bool) {
+func blockScalarHeader(content string, indent int) (string, int, blockHeader, bool) {
 	n, lastDash := itemPrefix(content)
 	rest := content[n:]
-	if h, ok := parseBlockHeader(withoutComment(rest), lineNum); ok {
+	if h, ok := parseBlockHeader(withoutComment(rest)); ok {
 		// A header alone on its line leaves no text before the body, so the
 		// collapsed line starts with the quote and reads as a quoted
 		// scalar, never a key.
@@ -964,17 +956,14 @@ func blockScalarHeader(content string, indent, lineNum int) (string, int, blockH
 		}
 		return content[:n], indent + lastDash, h, true
 	}
-	key, value, isPair := tryParseKeyValue(rest)
-	if !isPair || !spaceAfterQuotedKey(rest) {
-		return "", 0, blockHeader{}, false
+	if key, value, isPair := tryParseKeyValue(rest); isPair && spaceAfterQuotedKey(rest) {
+		if h, ok := parseBlockHeader(value); ok {
+			// The key is written back double-quoted, which reads back as
+			// the same key whatever it holds.
+			return content[:n] + doubleQuoted(key) + ": ", indent + n, h, true
+		}
 	}
-	h, ok := parseBlockHeader(value, lineNum)
-	if !ok {
-		return "", 0, blockHeader{}, false
-	}
-	// The key is written back double-quoted, which reads back as the same
-	// key whatever it holds.
-	return content[:n] + doubleQuoted(key) + ": ", indent + n, h, true
+	return "", 0, blockHeader{}, false
 }
 
 // ownerIndent returns the column a block scalar header alone on its line,
@@ -987,10 +976,15 @@ func ownerIndent(out []pLine, indent int) int {
 		return -1
 	}
 	p := out[len(out)-1]
-	n, _ := itemPrefix(p.raw)
+	n, lastDash := itemPrefix(p.raw)
 	rest := p.raw[n:]
-	if withoutComment(rest) == "-" {
+	// A bare dash: "-" alone or last in "- -", or a dash followed only by
+	// a comment.
+	switch r := withoutComment(rest); {
+	case r == "-":
 		return p.indent + n
+	case n > 0 && r == "":
+		return p.indent + lastDash
 	}
 	if _, value, isPair := tryParseKeyValue(rest); isPair && value == "" {
 		return p.indent + n
@@ -1147,7 +1141,14 @@ func takeBlockScalar(raw []string, start, parentIndent int, h blockHeader, lastH
 // a more-indented line, one that starts with white space, every line break
 // is kept. Blank lines before the first text line are line breaks.
 func foldLines(body []string) string {
+	// The folded text is never longer than the lines with one byte after
+	// each.
+	size := 0
+	for _, line := range body {
+		size += len(line) + 1
+	}
 	var b strings.Builder
+	b.Grow(size)
 	started, prevSpaced := false, false
 	blanks := 0
 	for _, line := range body {
@@ -1157,14 +1158,13 @@ func foldLines(body []string) string {
 		}
 		spaced := line[0] == ' ' || line[0] == '\t'
 		switch {
-		case !started:
-			b.WriteString(strings.Repeat("\n", blanks))
-		case prevSpaced || spaced:
-			b.WriteString(strings.Repeat("\n", blanks+1))
-		case blanks == 0:
+		case started && (prevSpaced || spaced):
+			blanks++ // the break after the previous text line is kept too
+		case started && blanks == 0:
 			b.WriteByte(' ')
-		default:
-			b.WriteString(strings.Repeat("\n", blanks))
+		}
+		for ; blanks > 0; blanks-- {
+			b.WriteByte('\n')
 		}
 		b.WriteString(line)
 		started, prevSpaced, blanks = true, spaced, 0
@@ -1501,12 +1501,13 @@ func parseInlineScalar(raw string) *yNode {
 	return newScalarNode(s, false)
 }
 
-// indicatorStartsPlainScalar fails on s, a plain scalar that starts with
-// '|' or '>'. Either starts a block scalar header, and a header the parser
-// read has become a quoted scalar by now, so s is plain text, which YAML
-// does not let start with either.
+// indicatorStartsPlainScalar fails on s, a value that starts with '|' or
+// '>'. Either starts a block scalar header, and a header the parser read
+// has become a quoted scalar by now, so s is a malformed header ("|0",
+// "| x") or plain text (">=1.0"), which YAML does not let start with
+// either. This is the one place both are rejected.
 func indicatorStartsPlainScalar(s string) {
-	panic(fmt.Sprintf("yaml: plain scalar %q starts with %q; quote it", s, s[0]))
+	panic(fmt.Sprintf("yaml: %q is not a block scalar header, and a plain scalar cannot start with %q; quote it", s, s[0]))
 }
 
 // decodeQuotedScalar decodes the quoted scalar s, or fails when s is not one.

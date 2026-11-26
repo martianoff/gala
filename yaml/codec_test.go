@@ -995,7 +995,7 @@ func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 		{"\"a|b\": | # note\n  body\n", "{a|b: body\n}"},
 		// With no space after a quoted key's colon, "|" opens no block. It
 		// is then plain text, which YAML does not let start with '|'.
-		{"\"k\":|\n  body", `error: yaml: plain scalar "|" starts with '|'; quote it`},
+		{"\"k\":|\n  body", `error: yaml: "|" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
 	}
 	for _, tt := range tests {
 		if got := parseDump(tt.src); got != tt.want {
@@ -1103,6 +1103,8 @@ func TestDecoder_BlockScalarForms(t *testing.T) {
 		// A header on a line of its own.
 		{"header below its key", "k:\n  |\n  a\nj: 1", "{k: a\n, j: 1}"},
 		{"header below its dash", "-\n  >\n  a\n  b", "[a b]"},
+		{"header below a dash with a comment", "- # note\n  |\n  a", "[a]"},
+		{"header below a key with a comment", "k: # note\n  |\n  a", "{k: a}"},
 		{"header alone at the top", "|\na\nb\n", "a\nb\n"},
 		// A scalar on the line below its key or dash.
 		{"scalar below a dash", "-\n  x", "[x]"},
@@ -1133,15 +1135,15 @@ func TestDecoder_BlockScalarForms(t *testing.T) {
 // rather than decoding as text or failing on a later line (#1350).
 func TestDecoder_UnsupportedFormsFail(t *testing.T) {
 	tests := []struct{ name, src, want string }{
-		{"indentation indicator 0", "k: |0\n  a", `yaml: invalid block scalar header "|0" at line 1`},
-		{"two-digit indentation indicator", "k: |10\n  a", `yaml: invalid block scalar header "|10" at line 1`},
-		{"two chomping indicators", "k: |-+\n  a", `yaml: invalid block scalar header "|-+" at line 1`},
-		{"plain scalar starting with '>'", "k: >=1.0", `yaml: plain scalar ">=1.0" starts with '>'; quote it`},
-		{"long plain scalar starting with '|'", "k: |abc", `yaml: plain scalar "|abc" starts with '|'; quote it`},
-		{"plain scalar starting with '|'", "k: |x", `yaml: invalid block scalar header "|x" at line 1`},
-		{"item starting with '>'", "- >foo", `yaml: plain scalar ">foo" starts with '>'; quote it`},
-		{"header with a comment", "k: >x # c", `yaml: invalid block scalar header ">x" at line 1`},
-		{"text after a header", "k: | x\n  a", `yaml: invalid block scalar header "| x" at line 1`},
+		{"indentation indicator 0", "k: |0\n  a", `yaml: "|0" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
+		{"two-digit indentation indicator", "k: |10\n  a", `yaml: "|10" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
+		{"two chomping indicators", "k: |-+\n  a", `yaml: "|-+" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
+		{"plain scalar starting with '>'", "k: >=1.0", `yaml: ">=1.0" is not a block scalar header, and a plain scalar cannot start with '>'; quote it`},
+		{"long plain scalar starting with '|'", "k: |abc", `yaml: "|abc" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
+		{"plain scalar starting with '|'", "k: |x", `yaml: "|x" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
+		{"item starting with '>'", "- >foo", `yaml: ">foo" is not a block scalar header, and a plain scalar cannot start with '>'; quote it`},
+		{"header with a comment", "k: >x # c", `yaml: ">x" is not a block scalar header, and a plain scalar cannot start with '>'; quote it`},
+		{"text after a header", "k: | x\n  a", `yaml: "| x" is not a block scalar header, and a plain scalar cannot start with '|'; quote it`},
 		{"tab indentation", "a: 1\n\tb: 2", "yaml: tab used for indentation at line 2; indent with spaces"},
 		{"tab after spaces", "a:\n  \tb: 2", "yaml: tab used for indentation at line 2; indent with spaces"},
 		{"tab before a quoted key", "a: 1\n\t\"k\": v", "yaml: tab used for indentation at line 2; indent with spaces"},
