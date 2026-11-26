@@ -192,7 +192,43 @@ func (g *gen) exprExpect(e coreexport.Node, sc *scope, expect coreexport.Node) t
 			}
 		}
 	}
+	if isFunc {
+		g.markTailLambdas(e, ft)
+	}
 	return g.expr(e, sc)
+}
+
+// markTailLambdas records function type expect for each lambda whose value
+// is e's: e itself, or one reached through parentheses, the branches of an
+// if, the arms of a match and a block's trailing statement. Those lambdas
+// are translated where e's value goes, so they take expect's parameter and
+// result types as a lambda passed directly does.
+func (g *gen) markTailLambdas(e coreexport.Node, expect *coreexport.TypeFunc) {
+	switch e := e.(type) {
+	case *coreexport.Lambda:
+		g.tailExpect[e] = expect
+	case *coreexport.Paren:
+		g.markTailLambdas(e.Expr, expect)
+	case *coreexport.IfExpr:
+		g.markTailLambdas(e.Then, expect)
+		g.markTailLambdas(e.Else, expect)
+	case *coreexport.If:
+		// A block's trailing if/else carries its value (stmt).
+		if e.Else != nil {
+			g.markTailLambdas(e.Then, expect)
+			g.markTailLambdas(e.Else, expect)
+		}
+	case *coreexport.Match:
+		for _, c := range e.Cases {
+			if c, ok := c.(*coreexport.Case); ok {
+				g.markTailLambdas(c.Body, expect)
+			}
+		}
+	case *coreexport.Block:
+		if len(e.Stmts) > 0 {
+			g.markTailLambdas(e.Stmts[len(e.Stmts)-1], expect)
+		}
+	}
 }
 
 // isFuncValue reports whether e plainly names a function value: a declared
@@ -205,6 +241,9 @@ func (g *gen) isFuncValue(e coreexport.Node, sc *scope) bool {
 // lambda translates a lambda; expect is the function type the context wants,
 // or nil.
 func (g *gen) lambda(l *coreexport.Lambda, sc *scope, expect *coreexport.TypeFunc) term {
+	if expect == nil {
+		expect = g.tailExpect[l]
+	}
 	if g.placeholders[l] {
 		if expect == nil || len(expect.Params) != len(l.Params) {
 			// The transformer makes a lambda of `_` only for a function

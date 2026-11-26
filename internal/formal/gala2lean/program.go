@@ -60,6 +60,10 @@ type gen struct {
 	// typeParamNames is every name the program declares as a type
 	// parameter, of any function, method or type (nonFuncSlot).
 	typeParamNames map[string]bool
+	// tailExpect is the function type a lambda that is the value of a
+	// parenthesized expression, an if or match arm, or a block's trailing
+	// expression takes from where that value goes (markTailLambdas).
+	tailExpect map[*coreexport.Lambda]*coreexport.TypeFunc
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).
@@ -150,6 +154,7 @@ func newGen() *gen {
 		placeholderOf: map[coreexport.Node]*coreexport.Lambda{},
 		placeholders:  map[*coreexport.Lambda]bool{},
 		argChecked:    map[coreexport.Node]bool{},
+		tailExpect:    map[*coreexport.Lambda]*coreexport.TypeFunc{},
 	}
 }
 

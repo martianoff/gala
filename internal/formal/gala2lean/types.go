@@ -696,6 +696,13 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		return g.exprType(e.Right, sc, seen)
 	case *coreexport.IfExpr:
 		return g.exprType(e.Then, sc, seen)
+	case *coreexport.Block:
+		if sc != nil {
+			return g.blockValueType(e, sc)
+		}
+		return ""
+	case *coreexport.Match:
+		return g.matchType(e, sc, seen)
 	case *coreexport.Name:
 		if gv := g.globalBy[e.Name]; gv != nil && !seen[e.Name] {
 			if gv.typ != nil {
@@ -791,6 +798,46 @@ func (g *gen) exprType(e coreexport.Node, sc *scope, seen map[string]bool) strin
 		return fmt.Sprintf("(T%d %s)", len(parts), strings.Join(parts, " "))
 	}
 	return ""
+}
+
+// matchType is the Lean type of match m's value: the type every arm whose
+// type is fully plain to see agrees on, else the first arm's type that is
+// partly so (a lambda's with its result `_`); "" when none is or two
+// differ. An arm's pattern binders are of unknown type here, so a name they
+// shadow is not read as the outer one.
+func (g *gen) matchType(m *coreexport.Match, sc *scope, seen map[string]bool) string {
+	t, partial := "", ""
+	for _, cn := range m.Cases {
+		c, ok := cn.(*coreexport.Case)
+		if !ok {
+			return ""
+		}
+		armSc := newScope(sc, 0)
+		if sc != nil {
+			armSc.level = sc.level
+		}
+		binders := map[string]bool{}
+		g.patBinders(c.Pattern, binders)
+		for x := range binders {
+			armSc.bind(x, false, "")
+		}
+		at := g.safeType(func() string { return g.exprType(c.Body, armSc, maps.Clone(seen)) })
+		switch {
+		case at == "":
+		case parseLean(at).hasHole():
+			if partial == "" {
+				partial = at
+			}
+		case t == "":
+			t = at
+		case at != t:
+			return ""
+		}
+	}
+	if t == "" {
+		return partial
+	}
+	return t
 }
 
 // rawPrinted is the set of types whose values `fmt` can print raw, as Go
