@@ -33,6 +33,12 @@ type pendingDefaultCheck struct {
 	meta      *transpiler.FunctionMetadata
 	line, col int
 	spans     map[int]defaultExprSpan
+	// fields marks a case's field defaults, which read no other field
+	// (GALA-E0098), so a default naming one is no parameter read.
+	fields bool
+	// paramReadsOnly checks only a default that is an earlier parameter
+	// (a method's, whose other defaults are checked where they are used).
+	paramReadsOnly bool
 }
 
 // qualifiedName is name keyed in package pkgName: qualified unless the
@@ -176,7 +182,8 @@ func (fd *fileDecls) sealedDeclaredHere(fullName string) {
 				Name: v.Name, ParamTypes: apply.ParamTypes, ParamNames: apply.ParamNames, DefaultExprs: apply.DefaultExprs,
 			},
 			line: v.Pos.Line, col: v.Pos.Column,
-			spans: spans,
+			spans:  spans,
+			fields: true,
 		})
 	}
 }

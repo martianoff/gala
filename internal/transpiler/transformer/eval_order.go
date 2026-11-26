@@ -74,6 +74,10 @@ const (
 	// operandInoutLend is `&x` of an `inout` place x, lent as a call
 	// argument (see checkInoutLend).
 	operandInoutLend
+	// operandConstRead is `func() T { return c }()`, a constant read as a
+	// value of the parameter's type (atParamType): a call that does
+	// nothing.
+	operandConstRead
 )
 
 func (t *galaASTTransformer) markOperand(n ast.Node, mark operandMark) {
@@ -653,7 +657,7 @@ func (t *galaASTTransformer) makesCallExcept(e ast.Expr, changeable func(string)
 		case *ast.FuncLit:
 			return false
 		case *ast.CallExpr:
-			if !t.isTransparentCall(n, changeable) && !t.isStdHelperCall(n, "EvalOperand", "NewImmutable", "Copy") && !pure(n) {
+			if !t.isTransparentCall(n, changeable) && !t.isStdHelperCall(n, "EvalOperand", "NewImmutable", "Copy") && !t.marked(n, operandConstRead) && !pure(n) {
 				found = true
 			}
 		case *ast.UnaryExpr:

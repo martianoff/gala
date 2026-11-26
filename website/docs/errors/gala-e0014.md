@@ -11,7 +11,7 @@ last_modified_at: 2026-07-26
 
 # GALA-E0014 — Default expression type mismatch
 
-**What it means.** A parameter's default-value literal is statically incompatible with the parameter's declared type.
+**What it means.** A parameter's default-value literal is statically incompatible with the parameter's declared type, or the default is an earlier parameter of another predeclared type (`z int64 = u` for a `u int`): the default reads that parameter's value, which does not convert implicitly.
 
 ---
 
@@ -62,7 +62,7 @@ func create(a string = "not-an-int") string = a
 
 Default-argument injection happens at the call site, so a mismatched default would either fail in Go with a less actionable message or silently round-trip through an implicit conversion. Catching it in the analyzer keeps the error next to the declaration, where the fix is obvious.
 
-Note that the check runs for **literal** defaults only. Non-literal expressions (`f()`, `x + 1`) are skipped because their types depend on resolution context; the literal subset covers the cases most likely to be typos.
+Note that the check runs for **literal** defaults and for a default that is exactly an earlier parameter of a predeclared type. Other expressions (`f()`, `x + 1`) are skipped because their types depend on resolution context; they are checked where the default is used.
 
 ---
 

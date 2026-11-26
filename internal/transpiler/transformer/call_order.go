@@ -90,7 +90,8 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 // boundArgValue is what a default reads for the earlier parameter, of type
 // typ (nil when unknown), whose argument is arg: arg itself when reading it
 // again is the same as reading it once (it is inert), or else a temporary the
-// innermost call evaluates arg into. An untyped constant expression with
+// innermost call evaluates arg into. An inert untyped constant is read at the
+// parameter's type, as a value (atParamType). An untyped constant expression with
 // shifts by values (`1 << n`) takes its type where it is passed, which a
 // temporary would not give it: it is read again over its shift counts' bound
 // values, converted to typ when the parameter is declared with a predeclared
@@ -100,6 +101,13 @@ func (t *galaASTTransformer) recordCallDefault(expr ast.Expr) {
 // where the default uses it.
 func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) ast.Expr {
 	if t.inert(arg) {
+		// An untyped constant read again is the parameter's value only at
+		// the parameter's type (`uint8(1 << n)` is 0 for n = 8), and only
+		// as a value, not a constant Go would fold: `int(-u)` for a uint8
+		// u passed 1 is 255, not the constant -1.
+		if t.isConstantArg(arg) {
+			return t.atParamType(arg, typ, true)
+		}
 		return arg
 	}
 	frame := t.topCallFrame()
@@ -109,10 +117,7 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 	// A shift count is never itself such an expression, so boundArgValue
 	// gives it the inert check and a temporary.
 	if read, ok := t.withShiftCountsMapped(arg, func(c ast.Expr) ast.Expr { return t.boundArgValue(c, nil) }); ok {
-		if basic, ok := typ.(transpiler.BasicType); ok && isNumericPrimitive(basic.Name) {
-			read = &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
-		}
-		return read
+		return t.atParamType(read, typ, false)
 	}
 	tmp := t.frameTempOf(frame, arg)
 	read := ast.NewIdent(tmp.name)
@@ -135,6 +140,66 @@ func (t *galaASTTransformer) frameTempOf(frame *callFrame, arg ast.Expr) frameTe
 	tmp := frameTemp{expr: arg, name: t.nextTempVar(), typ: t.probeExprType(arg)}
 	frame.temps = append(frame.temps, tmp)
 	return tmp
+}
+
+// atParamType is read, a constant expression a default reads for a parameter
+// of type typ, at typ when the parameter is declared with a predeclared
+// numeric type the use site does not shadow: there it has the parameter's
+// value wherever the default uses it (`float64(u / 2)` reads `int64`
+// division, not `float64(7.0 / 2)`). A constant read (constant set) is the
+// value of a function literal called at once, `func() T { return c }()`,
+// not a typed constant: Go folds a constant expression and rejects overflow
+// (`-uint8(1)`) the parameter's value wraps; it makes no call that matters
+// to evaluation order (operandConstRead). Another type (a named one the use site may not be
+// able to spell, or a type parameter, whose type Go infers) leaves read as
+// it is.
+func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, constant bool) ast.Expr {
+	basic, ok := typ.(transpiler.BasicType)
+	if !ok || !isConstantNumericType(basic.Name) || t.namesSomethingElse(basic.Name) {
+		return read
+	}
+	if constant {
+		call := &ast.CallExpr{Fun: thunkLit(&ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{read}}}}, ast.NewIdent(basic.Name))}
+		t.markOperand(call, operandConstRead)
+		return call
+	}
+	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
+}
+
+// isConstantArg reports whether arg, a lowered argument, is a Go constant
+// expression: an untyped constant (isUntypedConstArg, a shift by a value
+// included, whose type its use gives), or one built from constants with
+// operators and conversions to predeclared numeric types (`uint8(1)`,
+// `byte(200) + 50`), which Go folds wherever it is read.
+func (t *galaASTTransformer) isConstantArg(arg ast.Expr) bool {
+	if t.isUntypedConstArg(arg) {
+		return true
+	}
+	switch e := arg.(type) {
+	case *ast.ParenExpr:
+		return t.isConstantArg(e.X)
+	case *ast.UnaryExpr:
+		return e.Op != token.AND && e.Op != token.ARROW && t.isConstantArg(e.X)
+	case *ast.BinaryExpr:
+		return t.isConstantArg(e.X) && t.isConstantArg(e.Y)
+	case *ast.CallExpr:
+		fun, ok := e.Fun.(*ast.Ident)
+		return ok && len(e.Args) == 1 && isConstantNumericType(fun.Name) && !t.namesSomethingElse(fun.Name) && t.isConstantArg(e.Args[0])
+	}
+	return false
+}
+
+// namesSomethingElse reports whether name, a predeclared type the generated
+// read spells, is bound to something else where the default is
+// read: a local of the use site, or a binding or type of this package.
+func (t *galaASTTransformer) namesSomethingElse(name string) bool {
+	return shadowedAt(t.currentScope, name) || t.isTopLevelBinding(name) || t.packageDeclaresType(name)
+}
+
+// isConstantNumericType reports whether name is a predeclared type an untyped
+// numeric constant converts to: an integer, floating-point or complex one.
+func isConstantNumericType(name string) bool {
+	return isNumericPrimitive(name) || name == "complex64" || name == "complex128"
 }
 
 // changeableInScope reports whether name is bound to a variable a call could

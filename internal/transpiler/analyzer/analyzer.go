@@ -1357,7 +1357,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	recordOpaqueBases(richAST, pkgName, underlying)
 	decls.markStoredAsDeclared(aliasStep(ownAliases, pkgName, richAST))
 	for _, check := range fd.pendingDefaultChecks {
-		if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
+		if err := validateDefaultParams(check, filePath, underlying); err != nil {
 			return nil, err
 		}
 	}
@@ -3802,9 +3802,24 @@ type defaultExprSpan struct {
 // `type Millis int64`) or `time.Duration` is checked the way Go converts it: a
 // numeric literal is a valid default for any type whose underlying type is
 // numeric.
-func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan, underlying func(transpiler.Type) transpiler.Type) error {
+func validateDefaultParams(check pendingDefaultCheck, filePath string, underlying func(transpiler.Type) transpiler.Type) error {
 	_ = filePath // filePath is retained for future use; position info now travels via the coded error
+	funcMeta, line, column, defaultSpans := check.meta, check.line, check.col, check.spans
 	if len(funcMeta.DefaultExprs) == 0 {
+		return nil
+	}
+	// In parameter order, so the first mismatch reported is the same each
+	// time.
+	order := slices.Sorted(maps.Keys(funcMeta.DefaultExprs))
+	if check.paramReadsOnly {
+		for _, i := range order {
+			if i >= len(funcMeta.ParamTypes) {
+				continue
+			}
+			if got := paramReadTypeMismatch(funcMeta, i, strings.TrimSpace(funcMeta.DefaultExprs[i].Text)); got != "" {
+				return defaultTypeMismatchError(funcMeta, i, got, funcMeta.ParamTypes[i].String(), line, column, defaultSpans)
+			}
+		}
 		return nil
 	}
 
@@ -3829,7 +3844,8 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	// Check literal type compatibility
-	for i, def := range funcMeta.DefaultExprs {
+	for _, i := range order {
+		def := funcMeta.DefaultExprs[i]
 		if i >= len(funcMeta.ParamTypes) {
 			continue
 		}
@@ -3839,34 +3855,85 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 		}
 		literalType := inferLiteralType(def.Text)
 		if literalType == "" {
+			// A default that is an earlier parameter is that parameter's
+			// value, of its type: `z int64 = u` for a `u int` does not fit,
+			// whatever the call passes for u (a constant included).
+			if mismatch := paramReadTypeMismatch(funcMeta, i, strings.TrimSpace(def.Text)); mismatch != "" && !check.fields {
+				return defaultTypeMismatchError(funcMeta, i, mismatch, paramType, line, column, defaultSpans)
+			}
 			continue // non-literal expression, can't validate statically
 		}
 		if !typesCompatibleForDefault(paramType, literalType) &&
 			(underlying == nil || !typesCompatibleForDefault(underlying(funcMeta.ParamTypes[i]).String(), literalType)) {
-			paramName := ""
-			if i < len(funcMeta.ParamNames) {
-				paramName = funcMeta.ParamNames[i]
-			}
-			// Point the diagnostic at the default expression itself (with an
-			// exact caret span) when we captured its position; otherwise fall
-			// back to the function-declaration start.
-			errLine, errCol := line, column
-			derr := galaerr.NewCodedSemanticError(
-				galaerr.CodeParamDefaultTypeMismatch,
-				errLine, errCol,
-				fmt.Sprintf("default for parameter %q has type %s, expected %s", paramName, literalType, paramType),
-				"fix the default expression or change the parameter type",
-			)
-			if sp, ok := defaultSpans[i]; ok && sp.line > 0 {
-				derr.Line = sp.line
-				derr.Column = sp.startCol
-				derr = derr.WithSpan(sp.endCol)
-			}
-			return derr
+			return defaultTypeMismatchError(funcMeta, i, literalType, paramType, line, column, defaultSpans)
 		}
 	}
 
 	return nil
+}
+
+// paramReadTypeMismatch is the type of the earlier parameter text names, when
+// the default of parameter i is exactly that parameter and both are
+// predeclared types of different names (`z int64 = u` for a `u int`), and ""
+// otherwise. Only predeclared types are compared: a default of an interface,
+// named or generic type needs the type checker.
+func paramReadTypeMismatch(funcMeta *transpiler.FunctionMetadata, i int, text string) string {
+	want, ok := funcMeta.ParamTypes[i].(transpiler.BasicType)
+	if !ok || !isConcretePredeclared(want.Name) {
+		return ""
+	}
+	for j := 0; j < i && j < len(funcMeta.ParamNames) && j < len(funcMeta.ParamTypes); j++ {
+		if funcMeta.ParamNames[j] != text {
+			continue
+		}
+		got, ok := funcMeta.ParamTypes[j].(transpiler.BasicType)
+		if !ok || !isConcretePredeclared(got.Name) || canonicalBasic(got.Name) == canonicalBasic(want.Name) {
+			return ""
+		}
+		return got.Name
+	}
+	return ""
+}
+
+// isConcretePredeclared reports whether name is a predeclared type a value
+// converts to only by conversion: not `any` or `error`, which are interfaces.
+func isConcretePredeclared(name string) bool {
+	return transpiler.IsPrimitiveType(name) && name != "any" && name != "error"
+}
+
+// canonicalBasic is name with Go's predeclared aliases resolved: byte is
+// uint8 and rune is int32.
+func canonicalBasic(name string) string {
+	switch name {
+	case "byte":
+		return "uint8"
+	case "rune":
+		return "int32"
+	}
+	return name
+}
+
+// defaultTypeMismatchError is GALA-E0014 for the default of parameter i of
+// funcMeta, of type got where want is declared: at the default expression,
+// with an exact caret span, when its position was captured, and at the
+// declaration's start (line:column) otherwise.
+func defaultTypeMismatchError(funcMeta *transpiler.FunctionMetadata, i int, got, want string, line, column int, defaultSpans map[int]defaultExprSpan) error {
+	paramName := ""
+	if i < len(funcMeta.ParamNames) {
+		paramName = funcMeta.ParamNames[i]
+	}
+	derr := galaerr.NewCodedSemanticError(
+		galaerr.CodeParamDefaultTypeMismatch,
+		line, column,
+		fmt.Sprintf("default for parameter %q has type %s, expected %s", paramName, got, want),
+		"fix the default expression or change the parameter type",
+	)
+	if sp, ok := defaultSpans[i]; ok && sp.line > 0 {
+		derr.Line = sp.line
+		derr.Column = sp.startCol
+		derr = derr.WithSpan(sp.endCol)
+	}
+	return derr
 }
 
 // aliasStep returns a resolver that follows a type one alias declaration

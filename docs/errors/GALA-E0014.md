@@ -1,7 +1,9 @@
 # GALA-E0014 — Default expression type mismatch
 
 **When it fires.** A parameter's default-value literal is statically
-incompatible with the parameter's declared type.
+incompatible with the parameter's declared type, or the default is an earlier
+parameter of another predeclared type (`z int64 = u` for a `u int`): the
+default reads that parameter's value, which does not convert implicitly.
 
 **Minimal repro.**
 
@@ -33,7 +35,7 @@ actionable error, or (worse) silently round-trip through an implicit
 conversion. Catching the mismatch at analyzer time keeps the error near
 the declaration where the fix is obvious.
 
-Currently the check runs only for literal defaults — non-literal
-expressions (like `f()` or `x + 1`) skip the check because their types
-depend on resolution context. The literal subset catches the cases most
-likely to be typos.
+The check runs for literal defaults and for a default that is exactly an
+earlier parameter of a predeclared type. Other expressions (like `f()` or
+`x + 1`) skip it because their types depend on resolution context; they are
+checked where the default is used.

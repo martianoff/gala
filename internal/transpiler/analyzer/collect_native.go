@@ -783,6 +783,15 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			params := a.nativeParamsOf(sig.Parameters(), pkgName, allTypeParams)
 			methodMeta.ParamTypes, methodMeta.Variadic, methodMeta.ParamNames, methodMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
 			methodMeta.InoutParams = params.inout
+			if len(methodMeta.DefaultExprs) > 0 {
+				fd.pendingDefaultChecks = append(fd.pendingDefaultChecks, pendingDefaultCheck{
+					meta: &transpiler.FunctionMetadata{
+						Name: methodName, ParamTypes: methodMeta.ParamTypes, ParamNames: methodMeta.ParamNames, DefaultExprs: methodMeta.DefaultExprs,
+					},
+					line: declPos.Line, col: declPos.Column, spans: params.spans,
+					paramReadsOnly: true,
+				})
+			}
 
 			// The signature takes its type's parameter names after
 			// section 2.5, when every file's types are known.
