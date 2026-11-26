@@ -1070,6 +1070,19 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if v.spread {
 			hasSpread = true
 		}
+		methodCtx := func() callContext {
+			ctx := t.buildMethodCallContext(methodMeta, anyView(), false)
+			if typeMeta != nil {
+				ctx.recvTypeParams = typeMeta.TypeParams
+			}
+			return ctx
+		}
+		// An argument crossing a Sendable boundary is checked however it
+		// was lowered, one the inference pre-pass lowered included.
+		genMethodCtx := methodCtx()
+		if cerr := t.checkSendableArg(genMethodCtx, i, v); cerr != nil {
+			return true, nil, cerr
+		}
 		// Reuse pre-transformed expression if available, recorded where
 		// it is written as lowerArg records the others, so the call
 		// evaluates its arguments in written order (call_order.go). An
@@ -1085,17 +1098,6 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 			mArgs = append(mArgs, expr)
 			continue
-		}
-		methodCtx := func() callContext {
-			ctx := t.buildMethodCallContext(methodMeta, anyView(), false)
-			if typeMeta != nil {
-				ctx.recvTypeParams = typeMeta.TypeParams
-			}
-			return ctx
-		}
-		genMethodCtx := methodCtx()
-		if cerr := t.checkSendableArg(genMethodCtx, i, v); cerr != nil {
-			return true, nil, cerr
 		}
 		lowerIn := func(ctx callContext) (ast.Expr, error) {
 			expectedType := t.expectedArgType(ctx, i, v.spread)

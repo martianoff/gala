@@ -57,6 +57,59 @@ func main() {
 			expectCapture:  "counter",
 		},
 		{
+			// A non-lambda argument of a method with type parameters of
+			// its own is lowered in its inference pre-pass and reused; it
+			// is checked as a generic function's is (#1329).
+			name: "function value to a Sendable parameter of a generic method",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
+func main() {
+    var n = 1
+    val g = () => n + 1
+    val b = Box(1)
+    Println(b.Run(g))
+}`,
+			expectContains: "function value",
+			expectCapture:  "g",
+		},
+		{
+			name: "function value by name to a Sendable parameter of a generic method",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](u U, f Sendable[func() U]) U = f()
+
+func main() {
+    var n = 1
+    val g = () => n + 1
+    val b = Box(1)
+    Println(b.Run(f = g, u = 0))
+}`,
+			expectContains: "function value",
+			expectCapture:  "g",
+		},
+		{
+			name: "var captured by a by-name argument of a generic method",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
+func main() {
+    var counter = 0
+    val b = Box(1)
+    Println(b.Run(counter + 1))
+}`,
+			expectContains: "reassignable var",
+			expectCapture:  "counter",
+		},
+		{
 			name: "var capture via thunk sugar",
 			input: `package main
 

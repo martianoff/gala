@@ -1,0 +1,20 @@
+package main
+
+// A function value passed to a Sendable parameter of a method with type
+// parameters of its own is checked as it is for a generic function: one that
+// is a Sendable parameter itself crosses the boundary; a plain function value
+// (which may close over mutable state) is GALA-E0037.
+
+struct Box[T any](V T)
+
+func (b Box[T]) Run[U any](f Sendable[func() U]) U = f()
+
+func (b Box[T]) Both[U any](u U, f Sendable[func(U) U]) U = f(u)
+
+func forward(b Box[int], g Sendable[func() int], inc Sendable[func(int) int]) string =
+    s"${b.Run(g)} ${b.Both(5, inc)}"
+
+func main() {
+    val k = 2
+    Println(forward(Box(0), () => k * 10, (x) => x + k))
+}
