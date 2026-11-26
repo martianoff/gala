@@ -5546,15 +5546,9 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 // void call, an assignment, or a block ending in a statement. No function
 // without a result fits the parameter, so Go would reject the call.
 func (t *galaASTTransformer) valuelessLambdaError(l lambdaSrc) error {
-	callee := t.lambdaArgCallee(l)
-	if callee == "" {
-		callee = "the function it is passed to"
-	}
-	msg := fmt.Sprintf("this lambda has no value, but %s takes a function with a result here; end the lambda in the value to return", callee)
+	msg := fmt.Sprintf("this lambda has no value, but %s takes a function with a result here; end the lambda in the value to return", t.lambdaArgCalleeOr(l, "the function it is passed to"))
 	if block := l.block(); block.ok() {
-		if last, ok := block.lastStatement(); ok {
-			return t.semanticErrorAtNode(last.at, msg)
-		}
+		return t.errorAtBlockEnd(block, msg)
 	}
 	return t.semanticErrorAtNode(l.at(), msg)
 }

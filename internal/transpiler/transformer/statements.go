@@ -1103,7 +1103,12 @@ func (t *galaASTTransformer) sourceFunctionName(name, receiverTypeName string) s
 // result type promises — subject is "function F" or "this lambda" — at the
 // body's last statement (or its closing brace when it is empty).
 func (t *galaASTTransformer) missingReturnError(body blockSrc, subject, result string) error {
-	msg := fmt.Sprintf("%s returns %s, but its body can finish without a value; end it in the value to return, or add a `return`", subject, result)
+	return t.errorAtBlockEnd(body, fmt.Sprintf("%s returns %s, but its body can finish without a value; end it in the value to return, or add a `return`", subject, result))
+}
+
+// errorAtBlockEnd is the error msg at the end of body, where a missing value
+// belongs: its last statement, or its closing brace when it is empty.
+func (t *galaASTTransformer) errorAtBlockEnd(body blockSrc, msg string) error {
 	if last, ok := body.lastStatement(); ok {
 		return t.semanticErrorAtNode(last.at, msg)
 	}
