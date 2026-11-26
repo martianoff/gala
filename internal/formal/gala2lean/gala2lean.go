@@ -164,11 +164,9 @@ func Translate(p *coreexport.Program, opts Options) (*Result, error) {
 	p = hideLibNames(p)
 	p = qualifyGoImports(p)
 	p = ptrReceivers(p)
-	p, placeholders := lowerPlaceholders(p)
 	g := newGen()
 	g.depNS = depNS
 	g.ownPtrs = ownPtr(p)
-	g.placeholders = placeholders
 	g.library = opts.Library
 	g.ns = opts.Namespace
 	g.unsup = depUnsup

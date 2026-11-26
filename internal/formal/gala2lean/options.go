@@ -111,7 +111,7 @@ func (g *gen) optCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term
 	repl := []string{"{r}", recv.val()}
 	for i, a := range e.Args {
 		positional(a)
-		v := g.exprExpect(a, sc, g.optParamType(m.params[i], t, args))
+		v := g.argExpect(a, sc, g.optParamType(m.params[i], t, args))
 		subs = append(subs, v)
 		repl = append(repl, fmt.Sprintf("{%d}", i), v.val())
 	}
@@ -207,6 +207,9 @@ func optionOfInferred() coreexport.Node {
 // types them (typedLambda).
 func (g *gen) funcArgResult(a coreexport.Node, expect coreexport.Node, sc *scope, seen map[string]bool) string {
 	a = argNode(a)
+	if l, ok := g.placeholderLambda(a, expect); ok {
+		a = l
+	}
 	if l, ok := a.(*coreexport.Lambda); ok {
 		a = g.typedLambda(l, expect)
 	}

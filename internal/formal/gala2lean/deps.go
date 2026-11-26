@@ -158,6 +158,16 @@ func (g *gen) refs(n coreexport.Node, bound map[string]bool, out map[string]bool
 
 // walkChildren calls f on each direct child of n.
 func walkChildren(n coreexport.Node, f func(coreexport.Node)) {
+	if p, ok := n.(*packed); ok {
+		// A variadic call's packed arguments (variadic.go).
+		for _, e := range p.elems {
+			f(e)
+		}
+		if p.spread != nil {
+			f(p.spread)
+		}
+		return
+	}
 	v := reflect.ValueOf(n)
 	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
 		return

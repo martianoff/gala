@@ -202,6 +202,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 	pre := make([][]string, len(e.Args))
 	hoisted := false
 	for i, a := range e.Args {
+		g.placeholderArg(a, s.types[paramOf[i]])
 		if s.lent[i] != nil {
 			continue // read after the other arguments, below
 		}
@@ -215,7 +216,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 			vals[i] = g.packTerm(p, sc, s.types[paramOf[i]])
 			continue
 		}
-		vals[i] = g.exprExpect(argNode(a), sc, s.types[paramOf[i]])
+		vals[i] = g.argExpect(argNode(a), sc, s.types[paramOf[i]])
 	}
 	inOrder := true
 	defaults := false
@@ -299,7 +300,7 @@ func (g *gen) callItems(s *sig, e *coreexport.Call, sc *scope, hoist bool) ([]st
 		}
 		saved := g.qualify
 		g.qualify = true
-		d := g.exprExpect(s.defaults[k], dsc, s.types[k])
+		d := g.argExpect(s.defaults[k], dsc, s.types[k])
 		g.qualify = saved
 		delete(g.inDefault, key)
 		tmp := g.freshName("d")
@@ -343,7 +344,15 @@ func (g *gen) apply(s *sig, args []string, subs ...term) term {
 
 // call translates a call: of a declared function, struct or variant, of
 // Println/Print, of an Option/Either constructor, or of a function value.
+// call translates call e, then checks that every argument of it that may
+// hold a placeholder lambda's `_` went through placeholderArg (uncheckedArgs).
 func (g *gen) call(e *coreexport.Call, sc *scope) term {
+	t := g.callInner(e, sc)
+	g.uncheckedArgs(e)
+	return t
+}
+
+func (g *gen) callInner(e *coreexport.Call, sc *scope) term {
 	if u, ok := e.Callee.(*coreexport.Unsupported); ok {
 		unsup(u.Pos, "%s", u.What)
 	}
@@ -432,7 +441,7 @@ func (g *gen) call(e *coreexport.Call, sc *scope) term {
 		if ft != nil && i < len(ft.Params) {
 			expect = ft.Params[i]
 		}
-		t := g.exprExpect(a, sc, expect)
+		t := g.argExpect(a, sc, expect)
 		parts, subs = append(parts, t.val()), append(subs, t)
 	}
 	if len(e.Args) == 0 {
@@ -471,6 +480,7 @@ func (g *gen) print(x string, e *coreexport.Call, sc *scope) term {
 	for i, a := range e.Args {
 		positional(a)
 		g.printable(a, sc)
+		g.placeholderArg(a, &coreexport.TypeName{Name: "any"})
 		subs[i] = g.expr(a, sc)
 		shown[i] = "garg " + subs[i].val()
 	}

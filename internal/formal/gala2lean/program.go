@@ -48,11 +48,15 @@ type gen struct {
 	depNS map[string]bool
 	// ownPtrs is the packages that may declare their own Ptr type (ownPtr).
 	ownPtrs map[string]bool
-	// placeholders are the lambdas lowerPlaceholders made of placeholder
-	// arguments.
-	placeholders map[*coreexport.Lambda]bool
-	// inPlaceholder is how many of those lambdas the translation is inside.
-	inPlaceholder int
+	// Placeholder lambdas (placeholders.go): those made, by the argument
+	// each was made of; their set; how many of them the translation is
+	// inside; the arguments placeholderArg checked; and the count that
+	// names their parameters.
+	placeholderOf  map[coreexport.Node]*coreexport.Lambda
+	placeholders   map[*coreexport.Lambda]bool
+	inPlaceholder  int
+	argChecked     map[coreexport.Node]bool
+	placeholderSeq int
 	// cur is the declaration being translated (guard), and uses what each
 	// declaration's translation used of the program's declarations, by
 	// their report keys (attributeReach).
@@ -140,6 +144,9 @@ func newGen() *gen {
 		inDefault:     map[string]bool{},
 		refsInDefault: map[string]bool{},
 		uses:          map[string]map[string]bool{},
+		placeholderOf: map[coreexport.Node]*coreexport.Lambda{},
+		placeholders:  map[*coreexport.Lambda]bool{},
+		argChecked:    map[coreexport.Node]bool{},
 	}
 }
 

@@ -675,6 +675,7 @@ func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scop
 		}
 		positional(e.Args[0])
 		g.comparable(s.Target, sc)
+		g.placeholderArg(e.Args[0], &coreexport.TypeName{Name: name})
 		x, y := g.expr(s.Target, sc), g.expr(e.Args[0], sc)
 		return wrap(fmt.Sprintf("(%s == %s)", x.val(), y.val()), x, y), true
 	case "Copy":
@@ -690,7 +691,7 @@ func (g *gen) generatedMethod(e *coreexport.Call, s *coreexport.Select, sc *scop
 			if !ok || g.fieldByType(t, na.Name) == nil {
 				unsup(posOf(a), "copy-argument")
 			}
-			v := g.exprExpect(na.Value, sc, g.fieldByType(t, na.Name).Type)
+			v := g.argExpect(na.Value, sc, g.fieldByType(t, na.Name).Type)
 			subs = append(subs, v)
 			sets = append(sets, ident(na.Name)+" := "+v.val())
 		}

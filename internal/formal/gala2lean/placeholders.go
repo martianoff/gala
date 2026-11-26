@@ -14,38 +14,45 @@ import (
 // "Placeholder Lambda Shorthand"). The rules here follow the transformer's
 // code (internal/transpiler/transformer; lines at the time of writing):
 //
-//   - tryRewriteAsPlaceholderLambda (lambdas.go:1621) rewrites an argument
-//     whose slot is a function type when visitPlaceholders (args_source.go:233)
-//     finds a `_` in it: every `_` written in the argument, in source order,
-//     outside nested lambdas and case clauses, inside if and match
-//     expressions and blocks too; a `_` in `${...}` is inside a string token
-//     there, and is never found;
-//   - transformArgument (calls.go:5359) tries it on an argument before
-//     lowering what is inside, and while the body is lowered a nested
-//     argument whose slot is a function type makes a lambda of its own,
-//     binding `_` closer: a `_` belongs to the innermost such argument
-//     around it (placeholderTakes.take, lambdas.go:1559);
+//   - transformArgument (calls.go:5359) tries tryRewriteAsPlaceholderLambda
+//     (lambdas.go:1621) on a call argument, a by-name argument (calls.go:783)
+//     or a parameter's default value (default_exprs.go:785), before lowering
+//     what is inside; it rewrites when the slot is a function type and
+//     visitPlaceholders (args_source.go:233) finds a `_`: every `_` written
+//     in it, in source order, outside nested lambdas and case clauses,
+//     inside if and match expressions and blocks too (a `_` in `${...}` is
+//     inside a string token there, and is never found). No other context
+//     (a typed val, an assignment, a return) starts a rewrite;
+//   - while the body is lowered, a nested argument whose slot is a function
+//     type makes a lambda of its own, binding `_` closer: a `_` belongs to
+//     the innermost such argument around it (placeholderTakes.take,
+//     lambdas.go:1559);
 //   - the lambda's parameters are the `_` it takes, in source order, and
 //     must be as many as its function type's.
 //
 // The Core exporter marks each `_` in place, as the unsupported construct
-// placeholder-lambda. lowerPlaceholders rewrites an argument A of a call C
-// into an untyped lambda with one parameter per mark in A (outside lambdas,
-// case clauses and interpolated strings), in source order, each mark
-// replaced by its parameter, where C is not inside a call argument up to the
-// nearest enclosing lambda, case clause or top-level declaration, so no
-// outer slot can take them. The translation then checks the rest:
+// placeholder-lambda. gala2lean decides at each argument, where its slot
+// type is known (argExpect):
 //
-//   - g.lambda accepts such a lambda only for a slot of a function type with
-//     as many parameters;
-//   - argExpect accepts a parameter of one inside a nested call argument only
-//     when that argument's slot is known not to be a function type, so no
-//     inner lambda can take it.
+//   - for a slot of a function type with k parameters, an argument holding
+//     `_` marks (argMarks) is the lambda placeholderLambda makes of it: a
+//     parameter per mark, in source order, each mark replaced by its
+//     parameter; it is translated only when it has k marks (g.lambda);
+//   - inside such a lambda's body, an argument or other typed context that
+//     reads one of its parameters must have a slot known not to be a
+//     function type (placeholderArg): else the transformer's innermost rule
+//     might give that `_` to a lambda of its own, or the slot is unknown;
+//   - outside any, an argument holding marks must have a slot known not to
+//     be a function type, or be the lambda's own (a function slot): the
+//     marks are then left to the arguments nested in it.
 //
-// Anywhere else it is reported (placeholder-lambda). Every other `_` stays
-// as exported, and is reported where it is reached.
+// So no function slot lies between a `_` and the argument whose lambda
+// takes it, nor around that argument up to the nearest lambda or case
+// clause, and Go's innermost rule gives the `_` to the same lambda. Every
+// other `_` stays as exported, and is reported where it is reached
+// (placeholder-lambda).
 
-// placeholderParam starts the name of each parameter lowerPlaceholders
+// placeholderParam starts the name of each parameter placeholderLambda
 // makes; no GALA name starts with `_gala_` (GALA-E0097).
 const placeholderParam = "_gala_placeholder"
 
@@ -100,7 +107,7 @@ func hasNode(n coreexport.Node, f func(coreexport.Node) bool) bool {
 func hasPlaceholder(n coreexport.Node) bool { return hasNode(n, isPlaceholder) }
 
 // hasPlaceholderParam reports whether n refers to a parameter of a lambda
-// lowerPlaceholders made.
+// placeholderLambda made.
 func hasPlaceholderParam(n coreexport.Node) bool {
 	return hasNode(n, func(n coreexport.Node) bool {
 		x, ok := n.(*coreexport.Name)
@@ -108,89 +115,33 @@ func hasPlaceholderParam(n coreexport.Node) bool {
 	})
 }
 
-// lowerPlaceholders is p with each placeholder argument that the rules
-// above admit rewritten into a lambda; the lambdas are in the returned set.
-func lowerPlaceholders(p *coreexport.Program) (*coreexport.Program, map[*coreexport.Lambda]bool) {
-	l := &placeholderLowering{lambdas: map[*coreexport.Lambda]bool{}, marked: map[coreexport.Node]bool{}}
-	out := *p
-	out.Files = make([]*coreexport.File, len(p.Files))
-	for i, f := range p.Files {
-		out.Files[i] = f
-		if l.mark(f) {
-			out.Files[i] = l.rewrite(f, false).(*coreexport.File)
-		}
+// placeholderLambda is the lambda the transformer makes of argument a for
+// a slot of type expect: when expect is a function type and a, not a lambda
+// itself, holds `_` marks. It is made once per argument, so the translation
+// and the type queries see the same one.
+func (g *gen) placeholderLambda(a coreexport.Node, expect coreexport.Node) (*coreexport.Lambda, bool) {
+	a = argNode(a)
+	if _, isFunc := expect.(*coreexport.TypeFunc); !isFunc {
+		return nil, false
 	}
-	return &out, l.lambdas
-}
-
-type placeholderLowering struct {
-	lambdas map[*coreexport.Lambda]bool
-	// marked holds the nodes with a `_` mark at or below them: only those
-	// are rewritten (copied).
-	marked map[coreexport.Node]bool
-	fresh  int
-}
-
-// mark records in l.marked whether n holds a `_` mark, and reports it.
-func (l *placeholderLowering) mark(n coreexport.Node) bool {
-	has := isPlaceholder(n)
-	walkChildren(n, func(c coreexport.Node) {
-		if l.mark(c) {
-			has = true
-		}
-	})
-	if has {
-		l.marked[n] = true
+	if l, ok := g.placeholderOf[a]; ok {
+		return l, l != nil
 	}
-	return has
-}
-
-// rewrite is n with its admitted placeholder arguments rewritten; inArg is
-// whether n is inside a call argument within the current lambda, case
-// clause or top-level declaration.
-func (l *placeholderLowering) rewrite(n coreexport.Node, inArg bool) coreexport.Node {
-	if !l.marked[n] {
-		return n
+	g.placeholderOf[a] = nil
+	switch a.(type) {
+	case *coreexport.Lambda, *coreexport.Spread:
+		return nil, false
 	}
-	switch n := n.(type) {
-	case *coreexport.Lambda, *coreexport.Case:
-		// A new context: its body's `_` are its own.
-		return mapChildren(n, func(c coreexport.Node) coreexport.Node { return l.rewrite(c, false) })
-	case *coreexport.Call:
-		out := *n
-		out.Callee = l.rewrite(n.Callee, inArg)
-		out.Args = make([]coreexport.Node, len(n.Args))
-		for i, a := range n.Args {
-			if !inArg && l.marked[a] {
-				if lam := l.lambdaOf(a); lam != nil {
-					out.Args[i] = withArg(a, lam)
-					continue
-				}
-			}
-			out.Args[i] = l.rewrite(a, true)
-		}
-		return &out
-	}
-	return mapChildren(n, func(c coreexport.Node) coreexport.Node { return l.rewrite(c, inArg) })
-}
-
-// lambdaOf is argument a, of a call outside any call argument, as a lambda
-// of a parameter per `_` it holds (argMarks), else nil.
-func (l *placeholderLowering) lambdaOf(a coreexport.Node) *coreexport.Lambda {
-	v := argNode(a)
-	if _, spread := v.(*coreexport.Spread); spread {
-		return nil
-	}
-	marks, ok := argMarks(v)
+	marks, ok := argMarks(a)
 	if !ok || len(marks) == 0 {
-		return nil
+		return nil, false
 	}
-	pos := posOf(v)
+	pos := posOf(a)
 	names := map[*coreexport.Unsupported]string{}
 	params := make([]coreexport.Node, len(marks))
 	for i, m := range marks {
-		l.fresh++
-		names[m] = placeholderParam + strconv.Itoa(l.fresh)
+		g.placeholderSeq++
+		names[m] = placeholderParam + strconv.Itoa(g.placeholderSeq)
 		params[i] = &coreexport.Param{Meta: coreexport.Meta{Kind: "param", Pos: pos}, Name: names[m]}
 	}
 	var subst func(n coreexport.Node) coreexport.Node
@@ -200,24 +151,82 @@ func (l *placeholderLowering) lambdaOf(a coreexport.Node) *coreexport.Lambda {
 		}
 		return mapChildren(n, subst)
 	}
-	// Its lambdas and case clauses are contexts of their own.
-	body := subst(v)
-	l.mark(body)
-	lam := &coreexport.Lambda{
-		Meta:   coreexport.Meta{Kind: "lambda", Pos: pos},
-		Params: params,
-		Body:   l.rewrite(body, true),
-	}
-	l.lambdas[lam] = true
-	return lam
+	l := &coreexport.Lambda{Meta: coreexport.Meta{Kind: "lambda", Pos: pos}, Params: params, Body: subst(a)}
+	g.placeholderOf[a], g.placeholders[l] = l, true
+	return l, true
 }
 
-// withArg is argument a with its value replaced by v.
-func withArg(a, v coreexport.Node) coreexport.Node {
-	if na, ok := a.(*coreexport.NamedArg); ok {
-		out := *na
-		out.Value = v
-		return &out
+// argExpect translates a, a call argument or a parameter's default value,
+// for a slot of type expect (nil when unknown): as the lambda the
+// transformer makes of it when it is a placeholder lambda, else as
+// exprExpect does.
+func (g *gen) argExpect(a coreexport.Node, sc *scope, expect coreexport.Node) term {
+	g.placeholderArg(a, expect)
+	if l, ok := g.placeholderLambda(a, expect); ok {
+		return g.lambda(l, sc, expect.(*coreexport.TypeFunc))
 	}
-	return v
+	return g.exprExpect(a, sc, expect)
+}
+
+// placeholderArg stops the translation of e, an argument or other typed
+// context for a slot of type expect (nil when unknown), where the `_` it
+// holds might not be the lambda's gala2lean gives them to: e reads a
+// parameter of a placeholder lambda around it and its slot is not known to
+// want something other than a function (the transformer might make a
+// lambda of e that takes that `_`), or e holds `_` marks for a slot that is
+// neither a function type nor known not to be one.
+func (g *gen) placeholderArg(e coreexport.Node, expect coreexport.Node) {
+	e = argNode(e)
+	g.argChecked[e] = true
+	if l, ok := e.(*coreexport.Lambda); ok && g.placeholders[l] || g.nonFuncSlot(expect) {
+		return
+	}
+	if g.inPlaceholder > 0 && hasPlaceholderParam(e) {
+		unsup(posOf(e), "placeholder-lambda")
+	}
+	if _, isFunc := expect.(*coreexport.TypeFunc); !isFunc {
+		if marks, _ := argMarks(e); len(marks) > 0 {
+			unsup(posOf(e), "placeholder-lambda")
+		}
+	}
+}
+
+// nonFuncSlot reports whether t is a type that is plainly not a function
+// type: a basic type, a declared struct or sealed type, or one of std's
+// generic types, none of them a type parameter in scope.
+func (g *gen) nonFuncSlot(t coreexport.Node) bool {
+	n, ok := t.(*coreexport.TypeName)
+	if !ok || n.Package != "" {
+		return false
+	}
+	if _, param := g.tparams[n.Name]; param {
+		return false
+	}
+	switch n.Name {
+	case "int", "int64", "string", "bool", "any":
+		return true
+	}
+	_, std := stdGeneric[n.Name]
+	return g.declaredType(n.Name) || std || hashTypes[n.Name]
+}
+
+// uncheckedArgs stops the translation of call e when an argument of it that
+// holds `_` marks or reads a placeholder lambda's parameter was translated
+// without placeholderArg's check: every path that translates an argument
+// must check it (argExpect, or placeholderArg with the slot's type, nil when
+// unknown). TestPlaceholderArgsChecked keeps this construct out of every
+// program the tests translate.
+func (g *gen) uncheckedArgs(e *coreexport.Call) {
+	for _, a := range e.Args {
+		n := argNode(a)
+		if sp, ok := n.(*coreexport.Spread); ok {
+			n = sp.Value
+		}
+		if g.argChecked[n] {
+			continue
+		}
+		if marks, _ := argMarks(n); len(marks) > 0 || g.inPlaceholder > 0 && hasPlaceholderParam(n) {
+			unsup(posOf(n), "placeholder-unchecked-arg")
+		}
+	}
 }

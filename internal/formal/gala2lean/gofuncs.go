@@ -212,7 +212,7 @@ func (g *gen) goCall(e *coreexport.Call, s *coreexport.Select, sc *scope) (term,
 	vals := make([]string, len(e.Args))
 	for i, a := range e.Args {
 		positional(a)
-		args[i] = g.exprExpect(a, sc, &coreexport.TypeName{Name: f.params[i]})
+		args[i] = g.argExpect(a, sc, &coreexport.TypeName{Name: f.params[i]})
 		vals[i] = args[i].val()
 	}
 	code := "(" + f.lean + " " + strings.Join(vals, " ") + ")"
@@ -259,7 +259,7 @@ func (g *gen) replacerReplace(e, nr *coreexport.Call, sc *scope) term {
 	}
 	positional(e.Args[0])
 	list := g.goStringArgs(nr, sc)
-	x := g.exprExpect(e.Args[0], sc, &coreexport.TypeName{Name: "string"})
+	x := g.argExpect(e.Args[0], sc, &coreexport.TypeName{Name: "string"})
 	return act(fmt.Sprintf("goReplacerReplace (← goNewReplacer %s) %s", list.val(), x.val()))
 }
 
@@ -284,7 +284,7 @@ func (g *gen) goStringArgs(c *coreexport.Call, sc *scope) term {
 	subs := make([]term, len(c.Args))
 	for i, a := range c.Args {
 		positional(a)
-		subs[i] = g.exprExpect(a, sc, &coreexport.TypeName{Name: "string"})
+		subs[i] = g.argExpect(a, sc, &coreexport.TypeName{Name: "string"})
 		parts[i] = subs[i].val()
 	}
 	return wrap("(["+strings.Join(parts, ", ")+"] : List String)", subs...)

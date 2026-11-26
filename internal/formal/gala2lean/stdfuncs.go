@@ -223,13 +223,14 @@ func (g *gen) stdFuncCall(x string, e *coreexport.Call, sc *scope) term {
 		// Go's conversion of an int or int64 to int or int64 keeps the
 		// value: both are 64 bits, as galaspec takes Go's int to be
 		// (docs/FORMAL_SEMANTICS.MD). Any other conversion is reported.
+		g.placeholderArg(e.Args[0], &coreexport.TypeName{Name: "int"})
 		if g.typeOf(e.Args[0], sc) != "Int64" {
 			unsup(e.Pos, "conversion")
 		}
 		return g.expr(e.Args[0], sc)
 	case "ArrayTabulate":
-		n := g.exprExpect(e.Args[0], sc, &coreexport.TypeName{Name: "int"})
-		f := g.exprExpect(e.Args[1], sc, tabulateFn())
+		n := g.argExpect(e.Args[0], sc, &coreexport.TypeName{Name: "int"})
+		f := g.argExpect(e.Args[1], sc, tabulateFn())
 		return act(fmt.Sprintf("GArray.mk <$> seqTabulate %s %s", n.val(), f.val()))
 	}
 	args := make([]term, len(e.Args))
