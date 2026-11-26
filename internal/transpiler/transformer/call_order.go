@@ -105,7 +105,7 @@ func (t *galaASTTransformer) boundArgValue(arg ast.Expr, typ transpiler.Type) as
 		// the parameter's type (`uint8(1 << n)` is 0 for n = 8), and only
 		// as a value, not a constant Go would fold: `int(-u)` for a uint8
 		// u passed 1 is 255, not the constant -1.
-		if t.isUntypedConstArg(arg) {
+		if t.isUntypedConstArg(arg) || isConversionOfUntypedConst(t, arg, typ) {
 			return t.atParamType(arg, typ, true)
 		}
 		return arg
@@ -151,6 +151,19 @@ func (t *galaASTTransformer) atParamType(read ast.Expr, typ transpiler.Type, con
 		return &ast.CallExpr{Fun: &ast.IndexExpr{X: t.stdIdent("EvalOperand"), Index: ast.NewIdent(basic.Name)}, Args: []ast.Expr{read}}
 	}
 	return &ast.CallExpr{Fun: ast.NewIdent(basic.Name), Args: []ast.Expr{read}}
+}
+
+// isConversionOfUntypedConst reports whether arg is a conversion of an untyped
+// constant to typ, a predeclared type (`uint8(1)`): a typed constant, which
+// Go folds in the default as it does an untyped one at that type.
+func isConversionOfUntypedConst(t *galaASTTransformer, arg ast.Expr, typ transpiler.Type) bool {
+	basic, ok := typ.(transpiler.BasicType)
+	call, isCall := arg.(*ast.CallExpr)
+	if !ok || !isCall || len(call.Args) != 1 {
+		return false
+	}
+	fun, isIdent := call.Fun.(*ast.Ident)
+	return isIdent && fun.Name == basic.Name && t.isUntypedConstArg(call.Args[0])
 }
 
 // namesSomethingElse reports whether name, a predeclared type or a package

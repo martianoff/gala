@@ -78,6 +78,11 @@ func pick[U any](u U, z U = u) U = z
 			contains: "neg(1, int(-std.EvalOperand[uint8](1)))",
 		},
 		{
+			name:     "typed constant",
+			main:     `Println(neg(uint8(1)))`,
+			contains: "neg(uint8(1), int(-std.EvalOperand[uint8](uint8(1))))",
+		},
+		{
 			name:     "complex parameter",
 			main:     `Println(kindC(5))`,
 			contains: "kindC(5, std.EvalOperand[complex128](5))",

@@ -23,7 +23,7 @@ func main() {
     // The shift is computed in int64, then converted.
     Println(scaled(u = 1 << n))
     // -uint8(1) wraps to 255 as the parameter's value does.
-    Println(neg(1))
+    Println(neg(1), neg(uint8(1)))
     // complex64(0.1) widened, not the constant 0.1.
     Println(widen(0.1))
     // Written as the parameter's type already.
