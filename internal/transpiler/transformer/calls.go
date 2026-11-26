@@ -786,6 +786,16 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// default type: a lambda argument may need another (see
 	// lowerLambdaOverWeakConst).
 	weakConst := make(map[string]transpiler.Type)
+	// A by-name constant binds as a bare one (isWeakConstArg) only where its
+	// thunk can then be given the type: not when a receiver type argument is
+	// spelled like one of the method's own type parameters (`U` of an
+	// enclosing `Box[U]`), which the substitution would take for it.
+	thunksFixable := methodMeta == nil || !slices.ContainsFunc(recvTypeArgTypes, func(arg transpiler.Type) bool {
+		return typeMentionsTypeParam(arg, methodMeta.TypeParams)
+	})
+	weakArg := func(expr ast.Expr) bool {
+		return t.isUntypedConstArg(expr) || (thunksFixable && t.isWeakConstArg(expr))
+	}
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
 		for i, arg := range slots {
 			pi := methodParamIndex(methodMeta, i)
@@ -986,7 +996,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				return true, nil, err
 			}
 			// An untyped constant leaves the slot's binding in place.
-			isConst := t.isUntypedConstArg(expr)
+			isConst := weakArg(expr)
 			for tp, inferred := range inferredMap {
 				if slot, slotted := fromSlot[tp]; slotted && isConst {
 					// Go would infer the constant's default type, so the
@@ -1200,6 +1210,14 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		if typeArgs, err = t.resultOnlyMethodTypeArgs(c, methodMeta, typeArgs, typeSubst, slotTyped, yields, mArgs); err != nil {
 			return true, nil, err
+		}
+		if thunksFixable {
+			t.fixConstThunks(mArgs, methodMeta.TypeParams, func(i int) transpiler.Type {
+				if pi := methodParamIndex(methodMeta, i); pi >= 0 {
+					return t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
+				}
+				return nil
+			}, typeSubst)
 		}
 		// The type arguments spelled from the slot (those the arguments
 		// bind were checked with them).
@@ -2256,6 +2274,24 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}
 
 	// Non-generic Apply method: call Apply on a freshly constructed instance.
+	// A by-name constant takes the type the instance's type arguments give
+	// it (`Try(5)` in a `Try[int64]` slot).
+	// Not through an alias, whose type arguments are its own, not the type's.
+	if !viaAlias {
+		subst := map[string]transpiler.Type{}
+		recvArgs := t.getReceiverTypeArgTypes(t.astTypeToTranspilerType(fun))
+		for i, tp := range typeMeta.TypeParams {
+			if i < len(recvArgs) {
+				subst[tp] = recvArgs[i]
+			}
+		}
+		t.fixConstThunks(args, typeMeta.TypeParams, func(i int) transpiler.Type {
+			if pi := paramIndex(i, methodMeta.ParamTypes, methodMeta.Variadic); pi >= 0 {
+				return methodMeta.ParamTypes[pi]
+			}
+			return nil
+		}, subst)
+	}
 	receiver := &ast.CompositeLit{Type: fun}
 	return true, &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
@@ -6003,13 +6039,87 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
-	return withLead(&ast.FuncLit{
-		Type: &ast.FuncType{
-			Params:  &ast.FieldList{},
-			Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
-		},
-		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}},
-	}, mark), true
+	lit := thunkLit(&ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}}, retTypeExpr)
+	if !concreteResult && t.isUntypedConstArg(expr) {
+		// An untyped constant's result is the constant's default type only
+		// until the call's type arguments are known (constThunkArg).
+		if t.constThunks == nil {
+			t.constThunks = make(map[*ast.FuncLit]bool)
+		}
+		t.constThunks[lit] = true
+	}
+	return withLead(lit, mark), true
+}
+
+// constThunkArg is the by-name thunk expr is, of an untyped constant whose
+// result type a type parameter left open when it was lowered (`lazy(5)` for
+// `lazy[U any](d func() U)`), or nil. Such an argument binds its type
+// parameter as the bare constant does in a `U` parameter: the slot the call
+// fills fixes it over the constant's default type (fixConstThunks).
+func (t *galaASTTransformer) constThunkArg(expr ast.Expr) *ast.FuncLit {
+	if lit, ok := expr.(*ast.FuncLit); ok && t.constThunks[lit] {
+		return lit
+	}
+	return nil
+}
+
+// isWeakConstArg reports whether expr, a lowered argument, binds the type
+// parameters it fills only as an untyped constant does: it is one
+// (isUntypedConstArg), or a by-name thunk of one (constThunkArg). It is what
+// decides whether the slot's type arguments are spelled over the constant's
+// default (and, where its thunk can be retyped, a generic method's weakArg);
+// places that look at the constant itself (the order constants are unified
+// in) keep isUntypedConstArg.
+func (t *galaASTTransformer) isWeakConstArg(expr ast.Expr) bool {
+	return t.isUntypedConstArg(expr) || t.constThunkArg(expr) != nil
+}
+
+// fixConstThunks gives each by-name thunk of an untyped constant among args
+// (constThunkArg) the result type its parameter has once the type arguments
+// resolved, for the callee's typeParams, are known: `func() int64 { return 5 }`
+// for `func() U`, U int64. paramType is the type of the parameter argument i
+// fills, nil when none. A parameter naming one of typeParams that resolved
+// leaves out is skipped: the name may be the caller's own. So is an `any`
+// result, which may stand for a type argument nothing determines.
+func (t *galaASTTransformer) fixConstThunks(args []ast.Expr, typeParams []string, paramType func(i int) transpiler.Type, resolved map[string]transpiler.Type) {
+	if len(t.constThunks) == 0 {
+		return
+	}
+	for i, arg := range args {
+		lit := t.constThunkArg(arg)
+		if lit == nil {
+			continue
+		}
+		pt := paramType(i)
+		if pt == nil {
+			continue
+		}
+		named := map[string]bool{}
+		t.collectReferencedParams(pt, typeParams, named)
+		unresolved := false
+		for tp := range named {
+			if typ, ok := resolved[tp]; !ok || transpiler.IsUnusable(typ) {
+				unresolved = true
+			}
+		}
+		if unresolved {
+			continue
+		}
+		// A Sendable[func() U] parameter takes the thunk itself.
+		unwrapped, _ := transpiler.UnwrapSendable(t.substituteInType(pt, resolved))
+		ft, ok := unwrapped.(transpiler.FuncType)
+		if !ok || len(ft.Params) != 0 || len(ft.Results) != 1 {
+			continue
+		}
+		// A type parameter in scope here (the caller's, spelled from the
+		// slot) can be named; one nothing binds cannot.
+		res := ft.Results[0]
+		if transpiler.IsUnusableOrAny(res) || t.mentionsUnboundTypeParam(res) {
+			continue
+		}
+		lit.Type.Results.List[0].Type = t.typeToExpr(res)
+		t.exprTypeCache[lit] = ft
+	}
 }
 
 // passesNamedFunctionAsThunk reports whether a value of a named function type
