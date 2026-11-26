@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -1691,71 +1692,18 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// below), so it does not widen the type.
 	typed := paramTypes[:min(placeholderCount, len(ft.Params))]
 	scopeType := placeholderScopeType(typed)
-	var byPosition []transpiler.Type
+	var body, bodyResultType ast.Expr
+	var takes *placeholderTakes
+	var err error
 	if scopeType.IsAny() && slices.ContainsFunc(typed, func(p transpiler.Type) bool { return !p.IsAny() }) {
-		byPosition = paramTypes
-	}
-	var undoTrial func()
-	if byPosition != nil {
-		undoTrial = t.snapshotTrialLowering()
-	}
-	body, bodyResultType, takes, err := t.lowerPlaceholderBody(e, scopeType, byPosition)
-	// The k-th parameter is the k-th `_` the lambda took, which is the k-th
-	// `_` written unless a nested call took one before it (`_ + xs.Map(_ *
-	// 2).Size() + _.Lo`). Lowering finds which it took; when it typed one by
-	// another parameter than its own, lower again by the ones it took, until
-	// the two agree: what a nested call takes may depend on the type of a
-	// `_` it is called on. One typed `any` for being past the parameters
-	// hides the function slot of a nested call made on it, which then
-	// leaves its `_` to this lambda: with more taken than parameters, the
-	// first ones taken are tried. A lowering that failed may have failed for
-	// a `_` typed by another parameter, so the `_` it takes are learnt from
-	// one binding them all to `any`, and its error stands when that types
-	// each by its own. A lambda that takes fewer `_` than parameters is
-	// rejected below whatever they are typed by.
-	for range placeholderCount {
-		if byPosition == nil {
-			break
-		}
-		var taken []int
-		failed := err
-		if err == nil {
-			taken = takes.taken(body)
-		} else if shared, sharedResult, sharedTakes, sharedErr := t.lowerPlaceholderBody(e, scopeType, nil); sharedErr == nil {
-			taken = sharedTakes.taken(shared)
-			if len(taken) != len(ft.Params) {
-				// Its arity is the error to report, unless a lowering below
-				// finds one `_` per parameter.
-				body, bodyResultType, takes, err = shared, sharedResult, sharedTakes, nil
-			}
-		}
-		if len(taken) < len(ft.Params) {
-			break
-		}
-		taken = taken[:len(ft.Params)]
-		if typedAsTaken(byPosition, paramTypes, taken) {
-			// A lowering that failed with each `_` typed by its own
-			// parameter failed for the program.
-			if failed != nil {
-				err = failed
-			}
-			break
-		}
-		// Restoring hands the snapshot itself back, so take another.
-		undoTrial()
-		undoTrial = t.snapshotTrialLowering()
-		byPosition = typesByParameter(paramTypes, taken)
-		body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, byPosition)
+		body, bodyResultType, takes, err = t.lowerMixedPlaceholderBody(e, scopeType, paramTypes, len(ft.Params))
+	} else {
+		body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, nil)
 	}
 	if err != nil {
 		return nil, false, err
 	}
 	line, col := e.at().start()
-	if taken := takes.taken(body); byPosition != nil && len(taken) == len(ft.Params) && !typedAsTaken(byPosition, paramTypes, taken) {
-		return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
-			"cannot tell which parameter each placeholder `_` stands for",
-			"use a lambda with named parameters")
-	}
 
 	// Rename each `_` the lambda took to its parameter, one parameter per
 	// `_` written, left to right. The lowered body may hold function
@@ -1924,18 +1872,6 @@ func (t *galaASTTransformer) lowerPlaceholderBody(
 	return body, t.getExprType(body), takes, nil
 }
 
-// typedAsTaken reports whether byPosition, the types the `_` written were
-// lowered with, typed each `_` at taken, the positions of those the lambda
-// took, by its parameter: the k-th by paramTypes[k].
-func typedAsTaken(byPosition, paramTypes []transpiler.Type, taken []int) bool {
-	for k, i := range taken {
-		if byPosition[i].String() != paramTypes[k].String() {
-			return false
-		}
-	}
-	return true
-}
-
 // hasPlaceholderName reports whether body holds an identifier still named as
 // lowerPlaceholderBody names a taken `_`: a copy of one rename could not find.
 func hasPlaceholderName(body ast.Node) bool {
@@ -1949,24 +1885,115 @@ func hasPlaceholderName(body ast.Node) bool {
 	return found
 }
 
+// lowerMixedPlaceholderBody is lowerPlaceholderBody for a placeholder lambda
+// whose params parameters, typed paramTypes by the `_` written, differ in
+// type: each `_` it takes reads its own parameter's type.
+//
+// The k-th parameter is the k-th `_` the lambda takes, which is the k-th `_`
+// written unless a nested call took one before it (`_ + xs.Map(_ *
+// 2).Size() + _.Lo`), and what a nested call takes may depend on the type of
+// the `_` it is called on (`_.Items.Map(_.Lo)`). So each choice of params of
+// the `_` written is tried, in order, the `_` left to right first: lowered
+// with the chosen `_` typed by their parameters, the first whose lowering
+// takes exactly them is the body. With none, every `_` is lowered as reading
+// one binding of type shared, as when the types agree: one that takes other
+// than params `_` is rejected for its arity (unless it takes more, and the
+// `_` left to right failed: that error is reported), and otherwise the
+// lowering by the `_` it takes is the program's, an error of it reported.
+func (t *galaASTTransformer) lowerMixedPlaceholderBody(
+	e exprSrc,
+	shared transpiler.Type,
+	paramTypes []transpiler.Type,
+	params int,
+) (ast.Expr, ast.Expr, *placeholderTakes, error) {
+	undo := t.snapshotTrialLowering()
+	lowerTaking := func(taken []int) (ast.Expr, ast.Expr, *placeholderTakes, error) {
+		undo()
+		// Restoring hands the snapshot itself back, so take another.
+		undo = t.snapshotTrialLowering()
+		return t.lowerPlaceholderBody(e, shared, typesByParameter(paramTypes, taken))
+	}
+	var firstErr error
+	choice := make([]int, params)
+	for i := range choice {
+		choice[i] = i
+	}
+	for tries := 0; params <= len(paramTypes) && tries < maxPlaceholderChoices; tries++ {
+		body, result, takes, err := lowerTaking(choice)
+		if err == nil && slices.Equal(takes.taken(body), choice) {
+			return body, result, takes, nil
+		}
+		if tries == 0 {
+			firstErr = err
+		}
+		if !nextChoice(choice, len(paramTypes)) {
+			break
+		}
+	}
+	undo()
+	body, result, takes, err := t.lowerPlaceholderBody(e, shared, nil)
+	if err != nil {
+		if firstErr != nil {
+			return nil, nil, nil, firstErr
+		}
+		return nil, nil, nil, err
+	}
+	taken := takes.taken(body)
+	if len(taken) > params && firstErr != nil {
+		// Typed `any`, a `_` hid the function slot of a nested call made on
+		// it, which left its `_` to this lambda: the error of the `_` left
+		// to right is the program's.
+		return nil, nil, nil, firstErr
+	}
+	if len(taken) != params {
+		return body, result, takes, nil
+	}
+	if _, _, _, err := lowerTaking(taken); err != nil {
+		return nil, nil, nil, err
+	}
+	line, col := e.at().start()
+	return nil, nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
+		"cannot tell which parameter each placeholder `_` stands for",
+		"use a lambda with named parameters")
+}
+
+// maxPlaceholderChoices bounds the choices of `_` lowerMixedPlaceholderBody
+// tries; a body with that many has a lambda with named parameters to spare.
+const maxPlaceholderChoices = 32
+
+// nextChoice advances choice, an increasing choice of len(choice) of 0..n-1,
+// to the next in lexicographic order, and reports whether there is one.
+func nextChoice(choice []int, n int) bool {
+	k := len(choice)
+	for i := k - 1; i >= 0; i-- {
+		if choice[i] < n-k+i {
+			choice[i]++
+			for j := i + 1; j < k; j++ {
+				choice[j] = choice[j-1] + 1
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // snapshotTrialLowering records what lowering a placeholder lambda's body
 // adds to the file, and returns what puts it back: a lowering discarded for
 // typing a `_` by another parameter than its own leaves neither the types it
 // could not resolve, warned about or counted as mixed operands, which are no
-// gap of the program, nor the imports only it used, nor the editor hints it
-// recorded.
+// gap of the program, nor the editor hints it recorded, nor the dot imports
+// only it used. Other imports it added are dropped with the file's unused
+// ones (PruneUnused), and the helpers it declared are kept with theirs.
 func (t *galaASTTransformer) snapshotTrialLowering() func() {
 	unresolved, warnings, hints := len(t.unresolvedTypes), len(t.inferenceWarnings), len(t.lspLambdaParamHints)
 	mismatches := t.operandMismatches
-	needsFmt, needsFmtAlias, needsUtf8 := t.needsFmtImport, t.needsFmtAliasImport, t.needsUtf8Import
-	restoreImports := t.snapshotCodecImports()
+	usedDot := maps.Clone(t.importManager.usedDotImports)
 	return func() {
 		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
 		t.inferenceWarnings = t.inferenceWarnings[:warnings]
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:hints]
 		t.operandMismatches = mismatches
-		t.needsFmtImport, t.needsFmtAliasImport, t.needsUtf8Import = needsFmt, needsFmtAlias, needsUtf8
-		restoreImports()
+		t.importManager.usedDotImports = usedDot
 	}
 }
 
