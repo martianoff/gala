@@ -608,6 +608,11 @@ theorem lowerBody_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (F : Spe
   Gala.M5.lowerBody_mono
 
 open Gala Gala.M5 GoCore.Full in
+theorem lowerFun_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (f : String) (F : Spec.Func) (lb : List Stmt),
+    lowerFun K sg f F = some lb → lowerFun K' sg f F = some lb :=
+  Gala.M5.lowerFun_mono
+
+open Gala Gala.M5 GoCore.Full in
 theorem lowerC_mono : ∀ {K K' : Nat} (sg : Sigs), K ≤ K' → ∀ (κ : String → Option Kind) (e : Spec.Expr)
     (r : Kind × Expr), lowerC K sg κ e = some r → lowerC K' sg κ e = some r :=
   Gala.M5.lowerC_mono
@@ -751,5 +756,15 @@ theorem loop_calls_instance : ∀ (steps d : Nat), steps ≤ 40 →
       ((Spec.eval swDs d swCall).run.run { incCore with steps })
       ((evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 }) :=
   Gala.M5.loop_calls_instance
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_spec_ok : (Spec.eval swDs 8 swCall).run.run { incCore with steps := 40 } =
+    (.ok (.int (-1)), { incCore with steps := 9 }) :=
+  Gala.M5.sw_spec_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_gocore_ok : ∀ (N : Nat), N ≥ 88 →
+    ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧ VRel (.int (-1)) w :=
+  Gala.M5.sw_gocore_ok
 
 end Gala.Statements

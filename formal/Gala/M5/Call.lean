@@ -3849,4 +3849,64 @@ theorem lowerBody_mono (hKK : K ≤ K') (F : Spec.Func) (lb : List GoCore.Full.S
       · cases h
     · cases h
 
+theorem lowerLoop_mono (hKK : K ≤ K') (f : String) (xks : List (String × Kind)) (ρ : Kind)
+    (κ : String → Option Kind) : ∀ (e : Spec.Expr) (ls : List GoCore.Full.Stmt),
+    lowerLoop K sg f xks ρ κ e = some ls → lowerLoop K' sg f xks ρ κ e = some ls
+  | e, ls, h => by
+    cases e
+    case ifExpr c a b =>
+      rw [lowerLoop] at h ⊢
+      split at h
+      · rename_i lc ta tb hc ha hb
+        rw [lowerC_mono sg hKK κ c _ hc, lowerLoop_mono hKK f xks ρ κ a ta ha, lowerLoop_mono hKK f xks ρ κ b tb hb]
+        exact h
+      · cases h
+    all_goals
+      simp only [lowerLoop] at h ⊢
+      split at h
+      · rename_i args hsa
+        try simp only [hsa]
+        split at h
+        · rename_i hn
+          simp only [hn, ↓reduceIte]
+          cases hl : lowerArgs K sg κ (xks.map (·.2)) args with
+          | none => rw [hl] at h; cases h
+          | some las => rw [hl] at h; rw [lowerArgs_mono sg hKK κ _ args las hl]; exact h
+        · cases h
+      · rename_i hsa
+        try simp only [hsa]
+        split at h
+        · cases h
+        · rename_i hc
+          simp only [hc]
+          split at h
+          · rename_i k le hle
+            rw [lowerC_mono sg hKK κ _ _ hle]
+            exact h
+          · cases h
+
+/-- **The lowering of a function at `K` is the same at every larger `K`**, a loop's
+    included (`lowerBody_mono`). -/
+theorem lowerFun_mono (hKK : K ≤ K') (f : String) (F : Spec.Func) (lb : List GoCore.Full.Stmt)
+    (h : lowerFun K sg f F = some lb) : lowerFun K' sg f F = some lb := by
+  unfold lowerFun at h ⊢
+  split at h
+  · cases h
+  · rename_i xks ρ hs
+    split at h
+    · rename_i hg
+      simp only [hg, ↓reduceIte]
+      split at h
+      · rename_i hp
+        simp only [hp]
+        split at h
+        · rename_i ls hl
+          rw [lowerLoop_mono sg hKK f xks ρ _ F.body ls hl]
+          exact h
+        · cases h
+      · cases h
+    · rename_i hg
+      simp only [hg, Bool.false_eq_true, ↓reduceIte]
+      exact lowerBody_mono sg hKK F lb h
+
 end MonoK

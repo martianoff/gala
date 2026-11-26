@@ -148,4 +148,138 @@ theorem loop_calls_instance (steps d : Nat) (hs : steps ≤ 40) :
   calls_correct swDs swCtx "main" 11 swSg sw_funRel (by omega) (fun _ => none) swCall .int swCallG
     sw_lowerC { incCore with steps } { incSt with steps := 40 } incEnv (sw_inv3 40) hs d
 
+/-! galaspec's side, iteration by iteration through the unfolding lemmas (`eval` is
+well-founded, so the kernel does not compute it): `sw_step` is one iteration of the
+recursion, `sw_last` the one that returns. -/
+
+def swFr (a b n : Int) : Spec.Env := specFrame swF.params [.int a, .int b, .int n]
+
+theorem sw_name (d k : Nat) (a b n : Int) (x : String) (v : Int)
+    (hx : (x = "a" ∧ v = a) ∨ (x = "b" ∧ v = b) ∨ (x = "n" ∧ v = n)) :
+    (Spec.eval swDs (d + 1) (.name x)).run.run { incCore with steps := k + 1, locals := swFr a b n } =
+      (.ok (.int v), { incCore with steps := k, locals := swFr a b n }) := by
+  rw [Spec.eval.eq_def]
+  rcases hx with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+  simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.run_getCore, swFr, specFrame, swF, iParam, Spec.bind,
+    Spec.resolve, Spec.lookupVar, Spec.lookup, Spec.deref] <;> rfl
+
+theorem sw_cond (d k : Nat) (a b n : Int) :
+    (Spec.eval swDs (d + 2) (.binary "==" (.name "n") (.lit (.int 0)))).run.run
+        { incCore with steps := k + 3, locals := swFr a b n } =
+      (.ok (.bool (n == 0)), { incCore with steps := k, locals := swFr a b n }) := by
+  rw [Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run]
+  rw [Spec.eval.eq_def, Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.run_getCore, swFr, specFrame, swF, iParam, Spec.bind,
+    Spec.resolve, Spec.lookupVar, Spec.lookup, Spec.deref, Spec.intLit, Spec.binop, id_pure, minInt_eq, maxInt_eq,
+    Spec.valEq]
+
+theorem sw_sub (d k : Nat) (a b n : Int) :
+    (Spec.eval swDs (d + 2) (.binary "-" (.name "a") (.name "b"))).run.run
+        { incCore with steps := k + 3, locals := swFr a b n } =
+      (.ok (.int (Spec.wrap (a - b))), { incCore with steps := k, locals := swFr a b n }) := by
+  rw [Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run]
+  rw [Spec.eval.eq_def, Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.run_getCore, swFr, specFrame, swF, iParam, Spec.bind,
+    Spec.resolve, Spec.lookupVar, Spec.lookup, Spec.deref, Spec.binop, id_pure]
+
+theorem sw_dec (d k : Nat) (a b n : Int) :
+    (Spec.eval swDs (d + 2) (.binary "-" (.name "n") (.lit (.int 1)))).run.run
+        { incCore with steps := k + 3, locals := swFr a b n } =
+      (.ok (.int (Spec.wrap (n - 1))), { incCore with steps := k, locals := swFr a b n }) := by
+  rw [Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run]
+  rw [Spec.eval.eq_def, Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.run_getCore, swFr, specFrame, swF, iParam, Spec.bind,
+    Spec.resolve, Spec.lookupVar, Spec.lookup, Spec.deref, Spec.intLit, Spec.binop, id_pure, minInt_eq, maxInt_eq]
+
+theorem sw_resolve (fr : Spec.Env) (hfr : Spec.lookupVar fr [] "sw" = none) :
+    Spec.resolve swDs fr [] "sw" = .func swF := by
+  simp [Spec.resolve, hfr, swDs]
+
+theorem sw_args (m k : Nat) (a b n : Int) :
+    (Spec.funcArgs swDs (m + 2) swF [.name "b", .name "a", .binary "-" (.name "n") (.lit (.int 1))]).run.run
+        { incCore with steps := k + 5, locals := swFr a b n } =
+      (.ok [.int b, .int a, .int (Spec.wrap (n - 1))], { incCore with steps := k, locals := swFr a b n }) := by
+  rw [Spec.funcArgs.eq_def]
+  rw [bindArgs_pos swDs (m + 2) _ _ _ _ (by intro x hx; simp at hx; rcases hx with rfl | rfl | rfl <;> rfl) rfl
+    (by intro j hj; simp [swF] at hj; rcases (by omega : j = 0 ∨ j = 1 ∨ j = 2) with rfl | rfl | rfl <;>
+      exact ⟨"int", rfl⟩)]
+  rw [evalList_cons_run, sw_name (m + 1) (k + 4) a b n "b" b (by simp)]
+  simp only
+  rw [evalList_cons_run, sw_name (m + 1) (k + 3) a b n "a" a (by simp)]
+  simp only
+  rw [evalList_cons_run, sw_dec m k a b n]
+  simp only
+  rw [evalList_nil_run]
+
+theorem sw_step (m k k' : Nat) (a b n : Int) (hn : n ≠ 0) (v : Spec.Val) (hv : v ≠ .unit)
+    (h : (Spec.eval swDs (m + 2) swBodyS).run.run
+        { incCore with steps := k, locals := swFr b a (Spec.wrap (n - 1)) } =
+      (.ok v, { incCore with steps := k', locals := swFr b a (Spec.wrap (n - 1)) })) :
+    (Spec.eval swDs (m + 4) swBodyS).run.run { incCore with steps := k + 10, locals := swFr a b n } =
+      (.ok v, { incCore with steps := k', locals := swFr a b n }) := by
+  rw [swBodyS, eval_ifE_ok swDs (m + 3) (k + 9) _ _ _ _ (.inl rfl) false _
+    { incCore with steps := k + 6, locals := swFr a b n } rfl
+    (by rw [sw_cond (m + 1) (k + 6) a b n, show (n == 0) = false from beq_eq_false_iff_ne.mpr hn])]
+  simp only [Bool.false_eq_true, ite_false]
+  rw [eval_call_run swDs (m + 2) (k + 5) "sw" _ swF _ rfl (sw_resolve (swFr a b n) (by simp [swFr, specFrame, swF,
+    iParam, Spec.bind, Spec.lookupVar, Spec.lookup])), Spec.run_bind_eq, sw_args m k a b n]
+  simp only
+  rw [callFunc_run swDs (m + 2) swF _ _ (by simp [swF, iParam]; exact ⟨.int, rfl⟩) .int rfl rfl (.ok v) _
+    (by rw [runIn_res]; erw [h]) (by simpa using hv)]
+
+theorem sw_last (m k : Nat) (a b : Int) :
+    (Spec.eval swDs (m + 3) swBodyS).run.run { incCore with steps := k + 7, locals := swFr a b 0 } =
+      (.ok (.int (Spec.wrap (a - b))), { incCore with steps := k, locals := swFr a b 0 }) := by
+  rw [swBodyS, eval_ifE_ok swDs (m + 2) (k + 6) _ _ _ _ (.inl rfl) true _
+    { incCore with steps := k + 3, locals := swFr a b 0 } rfl
+    (by rw [sw_cond m (k + 3) a b 0]; rfl)]
+  simp only [ite_true]
+  exact sw_sub m k a b 0
+
+theorem sw_lit (d k : Nat) (c : Int) (hc : -9223372036854775808 ≤ c ∧ c ≤ 9223372036854775807) :
+    (Spec.eval swDs (d + 1) (.lit (.int c))).run.run { incCore with steps := k + 1 } =
+      (.ok (.int c), { incCore with steps := k }) := by
+  rw [Spec.eval.eq_def]
+  simp [Spec.run_bind_eq, tick_run, Spec.run_liftM, Spec.intLit, minInt_eq, maxInt_eq, hc]
+  rfl
+
+theorem sw_call_args : (Spec.funcArgs swDs 7 swF [.lit (.int 1), .lit (.int 2), .lit (.int 2)]).run.run
+      { incCore with steps := 39 } = (.ok [.int 1, .int 2, .int 2], { incCore with steps := 36 }) := by
+  rw [Spec.funcArgs.eq_def]
+  rw [bindArgs_pos swDs 7 _ _ _ _ (by intro x hx; simp at hx; rcases hx with rfl | rfl | rfl <;> rfl) rfl
+    (by intro j hj; simp [swF] at hj; rcases (by omega : j = 0 ∨ j = 1 ∨ j = 2) with rfl | rfl | rfl <;>
+      exact ⟨"int", rfl⟩)]
+  rw [evalList_cons_run, sw_lit 6 38 1 (by decide)]
+  simp only
+  rw [evalList_cons_run, sw_lit 6 37 2 (by decide)]
+  simp only
+  rw [evalList_cons_run, sw_lit 6 36 2 (by decide)]
+  simp only
+  rw [evalList_nil_run]
+
+/-- **galaspec's run of `sw(1, 2, 2)` ends with `-1`**, after two iterations that swap the
+    parameters. -/
+theorem sw_spec_ok : (Spec.eval swDs 8 swCall).run.run { incCore with steps := 40 } =
+    (.ok (.int (-1)), { incCore with steps := 9 }) := by
+  have h3 := sw_last 0 9 1 2
+  rw [show Spec.wrap (1 - 2) = -1 by decide, show (0 : Int) = Spec.wrap (Spec.wrap (2 - 1) - 1) by decide] at h3
+  have h5 := sw_step 1 16 9 2 1 (Spec.wrap (2 - 1)) (by decide) _ (by simp) h3
+  have h7 := sw_step 3 26 9 1 2 2 (by decide) _ (by simp) h5
+  rw [swCall, eval_call_run swDs 7 39 "sw" _ swF _ rfl (sw_resolve [] rfl), Spec.run_bind_eq, sw_call_args]
+  simp only
+  rw [callFunc_run swDs 7 swF _ _ (by simp [swF, iParam]; exact ⟨.int, rfl⟩) .int rfl rfl (.ok (.int (-1))) _
+    (by rw [runIn_res]; erw [h7]) (by simp)]
+
+/-- **What `calls_correct` then says**: GoCore's run of the loop, at every depth from
+    `11 * 8` on, ends with a related `int`. -/
+theorem sw_gocore_ok (N : Nat) (hN : N ≥ 88) :
+    ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧ VRel (.int (-1)) w := by
+  have h := loop_calls_instance 40 8 (by decide) N hN
+  rw [sw_spec_ok] at h
+  obtain ⟨w, g', hg, hv, -⟩ := h
+  exact ⟨w, g', hg, hv⟩
+
 end Gala.M5
