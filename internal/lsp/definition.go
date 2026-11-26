@@ -317,6 +317,11 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		if parenOpen < 0 || parenClose < 0 || parenClose <= parenOpen {
 			continue
 		}
+		// A group that opens after `=>` is in the arm's body, not its
+		// pattern: `case _ => f((n))` binds nothing.
+		if arrow := strings.Index(line, "=>"); arrow >= 0 && parenOpen > arrow {
+			continue
+		}
 
 		// Each binding is the first identifier of its comma-separated slot
 		// ("x" or "x int"), located by walking the slot itself: searching the
