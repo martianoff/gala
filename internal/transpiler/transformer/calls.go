@@ -7096,7 +7096,8 @@ func withoutKeys(subst typeSubstMap, drop map[string]transpiler.Type) typeSubstM
 // (weak, see constThunkArg), or an expression whose type stays what it is
 // against the slot (`x64`, `x64 + 1`). One the slot types is not: an if,
 // match or lambda, and an expression its constants alone type, which takes
-// the slot's type when lowered against it (`Some(1)`, `id(1)`, `None()`). The
+// the slot's type when lowered against it (`id(1)` against a float64 slot);
+// against its own default type it keeps the binding either way. The
 // lowerings are trials: what they record, and any scoped state a failed one
 // leaves, is undone.
 func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc, weakSlot transpiler.Type) bool {
