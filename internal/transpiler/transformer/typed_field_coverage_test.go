@@ -127,6 +127,31 @@ func f(o Option[time.Time]) int = o match {
 			missing: "Some(...)",
 		},
 		{
+			name: "an error field of a nested struct pattern",
+			src: `struct Holder(E error)
+
+func f(o Option[Holder]) string = o match {
+    case Some(Holder(e: error)) => e.Error()
+    case None() => ""
+}
+`,
+			missing: "Some(...)",
+		},
+		{
+			name: "a type-parameter field in a generic method",
+			src: `sealed type Box[T any] {
+    case Full(V T)
+    case Empty()
+}
+
+func (b Box[T]) Describe() string = b match {
+    case Full(v: T) => s"$v"
+    case Empty() => ""
+}
+`,
+			missing: "Full(...)",
+		},
+		{
 			name: "a type-parameter field",
 			src: `func f[T any](o Option[T]) int = o match {
     case Some(x: T) => s"$x".Size()
