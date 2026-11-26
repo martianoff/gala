@@ -311,7 +311,7 @@ func (t *galaASTTransformer) exprMatchesEveryValueBinding(e patExpr, matchedType
 	if isWildcard(text) {
 		return true
 	}
-	// A capitalized name that is not a value in scope binds too, in its own arm.
+	// A capitalized name that is neither a value nor a variant or extractor the value is tested for binds too, in its own arm.
 	if bound == nil && (t.isBindingPatternOf(text, matchedType) || t.isPatternBinding(text, matchedType)) {
 		return true
 	}

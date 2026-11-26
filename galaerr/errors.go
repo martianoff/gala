@@ -1195,7 +1195,7 @@ const (
 	CodeUnderscoreBindingRead ErrorCode = "GALA-E0139"
 
 	// E0141: a case written after an unguarded case that matches every value
-	// (`case _`, a binding `case x` or a capitalized name that is not a value,
+	// (`case _`, a binding `case x` or a capitalized name that binds rather than tests,
 	// a typed pattern of the subject's own non-interface GALA or primitive
 	// type, or a tuple pattern whose elements all match everything), in a
 	// match or a partial-function literal. Cases are tried in order, so it can
