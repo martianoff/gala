@@ -3,7 +3,6 @@ package build
 import (
 	"encoding/xml"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -58,25 +57,12 @@ func TestFailAfterOutput(t T) T {
 // whose tests run under `go test`: in both, every test above has its own
 // result, and only the failing one fails.
 func TestRunTests_OutputWithoutTrailingNewline(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain not on PATH")
-	}
-
-	projectDir := t.TempDir()
-	files := map[string]string{
-		"gala.mod":          "module example.com/framing\n\ngala 0.0.0\n",
+	projectDir := newForeignGenGoProject(t, "example.com/framing", map[string]string{
 		"main.gala":         "package main\n\nfunc main() {\n    Println(\"main\")\n}\n",
 		"main_test.gala":    "package main" + framingTests,
 		"sub/sub.gala":      "package sub\n\nfunc Sub() int = 1\n",
 		"sub/sub_test.gala": "package sub" + framingTests,
-	}
-	for name, content := range files {
-		writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
-	}
-
-	isolateUserState(t)
-	setEnvForTest(t, "GOCACHE", filepath.Join(t.TempDir(), "gocache"))
-	alignGorootWithPathGo(t)
+	})
 	chdirForTest(t, projectDir)
 
 	b, err := NewBuilder(projectDir, "test", false)
@@ -94,22 +80,18 @@ func TestRunTests_OutputWithoutTrailingNewline(t *testing.T) {
 	require.NoError(t, xml.Unmarshal(data, &doc), string(data))
 	require.Len(t, doc.Suites, 2, string(data))
 	for _, suite := range doc.Suites {
-		cases := map[string]junitTestCase{}
+		got := map[string]string{}
 		for _, tc := range suite.TestCases {
-			cases[tc.Name] = tc
+			outcome, message, _ := outcomeOf(tc)
+			got[tc.Name] = outcome + " " + message
 		}
-		for _, name := range []string{"TestYank", "TestLongLine", "TestIndented", "TestRunAfterOutput", "TestRunAfterOutput/sub"} {
-			tc, ok := cases[name]
-			if assert.True(t, ok, "%s: %s missing; %s", suite.Name, name, data) {
-				assert.Nil(t, tc.Failure, "%s: %s", suite.Name, name)
-			}
-		}
-		if assert.Contains(t, cases, "TestFailAfterOutput", suite.Name) {
-			failure := cases["TestFailAfterOutput"].Failure
-			if assert.NotNil(t, failure, suite.Name) {
-				assert.Equal(t, "bad", failure.Message, suite.Name)
-			}
-		}
-		assert.Len(t, cases, 6, "%s: %s", suite.Name, data)
+		assert.Equal(t, map[string]string{
+			"TestYank":               "pass ",
+			"TestLongLine":           "pass ",
+			"TestIndented":           "pass ",
+			"TestRunAfterOutput":     "pass ",
+			"TestRunAfterOutput/sub": "pass ",
+			"TestFailAfterOutput":    "fail bad",
+		}, got, "%s: %s", suite.Name, data)
 	}
 }
