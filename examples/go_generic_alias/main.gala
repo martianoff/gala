@@ -1,0 +1,30 @@
+package main
+
+import (
+    "fmt"
+    "martianoff/gala/examples/go_generic_alias_bridge"
+)
+
+// A lambda typed by an instance of a generic Go type alias of a function type
+// (`Handler[int]` for `type Handler[T any] = func(T) error`) takes its
+// parameter types from the alias's target, as for a generic defined type
+// (#1362).
+
+func check(h go_generic_alias_bridge.Handler[int]) bool = h(-1) != nil
+
+func main() {
+    val h go_generic_alias_bridge.Handler[int] = (x) => if (x > 0) nil else fmt.Errorf("not positive: %d", x)
+    Println(h(1) == nil, h(0))
+
+    val g = go_generic_alias_bridge.Handler[string]((s) => if (s.Size() > 0) nil else fmt.Errorf("empty"))
+    Println(g("a") == nil)
+
+    Println(check((x) => if (x < 0) fmt.Errorf("negative") else nil))
+
+    val s go_generic_alias_bridge.Seq[int] = (yield) => {
+        if (yield(1)) {
+            yield(2)
+        }
+    }
+    Println(go_generic_alias_bridge.Collect(s))
+}

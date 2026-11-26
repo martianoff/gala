@@ -1829,6 +1829,22 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	// would copy every field into the cache a second time.
 	if _, isStruct := typ.Underlying().(*types.Struct); isStruct {
 		data.Underlying = transpiler.BasicType{Name: "any"}
+	} else if forceKind == "alias" && isGenericGoType(typ) {
+		// A generic alias's target types the lambdas that fill a slot of
+		// an instance of it (`Handler[int]`), so it is recorded as Go spells
+		// it: an instance keeps its type arguments, an array its length, an
+		// interface literal its methods. A target GALA cannot spell exactly
+		// (a variadic function, an unexported name), a type parameter (whose
+		// Underlying is its constraint) or an interface records the `any`
+		// placeholder, which types nothing.
+		under := typ.Underlying()
+		_, isParam := types.Unalias(typ).(*types.TypeParam)
+		_, isIface := under.(*types.Interface)
+		if isParam || isIface || !spellsExactly(under) {
+			data.Underlying = transpiler.BasicType{Name: "any"}
+		} else {
+			data.Underlying = convertGoType(under, true)
+		}
 	} else {
 		data.Underlying = goTypeToTranspilerType(typ.Underlying())
 	}
