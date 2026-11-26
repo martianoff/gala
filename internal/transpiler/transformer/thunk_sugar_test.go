@@ -455,3 +455,30 @@ func zero[X any]() X {
 		})
 	}
 }
+
+// A by-name argument whose type is a type parameter of the enclosing
+// declaration is lifted to a thunk of that type, which the generated Go names
+// (#1370), for a generic function and a method with type parameters of its own.
+func TestThunkSugar_EnclosingTypeParam(t *testing.T) {
+	input := `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) Lazy[U any](d func() U) U = d()
+
+func lazy[U any](d func() U) U = d()
+
+func viaFunction[T any](x T) T = lazy(x)
+
+func viaMethod[T any](x T, b Box[int]) T = b.Lazy(x)
+
+func main() {
+    Println(viaFunction(5), viaMethod("s", Box(1)))
+}`
+
+	out, err := newThunkSugarTranspiler().Transpile(input, "")
+	require.NoError(t, err)
+	for _, want := range []string{"return lazy(func() T {", "return Box_Lazy(b, func() T {"} {
+		assert.Contains(t, out, want)
+	}
+}
