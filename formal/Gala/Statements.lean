@@ -767,4 +767,8 @@ theorem sw_gocore_ok : ∀ (N : Nat), N ≥ 88 →
     ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧ VRel (.int (-1)) w :=
   Gala.M5.sw_gocore_ok
 
+open Gala Gala.M5 GoCore.Full in
+theorem swProg_gc : declAt (Order.gc swProg) 0 0 0 = some (.func "sw" none [] swSig (some swGo)) :=
+  Gala.M5.swProg_gc
+
 end Gala.Statements

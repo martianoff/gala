@@ -104,6 +104,7 @@ REQUIRED_THEOREMS = [
     "Gala.M5.loop_calls_instance",
     "Gala.M5.sw_spec_ok",
     "Gala.M5.sw_gocore_ok",
+    "Gala.M5.swProg_gc",
     "Gala.M5.tmpCall_no_funRel",
     "Gala.M5.tmpParam_not_lowered",
     "Gala.M5.sw_lowerFun",

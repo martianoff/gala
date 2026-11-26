@@ -282,4 +282,36 @@ theorem sw_gocore_ok (N : Nat) (hN : N ≥ 88) :
   obtain ⟨w, g', hg, hv, -⟩ := h
   exact ⟨w, g', hg, hv⟩
 
+/-! ## The order result on the loop
+
+`sw`'s loop is `Body3` and fits the scope gc's rewrite gives it, so `gc_runs3` says `Order.gc`
+leaves it in place: the temporaries' `:=`, the parameters' `=` and `continue` fire no trigger. -/
+
+section LoopOrder
+open Hoist
+
+def swSig : Sig := lowerSigOf [("a", .int), ("b", .int), ("n", .int)] .int
+def swProgPkg : Package := ⟨"main", "main", false, [⟨"m.go", [], [Decl.func "sw" none [] swSig (some swGo)]⟩]⟩
+def swProg : Program := ⟨[swProgPkg]⟩
+
+theorem sw_body3 : Body3 swGo := by
+  simp [Body3, body3Ss, body3S, body3OS, ccB, ccBs, canon, canonArgs, canonOps, triggers,
+    isNonzeroLit, isLit, isIdentE, swGo]
+
+theorem sw_fits : FitsSs (gcScope swProg "main" 0 none [] swSig swGo) swGo := by
+  simp [FitsSs, FitsS, FitsOS, FitsE, FitsEs, fieldListNames, swGo, afterS, gcScope, funcScope, changeableName,
+    Scope.isLocal, Scope.isLType, Scope.ltype?, Scope.obj?, Scope.env, nameOwner,
+    Scope.enter, Scope.withIfaces, Scope.bind, sigNames, swSig, lowerSigOf, kindName, chSs, chS, chE,
+    chEs, chOS, chOE, isVarObj, buildCtx, buildPkg, swProg, swProgPkg, Id.run, List.forIn_cons,
+    List.forIn_nil, List.foldl_cons, List.foldl_nil, id_pure, idb,
+    Std.HashMap.getElem?_insert, declaredBy, sw_tmps.1, sw_tmps.2.1, sw_tmps.2.2]
+
+/-- **`gc_runs3` on the loop**: GoCore's model of gc's order leaves `sw`'s loop as written. -/
+theorem swProg_gc : declAt (Order.gc swProg) 0 0 0 = some (.func "sw" none [] swSig (some swGo)) :=
+  gc_runs3 swProg 0 0 0 swProgPkg "sw" none [] swSig swGo rfl sw_body3 sw_fits rfl
+
+#guard declAt (Order.gc swProg) 0 0 0 == declAt swProg 0 0 0
+
+end LoopOrder
+
 end Gala.M5
