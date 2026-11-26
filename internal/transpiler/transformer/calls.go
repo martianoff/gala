@@ -6001,6 +6001,25 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 
+	// A `nil` that the thunk could not hold is the function itself: `func()`
+	// cannot evaluate it as a statement, and `func() T` cannot return it
+	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
+	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
+	// returning nil, as before.
+	if isNilIdent(expr) {
+		if len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0]) {
+			t.typeNilAs(expr, expectedType)
+			return expr, false
+		}
+		// A concrete result other than a function type: typing the nil as it
+		// changes no decision below (a function-typed nil would read as a
+		// function value, a type-parameter one as an inferable result).
+		if r := ft.Results; len(r) == 1 && !t.hasTypeParams(r[0]) && !t.mentionsUnboundTypeParam(r[0]) &&
+			t.resolveTranspilerTypeAsFuncType(r[0]) == nil {
+			t.typeNilAs(expr, r[0])
+		}
+	}
+
 	// Already a function value: pass through untouched, handing an existing
 	// thunk (a `func() T` value or a method/eta reference) directly to the
 	// parameter — except Try(f) over a function returning only an error.
@@ -6089,6 +6108,51 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		t.constThunks[lit] = true
 	}
 	return withLead(lit, mark), true
+}
+
+// nilCannotBe reports whether typ is known to be a type no `nil` can have: a
+// scalar (a predeclared number, string or bool, or a Go or opaque type over
+// one), a GALA struct or sealed type, or a Go struct type, generic ones with
+// any type arguments included (`Option[T]`). Anything else, including a Go
+// type whose type information is missing, may hold nil.
+func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
+	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() {
+		return false
+	}
+	base := t.followAliasChain(typ)
+	if g, isGen := base.(transpiler.GenericType); isGen {
+		base = g.Base // its type arguments do not decide whether nil is one
+	}
+	// A type parameter may be instantiated with a type nil can be.
+	if t.hasTypeParams(base) || t.mentionsUnboundTypeParam(base) {
+		return false
+	}
+	if _, kind, via := t.resolveScalar(base); kind != scalarNone || via != nil {
+		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
+	}
+	var nt transpiler.NamedType
+	switch b := base.(type) {
+	case transpiler.NamedType:
+		nt = b
+	case transpiler.BasicType: // a local type by its bare name
+		nt = transpiler.NamedType{Name: b.Name}
+	default:
+		return false
+	}
+	// A Go type of this or another package: its kind is known from Go.
+	if _, data := t.goTypeDataFor(nt); data != nil && data.Kind != transpiler.GoKindMethodsOnly {
+		return data.Kind == "struct"
+	}
+	if t.isGoTyped(nt) {
+		return false
+	}
+	// A GALA struct or sealed type: declared in GALA source (DefinedIn, a
+	// shorthand `struct Empty()`), or with fields. A placeholder for a
+	// receiver type a .go file of the package declares (a Go `type Names
+	// []string`) has none of these.
+	meta := t.getTypeMeta(nt.BaseName())
+	return meta != nil && !meta.IsInterface &&
+		(meta.IsSealed || meta.IsShorthand || meta.DefinedIn != "" || len(meta.FieldNames) > 0)
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose

@@ -482,3 +482,75 @@ func main() {
 		assert.Contains(t, out, want)
 	}
 }
+
+// TestThunkSugar_NilForAFunctionParam pins #1448: `nil` for a zero-arg
+// function parameter whose thunk could not return nil (`func() state`, a
+// struct result, or a void `func()`) is the function itself, passed as is.
+// For a result nil can be (`func() *state`, `func() any`), the thunk
+// returning nil stays, as before.
+func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
+	cases := []struct {
+		name, param, want, notWant string
+	}{
+		{"a struct result", "func() state", "b(nil, 2)", "return nil"},
+		{"an int result", "func() int", "b(nil, 2)", "return nil"},
+		{"no result", "func()", "b(nil, 2)", "func() {"},
+		{"a string result", "func() string", "b(nil, 2)", "return nil"},
+		{"an opaque result", "func() Count", "b(nil, 2)", "return nil"},
+		{"a sealed result", "func() Shape", "b(nil, 2)", "return nil"},
+		{"a fieldless struct result", "func() Empty", "b(nil, 2)", "return nil"},
+		{"a generic struct result", "func() Option[int]", "b(nil, 2)", "return nil"},
+		{"a Go struct result", "func() time.Time", "b(nil, 2)", "return nil"},
+		{"a pointer result", "func() *state", "return nil", ""},
+		{"an any result", "func() any", "return nil", ""},
+		{"an error result", "func() error", "return nil", ""},
+		{"a slice result", "func() []int", "return nil", ""},
+		{"a map result", "func() map[string]int", "return nil", ""},
+		{"a GALA interface result", "func() Shower", "return nil", ""},
+		{"a Go named map result", "func() http.Header", "return nil", ""},
+		{"a Go interface result", "func() io.Reader", "return nil", ""},
+		{"a function result", "func() func() int", "return nil", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			input := `package main
+
+import "io"
+import "net/http"
+import "time"
+
+struct state(n int)
+
+struct Empty()
+
+sealed type Shape {
+    case Dot()
+    case Disk(r int)
+}
+
+var _t time.Time = time.Time{}
+
+opaque type Count int
+
+type Shower interface {
+    Show() string
+}
+
+var _r io.Reader = nil
+var _h http.Header = nil
+
+func b(f ` + c.param + `, n int) int = if (f == nil) n else 0
+
+func main() {
+    Println(b(nil, 2))
+}`
+			out, err := newThunkSugarTranspiler().Transpile(input, "")
+			require.NoError(t, err)
+			body := mainBodyOf(t, out)
+			assert.Contains(t, body, c.want)
+			if c.notWant != "" {
+				assert.NotContains(t, body, c.notWant)
+			}
+		})
+	}
+}

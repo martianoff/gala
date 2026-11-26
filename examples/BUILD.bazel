@@ -2236,6 +2236,14 @@ gala_exec_test(
     expected = "range_type_param_int_constraint.out",
 )
 
+# #1448: nil for a zero-argument function parameter is the function itself
+# when its thunk could not return nil.
+gala_exec_test(
+    name = "nil_function_argument",
+    src = "nil_function_argument.gala",
+    expected = "nil_function_argument.out",
+)
+
 # #1426: a self tail call passing an untyped constant to a non-int parameter.
 gala_exec_test(
     name = "tail_call_untyped_const",
