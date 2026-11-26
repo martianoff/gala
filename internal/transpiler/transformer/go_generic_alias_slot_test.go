@@ -65,7 +65,7 @@ type WithPair[T any] = func([2]T) int
 		{"conversion to a generic alias instance", "val h = lib.Handler[int]((x) => nil)\n    Println(h(1))", "func(x int) error"},
 		{"GALA function taking a generic alias instance", "Println(apply((x) => nil))\n}\n\nfunc apply(h lib.Handler[int]) error {\n    h(1)", "func(x int) error"},
 		{"alias over a generic struct instance", "val h lib.WithBox[int] = (b) => nil\n    Println(h(nil))", "func(b *lib.Box[int]) error"},
-		{"alias over an interface literal", "val h lib.WithCloser[int] = (x, c) => nil\n    Println(h != nil)", "func(x int, c interface"},
+		{"alias over an interface literal", "val h lib.WithCloser[int] = (x, c) => nil\n    Println(h != nil)", "Close() error"},
 		{"alias over a fixed-length array", "val h lib.WithPair[int] = (xs) => 0\n    Println(h != nil)", "func(xs [2]int) int"},
 		{"lambda as a typed val of an iterator alias instance", "val s lib.Seq[int] = (yield) => { yield(1) }\n    Println(lib.Collect(s))", "func(yield func(int) bool)"},
 	}
