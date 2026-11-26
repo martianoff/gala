@@ -48,6 +48,18 @@ func f(o Option[int]) int = o match {
 `,
 		},
 		{
+			name: "a parenthesized rest binds as the rest does",
+			src: `import . "martianoff/gala/collection_immutable"
+
+func f(xs Array[int]) int = xs match {
+    case Array(a, (r)...) => a + r.Size()
+    case _ => 0
+}
+
+val ys = ArrayOf(1)
+`,
+		},
+		{
 			name: "a parenthesized variant at the top of a case tests the value",
 			src: `func f(o Option[int]) int = o match {
     case (Some(n)) => n

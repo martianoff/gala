@@ -111,6 +111,10 @@ func (p patSrc) expr() patExpr {
 	if p.inner.ok() {
 		return p.inner
 	}
+	if p.kind() == patKindRest {
+		// `(r)...` binds r, as `r...` does.
+		return unparenPattern(p.rawExpr())
+	}
 	return p.rawExpr()
 }
 

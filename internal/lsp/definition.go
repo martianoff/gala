@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
@@ -289,6 +290,10 @@ func (h *GalaHandler) definitionLocations(uri, text string, richAST *transpiler.
 	return nil, nil
 }
 
+// caseGuard finds the `if` that starts a case's guard, written with a space or
+// a parenthesis after it.
+var caseGuard = regexp.MustCompile(`[\s)]if[\s(]`)
+
 // patternBindingDefinition checks if the word at the cursor is a pattern binding
 // variable (inside case Xxx(b, h) =>). If so, returns its own position as the definition.
 // Also searches backwards for the case line if the cursor is in the body after =>.
@@ -318,8 +323,8 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		// reached too.
 		parenClose := strings.Index(line, ")")
 		if end := strings.Index(line, "=>"); end > 0 {
-			if guard := strings.Index(line[:end], " if "); guard > 0 {
-				end = guard
+			if loc := caseGuard.FindStringIndex(line[:end]); loc != nil {
+				end = loc[0]
 			}
 			if last := strings.LastIndex(line[:end], ")"); last > parenClose {
 				parenClose = last
