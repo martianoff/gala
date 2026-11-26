@@ -158,6 +158,9 @@ jobs:
         working-directory: gala_team
         run: |
           set -euo pipefail
+          # The cache size budget measures the analyzer cache entries this
+          # job writes, the ones newer than this file.
+          touch "$RUNNER_TEMP/builds-start"
           # Report whether setup-bazel restored a disk cache. Without this
           # the wall time below is uninterpretable: a restored cache and a
           # missed one differ by ~10x, which reads as a regression when it
@@ -218,11 +221,14 @@ jobs:
         run: |
           set -euo pipefail
           # The analyzer keeps its cache in the directory of the module whose
-          # file a transpile action reads: gala_team's in Bazel's execution
-          # root (<execroot>/.gala/cache), every other module's in its
-          # repository under <output_base>/external. Entries are <...>.bin
-          # (the binary codec); the step used to look for *.gob in the
-          # gala_team checkout and so measured nothing.
+          # file a transpile action reads (the nearest holding gala.mod):
+          # gala_team's under Bazel's execution root, every other module's
+          # under its repository in <output_base>/external. This relies on
+          # unsandboxed transpile workers, which run in the execution root.
+          # Entries are <...>.bin (the binary codec); the step used to look
+          # for *.gob in the gala_team checkout and so measured nothing. Only
+          # entries the builds above wrote count: a restored repository
+          # cache can hold an older gala's.
           bazel_flags=(
             --override_module=gala=$GITHUB_WORKSPACE/gala_simple
             --override_module=gala_tui=$GITHUB_WORKSPACE/gala_tui
@@ -231,26 +237,25 @@ jobs:
           )
           execroot=$(bazel info execution_root "${bazel_flags[@]}")
           output_base=$(bazel info output_base "${bazel_flags[@]}")
-          caches=()
-          for d in "$execroot/.gala/cache" "$output_base"/external/*/.gala/cache; do
-            if [ -d "$d" ]; then caches+=("$d"); fi
+          roots=()
+          for d in "$execroot" "$output_base"/external/*/; do
+            if [ -d "$d" ]; then roots+=("${d%/}"); fi
           done
-          sizes=""
-          if [ "${#caches[@]}" -gt 0 ]; then
-            # An entry a worker's eviction removes mid-walk is no error;
-            # any other find error is.
-            errs=$(mktemp)
-            sizes=$(find "${caches[@]}" -type f -name '*.bin' -printf '%s %p\n' 2>"$errs" | sort -nr) || true
-            if grep -v 'No such file or directory' "$errs" >&2; then
-              echo "::error::could not list the analyzer caches"
-              exit 1
-            fi
+          # An entry a worker's eviction removes mid-walk is no error; any
+          # other find error is.
+          errs="$RUNNER_TEMP/cache-find-errors"
+          sizes=$(find -H "${roots[@]}" -path '*/.gala/cache/*' -type f -name '*.bin' \
+            -newer "$RUNNER_TEMP/builds-start" -printf '%s %p\n' 2>"$errs" | sort -nr) || true
+          rc=0
+          grep -v 'No such file or directory' "$errs" >&2 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "::error::could not list the analyzer caches"
+            exit 1
           fi
           entries=$(printf '%s' "$sizes" | grep -c . || true)
           echo "Analyzer cache entries: ${entries}"
-          for d in "${caches[@]}"; do
-            echo "  $(printf '%s\n' "$sizes" | grep -cF " $d/" || true) in $d"
-          done
+          # Per cache: the entry's path up to and including .gala/cache.
+          printf '%s\n' "$sizes" | sed -n 's#^[0-9]* \(.*/\.gala/cache\)/.*#\1#p' | sort | uniq -c | sed 's/^/ /'
           # A budget over no entries checks nothing: fail rather than pass
           # when the cache moved or its entries were renamed again.
           if [ "$entries" -eq 0 ]; then
