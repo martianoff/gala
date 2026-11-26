@@ -28,6 +28,7 @@ import Gala.M5.IifeInst
 import Gala.M5.LoopInst
 import Gala.M5.GoFuelInst
 import Gala.M5.ProgInst
+import Gala.M5.DivInst
 
 namespace Gala.Statements
 
@@ -871,5 +872,79 @@ theorem changeable_not_fits : fitsSs chScope [.ret [.binary "+" (.ident "x") (.i
 open Gala Gala.M5 GoCore.Full in
 theorem swProg_gc : declAt (Order.gc swProg) 0 0 0 = some (.func "sw" none [] swSig (some swGo)) :=
   Gala.M5.swProg_gc
+
+open Gala Gala.M5 GoCore.Full in
+theorem kszOf_ok : ∀ (ds : Spec.Decls), KszOK ds (kszOf ds) :=
+  Gala.M5.kszOf_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem calls_stutter : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat),
+    FunRel K sg ds cx P → 11 ≤ K → KszOK ds Q → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind)
+    (le : Expr), lowerC K sg κ e = some (k, le) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
+    ∀ N ≥ K * d, Stut Q (esz e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) :=
+  Gala.M5.calls_stutter
+
+open Gala Gala.M5 GoCore.Full in
+theorem calls_fuel : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs) (Q : Nat),
+    FunRel K sg ds cx P → 11 ≤ K → KszOK ds Q → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind)
+    (le : Expr), lowerC K sg κ e = some (k, le) → ∀ (s : Spec.St) (g : St) (env : Env),
+    Inv3 cx P sg κ s.toCore g env → ∀ (d : Nat), s.steps ≤ d → Q * (g.steps + 1) + esz e ≤ s.steps →
+    ((Spec.eval ds d e).run.run s).1 = .error .fuel →
+    ∀ N ≥ K * d, ((evalExpr cx N env le).run.run g).1 = .error .fuel :=
+  Gala.M5.calls_fuel
+
+open Gala Gala.M5 GoCore.Full in
+theorem calls_diverge : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind) (le : Expr),
+    lowerC K sg κ e = some (k, le) → ∀ (c : Spec.Core) (g : St) (env : Env), Inv3 cx P sg κ c g env →
+    (∀ n, ((Spec.eval ds n e).run.run { toCore := c, steps := n }).1 = .error .fuel) →
+    ∀ N m, ((evalExpr cx N env le).run.run { g with steps := m }).1 = .error .fuel :=
+  Gala.M5.calls_diverge
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_kszOf : kszOf swDs = 15 :=
+  Gala.M5.sw_kszOf
+
+open Gala Gala.M5 GoCore.Full in
+theorem spin_kszOf : kszOf spinDs = 7 :=
+  Gala.M5.spin_kszOf
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_gocore_steps : ∀ (N : Nat), N ≥ 88 →
+    ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧
+      VRel (.int (-1)) w ∧ g'.steps ≤ 38 :=
+  Gala.M5.sw_gocore_steps
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_spec_fuel : ((Spec.eval swDs 20 swCall).run.run { incCore with steps := 20 }).1 = .error .fuel :=
+  Gala.M5.sw_spec_fuel
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_gocore_fuel : ∀ N ≥ 11 * 20,
+    ((evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 0 }).1 = .error .fuel :=
+  Gala.M5.sw_gocore_fuel
+
+open Gala Gala.M5 GoCore.Full in
+theorem spin_lowerFun : lowerFun 11 spinSg "spin" spinF = some spinGo :=
+  Gala.M5.spin_lowerFun
+
+open Gala Gala.M5 GoCore.Full in
+theorem spin_lowerProg : lowerProg 11 spinDs = some (progOf spinFs) :=
+  Gala.M5.spin_lowerProg
+
+open Gala Gala.M5 GoCore.Full in
+theorem spin_funRel : FunRel 11 spinSg spinDs spinCtx "main" :=
+  Gala.M5.spin_funRel
+
+open Gala Gala.M5 GoCore.Full in
+theorem spin_spec_diverges : ∀ n,
+    ((Spec.eval spinDs n spinCall).run.run { incCore with steps := n }).1 = .error .fuel :=
+  Gala.M5.spin_spec_diverges
+
+open Gala Gala.M5 GoCore.Full in
+theorem spin_gocore_diverges : ∀ N m,
+    ((evalExpr spinCtx N incEnv spinCallG).run.run { incSt with steps := m }).1 = .error .fuel :=
+  Gala.M5.spin_gocore_diverges
 
 end Gala.Statements

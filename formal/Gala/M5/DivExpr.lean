@@ -33,7 +33,7 @@ theorem expr_down {d : Nat} (hE : ExprSim ds cx P K sg d) (hS : ExprSF ds cx P K
       VRel v w ∧ valKind v = some k ∧ (isLitE e = false → ¬ UInt w) ∧ SFrame s.toCore s'.toCore ∧
       GFrame g g' ∧ s.steps + Q * g'.steps ≤ s'.steps + Q * g.steps + esz e ∧ s'.steps ≤ s.steps := by
   have hi' : Inv3 cx P sg κ s.toCore (shift s.steps g) env := (inv3_shift _).2 hi
-  have hsg : s.steps ≤ (shift s.steps g).steps := by simp [shift]
+  have hsg : s.steps ≤ (shift s.steps g).steps := by simp []
   have h1 := hE κ e k le hl s _ env hi' hsg N hN
   have h2 := (hS κ e k le hl s _ env hi' N hN).1 hsg
   rw [hr] at h1 h2
@@ -43,7 +43,7 @@ theorem expr_down {d : Nat} (hE : ExprSim ds cx P K sg d) (hS : ExprSF ds cx P K
   rcases down ((simAll cx s.steps N N (Nat.le_refl _)).evalExpr env le) g hg1 with hf | ⟨g0, hg0, rfl⟩
   · exact .inl hf
   · refine .inr ⟨w, g0, hg0, hvw, hkv, hu, hsf, (gframe_shift _).1 hgf, ?_, hmono⟩
-    simp only [Stut, shift] at h2
+    simp only [Stut] at h2
     rw [Nat.mul_add, Nat.mul_add] at h2
     omega
 
@@ -385,7 +385,7 @@ theorem andor_sf (d : Nat) (ihE : ExprSim ds cx P K sg d) (ih : ExprSF ds cx P K
       rcases spec_bind_fuel hf with hf | ⟨b0, s3, hb0, hf⟩
       · exact absurd hf (liftM_fuel (hnf_asBool _))
       rw [Spec.run_liftM, spec_asBool_run] at hb0
-      simp only [Prod.mk.injEq, Except.ok.injEq] at hb0
+      simp only [] at hb0
       obtain ⟨rfl, rfl⟩ := hb0
       dsimp only at hbd hmono
       cases b
@@ -421,7 +421,7 @@ theorem evalArgs_mapM (M : Nat) (env : Env) (las : List Expr) (g : St) :
   | [a] =>
     simp only [evalArgs, List.mapM_cons, List.mapM_nil, grun_bind]
     rcases (evalExpr cx M env a).run.run g with ⟨r, g'⟩
-    cases r <;> simp [run_pureM, grun_bind] <;> rfl
+    cases r <;> simp [] <;> rfl
   | [] => simp [evalArgs]
   | a :: b :: rest => simp [evalArgs]
 
@@ -556,7 +556,7 @@ theorem paramCells_shift {n : Nat} {xks : List (String × Kind)} {env : Env} {g 
     ParamCells n xks env (shift k g) ↔ ParamCells n xks env g := Iff.rfl
 
 /-- The callee's state: related to galaspec's frame of the arguments. -/
-theorem callee_setup (hF : FunRel K sg ds cx P) {f : String} {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind}
+theorem callee_setup {f : String} {F : Spec.Func} {xks : List (String × Kind)} {ρ : Kind}
     {lb : List Stmt} {fi : Nat} {p : PkgCtx} (hpk : cx.pkgs.get? P = some p)
     (hobjs : ∀ x ∈ ["true", "false", "int", "bool", "string"], p.objs.get? x = none)
     (hsig : sigOf F = some (xks, ρ)) (hlb : lowerFun K sg f F = some lb)
@@ -718,7 +718,7 @@ theorem call_sf (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (hQ : KszOK 
     obtain ⟨k2, hk2⟩ : ∃ k2, ga.steps = k2 + 1 := ⟨ga.steps - 1, by unfold Spent at hspa; simp at hspa; omega⟩
     have hia := inv3_frame hi hsfa hgfa
     have hlenV : vs.length = F.params.length := by rw [hlenP, krel_length hkr, List.length_map]
-    obtain ⟨hic, hpc, hpsteps, -⟩ := callee_setup ds cx P K sg hF (fi := fi) hpk hobjs hsig hlb hkr hia k2 (by omega)
+    obtain ⟨hic, hpc, hpsteps, -⟩ := callee_setup cx P K sg (fi := fi) hpk hobjs hsig hlb hkr hia k2 (by omega)
     have hsb : sa.steps ≤ k2 := by unfold Spent at hspa; simp at hspa; omega
     have hB := ihB f F xks ρ lb hFl hsig hlb { sa with locals := specFrame F.params vs } _ _ ga.cells.size hic
       (by show sa.steps ≤ _; rw [hpsteps]; exact hsb) hpc (m + 2) (by rw [Nat.mul_succ] at hN; omega)
@@ -751,7 +751,7 @@ theorem call_sf (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (hQ : KszOK 
       rw [hcall sa vs hlenV (.ok v) _ (fun h => hv1 (by cases h; rfl)) (by rw [runIn_res, hrb]; rcases hv with rfl | rfl <;> rfl)]
       rw [grun_bind, callBody_ret cx m P fi xks ρ lb ws ga k2 hk2 (argsRel_of_krel hkr) hnames' v w hvw hkv g1
         hgo (by rw [gframeP_defers hgf1])]
-      simp only [Stut, run_pureM] at hSA hSB' ⊢
+      simp only [Stut] at hSA hSB' ⊢
       have : ({ s with steps := k1 } : Spec.St).steps = k1 := rfl
       show _ ≤ _
       dsimp only at hSA hSB' ⊢
@@ -815,7 +815,7 @@ theorem call_sf (d : Nat) (hF : FunRel K sg ds cx P) (hK : 7 ≤ K) (hQ : KszOK 
     | succ k2 =>
     have hia := inv3_frame hi hsfa hgfa
     have hlenV : vs.length = F.params.length := by rw [hlenP, krel_length hkr, List.length_map]
-    obtain ⟨hic, hpc, hpsteps, -⟩ := callee_setup ds cx P K sg hF (fi := fi) hpk hobjs hsig hlb hkr hia k2 (by omega)
+    obtain ⟨hic, hpc, hpsteps, -⟩ := callee_setup cx P K sg (fi := fi) hpk hobjs hsig hlb hkr hia k2 (by omega)
     have hbf := callFunc_fuel ds d F vs sa (params_typed htys) ρ hres hlenV hf
     dsimp only at hbd hmono
     have := (ihBF f F xks ρ lb hFl hsig hlb { sa with locals := specFrame F.params vs } _ _ ga.cells.size hic

@@ -7,6 +7,8 @@
     fuel on `spin(0)` with every budget (`spin_spec_diverges`), so GoCore's run of the loop
     never ends normally, at any depth and step budget (`spin_gocore_diverges`, from
     `calls_diverge`).
+  * `sw(1, 2, 2)`: galaspec spends 31 steps, so GoCore spends at least 2 (`sw_gocore_steps`,
+    from `calls_stutter`).
   * `sw(1, 2, 2)` with too few steps: galaspec, at depth and budget 20, runs out of fuel
     (it needs 31 steps, `sw_spec_ok`), so GoCore with no step runs out too
     (`sw_gocore_fuel`, from `calls_fuel` with `Q = 15`). The bound is sound but loose: its
@@ -63,6 +65,20 @@ theorem sw_gocore_fuel : ∀ N ≥ 11 * 20,
     .int swCallG sw_lowerC { incCore with steps := 20 } { incSt with steps := 0 } incEnv (sw_inv3 0) 20
     (Nat.le_refl _) (by rw [sw_kszOf]; decide) sw_spec_fuel
 
+/-- **`calls_stutter` on `sw(1, 2, 2)`**: galaspec spends 31 steps (40 to 9, `sw_spec_ok`), so
+    GoCore spends at least 2 (`31 ≤ 15 * spent + 5`): its run ends with at most 38 of its
+    40 steps left. (It spends 4: one for the call, one per iteration.) -/
+theorem sw_gocore_steps (N : Nat) (hN : N ≥ 88) :
+    ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧
+      VRel (.int (-1)) w ∧ g'.steps ≤ 38 := by
+  obtain ⟨w, g', hg, hv⟩ := sw_gocore_ok N hN
+  have h := calls_stutter swDs swCtx "main" 11 swSg (kszOf swDs) sw_funRel (by omega) (kszOf_ok swDs)
+    (fun _ => none) swCall .int swCallG sw_lowerC { incCore with steps := 40 } { incSt with steps := 40 } incEnv
+    (sw_inv3 40) (Nat.le_refl _) 8 N (by omega)
+  rw [sw_spec_ok, hg, sw_kszOf] at h
+  simp only [Stut] at h
+  exact ⟨w, g', hg, hv, by simp [esz, eszs, swCall] at h; omega⟩
+
 /-! ## `spin` -/
 
 def spinBodyS : Spec.Expr := .ifExpr (.lit (.bool false)) (.lit (.int 0)) (.call (.name "spin") [.name "n"])
@@ -111,7 +127,7 @@ theorem spin_lowerOne : lowerOne 11 spinSg "spin" spinF = some ("spin", lowerSig
   have h1 : sigOf spinF = some ([("n", .int)], .int) := rfl
   have h3 : body3Ss spinGo = true := by
     simp [body3Ss, body3S, body3OS, ccB, ccBs, canon, canonArgs, canonOps, triggers,
-      isNonzeroLit, isLit, isIdentE, spinGo]
+      isIdentE, spinGo]
   simp [lowerOne, h1, spin_lowerFun, h3]
 
 theorem spin_lowerFuns : lowerFuns 11 spinDs = some spinFs := by
@@ -171,7 +187,7 @@ theorem spin_name (d k : Nat) (v : Int) (s : Spec.St) (hs : s.steps = k + 1) (hl
 theorem spin_false (d k : Nat) (s : Spec.St) (hs : s.steps = k + 1) :
     (Spec.eval spinDs (d + 1) (.lit (.bool false))).run.run s = (.ok (.bool false), { s with steps := k }) := by
   rw [Spec.eval.eq_def]
-  simp [Spec.run_bind_eq, tick_run, hs]
+  simp [tick_run, hs]
   rfl
 
 theorem spin_lit0 (d k : Nat) (s : Spec.St) (hs : s.steps = k + 1) :

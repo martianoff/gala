@@ -36,6 +36,13 @@ import Gala.M5.LoopInst
 import Gala.M5.ProgInst
 import Gala.M5.GoFuel
 import Gala.M5.GoFuelInst
+import Gala.M5.DivBase
+import Gala.M5.DivExpr
+import Gala.M5.DivStmt
+import Gala.M5.DivTail
+import Gala.M5.DivLoop
+import Gala.M5.DivMain
+import Gala.M5.DivInst
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems
