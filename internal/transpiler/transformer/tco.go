@@ -305,6 +305,9 @@ func (t *galaASTTransformer) buildTailCallStep(
 	}
 
 	rhsExprs := make([]ast.Expr, len(args)) // what each parameter is assigned
+	// The parameter names that hide a type or package in the body: those
+	// name hygiene does not rename (an `int` parameter becomes `_gala_int`).
+	hiding := slices.DeleteFunc(slices.Clone(tc.paramNames), shadowsGeneratedName)
 	stmts := make([]ast.Stmt, 0, len(args)+2)
 	for i, a := range args {
 		// Named arguments (name = expr) are not supported for the rewrite.
@@ -329,7 +332,7 @@ func (t *galaASTTransformer) buildTailCallStep(
 		if err := t.checkSlotFill(arg, t.astTypeToTranspilerType(tc.paramTypes[i]), v.expr.at()); err != nil {
 			return nil, false, err
 		}
-		hidden := namesAny(tc.paramTypes[i], tc.paramNames)
+		hidden := namesAny(tc.paramTypes[i], hiding)
 		if asserted := t.wrapWithAssertion(arg, tc.paramTypes[i]); asserted != arg {
 			// The assertion spells the parameter's type in the body; where a
 			// parameter hides it, keep the real recursion.

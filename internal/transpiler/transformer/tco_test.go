@@ -80,6 +80,21 @@ func main() {
 			mustMiss: []string{"var _tmp_1 time.Duration", "_tmp_1 := 5"},
 		},
 		{
+			// A parameter named like a predeclared type is renamed
+			// (`_gala_byte`), so it hides nothing: the temporary is typed.
+			name: "a parameter named like a predeclared type",
+			input: `package main
+
+func f(byte byte, n int) byte = if (n == 0) byte else f(1 << n, n - 1)
+
+func main() {
+    Println(f(0, 3))
+}
+`,
+			mustHave: []string{"var _tmp_1 byte = 1 << n"},
+			mustMiss: []string{"_tmp_1 := 1 << n"},
+		},
+		{
 			// An argument that is no literal keeps an untyped temporary there.
 			name: "a non-literal argument for a parameter named like its type's package",
 			input: `package main
