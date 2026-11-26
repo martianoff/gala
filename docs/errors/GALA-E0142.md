@@ -50,12 +50,14 @@ error[GALA-E0142]: cannot range over `n`: its type T is constrained by Number, w
   --> main.gala:4:20
   |
 4 |     for i := range n {
-  |                    ^ range over a value of a concrete type, or declare the constr…
+  |                    ^ range over a value of a concrete type, or constrain the type…
   |
-  = hint: range over a value of a concrete type, or declare the constraint in a .go file of the package as an interface whose types share one underlying type (`interface{ ~int64 }`)
+  = hint: range over a value of a concrete type, or constrain the type parameter by an interface declared in a .go file of the package whose types share one underlying type (`interface{ ~int64 }`)
 ```
 
-**Fix.** Constrain `T` by an interface whose types share one underlying type:
+**Fix.** Range over a value of a concrete type, such as an `int` count. Or
+constrain `T` by an interface whose types share one underlying type. GALA
+interfaces hold methods only, so declare it in a `.go` file of the package:
 
 ```go
 type Number interface{ ~int64 }
@@ -63,9 +65,7 @@ type Number interface{ ~int64 }
 
 Then `for i := range n` binds `i` to `T`. The call must pass an `int64`-based
 value too, since an untyped `3` is an `int`: `steps(int64(3))`, or
-`steps(time.Nanosecond * 3)`. If the function must accept
-types of different underlying types, take a value of a concrete type, such as
-an `int` count, and range over that.
+`steps(time.Nanosecond * 3)`.
 
 **Rationale.** Go rejects a range over such a value with "cannot range over n
 (variable of type T constrained by Number): int and int64 have different

@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "GALA-E0142 — Range Over a Type Parameter With No Core Type"
-description: "GALA-E0142 fires when a for range loop ranges over a value of a type parameter whose constraint has no core type, such as any or interface{ ~int | ~int64 }. Use a constraint whose types share one underlying type."
+description: "GALA-E0142 fires when a for range loop ranges over a value of a type parameter whose constraint has no core type, such as any or interface{ ~int | ~int64 }. Range over a concrete type, or declare a constraint with one underlying type in a .go file."
 keywords: "gala-e0142, gala range type parameter, gala cannot range over, gala core type, gala generic range"
 permalink: /docs/errors/gala-e0142/
 last_modified_at: 2026-11-25
@@ -66,16 +66,18 @@ error[GALA-E0142]: cannot range over `n`: its type T is constrained by Number, w
   --> main.gala:4:20
   |
 4 |     for i := range n {
-  |                    ^ range over a value of a concrete type, or declare the constr…
+  |                    ^ range over a value of a concrete type, or constrain the type…
   |
-  = hint: range over a value of a concrete type, or declare the constraint in a .go file of the package as an interface whose types share one underlying type (`interface{ ~int64 }`)
+  = hint: range over a value of a concrete type, or constrain the type parameter by an interface declared in a .go file of the package whose types share one underlying type (`interface{ ~int64 }`)
 ```
 
 ---
 
 ## How to fix it
 
-Constrain `T` by an interface whose types share one underlying type:
+Range over a value of a concrete type, such as an `int` count. Or constrain
+`T` by an interface whose types share one underlying type. GALA interfaces
+hold methods only, so declare it in a `.go` file of the package:
 
 ```go
 type Number interface{ ~int64 }
@@ -83,9 +85,7 @@ type Number interface{ ~int64 }
 
 Then `for i := range n` binds `i` to `T`. The call must pass an `int64`-based
 value too, since an untyped `3` is an `int`: `steps(int64(3))`, or
-`steps(time.Nanosecond * 3)`. If the function must accept
-types of different underlying types, take a value of a concrete type, such as
-an `int` count, and range over that.
+`steps(time.Nanosecond * 3)`.
 
 ---
 
