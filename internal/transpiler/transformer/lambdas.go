@@ -1653,7 +1653,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	if !ok {
 		return nil, false, nil
 	}
-	placeholderCount := countPlaceholders(e)
+	placeholderCount := len(newPlaceholderTakes(e).index)
 	if placeholderCount == 0 {
 		return nil, false, nil
 	}
@@ -1695,7 +1695,10 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	if scopeType.IsAny() && slices.ContainsFunc(typed, func(p transpiler.Type) bool { return !p.IsAny() }) {
 		byPosition = paramTypes
 	}
-	unresolved := len(t.unresolvedTypes)
+	var undoTrial func()
+	if byPosition != nil {
+		undoTrial = t.snapshotTrialLowering()
+	}
 	body, bodyResultType, takes, err := t.lowerPlaceholderBody(e, scopeType, byPosition)
 	// The k-th parameter is the k-th `_` the lambda took, which is the k-th
 	// `_` written unless a nested call took one before it (`_ + xs.Map(_ *
@@ -1720,9 +1723,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		if taken == nil || typedAsTaken(byPosition, paramTypes, taken) {
 			break
 		}
-		// What the discarded lowerings could not type is not the body's: a
-		// `_` typed by another parameter is not the program's gap.
-		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
+		// Restoring hands the snapshot itself back, so take another.
+		undoTrial()
+		undoTrial = t.snapshotTrialLowering()
 		byPosition = typesByParameter(paramTypes, taken)
 		body, bodyResultType, takes, err = t.lowerPlaceholderBody(e, scopeType, byPosition)
 	}
@@ -1744,9 +1747,8 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	paramCounter := -1
 	paramNames := takes.rename(body, func() string { return t.freshTempName("__p", &paramCounter) })
 	if takes.names != nil && hasPlaceholderName(body) {
-		return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
-			"internal error: a placeholder `_` was copied where it could not be renamed to its parameter",
-			"use a lambda with named parameters")
+		return nil, false, semanticErrorAtStart(e.at(),
+			"internal error: a placeholder `_` was copied where it could not be renamed to its parameter")
 	}
 
 	if len(paramNames) == 0 {
@@ -1918,6 +1920,20 @@ func hasPlaceholderName(body ast.Node) bool {
 		return !found
 	})
 	return found
+}
+
+// snapshotTrialLowering records what lowering a placeholder lambda's body
+// adds to the file, and returns what puts it back: a lowering discarded for
+// typing a `_` by another parameter than its own leaves neither the types it
+// could not resolve, which are no gap of the program, nor the imports only it
+// used.
+func (t *galaASTTransformer) snapshotTrialLowering() func() {
+	unresolved := len(t.unresolvedTypes)
+	restoreImports := t.snapshotCodecImports()
+	return func() {
+		t.unresolvedTypes = t.unresolvedTypes[:unresolved]
+		restoreImports()
+	}
 }
 
 // typesByParameter is the type each `_` written reads when the lambda took
