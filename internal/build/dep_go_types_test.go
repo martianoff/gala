@@ -100,14 +100,14 @@ func TestResolveGoModuleSrcDirs(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(noRoot, "sub.go"), []byte("package sub\n"), 0o644))
 	present := mod.Require{Path: "example.com/NoRoot", Version: "v1.0.0", Go: true}
 
-	dirs, complete := resolveGoModuleSrcDirs(config, []mod.Require{present}, nil, false)
+	dirs, complete := resolveGoModuleSrcDirs(config, []mod.Require{present}, goReplacements(nil, ""), false)
 	assert.True(t, complete)
 	assert.Equal(t, filepath.Dir(noRoot), dirs[present.Path])
 
 	// No `go` on PATH: the download fails, and the module stays unresolved.
 	t.Setenv("PATH", t.TempDir())
 	missing := mod.Require{Path: "example.com/missing", Version: "v1.0.0", Go: true}
-	dirs, complete = resolveGoModuleSrcDirs(config, []mod.Require{present, missing}, nil, false)
+	dirs, complete = resolveGoModuleSrcDirs(config, []mod.Require{present, missing}, goReplacements(nil, ""), false)
 	assert.False(t, complete)
 	assert.Equal(t, map[string]string{present.Path: filepath.Dir(noRoot)}, dirs)
 }

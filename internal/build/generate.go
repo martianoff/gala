@@ -106,15 +106,9 @@ func (b *Builder) GalaImportPaths() []string {
 // ReplacedGoModules returns the Go modules gala.mod requires and also
 // replaces.
 func (b *Builder) ReplacedGoModules() []string {
-	goReqs := map[string]bool{}
-	for _, r := range b.galaMod.GoRequires() {
-		goReqs[r.Path] = true
-	}
 	var replaced []string
-	for _, r := range b.galaMod.Replace {
-		if goReqs[r.Old.Path] {
-			replaced = append(replaced, r.Old.Path)
-		}
+	for _, r := range b.galaMod.GoReplaces() {
+		replaced = append(replaced, r.Old.Path)
 	}
 	return replaced
 }

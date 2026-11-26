@@ -37,7 +37,7 @@ func TestGoModuleSrcDirClosure(t *testing.T) {
 		{Path: "example.com/old", Version: "v1.2.0", Go: true},
 	}
 	var downloaded []mod.Require
-	dirs, complete := goModuleSrcDirClosure(config, reqs, nil, func(missing []mod.Require) { downloaded = append(downloaded, missing...) })
+	dirs, complete := goModuleSrcDirClosure(config, reqs, goReplacements(nil, ""), func(missing []mod.Require) { downloaded = append(downloaded, missing...) })
 	assert.True(t, complete)
 	assert.Empty(t, downloaded)
 	assert.Equal(t, map[string]string{
@@ -50,7 +50,7 @@ func TestGoModuleSrcDirClosure(t *testing.T) {
 	// is still missing afterwards is left out, without making the result
 	// incomplete: it may serve only a test of the module requiring it.
 	require.NoError(t, os.RemoveAll(pflag))
-	dirs, complete = goModuleSrcDirClosure(config, reqs[:1], nil, func(missing []mod.Require) { downloaded = append(downloaded, missing...) })
+	dirs, complete = goModuleSrcDirClosure(config, reqs[:1], goReplacements(nil, ""), func(missing []mod.Require) { downloaded = append(downloaded, missing...) })
 	assert.True(t, complete)
 	assert.Equal(t, []mod.Require{
 		{Path: "example.com/pflag", Version: "v1.0.9", Indirect: true, Go: true},

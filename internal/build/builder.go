@@ -315,9 +315,10 @@ func (b *Builder) ensureDeps() error {
 	fetcher := fetch.NewGitFetcher(cache)
 
 	for _, req := range galaReqs {
-		if _, isLocal, ok := b.resolveReplace(req); ok {
+		fetchPath, fetchVersion := req.Path, req.Version
+		if rep, ok := b.galaMod.ReplaceFor(req.Path, req.Version); ok {
 			// Local replaces need no fetch — the source is already on disk.
-			if isLocal {
+			if rep.New.IsLocal() {
 				if b.verbose {
 					fmt.Printf("Replace: %s@%s => local path (fetch skipped)\n",
 						req.Path, req.Version)
@@ -325,7 +326,7 @@ func (b *Builder) ensureDeps() error {
 				continue
 			}
 			// Module replace: fetch the replacement coordinates if not cached.
-			// fall through with the effective path below
+			fetchPath, fetchVersion = rep.New.Path, rep.New.Version
 		}
 
 		modDir := b.effectiveDepDir(req)
@@ -336,11 +337,6 @@ func (b *Builder) ensureDeps() error {
 			continue
 		}
 
-		fetchPath, fetchVersion := req.Path, req.Version
-		if newPath, newVersion, isModuleReplace := b.resolveModuleReplace(req); isModuleReplace {
-			fetchPath, fetchVersion = newPath, newVersion
-		}
-
 		if b.verbose {
 			fmt.Printf("Fetching %s@%s...\n", fetchPath, fetchVersion)
 		}
@@ -349,31 +345,6 @@ func (b *Builder) ensureDeps() error {
 		}
 	}
 	return nil
-}
-
-// resolveReplace reports whether `req` has a matching replace directive in
-// the active gala.mod, and (if so) returns the resolved source path, an
-// isLocal flag, and ok=true. A replace matches when Old.Path equals req.Path
-// and Old.Version is either empty (wildcard) or equals req.Version.
-func (b *Builder) resolveReplace(req mod.Require) (path string, isLocal bool, ok bool) {
-	rep, ok := b.galaMod.ReplaceFor(req.Path, req.Version)
-	if !ok {
-		return "", false, false
-	}
-	if rep.New.IsLocal() {
-		return replacementDir(b.workspace.ProjectDir, rep.New.Path), true, true
-	}
-	return b.config.GalaModulePath(rep.New.Path, rep.New.Version), false, true
-}
-
-// resolveModuleReplace returns the replacement module coordinates (path,
-// version) for a non-local replace directive, or ok=false if none applies.
-func (b *Builder) resolveModuleReplace(req mod.Require) (path, version string, ok bool) {
-	rep, ok := b.galaMod.ReplaceFor(req.Path, req.Version)
-	if !ok || rep.New.IsLocal() {
-		return "", "", false
-	}
-	return rep.New.Path, rep.New.Version, true
 }
 
 // effectiveDepDir returns the on-disk directory where a dependency's source
@@ -392,7 +363,7 @@ func (b *Builder) effectiveDepDir(req mod.Require) string {
 // and shared by the project's and the dependencies' transpiles.
 func (b *Builder) goModuleSrcDirs() map[string]string {
 	if !b.goSrcDirsResolved {
-		b.goSrcDirs, b.goSrcDirsComplete = resolveGoModuleSrcDirs(b.config, b.goRequires(), b.goReplacement(), b.verbose)
+		b.goSrcDirs, b.goSrcDirsComplete = resolveGoModuleSrcDirs(b.config, b.goRequires(), goReplacements(b.galaMod, b.workspace.ProjectDir), b.verbose)
 		b.goSrcDirsResolved = true
 	}
 	return b.goSrcDirs
@@ -405,12 +376,6 @@ func (b *Builder) goRequires() []mod.Require {
 		b.goReqsResolved = true
 	}
 	return b.goReqs
-}
-
-// goReplacement applies the project's replace directives to a required Go
-// module (see goReplacements).
-func (b *Builder) goReplacement() goReplacementFunc {
-	return goReplacements(b.galaMod, b.workspace.ProjectDir)
 }
 
 // goSourcesComplete reports whether every Go module the build requires
@@ -562,12 +527,9 @@ type goReplacementFunc func(req mod.Require) (target mod.Require, dir string)
 func goModuleSrcDirClosure(config *Config, reqs []mod.Require, replacement goReplacementFunc, download func([]mod.Require)) (dirs map[string]string, complete bool) {
 	dirs = make(map[string]string, len(reqs))
 	versions := make(map[string]string, len(reqs))
-	if replacement == nil {
-		replacement = func(req mod.Require) (mod.Require, string) { return req, "" }
-	}
 	resolve := func(reqs []mod.Require) bool {
 		type lookup struct {
-			path   string     // the required module's path
+			path   string      // the required module's path
 			target mod.Require // the module whose source stands in for it
 		}
 		var missing []lookup

@@ -473,7 +473,7 @@ func (b *Builder) goReplacementDirs() []depInput {
 	if b.galaMod == nil || !slices.ContainsFunc(b.galaMod.Replace, func(r mod.Replace) bool { return r.New.IsLocal() }) {
 		return nil // only a directory replacement adds one
 	}
-	replacement := b.goReplacement()
+	replacement := goReplacements(b.galaMod, b.workspace.ProjectDir)
 	var deps []depInput
 	for _, req := range b.goRequires() {
 		if _, dir := replacement(req); dir != "" {

@@ -400,12 +400,8 @@ func replaceDrift(galaMod *mod.File, goReplaces []mod.Replace) []string {
 			drift = append(drift, fmt.Sprintf("replace %s (go.mod only)", mod.FormatReplaceEntry(r)))
 		}
 	}
-	goDeps := make(map[string]bool)
-	for _, r := range galaMod.GoRequires() {
-		goDeps[r.Path] = true
-	}
-	for _, r := range galaMod.Replace {
-		if goDeps[r.Old.Path] && !inGo[r] {
+	for _, r := range galaMod.GoReplaces() {
+		if !inGo[r] {
 			drift = append(drift, fmt.Sprintf("replace %s (gala.mod only)", mod.FormatReplaceEntry(r)))
 		}
 	}

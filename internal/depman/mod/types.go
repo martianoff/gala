@@ -123,6 +123,22 @@ func (f *File) ReplaceFor(path, version string) (Replace, bool) {
 	return *any, true
 }
 
+// GoReplaces returns the replace directives of a module the file requires as a
+// Go dependency.
+func (f *File) GoReplaces() []Replace {
+	goReqs := make(map[string]bool)
+	for _, r := range f.GoRequires() {
+		goReqs[r.Path] = true
+	}
+	var reps []Replace
+	for _, r := range f.Replace {
+		if goReqs[r.Old.Path] {
+			reps = append(reps, r)
+		}
+	}
+	return reps
+}
+
 // AddReplace adds a path replacement to the file.
 func (f *File) AddReplace(oldPath, oldVersion, newPath, newVersion string) {
 	for i := range f.Replace {
