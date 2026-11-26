@@ -909,7 +909,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				// function of no parameters is a thunk already, passed
 				// as it is (below). One that fails to lower against the
 				// slot is lowered as it was before by-name lifting here.
-				byNameType = t.substituteTranspilerTypeParams(byNameType, typeSubst)
+				// A binding only constants made so far stays open: the
+				// thunk's own type may replace or widen it, as a bare
+				// argument's does (`b.Both(5, x64)`).
+				byNameType = t.substituteTranspilerTypeParams(byNameType, withoutKeys(typeSubst, weakConst))
 				open := typeMentionsTypeParam(byNameType, methodMeta.TypeParams) || typeMentionsTypeParam(byNameType, typeMeta.TypeParams)
 				expr, txErr = t.transformArgument(v.expr, slot{typ: byNameType, open: open}, false)
 				if _, lifted := expr.(*ast.FuncLit); txErr == nil && lifted && sendable {
@@ -1027,7 +1030,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					// Go would infer the constant's default type, so the
 					// slot's is spelled when it differs
 					// (resultOnlyMethodTypeArgs).
-					slotTyped[tp] = slot.String() != inferred.String()
+					// Any one of them differing decides it: Go infers
+					// the widest of their kinds, which the last alone
+					// need not show (`Pick(1.0, 2)` in an `int` slot).
+					slotTyped[tp] = slotTyped[tp] || slot.String() != inferred.String()
 					continue
 				}
 				// A binding only constants made is weak, as in Go: a typed
@@ -7058,4 +7064,18 @@ func splitQualifiedName(name string) []string {
 		}
 	}
 	return nil
+}
+
+// withoutKeys is subst without the type parameters drop holds.
+func withoutKeys(subst typeSubstMap, drop map[string]transpiler.Type) typeSubstMap {
+	if len(drop) == 0 {
+		return subst
+	}
+	out := make(typeSubstMap, len(subst))
+	for tp, typ := range subst {
+		if _, dropped := drop[tp]; !dropped {
+			out[tp] = typ
+		}
+	}
+	return out
 }

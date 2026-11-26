@@ -1332,6 +1332,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "generic_method_weak_const_args",
+    src = "generic_method_weak_const_args.gala",
+    expected = "generic_method_weak_const_args.out",
+)
+
+gala_exec_test(
     name = "generic_method_sendable",
     src = "generic_method_sendable.gala",
     expected = "generic_method_sendable.out",
