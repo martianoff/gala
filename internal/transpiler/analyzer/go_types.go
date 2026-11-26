@@ -1611,54 +1611,83 @@ func embedsComparable(iface *types.Interface, seen map[*types.Interface]bool) bo
 	return false
 }
 
-// interfaceCoreType is the one underlying type of every term in iface's type
-// set (`~int64`, `int64 | MyInt`, an embedded `interface{ ~int64 }`), or nil
-// when it has no type terms or terms of different underlying types (`~int |
-// ~int64`), which Go cannot range over. Embedded interfaces intersect, but
-// their terms are pooled here: a constraint whose intersection narrows mixed
-// terms to one type is missed (nil), never mistyped.
+// interfaceCoreType is the one underlying type of every type in iface's type
+// set (`~int64`, `int64 | MyInt`, `interface{ ~int | ~int64; ~int64 }`), or
+// nil when the set is unrestricted (no type terms, or a union with `any`) or
+// holds types of different underlying types (`~int | ~int64`), which Go
+// cannot range over.
 func interfaceCoreType(iface *types.Interface) types.Type {
-	if iface.IsMethodSet() {
+	set := underlyingTypeSet(iface)
+	if set.all || len(set.types) == 0 {
 		return nil
 	}
-	var core types.Type
-	for _, term := range typeTerms(iface) {
-		u := term.Underlying()
-		if _, isIface := u.(*types.Interface); isIface {
-			return nil
-		}
-		if core == nil {
-			core = u
-		} else if !types.Identical(core, u) {
+	core := set.types[0]
+	for _, u := range set.types[1:] {
+		if !types.Identical(core, u) {
 			return nil
 		}
 	}
 	return core
 }
 
-// typeTerms is the types of iface's type terms, those of the interfaces it
-// embeds included.
-func typeTerms(iface *types.Interface) (terms []types.Type) {
+// typeSet is a type set by underlying type: all types (all), or those whose
+// underlying type is one of types. Telling `~T` from `T` apart is not needed
+// to find a core type: it only shrinks a set whose types share T.
+type typeSet struct {
+	all   bool
+	types []types.Type
+}
+
+// underlyingTypeSet is iface's type set: the intersection of its elements,
+// each a union of terms or an embedded interface (comparable and method
+// requirements do not restrict it by type).
+func underlyingTypeSet(iface *types.Interface) typeSet {
+	set := typeSet{all: true}
 	for i := range iface.NumEmbeddeds() {
+		var elem typeSet
 		switch e := iface.EmbeddedType(i).(type) {
 		case *types.Union:
 			for j := range e.Len() {
-				// A term may itself be an interface without methods.
-				if inner, isIface := e.Term(j).Type().Underlying().(*types.Interface); isIface {
-					terms = append(terms, typeTerms(inner)...)
-				} else {
-					terms = append(terms, e.Term(j).Type())
-				}
+				elem = elem.union(termSet(e.Term(j).Type()))
 			}
 		default:
-			if inner, isIface := e.Underlying().(*types.Interface); isIface {
-				terms = append(terms, typeTerms(inner)...)
-			} else {
-				terms = append(terms, e)
-			}
+			elem = termSet(e)
+		}
+		set = set.intersect(elem)
+	}
+	return set
+}
+
+// termSet is the type set of one term: an interface's own, or the term's
+// underlying type.
+func termSet(t types.Type) typeSet {
+	if inner, isIface := t.Underlying().(*types.Interface); isIface {
+		return underlyingTypeSet(inner)
+	}
+	return typeSet{types: []types.Type{t.Underlying()}}
+}
+
+func (s typeSet) union(o typeSet) typeSet {
+	if s.all || o.all {
+		return typeSet{all: true}
+	}
+	return typeSet{types: append(slices.Clip(s.types), o.types...)}
+}
+
+func (s typeSet) intersect(o typeSet) typeSet {
+	switch {
+	case s.all:
+		return o
+	case o.all:
+		return s
+	}
+	var both []types.Type
+	for _, t := range s.types {
+		if slices.ContainsFunc(o.types, func(u types.Type) bool { return types.Identical(t, u) }) {
+			both = append(both, t)
 		}
 	}
-	return terms
+	return typeSet{types: both}
 }
 
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields

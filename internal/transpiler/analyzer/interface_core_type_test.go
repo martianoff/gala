@@ -30,6 +30,15 @@ type Narrowed interface {
 	~int | ~int64
 	Tilde
 }
+type NarrowedSlice interface {
+	~[]int
+	interface{ ~[]int | ~[]string }
+}
+type WithAny interface{ ~int64 | any }
+type WithStringer interface {
+	~int64
+	String() string
+}
 `
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -47,9 +56,12 @@ type Narrowed interface {
 		{"Methods", ""},
 		{"Slice", "[]string"},
 		{"UnionOfIface", "int64"},
-		// Embedded interfaces intersect to int64 in Go; their terms are
-		// pooled here, so the core type is missed (known limit), not wrong.
-		{"Narrowed", ""},
+		// Embedded elements intersect: {int, int64} ∩ {int64}.
+		{"Narrowed", "int64"},
+		{"NarrowedSlice", "[]int"},
+		// `any` in a union admits every type: no core type.
+		{"WithAny", ""},
+		{"WithStringer", "int64"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
