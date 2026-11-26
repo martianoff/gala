@@ -1667,7 +1667,7 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// rejected below once the placeholders that survived are known.
 	paramTypes := make([]transpiler.Type, placeholderCount)
 	for i := 0; i < placeholderCount; i++ {
-		if i < len(ft.Params) && !ft.Params[i].IsNil() {
+		if i < len(ft.Params) && ft.Params[i] != nil && !ft.Params[i].IsNil() {
 			paramTypes[i] = ft.Params[i]
 		} else {
 			paramTypes[i] = transpiler.BasicType{Name: "any"}
@@ -1918,7 +1918,15 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 	for i := range choice {
 		choice[i] = i
 	}
-	for tries := 0; params <= len(paramTypes) && tries < maxPlaceholderChoices; tries++ {
+	// Each try lowers the placeholder lambdas nested in the body again, with
+	// their own tries, so a nested one tries fewer.
+	limit := maxPlaceholderChoices
+	for s := t.currentScope; s != nil && limit > 1; s = s.parent {
+		if s.placeholder != nil {
+			limit /= 8
+		}
+	}
+	for tries := 0; params <= len(paramTypes) && tries < max(limit, 1); tries++ {
 		body, result, takes, err := lowerTaking(choice)
 		if err == nil && slices.Equal(takes.taken(body), choice) {
 			return body, result, takes, nil
@@ -1948,8 +1956,13 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 	if len(taken) != params {
 		return body, result, takes, nil
 	}
-	if _, _, _, err := lowerTaking(taken); err != nil {
+	body, result, takes, err = lowerTaking(taken)
+	if err != nil {
 		return nil, nil, nil, err
+	}
+	if slices.Equal(takes.taken(body), taken) {
+		// A choice past those tried.
+		return body, result, takes, nil
 	}
 	line, col := e.at().start()
 	return nil, nil, nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
@@ -1958,7 +1971,8 @@ func (t *galaASTTransformer) lowerMixedPlaceholderBody(
 }
 
 // maxPlaceholderChoices bounds the choices of `_` lowerMixedPlaceholderBody
-// tries; a body with that many has a lambda with named parameters to spare.
+// tries, divided by 8 for each placeholder lambda it is nested in; a body
+// with that many has a lambda with named parameters to spare.
 const maxPlaceholderChoices = 32
 
 // nextChoice advances choice, an increasing choice of len(choice) of 0..n-1,
