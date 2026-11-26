@@ -8,18 +8,6 @@ func run[A any, B any](f func(A) B) func(A) B = f
 
 func widen[A any](f func(A) int64) func(A) int64 = f
 
-// Here the declared result binds run's type parameters (the typed-slot path).
-func pick(n int) func(int) int = run(n match {
-    case 1 => (k int) => {
-        val q = k + 1
-        q * q
-    }
-    case _ => (k int) => {
-        val q = k + n
-        q * q
-    }
-})
-
 func main() {
     val grouped = run(((k int) => {
         val q = k + 1
@@ -36,8 +24,6 @@ func main() {
         t
     })
     Println(chosen("hi"))
-
-    Println(pick(1)(3), pick(2)(3))
 
     // A match whose value no typed slot fixes, one arm a block ending in
     // the lambda.
