@@ -240,3 +240,7 @@ Commit the regenerated `src/` with the change to `grammar.js`.
 ## License
 
 Apache 2.0, as the rest of GALA. See [LICENSE](LICENSE).
+
+The headers in `src/tree_sitter/` are not GALA's: `tree-sitter generate`
+copies them in from tree-sitter, which is MIT-licensed. Its notice is in
+[LICENSE-tree-sitter](LICENSE-tree-sitter).
