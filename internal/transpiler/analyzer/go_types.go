@@ -1633,6 +1633,29 @@ func interfaceCoreType(iface *types.Interface) types.Type {
 	return core
 }
 
+// interfaceHasNoCoreType reports whether iface's type set provably has no
+// core type, so Go cannot range over a type parameter it constrains: the set
+// is unrestricted (`any`, `comparable`, methods only), or holds types of
+// different underlying types. A set with an unresolved type, or with a
+// channel (Go merges channels that differ only in direction), is not known
+// to have none, nor is an empty one.
+func interfaceHasNoCoreType(iface *types.Interface) bool {
+	set := underlyingTypeSet(iface, nil)
+	if set.all {
+		return true
+	}
+	distinct := false
+	for _, u := range set.types {
+		if _, isChan := u.(*types.Chan); isChan || u == types.Typ[types.Invalid] {
+			return false
+		}
+		if !types.Identical(set.types[0], u) {
+			distinct = true
+		}
+	}
+	return distinct
+}
+
 // typeSet is a type set by underlying type: all types (all), or those whose
 // underlying type is one of types. Telling `~T` from `T` apart is not needed
 // to find a core type: it only shrinks a set whose types share T.
@@ -1754,6 +1777,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 				data.CoreType = ct
 			}
 		}
+		data.NoCoreType = interfaceHasNoCoreType(iface)
 	} else if !isGenericGoType(typ) {
 		data.SelfEqual = hasSelfEqual(typ)
 	}

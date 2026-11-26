@@ -75,6 +75,36 @@ type WithStringer interface {
 	}
 }
 
+// interfaceHasNoCoreType is true only where a type set provably has no core
+// type, which GALA-E0142 rejects: never for a set with an unresolved type or
+// a channel, which Go may still range over.
+func TestInterfaceHasNoCoreType(t *testing.T) {
+	const src = `package p
+
+import "example.test/missing"
+
+type Any interface{}
+type Methods interface{ String() string }
+type Mixed interface{ ~int | ~int64 }
+type Tilde interface{ ~int64 }
+type Chans interface{ chan int | <-chan int }
+type Unresolved interface{ ~int | missing.ID }
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "p.go", src, 0)
+	require.NoError(t, err)
+	conf := types.Config{Error: func(error) {}}
+	pkg, _ := conf.Check("example.com/p", fset, []*ast.File{file}, nil)
+	require.NotNil(t, pkg)
+	for name, want := range map[string]bool{
+		"Any": true, "Methods": true, "Mixed": true,
+		"Tilde": false, "Chans": false, "Unresolved": false,
+	} {
+		iface := pkg.Scope().Lookup(name).Type().Underlying().(*types.Interface)
+		assert.Equal(t, want, interfaceHasNoCoreType(iface), name)
+	}
+}
+
 // An embedding cycle is a type error, but the analyzer type-checks past
 // errors: interfaceCoreType must end on it, with no core type. (go/types
 // currently breaks the cycle itself, giving an invalid underlying type for

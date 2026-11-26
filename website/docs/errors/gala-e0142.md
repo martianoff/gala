@@ -25,8 +25,10 @@ constraints have none:
 
 A Go constraint with a core type ranges as that type: `interface{ ~int64 }`
 binds the loop variable to `T`, and `interface{ ~[]string }` ranges as a
-slice. A Go constraint whose type information is not available (no Go SDK)
-is not checked here.
+slice. A Go constraint that is not known to lack a core type is left to Go:
+one whose type information is not available (no Go SDK), one naming a type
+that could not be resolved, and a set of channels, which Go merges into one
+core type when they differ only in direction.
 
 ---
 
@@ -79,8 +81,9 @@ Constrain `T` by an interface whose types share one underlying type:
 type Number interface{ ~int64 }
 ```
 
-Then `for i := range n` binds `i` to `T`, and `steps(int64(3))` or
-`steps(time.Nanosecond * 3)` instantiates it. If the function must accept
+Then `for i := range n` binds `i` to `T`. The call must pass an `int64`-based
+value too, since an untyped `3` is an `int`: `steps(int64(3))`, or
+`steps(time.Nanosecond * 3)`. If the function must accept
 types of different underlying types, take a value of a concrete type, such as
 an `int` count, and range over that.
 

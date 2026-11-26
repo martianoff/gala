@@ -66,14 +66,15 @@ func (t *galaASTTransformer) rangeOverTypeParamError(e exprSrc, xType transpiler
 
 // coreTypeOfConstraint is the core type of the type parameter constraint c:
 // nil for `any`, `comparable` and a GALA interface (methods only), or the
-// Go interface's recorded core type (nil when it has none). known is false
-// for a Go constraint whose type information is missing.
+// Go interface's recorded core type. known is false when c's core type is
+// not recorded and c is not known to have none (GoTypeData.NoCoreType): a Go
+// constraint with an unresolved type, or whose type information is missing.
 func (t *galaASTTransformer) coreTypeOfConstraint(c transpiler.Type) (core transpiler.Type, known bool) {
 	if !transpiler.IsInterfaceConstraint(c) {
 		return nil, true
 	}
 	if data := t.goConstraintData(c); data != nil {
-		return data.CoreType, true
+		return data.CoreType, data.CoreType != nil || data.NoCoreType
 	}
 	meta := t.getTypeMeta(c.BaseName())
 	return nil, meta != nil && meta.IsInterface

@@ -34,7 +34,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x0C}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x0D}
 
 const (
 	typeTagNil        uint8 = 0 // nil interface
@@ -581,6 +581,7 @@ func (e *encoder) writeGoTypeData(t *transpiler.GoTypeData) {
 	e.writeBool(t.EmbedsComparable)
 	e.writeBool(t.SelfEqual)
 	e.writeType(t.CoreType)
+	e.writeBool(t.NoCoreType)
 }
 
 func (e *encoder) writeStringGoTypeDataMap(m map[string]*transpiler.GoTypeData) {
@@ -1210,6 +1211,7 @@ func (d *decoder) readGoTypeData() *transpiler.GoTypeData {
 	t.EmbedsComparable = d.readBool()
 	t.SelfEqual = d.readBool()
 	t.CoreType = d.readType()
+	t.NoCoreType = d.readBool()
 	return t
 }
 

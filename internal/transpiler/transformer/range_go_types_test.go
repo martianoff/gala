@@ -25,6 +25,10 @@ type Sized interface{ Int64ish }
 type Mixed interface{ ~int | ~int64 }
 
 type Strs interface{ ~[]string }
+
+type Stringer interface{ String() string }
+
+type Recv interface{ chan int | <-chan int }
 `
 	cases := []struct {
 		name, constraint string
@@ -33,6 +37,9 @@ type Strs interface{ ~[]string }
 		{"a ~int64 constraint", "Int64ish", []string{`"i=%v"`, "func() T"}},
 		{"a constraint embedding one", "Sized", []string{`"i=%v"`, "func() T"}},
 		{"a slice core type", "Strs", []string{"for i := range n"}},
+		// Go merges channel directions into a core type: left to Go.
+		{"channels of both directions", "Recv", []string{"for i := range n"}},
+		{"a Go interface with methods only", "Stringer", nil},
 		{"a constraint with no core type", "Mixed", nil},
 		{"any", "any", nil},
 		{"comparable", "comparable", nil},
