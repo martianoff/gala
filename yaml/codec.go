@@ -1416,7 +1416,9 @@ func tryParseKeyValue(line string) (string, string, bool) {
 func trimYamlSpace(s string) string { return strings.Trim(s, " \t") }
 
 // withoutComment drops a trailing comment (" # ...", outside a quoted
-// scalar) from a scalar's text.
+// scalar) from a scalar's text. A flow collection's text keeps its comment
+// (see findComment), which is safe because every value that starts with '['
+// or '{' reaches parseFlowCollection.
 func withoutComment(s string) string {
 	if hi := findComment(s, 0); hi >= 0 {
 		return trimYamlSpace(s[:hi])
@@ -1588,11 +1590,7 @@ type flowParser struct {
 	i int
 }
 
-func (p *flowParser) skipWhite() {
-	for p.i < len(p.s) && (p.s[p.i] == ' ' || p.s[p.i] == '\t') {
-		p.i++
-	}
-}
+func (p *flowParser) skipWhite() { p.i += countLeadingWhite(p.s[p.i:]) }
 
 // fail reports a malformed flow collection, quoting s from the point where
 // reading stopped.
@@ -1623,11 +1621,11 @@ func (p *flowParser) collection(depth int) *yNode {
 			return node
 		}
 		if node.kind == ySeq {
-			p.sequenceEntry(node, depth)
+			node.seq = append(node.seq, p.sequenceEntry(depth))
 		} else {
-			key, value := p.pair(depth)
+			key := p.key()
 			node.mapKeys = append(node.mapKeys, key)
-			node.mapVals = append(node.mapVals, value)
+			node.mapVals = append(node.mapVals, p.pairValue(depth))
 		}
 		p.skipWhite()
 		switch {
@@ -1641,51 +1639,59 @@ func (p *flowParser) collection(depth int) *yNode {
 	}
 }
 
-// sequenceEntry reads one entry of a flow sequence into seq: a node, or a
-// "key: value" pair, which is a mapping of one pair.
-func (p *flowParser) sequenceEntry(seq *yNode, depth int) {
-	start := p.i
-	entry := p.node(depth)
-	p.skipWhite()
-	if p.i >= len(p.s) || p.s[p.i] != ':' {
-		seq.seq = append(seq.seq, entry)
-		return
+// sequenceEntry reads one entry of a flow sequence: a nested collection, a
+// scalar, or a "key: value" pair, which is a mapping of one pair.
+func (p *flowParser) sequenceEntry(depth int) *yNode {
+	c := p.s[p.i]
+	if c == '[' || c == '{' {
+		node := p.collection(depth + 1)
+		if p.colonFollows() {
+			p.fail("a flow collection as a key is not supported")
+		}
+		return node
 	}
-	p.i = start
-	key, value := p.pair(depth)
-	seq.seq = append(seq.seq, &yNode{kind: yMap, mapKeys: []string{key}, mapVals: []*yNode{value}})
+	quoted := c == '"' || c == '\''
+	text := p.key()
+	if p.colonFollows() {
+		return &yNode{kind: yMap, mapKeys: []string{text}, mapVals: []*yNode{p.pairValue(depth)}}
+	}
+	if quoted {
+		return newScalarNode(text, false)
+	}
+	return parseInlineScalar(text)
 }
 
-// pair reads a mapping entry: a scalar key, then ':' and a value, which is
-// null when it is left out.
-func (p *flowParser) pair(depth int) (string, *yNode) {
-	var key string
-	switch c := p.s[p.i]; c {
+// colonFollows reports whether a ':' comes next, after white space.
+func (p *flowParser) colonFollows() bool {
+	p.skipWhite()
+	return p.i < len(p.s) && p.s[p.i] == ':'
+}
+
+// key reads a scalar key, quoted or plain, and returns its text.
+func (p *flowParser) key() string {
+	switch p.s[p.i] {
 	case '[', '{':
 		p.fail("a flow collection as a key is not supported")
 	case '"', '\'':
-		key = p.quoted()
-	default:
-		key = p.plain()
+		return p.quoted()
 	}
-	p.skipWhite()
-	if p.i >= len(p.s) || p.s[p.i] != ':' {
-		return key, newScalarNode("", true)
+	return p.plain()
+}
+
+// pairValue reads what follows a mapping key: ':' and a value, which is
+// null when either is left out.
+func (p *flowParser) pairValue(depth int) *yNode {
+	if !p.colonFollows() {
+		return newScalarNode("", true)
 	}
 	p.i++
 	p.skipWhite()
-	if p.i < len(p.s) && (p.s[p.i] == ',' || p.s[p.i] == ']' || p.s[p.i] == '}') {
-		return key, newScalarNode("", true)
-	}
-	return key, p.node(depth)
-}
-
-// node reads a value: a nested collection, a quoted scalar or a plain one.
-func (p *flowParser) node(depth int) *yNode {
 	if p.i >= len(p.s) {
 		return newScalarNode("", true)
 	}
 	switch p.s[p.i] {
+	case ',', ']', '}':
+		return newScalarNode("", true)
 	case '[', '{':
 		return p.collection(depth + 1)
 	case '"', '\'':
@@ -1696,13 +1702,16 @@ func (p *flowParser) node(depth int) *yNode {
 
 // quoted reads the quoted scalar at p.i and returns its text.
 func (p *flowParser) quoted() string {
-	end := closingQuote(p.s[p.i:])
+	start := p.i
+	end := closingQuote(p.s[start:])
 	if end < 0 {
-		panic(fmt.Sprintf("yaml: unterminated quoted scalar %q", p.s[p.i:]))
+		panic(fmt.Sprintf("yaml: unterminated quoted scalar %q", p.s[start:]))
 	}
-	text := decodeQuotedScalar(p.s[p.i : p.i+end+1])
 	p.i += end + 1
-	return text
+	if p.s[start] == '"' {
+		return unescapeDoubleQuoted(p.s[start+1 : start+end])
+	}
+	return unescapeSingleQuoted(p.s[start+1 : start+end])
 }
 
 // plain reads the plain scalar at p.i and returns its text, which is never

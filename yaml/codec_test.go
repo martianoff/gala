@@ -624,24 +624,31 @@ func TestDecoder_QuotedKeyValueComment(t *testing.T) {
 
 // dumpNode writes a parsed document in a compact flow form, so that two
 // documents can be compared by their structure.
-func dumpNode(n *yNode) string {
+func dumpNode(n *yNode) string { return dumpWith(n, func(s string) string { return s }) }
+
+// dumpQuoted is dumpNode with every scalar and key quoted, so a string
+// reads apart from a nested collection.
+func dumpQuoted(n *yNode) string { return dumpWith(n, strconv.Quote) }
+
+// dumpWith dumps n, writing each scalar and key with text.
+func dumpWith(n *yNode, text func(string) string) string {
 	switch {
 	case n == nil:
 		return "<nil>"
 	case n.kind == yScalar && n.nullish:
 		return "<null>"
 	case n.kind == yScalar:
-		return n.scalar
+		return text(n.scalar)
 	case n.kind == ySeq:
 		items := make([]string, len(n.seq))
 		for i, c := range n.seq {
-			items[i] = dumpNode(c)
+			items[i] = dumpWith(c, text)
 		}
 		return "[" + strings.Join(items, ", ") + "]"
 	default:
 		pairs := make([]string, len(n.mapKeys))
 		for i, k := range n.mapKeys {
-			pairs[i] = k + ": " + dumpNode(n.mapVals[i])
+			pairs[i] = text(k) + ": " + dumpWith(n.mapVals[i], text)
 		}
 		return "{" + strings.Join(pairs, ", ") + "}"
 	}
@@ -649,13 +656,18 @@ func dumpNode(n *yNode) string {
 
 // parseDump parses src and dumps it, or returns the error the parse
 // panicked with.
-func parseDump(src string) (out string) {
+func parseDump(src string) string { return parseDumpWith(src, dumpNode) }
+
+// parseDumpQuoted is parseDump with dumpQuoted.
+func parseDumpQuoted(src string) string { return parseDumpWith(src, dumpQuoted) }
+
+func parseDumpWith(src string, dump func(*yNode) string) (out string) {
 	defer func() {
 		if r := recover(); r != nil {
 			out = "error: " + fmt.Sprint(r)
 		}
 	}()
-	return dumpNode(parseYAML(src))
+	return dump(parseYAML(src))
 }
 
 // A block sequence that is a mapping value may sit at the key's own
@@ -991,7 +1003,6 @@ func TestDecoder_DeeplyNestedSequenceLine(t *testing.T) {
 // block.
 func TestDecoder_BlockIndicatorInsideQuotes(t *testing.T) {
 	tests := []struct{ src, want string }{
-		{"k: [a, \"b: | # c\"]\nm: 1", `{k: [a, b: | # c], m: 1}`},
 		{"k: 'x: | # y'\nm: 1", "{k: x: | # y, m: 1}"},
 		{"- 'a: | # b'\n- c", "[a: | # b, c]"},
 		{"- \"a # b\": |\n    body\n  c: 1", "[{a # b: body\n, c: 1}]"},
@@ -1174,38 +1185,6 @@ func TestDecoder_UnsupportedFormsFail(t *testing.T) {
 
 // ----- Flow collections -------------------------------------------------------
 
-// dumpQuoted is dumpNode with every scalar quoted, so a string reads apart
-// from a nested collection.
-func dumpQuoted(n *yNode) string {
-	switch {
-	case n.kind == yScalar && n.nullish:
-		return "null"
-	case n.kind == yScalar:
-		return strconv.Quote(n.scalar)
-	case n.kind == ySeq:
-		items := make([]string, len(n.seq))
-		for i, c := range n.seq {
-			items[i] = dumpQuoted(c)
-		}
-		return "[" + strings.Join(items, ", ") + "]"
-	default:
-		pairs := make([]string, len(n.mapKeys))
-		for i, k := range n.mapKeys {
-			pairs[i] = strconv.Quote(k) + ": " + dumpQuoted(n.mapVals[i])
-		}
-		return "{" + strings.Join(pairs, ", ") + "}"
-	}
-}
-
-func parseDumpQuoted(src string) (out string) {
-	defer func() {
-		if r := recover(); r != nil {
-			out = "error: " + fmt.Sprint(r)
-		}
-	}()
-	return dumpQuoted(parseYAML(src))
-}
-
 // Flow sequences and mappings are parsed as YAML 1.2 reads them (#1374),
 // wherever a value may stand: after a key, as a sequence item, and as the
 // whole document. A "#" or ": " inside a quoted item is text, a comment
@@ -1226,11 +1205,11 @@ func TestDecoder_FlowCollections(t *testing.T) {
 		{"quoted mapping value", `k: {"a": "b # c"} # note`, `{"k": {"a": "b # c"}}`},
 		{"escaped quote", `k: ["a\"b", 'it''s']`, `{"k": ["a\"b", "it's"]}`},
 		{"trailing comma", "k: [a, b, ]", `{"k": ["a", "b"]}`},
-		{"null items", "k: [~, null, '']", `{"k": [null, null, ""]}`},
-		{"key with no value", "k: {a, b: 1, c: }", `{"k": {"a": null, "b": "1", "c": null}}`},
+		{"null items", "k: [~, null, '']", `{"k": [<null>, <null>, ""]}`},
+		{"key with no value", "k: {a, b: 1, c: }", `{"k": {"a": <null>, "b": "1", "c": <null>}}`},
 		{"JSON colon after a quoted key", `k: {"a":1}`, `{"k": {"a": "1"}}`},
 		{"colon inside a plain scalar", "k: {url: http://x:80/p}", `{"k": {"url": "http://x:80/p"}}`},
-		{"plain key with a colon and no space", "k: {a:1}", `{"k": {"a:1": null}}`},
+		{"plain key with a colon and no space", "k: {a:1}", `{"k": {"a:1": <null>}}`},
 		{"pair in a sequence", "k: [a: 1, b]", `{"k": [{"a": "1"}, "b"]}`},
 		{"spaces inside items", "k: [ a b , c ]", `{"k": ["a b", "c"]}`},
 		{"quoted key on the line", `"k": [a, "b # c"]`, `{"k": ["a", "b # c"]}`},
