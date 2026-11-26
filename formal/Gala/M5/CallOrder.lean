@@ -34,14 +34,16 @@ open Gala.GoCore.Full.Hoist
 /-! ## The shapes of lowered expressions, calls included -/
 
 mutual
-/-- A lowered expression's shape in GoCore: literals, names, Go's operators of step 2a, and
-    calls of a function by name. -/
+/-- A lowered expression's shape in GoCore: literals, names, Go's operators of step 2a,
+    calls of a function by name, and a function literal called at once with no arguments
+    (an IIFE: its body is checked statement by statement, `LitsQuiet`). -/
 def CC : Expr → Prop
   | .ident _ | .intLit _ | .strLit _ => True
   | .paren x => CC x
   | .unary op x => op ∈ ["-", "+", "^", "!"] ∧ CC x
   | .binary _ x y => CC x ∧ CC y
   | .call (.ident _) args false => CCs args
+  | .call (.funcLit _ _) [] false => True
   | _ => False
 def CCs : List Expr → Prop
   | [] => True
@@ -137,6 +139,9 @@ theorem lowerC_CC (K : Nat) (sg : Sigs) (κ : String → Option Kind) : ∀ (e :
     simp only [Prod.mk.injEq] at hp
     obtain ⟨-, rfl⟩ := hp
     exact lowerArgs_CC K sg κ ks args las hlas
+  | .ifExpr c a b, k, le, h => by
+    obtain ⟨st, -, -, rfl⟩ := lowerC_ifExpr K sg h
+    simp [iife, CC]
   | .call (.lit _) _, _, _, h | .call (.paren _) _, _, _, h | .call (.unary ..) _, _, _, h
   | .call (.binary ..) _, _, _, h | .call (.call ..) _, _, _, h | .call (.select ..) _, _, _, h
   | .call (.tuple _) _, _, _, h | .call (.ifExpr ..) _, _, _, h | .call (.mtch ..) _, _, _, h
@@ -144,7 +149,7 @@ theorem lowerC_CC (K : Nat) (sg : Sigs) (κ : String → Option Kind) : ∀ (e :
   | .call (.assign ..) _, _, _, h | .call (.incdec ..) _, _, _, h | .call (.decl ..) _, _, _, h
   | .call (.interp _) _, _, _, h | .call (.lambda ..) _, _, _, h | .call (.named ..) _, _, _, h
   | .call (.unsupported _) _, _, _, h
-  | .select .., _, _, h | .tuple _, _, _, h | .ifExpr .., _, _, h | .mtch .., _, _, h | .block _, _, _, h
+  | .select .., _, _, h | .tuple _, _, _, h | .mtch .., _, _, h | .block _, _, _, h
   | .ifStmt .., _, _, h | .ret _, _, _, h | .assign .., _, _, h | .incdec .., _, _, h | .decl .., _, _, h
   | .interp _, _, _, h | .lambda .., _, _, h | .named .., _, _, h | .unsupported _, _, _, h => by
     simp [lowerC] at h
@@ -170,56 +175,82 @@ end
 
 theorem idb {α β : Type} (a : α) (f : α → Id β) : (a >>= f : Id β) = f a := rfl
 
+theorem idbp {α β : Type} (x : Id α) (g : α → β) : (x >>= fun p => pure (g p) : Id β) = g x := rfl
+
+/-- The scope gc's rewrite gives a function literal's body. -/
+def litScope (s : Scope) (sig : Sig) : Scope := (s.enter sig).withIfaces sig
+
+theorem callKind_funcLit (s : Scope) (sig : Sig) (b : List Stmt) : callKind s (.funcLit sig b) = .call := rfl
+
 mutual
-theorem hE_cc (s : Scope) (top : Bool) : ∀ (e : Expr), CC e → ∀ h, (hE s false top e).run h = (e, h)
-  | .ident _, _, h | .intLit _, _, h | .strLit _, _, h => by simp [hE]; rfl
-  | .paren x, hc, h => by
+/-- **The rewrite leaves its IIFEs' bodies as they are**, each in the scope it gives it
+    (`litScope`). -/
+def LitsQuiet (s : Scope) : Expr → Prop
+  | .paren x | .unary _ x => LitsQuiet s x
+  | .binary _ x y => LitsQuiet s x ∧ LitsQuiet s y
+  | .call (.ident _) args _ => LitsQuietArgs s args
+  | .call (.funcLit sig b) [] _ => ∀ h, (hSs (litScope s sig) b).run h = (b, h)
+  | _ => True
+def LitsQuietArgs (s : Scope) : List Expr → Prop
+  | [] => True
+  | a :: as => LitsQuiet s a ∧ LitsQuietArgs s as
+end
+
+mutual
+theorem hE_cc (s : Scope) (top : Bool) : ∀ (e : Expr), CC e → LitsQuiet s e → ∀ h, (hE s false top e).run h = (e, h)
+  | .ident _, _, _, h | .intLit _, _, _, h | .strLit _, _, _, h => by simp [hE]; rfl
+  | .paren x, hc, hq, h => by
     simp only [hE]
     show (do let x' ← hE s false top x; pure (Expr.paren x')).run h = _
-    simp only [StateT.run_bind, hE_cc s top x hc h]; rfl
-  | .unary op x, ⟨_, hc⟩, h => by
+    simp only [StateT.run_bind, hE_cc s top x hc hq h]; rfl
+  | .unary op x, ⟨_, hc⟩, hq, h => by
     rw [hE]
-    simp only [StateT.run_bind, hE_cc s false x hc h, Bool.false_and]
+    simp only [StateT.run_bind, hE_cc s false x hc hq h, Bool.false_and]
     rfl
-  | .binary op x y, ⟨hx, hy⟩, h => by
+  | .binary op x y, ⟨hx, hy⟩, ⟨qx, qy⟩, h => by
     rw [hE]
-    simp [hE_cc s false x hx h]
+    simp [hE_cc s false x hx qx h]
     show (fun p => (Expr.binary op x p.fst, p.snd)) <$> (hE s false false y).run h = _
-    rw [hE_cc s false y hy h]; rfl
-  | .call (.ident f) args false, hc, h => by
+    rw [hE_cc s false y hy qy h]; rfl
+  | .call (.ident f) args false, hc, hq, h => by
     rw [hE]
     split
-    · simp only [StateT.run_bind, hEs_cc s args hc h, idb, Bool.false_and, Bool.false_eq_true, ite_false]
+    · simp only [StateT.run_bind, hEs_cc s args hc hq h, idb, Bool.false_and, Bool.false_eq_true, ite_false]
       rfl
     · simp only [StateT.run_bind, Bool.false_and, Bool.false_eq_true, ite_false]
       have hid : (hE s false false (.ident f)).run h = (.ident f, h) := by simp [hE]; rfl
-      simp only [idb, StateT.run_pure, id_pure, hid, hArgs_cc s _ args hc h]
-theorem hEs_cc (s : Scope) : ∀ (es : List Expr), CCs es → ∀ h, (hEs s false es).run h = (es, h)
-  | [], _, h => rfl
-  | e :: es, ⟨he, hes⟩, h => by
-    simp only [hEs, StateT.run_bind, hE_cc s false e he h, idb, hEs_cc s es hes h]; rfl
-theorem hArgs_cc (s : Scope) (iface : Bool) : ∀ (es : List Expr), CCs es → ∀ h, (hArgs s false iface es).run h = (es, h)
-  | [], _, h => rfl
-  | e :: es, ⟨he, hes⟩, h => by
-    simp only [hArgs, StateT.run_bind, hE_cc s false e he h, Bool.false_and, Bool.false_eq_true, ite_false,
-      idb, StateT.run_pure, id_pure, hArgs_cc s iface es hes h]
-
+      simp only [idb, StateT.run_pure, id_pure, hid, hArgs_cc s _ args hc hq h]
+  | .call (.funcLit sig b) [] false, _, hq, h => by
+    rw [hE, callKind_funcLit]
+    simp only [StateT.run_bind, Bool.false_and, Bool.false_eq_true, ite_false]
+    have hid : (hE s false false (.funcLit sig b)).run h = (.funcLit sig b, h) := by
+      simp only [hE, StateT.run_bind]
+      rw [show (s.enter sig).withIfaces sig = litScope s sig from rfl, hq h]
+      rfl
+    simp only [idb, StateT.run_pure, id_pure, hid]
+    rfl
+theorem hEs_cc (s : Scope) : ∀ (es : List Expr), CCs es → LitsQuietArgs s es → ∀ h, (hEs s false es).run h = (es, h)
+  | [], _, _, h => rfl
+  | e :: es, ⟨he, hes⟩, ⟨qe, qes⟩, h => by
+    simp only [hEs, StateT.run_bind, hE_cc s false e he qe h, idb, hEs_cc s es hes qes h]; rfl
+theorem hArgs_cc (s : Scope) (iface : Bool) : ∀ (es : List Expr), CCs es → LitsQuietArgs s es → ∀ h,
+    (hArgs s false iface es).run h = (es, h)
+  | [], _, _, h => rfl
+  | e :: es, ⟨he, hes⟩, ⟨qe, qes⟩, h => by
+    simp only [hArgs, StateT.run_bind, hE_cc s false e he qe h, Bool.false_and, Bool.false_eq_true, ite_false,
+      idb, StateT.run_pure, id_pure, hArgs_cc s iface es hes qes h]
 end
-
 
 /-! ## Statements no trigger fires on -/
 
 theorem blocked_off {evs : List Ev} (h : triggers evs = false) : blocked evs = none := by
   simp [blocked, h]
 
-theorem hOperands_cc (s : Scope) (top : Bool) (le : Expr) (hc : CC le) (h : HState) :
+theorem hOperands_cc (s : Scope) (top : Bool) (le : Expr) (hc : CC le) (hq : LitsQuiet s le) (h : HState) :
     (hOperands s false top [le]).run h = ([le], h) := by
   simp only [hOperands, hEs, StateT.run_bind, List.isEmpty_nil, Bool.and_true]
-  rw [hE_cc s top le hc h]
+  rw [hE_cc s top le hc hq h]
   rfl
-
-theorem idbp {α β : Type} (x : Id α) (g : α → β) : (x >>= fun p => pure (g p) : Id β) = g x := rfl
-
 
 /-- The value of a lowered declaration `var x = e`. -/
 def declExpr? : Decl → Option (String × Expr)
@@ -241,13 +272,15 @@ def afterS (s : Scope) : Stmt → Scope
 
 mutual
 /-- **No statement fires gc's trigger**, in scope `s`: each is a lowered declaration,
-    `return`, `if` or block of lowered expressions (`CC`), and the events of its operands
-    (`scanOperands`, `scanE`) do not trigger the rewrite (`Hoist.triggers`). -/
+    `return`, `if` or block of lowered expressions (`CC`), the events of its operands
+    (`scanOperands`, `scanE`) do not trigger the rewrite (`Hoist.triggers`), and the rewrite
+    leaves its IIFEs' bodies as they are (`LitsQuiet`). -/
 def NoTrigS (s : Scope) : Stmt → Prop
-  | .decl d => ∃ x e, declExpr? d = some (x, e) ∧ CC e ∧ triggers (scanOperands s true [e]) = false
-  | .ret es => ∃ e, es = [e] ∧ CC e ∧ triggers (scanOperands s true [e]) = false
+  | .decl d => ∃ x e, declExpr? d = some (x, e) ∧ CC e ∧ LitsQuiet s e ∧ triggers (scanOperands s true [e]) = false
+  | .ret es => ∃ e, es = [e] ∧ CC e ∧ LitsQuiet s e ∧ triggers (scanOperands s true [e]) = false
   | .block ss => NoTrigSs s ss
-  | .if_ init c b els => init = none ∧ CC c ∧ triggers (scanE s false c) = false ∧ NoTrigSs s b ∧ NoTrigOS s els
+  | .if_ init c b els => init = none ∧ CC c ∧ LitsQuiet s c ∧ triggers (scanE s false c) = false ∧
+      NoTrigSs s b ∧ NoTrigOS s els
   | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
   | .defer_ _ | .empty | .unsupported _ | .localType _ => False
 def NoTrigSs (s : Scope) : List Stmt → Prop
@@ -262,17 +295,17 @@ mutual
 theorem hS_noTrig (s : Scope) : ∀ (st : Stmt), NoTrigS s st → ∀ h, (hS s st).run h = (([st], afterS s st), h)
   | .decl d, hst, h => by
     simp only [NoTrigS] at hst
-    obtain ⟨x, le, hd, hc, ht⟩ := hst
+    obtain ⟨x, le, hd, hc, hq, ht⟩ := hst
     have hd' := declExpr?_some hd
     subst hd'
     simp only [hS, hSpecs, blocked_off ht, ht, StateT.run_bind]
-    rw [isolated_run _ [le] (hOperands_cc s true le hc) h]
+    rw [isolated_run _ [le] (hOperands_cc s true le hc hq) h]
     rfl
   | .ret es, hst, h => by
     simp only [NoTrigS] at hst
-    obtain ⟨le, rfl, hc, ht⟩ := hst
+    obtain ⟨le, rfl, hc, hq, ht⟩ := hst
     simp only [hS, blocked_off ht, ht, StateT.run_bind]
-    rw [isolated_run _ [le] (hOperands_cc s true le hc) h]
+    rw [isolated_run _ [le] (hOperands_cc s true le hc hq) h]
     rfl
   | .block ss, hss, h => by
     simp only [NoTrigS] at hss
@@ -280,10 +313,10 @@ theorem hS_noTrig (s : Scope) : ∀ (st : Stmt), NoTrigS s st → ∀ h, (hS s s
     rfl
   | .if_ init lc la els, hst, h => by
     simp only [NoTrigS] at hst
-    obtain ⟨rfl, hc, ht, hb, he⟩ := hst
+    obtain ⟨rfl, hc, hq, ht, hb, he⟩ := hst
     obtain ⟨s', hes⟩ := hOS_noTrig s els he h
     simp only [hS, hOS, StateT.run_bind, StateT.run_pure, idb, id_pure]
-    simp only [blocked_off ht, ht, StateT.run_bind, isolated_run _ lc (hE_cc s false lc hc), idb,
+    simp only [blocked_off ht, ht, StateT.run_bind, isolated_run _ lc (hE_cc s false lc hc hq), idb,
       hSs_noTrig s la hb h, hes]
     cases els <;> rfl
   | .expr _, h', _ | .incDec .., h', _ | .assign .., h', _ | .branch _, h', _ | .switch .., h', _
@@ -305,7 +338,8 @@ end
 
 mutual
 /-- **The events of a lowered expression in a scope it fits** (`canon_eq`): reads change
-    nothing, `f(args)` is a call node over `f`'s read and its arguments' events, a division
+    nothing, `f(args)` is a call node over `f`'s read and its arguments' events, an IIFE a
+    call node with nothing read before it (its body is a function of its own), a division
     or modulo by anything but a non-zero literal may panic dividing, a shift by anything but
     a literal may panic shifting. -/
 def canon (top : Bool) : Expr → List Ev
@@ -323,6 +357,8 @@ def canon (top : Bool) : Expr → List Ev
   | .call (.ident _) args _ =>
     if top then [.read false none] ++ canonArgs args
     else [mkNode true [.text] ([.read false none] ++ canonArgs args)]
+  | .call (.funcLit _ _) args _ =>
+    if top then canonArgs args else [mkNode true [.text] (canonArgs args)]
   | _ => []
 def canonArgs : List Expr → List Ev
   | [] => []
@@ -330,19 +366,35 @@ def canonArgs : List Expr → List Ev
 end
 
 mutual
-/-- **An expression fits a scope**: no name it reads is one a call may change there, and
-    each name it calls is a call there (not a conversion or builtin) of a function with one
-    result, not a variable. What gc's model reads then is `canon` (`canon_eq`). -/
+/-- **An expression fits a scope**: no name it reads is one a call may change there, each
+    name it calls is a call there (not a conversion or builtin) of a function with one
+    result, not a variable, and each IIFE has one result and a body that fits the scope the
+    rewrite gives it. What gc's model reads then is `canon` (`canon_eq`). -/
 def FitsE (s : Scope) : Expr → Prop
   | .ident x => changeableName s x = false
   | .paren x | .unary _ x => FitsE s x
   | .binary _ x y => FitsE s x ∧ FitsE s y
   | .call (.ident f) args _ => callKind s (.ident f) = .call ∧ changeableName s f = false ∧
       singleResult s (.ident f) = true ∧ FitsEs s args
+  | .call (.funcLit sig b) args _ => resultCount sig = 1 ∧ FitsSs (litScope s sig) b ∧ FitsEs s args
   | _ => True
 def FitsEs (s : Scope) : List Expr → Prop
   | [] => True
   | a :: as => FitsE s a ∧ FitsEs s as
+/-- **A body fits a scope**: its statements' expressions do (`FitsE`), each in the scope gc's
+    rewrite gives it (a declaration's name bound for the statements after it). -/
+def FitsS (s : Scope) : Stmt → Prop
+  | .decl (.value false [.mk [_] none [e]]) => FitsE s e
+  | .ret es => FitsEs s es
+  | .block ss => FitsSs s ss
+  | .if_ _ c b els => FitsE s c ∧ FitsSs s b ∧ FitsOS s els
+  | _ => True
+def FitsSs (s : Scope) : List Stmt → Prop
+  | [] => True
+  | st :: ss => FitsS s st ∧ FitsSs (afterS s st) ss
+def FitsOS (s : Scope) : Option Stmt → Prop
+  | none => True
+  | some st => FitsS s st
 end
 
 theorem readsChangeable_append (a b : List Ev) :
@@ -368,13 +420,15 @@ theorem canon_noRead (top : Bool) : ∀ e, CC e → readsChangeable (canon top e
     split
     · simp only [readsChangeable_append, canonArgs_noRead args hc]; rfl
     · rfl
+  | .call (.funcLit _ _) [] false, _ => by simp only [canon]; split <;> rfl
   | .charLit _, hc | .floatLit .., hc | .composite .., hc | .keyValue .., hc | .funcLit .., hc
   | .selector .., hc | .index .., hc | .sliceExpr .., hc | .typeAssert .., hc | .star _, hc
   | .structType _, hc | .interfaceType _, hc | .funcType _, hc | .arrayType .., hc | .mapType .., hc
-  | .ellipsis, hc | .unsupported _, hc | .call (.ident _) _ true, hc => by simp [CC] at hc
+  | .ellipsis, hc | .unsupported _, hc | .call (.ident _) _ true, hc | .call (.funcLit _ _) _ true, hc
+  | .call (.funcLit _ _) (_ :: _) false, hc => by simp [CC] at hc
   | .call (.intLit _) _ _, hc | .call (.strLit _) _ _, hc | .call (.charLit _) _ _, hc
   | .call (.floatLit ..) _ _, hc | .call (.composite ..) _ _, hc | .call (.keyValue ..) _ _, hc
-  | .call (.funcLit ..) _ _, hc | .call (.paren _) _ _, hc | .call (.selector ..) _ _, hc
+  | .call (.paren _) _ _, hc | .call (.selector ..) _ _, hc
   | .call (.index ..) _ _, hc | .call (.sliceExpr ..) _ _, hc | .call (.typeAssert ..) _ _, hc
   | .call (.call ..) _ _, hc | .call (.star _) _ _, hc | .call (.unary ..) _ _, hc | .call (.binary ..) _ _, hc
   | .call (.structType _) _ _, hc | .call (.interfaceType _) _ _, hc | .call (.funcType _) _ _, hc
@@ -389,6 +443,28 @@ theorem slotEv_off (s : Scope) (e : Expr) (evs : List Ev) (h : readsChangeable e
   unfold slotEv; split
   · rfl
   · simp [h]
+
+/-- The only argument of a call is no call of unknown arity, when it fits. -/
+theorem soleUnknown_fits (s : Scope) (args : List Expr) (hc : CCs args) (hfs : FitsEs s args) :
+    soleUnknown s args = false := by
+  unfold soleUnknown
+  split
+  · rename_i a
+    have hfa := hfs.1
+    have hca := (show CCs [a] from hc).1
+    unfold unknownArity
+    split
+    · rename_i fn as sp
+      cases fn
+      case ident g =>
+        simp only [FitsE] at hfa
+        simp [hfa.1, hfa.2.2.1]
+      case funcLit sig b =>
+        simp only [FitsE] at hfa
+        simp [callKind_funcLit, singleResult, hfa.1]
+      all_goals simp [CC] at hca
+    · rfl
+  · rfl
 
 mutual
 /-- **The bridge**: in a scope a lowered expression fits, gc's model reads `canon`. -/
@@ -409,25 +485,12 @@ theorem canon_eq (s : Scope) (top : Bool) : ∀ (e : Expr), CC e → FitsE s e �
     · simp only [slotEv_off s x _ (canon_noRead false x hx), slotEv_off s y _ (canon_noRead false y hy)]
       simp
   | .call (.ident f) args false, hc, ⟨hk, hch, hsr, hfs⟩ => by
-    have hsole : soleUnknown s args = false := by
-      unfold soleUnknown
-      split
-      · rename_i a
-        have hfa := hfs.1
-        have hca := (show CCs [a] from hc).1
-        unfold unknownArity
-        split
-        · rename_i fn as sp
-          cases fn
-          case ident g =>
-            simp only [FitsE] at hfa
-            simp [hfa.1, hfa.2.2.1]
-          all_goals simp [CC] at hca
-        · rfl
-      · rfl
-    simp only [scanE, hk, isPkgFunc, Bool.false_eq_true, ite_false, isMethodSel, hsole, isFmtFunc]
+    simp only [scanE, hk, isPkgFunc, Bool.false_eq_true, ite_false, isMethodSel, soleUnknown_fits s args hc hfs,
+      isFmtFunc]
     simp only [hch, canon]
     rw [scanArgs_eq s _ args hc hfs]
+  | .call (.funcLit sig b) [] false, _, _ => by
+    simp [scanE, callKind_funcLit, isPkgFunc, isMethodSel, soleUnknown, isFmtFunc, scanArgs, canon, canonArgs]
 theorem scanArgs_eq (s : Scope) (conv : List Bool) : ∀ (es : List Expr), CCs es → FitsEs s es →
     scanArgs s conv es = canonArgs es
   | [], _, _ => by simp [scanArgs, canonArgs]
@@ -441,18 +504,35 @@ end
 /-! ## The orders step 3a allows -/
 
 mutual
-/-- `CC`, as a check. -/
+/-- `CC`, as a check, with each IIFE's body a `Body3` body. -/
 def ccB : Expr → Bool
   | .ident _ | .intLit _ | .strLit _ => true
   | .paren x => ccB x
   | .unary op x => decide (op ∈ ["-", "+", "^", "!"]) && ccB x
   | .binary _ x y => ccB x && ccB y
   | .call (.ident _) args false => ccBs args
+  | .call (.funcLit _ b) [] false => body3Ss b
   | _ => false
 def ccBs : List Expr → Bool
   | [] => true
   | a :: as => ccB a && ccBs as
+/-- **No statement fires gc's trigger** on `canon`'s events: decidable. -/
+def body3S : Stmt → Bool
+  | .decl (.value false [.mk [_] none [e]]) => ccB e && !triggers (canon true e)
+  | .ret [e] => ccB e && !triggers (canon true e)
+  | .block ss => body3Ss ss
+  | .if_ init c b els => init.isNone && (ccB c && !triggers (canon false c)) && body3Ss b && body3OS els
+  | _ => false
+def body3Ss : List Stmt → Bool
+  | [] => true
+  | st :: ss => body3S st && body3Ss ss
+def body3OS : Option Stmt → Bool
+  | none => true
+  | some st => body3S st
 end
+
+/-- A lowered expression on which gc's trigger does not fire, read without a scope. -/
+def noTrigE (top : Bool) (e : Expr) : Bool := ccB e && !triggers (canon top e)
 
 mutual
 theorem ccB_sound : ∀ (e : Expr), ccB e = true → CC e
@@ -465,13 +545,15 @@ theorem ccB_sound : ∀ (e : Expr), ccB e = true → CC e
     simp only [ccB, Bool.and_eq_true] at h
     exact ⟨ccB_sound x h.1, ccB_sound y h.2⟩
   | .call (.ident _) args false, h => ccBs_sound args h
+  | .call (.funcLit _ _) [] false, _ => trivial
   | .charLit _, h | .floatLit .., h | .composite .., h | .keyValue .., h | .funcLit .., h
   | .selector .., h | .index .., h | .sliceExpr .., h | .typeAssert .., h | .star _, h
   | .structType _, h | .interfaceType _, h | .funcType _, h | .arrayType .., h | .mapType .., h
-  | .ellipsis, h | .unsupported _, h | .call (.ident _) _ true, h => by simp [ccB] at h
+  | .ellipsis, h | .unsupported _, h | .call (.ident _) _ true, h | .call (.funcLit _ _) _ true, h
+  | .call (.funcLit _ _) (_ :: _) false, h => by simp [ccB] at h
   | .call (.intLit _) _ _, h | .call (.strLit _) _ _, h | .call (.charLit _) _ _, h
   | .call (.floatLit ..) _ _, h | .call (.composite ..) _ _, h | .call (.keyValue ..) _ _, h
-  | .call (.funcLit ..) _ _, h | .call (.paren _) _ _, h | .call (.selector ..) _ _, h
+  | .call (.paren _) _ _, h | .call (.selector ..) _ _, h
   | .call (.index ..) _ _, h | .call (.sliceExpr ..) _ _, h | .call (.typeAssert ..) _ _, h
   | .call (.call ..) _ _, h | .call (.star _) _ _, h | .call (.unary ..) _ _, h | .call (.binary ..) _ _, h
   | .call (.structType _) _ _, h | .call (.interfaceType _) _ _, h | .call (.funcType _) _ _, h
@@ -484,83 +566,94 @@ theorem ccBs_sound : ∀ (es : List Expr), ccBs es = true → CCs es
     exact ⟨ccB_sound a h.1, ccBs_sound as h.2⟩
 end
 
-/-- A lowered expression on which gc's trigger does not fire, read without a scope. -/
-def noTrigE (top : Bool) (e : Expr) : Bool := ccB e && !triggers (canon top e)
-
-mutual
-/-- **No statement fires gc's trigger** on `canon`'s events: decidable. -/
-def body3S : Stmt → Bool
-  | .decl d => match declExpr? d with
-    | some (_, e) => noTrigE true e
-    | none => false
-  | .ret es => match es with
-    | [e] => noTrigE true e
-    | _ => false
-  | .block ss => body3Ss ss
-  | .if_ init c b els => init.isNone && noTrigE false c && body3Ss b && body3OS els
-  | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
-  | .defer_ _ | .empty | .unsupported _ | .localType _ => false
-def body3Ss : List Stmt → Bool
-  | [] => true
-  | st :: ss => body3S st && body3Ss ss
-def body3OS : Option Stmt → Bool
-  | none => true
-  | some st => body3S st
-end
-
 /-- **A body step 3a's order result speaks of**: no statement in which an operand that may
     panic (`/` or `%` by a non-literal, a shift by a non-literal count) precedes a call in
-    the same operand list, a call's arguments being a list of their own. -/
+    the same operand list, a call's arguments being a list of their own, and the same in
+    each IIFE's body. -/
 abbrev Body3 (body : List Stmt) : Prop := body3Ss body = true
 
-mutual
-/-- **A body fits a scope**: its statements' expressions do (`FitsE`), each in the scope gc's
-    rewrite gives it (a declaration's name bound for the statements after it). -/
-def FitsS (s : Scope) : Stmt → Prop
-  | .decl d => ∀ x e, declExpr? d = some (x, e) → FitsE s e
-  | .ret es => ∀ e ∈ es, FitsE s e
-  | .block ss => FitsSs s ss
-  | .if_ _ c b els => FitsE s c ∧ FitsSs s b ∧ FitsOS s els
-  | .expr _ | .incDec .. | .assign .. | .branch _ | .switch .. | .typeSwitch .. | .for_ .. | .range ..
-  | .defer_ _ | .empty | .unsupported _ | .localType _ => True
-def FitsSs (s : Scope) : List Stmt → Prop
-  | [] => True
-  | st :: ss => FitsS s st ∧ FitsSs (afterS s st) ss
-def FitsOS (s : Scope) : Option Stmt → Prop
-  | none => True
-  | some st => FitsS s st
-end
-
-theorem noTrigE_spec {s : Scope} {top : Bool} {e : Expr} (h : noTrigE top e = true) (hf : FitsE s e) :
-    CC e ∧ triggers (scanE s top e) = false := by
-  simp only [noTrigE, Bool.and_eq_true, Bool.not_eq_true'] at h
+theorem noTrigE_spec {s : Scope} {top : Bool} {e : Expr} (h : ccB e && !triggers (canon top e) = true)
+    (hf : FitsE s e) : CC e ∧ triggers (scanE s top e) = false := by
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
   have hc := ccB_sound e h.1
   exact ⟨hc, by rw [canon_eq s top e hc hf]; exact h.2⟩
 
+theorem body3S_decl_shape {d : Decl} (h : body3S (.decl d) = true) :
+    ∃ x e, d = .value false [.mk [x] none [e]] ∧ (ccB e && !triggers (canon true e)) = true := by
+  rw [body3S.eq_def] at h
+  split at h
+  · rename_i x e heq
+    cases heq
+    exact ⟨x, e, rfl, h⟩
+  all_goals first | cases h | (rename_i heq; cases heq)
+
+theorem body3S_ret_shape {es : List Expr} (h : body3S (.ret es) = true) :
+    ∃ e, es = [e] ∧ (ccB e && !triggers (canon true e)) = true := by
+  match es, h with
+  | [e], h => exact ⟨e, rfl, h⟩
+  | [], h => cases h
+  | _ :: _ :: _, h => cases h
+
 mutual
+/-- **In a scope it fits, a `Body3` expression's IIFEs are left as they are**. -/
+theorem litsQuiet_of (s : Scope) : ∀ (e : Expr), ccB e = true → FitsE s e → LitsQuiet s e
+  | .ident _, _, _ | .intLit _, _, _ | .strLit _, _, _ => trivial
+  | .paren x, hb, hf => litsQuiet_of s x hb hf
+  | .unary _ x, hb, hf => by
+    simp only [ccB, Bool.and_eq_true] at hb
+    exact litsQuiet_of s x hb.2 hf
+  | .binary _ x y, hb, hf => by
+    simp only [ccB, Bool.and_eq_true] at hb
+    exact ⟨litsQuiet_of s x hb.1 hf.1, litsQuiet_of s y hb.2 hf.2⟩
+  | .call (.ident _) args false, hb, hf => litsQuietArgs_of s args hb hf.2.2.2
+  | .call (.funcLit sig b) [] false, hb, hf => fun h => hSs_noTrig _ b (noTrigSs_of (litScope s sig) b hb hf.2.1) h
+  | .charLit _, hb, _ | .floatLit .., hb, _ | .composite .., hb, _ | .keyValue .., hb, _ | .funcLit .., hb, _
+  | .selector .., hb, _ | .index .., hb, _ | .sliceExpr .., hb, _ | .typeAssert .., hb, _ | .star _, hb, _
+  | .structType _, hb, _ | .interfaceType _, hb, _ | .funcType _, hb, _ | .arrayType .., hb, _ | .mapType .., hb, _
+  | .ellipsis, hb, _ | .unsupported _, hb, _ | .call (.ident _) _ true, hb, _ | .call (.funcLit _ _) _ true, hb, _
+  | .call (.funcLit _ _) (_ :: _) false, hb, _ => by simp [ccB] at hb
+  | .call (.intLit _) _ _, hb, _ | .call (.strLit _) _ _, hb, _ | .call (.charLit _) _ _, hb, _
+  | .call (.floatLit ..) _ _, hb, _ | .call (.composite ..) _ _, hb, _ | .call (.keyValue ..) _ _, hb, _
+  | .call (.paren _) _ _, hb, _ | .call (.selector ..) _ _, hb, _
+  | .call (.index ..) _ _, hb, _ | .call (.sliceExpr ..) _ _, hb, _ | .call (.typeAssert ..) _ _, hb, _
+  | .call (.call ..) _ _, hb, _ | .call (.star _) _ _, hb, _ | .call (.unary ..) _ _, hb, _
+  | .call (.binary ..) _ _, hb, _
+  | .call (.structType _) _ _, hb, _ | .call (.interfaceType _) _ _, hb, _ | .call (.funcType _) _ _, hb, _
+  | .call (.arrayType ..) _ _, hb, _ | .call (.mapType ..) _ _, hb, _ | .call .ellipsis _ _, hb, _
+  | .call (.unsupported _) _ _, hb, _ => by simp [ccB] at hb
+theorem litsQuietArgs_of (s : Scope) : ∀ (es : List Expr), ccBs es = true → FitsEs s es → LitsQuietArgs s es
+  | [], _, _ => trivial
+  | a :: as, hb, hf => by
+    simp only [ccBs, Bool.and_eq_true] at hb
+    exact ⟨litsQuiet_of s a hb.1 hf.1, litsQuietArgs_of s as hb.2 hf.2⟩
 /-- **In a scope it fits, a `Body3` statement fires no trigger** (`canon_eq`). -/
 theorem noTrigS_of (s : Scope) : ∀ (st : Stmt), body3S st = true → FitsS s st → NoTrigS s st
-  | .decl d, hb, hf => by
+  | .decl (.value false [.mk [x] none [e]]), hb, hf => by
     simp only [body3S] at hb
-    split at hb
-    · rename_i x e hd
-      obtain ⟨hc, ht⟩ := noTrigE_spec hb (hf x e hd)
-      exact ⟨x, e, hd, hc, by simpa [scanOperands] using ht⟩
-    · cases hb
-  | .ret es, hb, hf => by
+    have hb' := hb
+    simp only [Bool.and_eq_true] at hb'
+    obtain ⟨hc, ht⟩ := noTrigE_spec hb hf
+    exact ⟨x, e, rfl, hc, litsQuiet_of s e hb'.1 hf, by simpa [scanOperands] using ht⟩
+  | .ret [e], hb, hf => by
     simp only [body3S] at hb
-    split at hb
-    · rename_i e
-      obtain ⟨hc, ht⟩ := noTrigE_spec hb (hf e (by simp))
-      exact ⟨e, rfl, hc, by simpa [scanOperands] using ht⟩
-    · cases hb
+    have hb' := hb
+    simp only [Bool.and_eq_true] at hb'
+    obtain ⟨hc, ht⟩ := noTrigE_spec hb hf.1
+    exact ⟨e, rfl, hc, litsQuiet_of s e hb'.1 hf.1, by simpa [scanOperands] using ht⟩
   | .block ss, hb, hf => noTrigSs_of s ss hb hf
   | .if_ init c b els, hb, hf => by
     simp only [body3S, Bool.and_eq_true, Option.isNone_iff_eq_none] at hb
     obtain ⟨⟨⟨hi, hcb⟩, hbb⟩, heb⟩ := hb
     obtain ⟨hfc, hfb, hfe⟩ := hf
-    obtain ⟨hc, ht⟩ := noTrigE_spec hcb hfc
-    exact ⟨hi, hc, ht, noTrigSs_of s b hbb hfb, noTrigOS_of s els heb hfe⟩
+    obtain ⟨hc, ht⟩ := noTrigE_spec (by simpa using hcb) hfc
+    exact ⟨hi, hc, litsQuiet_of s c hcb.1 hfc, ht, noTrigSs_of s b hbb hfb, noTrigOS_of s els heb hfe⟩
+  | .decl (.func ..), hb, _ | .decl (.type _), hb, _ | .decl (.unsupported _), hb, _
+  | .decl (.value true _), hb, _ | .decl (.value false []), hb, _ | .decl (.value false (_ :: _ :: _)), hb, _
+  | .decl (.value false [.mk [] _ _]), hb, _ | .decl (.value false [.mk (_ :: _ :: _) _ _]), hb, _
+  | .decl (.value false [.mk [_] (some _) _]), hb, _ | .decl (.value false [.mk [_] none []]), hb, _
+  | .decl (.value false [.mk [_] none (_ :: _ :: _)]), hb, _ =>
+    by obtain ⟨_, _, hd, -⟩ := body3S_decl_shape hb; cases hd
+  | .ret [], hb, _ | .ret (_ :: _ :: _), hb, _ => by obtain ⟨_, hd, -⟩ := body3S_ret_shape hb; cases hd
   | .expr _, hb, _ | .incDec .., hb, _ | .assign .., hb, _ | .branch _, hb, _ | .switch .., hb, _
   | .typeSwitch .., hb, _ | .for_ .., hb, _ | .range .., hb, _ | .defer_ _, hb, _
   | .empty, hb, _ | .unsupported _, hb, _ | .localType _, hb, _ => by simp [body3S] at hb
@@ -580,7 +673,6 @@ abbrev gcScope (p : Program) (pkg : String) (fi : Nat) (recv : Option Field) (tp
     (body : List Stmt) : Scope :=
   let c := buildCtx p
   funcScope c (structFields c) (allMethods c) pkg fi recv tps sig body
-
 /-- **An order step 3a's bodies run as written in**: every `Body3` function body that fits
     the scope gc's rewrite gives it is in its place unchanged. That the lowered programs'
     bodies fit is owed by step 3d (from `FunRel` and `buildCtx`). -/
