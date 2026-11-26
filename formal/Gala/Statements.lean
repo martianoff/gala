@@ -26,6 +26,7 @@ import Gala.M5.Expr
 import Gala.M5.StmtOrder
 import Gala.M5.IifeInst
 import Gala.M5.LoopInst
+import Gala.M5.GoFuelInst
 
 namespace Gala.Statements
 
@@ -775,6 +776,36 @@ open Gala Gala.M5 GoCore.Full in
 theorem sw_gocore_ok : ∀ (N : Nat), N ≥ 88 →
     ∃ w g', (evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 } = (.ok w, g') ∧ VRel (.int (-1)) w :=
   Gala.M5.sw_gocore_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem simAll : ∀ (c : Ctx) (k n n' : Nat), n ≤ n' → SimAll c k n n' :=
+  Gala.M5.simAll
+
+open Gala Gala.M5 GoCore.Full in
+theorem syncAll : ∀ (c : Ctx) (n : Nat), SyncAll c n :=
+  Gala.M5.syncAll
+
+open Gala Gala.M5 GoCore.Full in
+theorem runProgramAt_adequate : ∀ (ord : Order) (prog : Program) {d d' f f' : Nat},
+    d ≤ d' → f ≤ f' → (runProgramAt ord prog d f).1 ≠ .fuel →
+    runProgramAt ord prog d' f' = runProgramAt ord prog d f :=
+  Gala.M5.runProgramAt_adequate
+
+open Gala Gala.M5 GoCore.Full in
+theorem runProgram_adequate : ∀ (prog : Program) {f f' : Nat}, f ≤ f' →
+    (runProgram prog f).1 ≠ .fuel → runProgram prog f' = runProgram prog f :=
+  Gala.M5.runProgram_adequate
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_gocore_more : ∀ (N N' j : Nat), N ≥ 88 → N ≤ N' →
+    ∃ w g', (evalExpr swCtx N' incEnv swCallG).run.run { incSt with steps := 40 + j } =
+      (.ok w, shift j g') ∧ VRel (.int (-1)) w :=
+  Gala.M5.sw_gocore_more
+
+open Gala Gala.M5 GoCore.Full in
+theorem sw_gocore_sync : ∀ (N : Nat),
+    Sync ((evalExpr swCtx N incEnv swCallG).run.run { incSt with steps := 40 }).2 :=
+  Gala.M5.sw_gocore_sync
 
 open Gala Gala.M5 GoCore.Full in
 theorem swProg_gc : declAt (Order.gc swProg) 0 0 0 = some (.func "sw" none [] swSig (some swGo)) :=

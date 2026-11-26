@@ -518,7 +518,7 @@ column lists what each milestone's claim rests on beyond them.
   order, left to right, which is galaspec's; where a division and a shift both fail, the
   first in that order decides on both sides. The fixtures `panic_order_divide` and
   `panic_order_shift` pin gc 1.25.5 to the same order on the shapes they test; that gc's
-  order agrees in general (with its `&&`/`||` temporaries) is carried to step 3.
+  order agrees in general (with its `&&`/`||` temporaries) is carried to M6.
   Step 2b is proved: `val`/`var`, `if` statements and blocks (`stmts_correct` and
   `block_correct` in `formal/Gala/M5/Stmt.lean`). A local `val x = e` or `var x = e`
   lowers to Go's `var x = e`, an `if` with block branches (an `else` a block or another
@@ -603,9 +603,25 @@ column lists what each milestone's claim rests on beyond them.
   self-tail-call loops (step 3c). Before step 3c those 6 counted as step 3b's, lowered as
   recursion, which is not the Go the transpiler emits for them (`formal/COVERAGE.md`
   gives the reasons for the rest).
+  Step 3d's first part is proved: GoCore's fuel adequacy, its M1. Every function of
+  GoCore's evaluator, started with `k` more steps and at any larger depth, ends a run that
+  does not run out of either the same way, in the same state, with `k` more steps left
+  (`simAll`: one induction over the 71 functions of the mutual block in
+  `formal/Gala/GoCore/Eval.lean`; `tick` and `forLoop`'s bound on its iterations are the
+  only readers of the steps, every handler of a `Stop` passes `fuel` on, and `recover`
+  reads how many deferred-call frames are open, not the evaluator's depth). For a whole
+  program, `runProgramAt_adequate`: a run that does not end in `fuel` ends the same way
+  and prints the same output with any larger depth and fuel; `runProgram_adequate` is the
+  same for `runProgram`, whose depth is the fuel capped. The same kind of induction shows
+  that every state a run reaches from a state with as many cell types as cells has as
+  many (`syncAll`), so `Inv3.sync` holds of `runProgram`'s states, which start empty.
+  Lean's kernel does not evaluate a whole program's GoCore run (`buildCtx` builds hash
+  maps keyed by strings, whose hash it does not compute), so these are pinned on step
+  3c's run of `sw(1, 2, 2)` (`sw_gocore_more`, `sw_gocore_sync`); for concrete whole
+  programs, `runProgramAt_adequate`'s hypothesis is discharged by step 5's instances.
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
-  order](#evaluation-order)); fuel adequacy is not proved yet.
+  order](#evaluation-order)); fuel adequacy is step 3d's, above.
   The rest of the plan below is not proved yet.
 
 ##### The target
@@ -743,9 +759,10 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   another text. There it hoists those operands into temporaries as order.go does;
   every other statement is left as it is. That gc's order and left to right give the
   same outcome and output on the statements left alone is a lemma a later step owes
-  (`untriggered_orders_agree`, carried to step 3 of the steps below: step 2's
-  statements are left alone by the rewrite, which is proved, but real gc still copies
-  an `&&` or `||` in them into a temporary); the differential run tests it meanwhile.
+  (`untriggered_orders_agree`, carried to M6, since it needs a model of real gc's
+  copying, which `Order.gc` does not have: step 2's statements are left alone by the
+  rewrite, which is proved, but real gc still copies an `&&` or `||` in them into a
+  temporary); the differential run tests it meanwhile.
   One choice of gc depends on static types GoCore's syntax does not carry: a value converted to an interface is copied early or
   read late by its type; the rewrite settles it from the declared types the syntax shows
   (a declared function's parameters, a composite literal's fields) where it can. Where
@@ -764,13 +781,14 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   orders that run step 2's lowered function bodies without a shift as written, and
   constrains nothing else in the program. A shift can panic with another text than a
   division, so a statement with both can trigger gc's rewrite; bodies with a shift are
-  covered for GoCore's evaluator, and whether gc's model or real gc runs them as written
-  is carried to step 3. Both of GoCore's orders meet it: left to right and GoCore's model
+  covered for GoCore's evaluator; whether gc's model runs them as written is carried to
+  step 3, whether real gc does to M6. Both of GoCore's orders meet it: left to right and GoCore's model
   of gc 1.25.5's order (`gc_runsStep2`, `leftToRight_runsStep2`). Real gc copies an `&&`
   or `||` into a temporary before the statement (order.go), which rewrites these bodies
   and is outside the predicate, although in them the copy cannot be observed (they
   change no state, and their only panic, an integer division by zero, has one text).
-  That such full hoisting agrees with left to right is an obligation step 3 carries. No
+  That such full hoisting agrees with left to right is an obligation M6 carries (it needs
+  a model of real gc's copying, which `Order.gc` does not have). No
   theorem takes the predicate as a hypothesis yet: tying a function body to a run of the
   program (`runProgramAt ord`) needs calls, and step 3's theorem will take it, widened
   to the whole program.
@@ -788,7 +806,8 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   tables (it excludes bodies that read a package-level name). `ordProg_gc` meets it on a
   recursive `fact` and `fact(x) + 1`, in the scopes the rewrite really builds. Like step
   2's, this is about GoCore's model of gc, not real gc, which copies every call into a
-  temporary; that full hoisting agrees with left to right is carried to step 3d.
+  temporary; that full hoisting agrees with left to right is carried to M6, which needs
+  a model of that copying (it is not part of step 3d).
   Step 3b widens `Body3` to IIFEs: the call of a function literal is a call like any
   other, so `x / z + func() int { .. }()` is out (the fixture `eval_order_iife` pins it:
   the literal's body prints before the division panics), and the IIFE's body is checked
@@ -822,12 +841,13 @@ Each step is its own pull request with a theorem.
    fuel-indexed lock-step lemma, galaspec given `K * (m + 1)` steps simulating GoCore's
    first `m` steps with related states. 3a (direct calls and `return`) and 3b (the IIFE)
    are proved, and 3c (the self-tail-call loop); 3d is GoCore's M1 with the lock-step lemma
-   and the whole-program theorems. 3d also owes what 3a to 3c leave open: that the GoCore
-   context of the lowered program (`buildCtx`) meets `FunRel` and that lowered bodies fit
-   gc's scope (`FitsSs`), fuel adequacy, that full hoisting agrees with left to right,
-   that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s states, and the
-   divergence theorem for the tail loop: a galaspec run that diverges at every depth is
-   a GoCore run that does not end normally.
+   and the whole-program theorems. 3d also owes what 3a to 3c leave open. Proved: fuel
+   adequacy, and that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s
+   states. Open: that the GoCore context of the lowered program (`buildCtx`) meets
+   `FunRel` and that lowered bodies fit gc's scope (`FitsSs`), and the divergence theorem
+   for the tail loop: a galaspec run that diverges at every depth is a GoCore run that
+   does not end normally. That full hoisting agrees with left to right is M6's, not
+   3d's: it needs a model of real gc's copying of every call.
 4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
    M3 fragment retired.
 5. Package-level initialization (galaspec's `mentions` order against GoCore's
@@ -1227,7 +1247,7 @@ The differential run compares galaspec, GoCore and gala2lean with `go run` on ev
 program; that is testing. The proofs run along track 1. M5 proves that the reference
 lowering from galaspec into GoCore preserves meaning; so far that is proved for call-free
 expressions and for `val`/`var`, `if` and blocks (gc's order for them rests on
-obligations step 3 carries). M6 will prove, program by program, that
+obligations M6 carries). M6 will prove, program by program, that
 the transpiler's Go is that lowering up to proved normalizations. Both claims are about
 GoCore, so GoCore's fidelity to Go (track 2) is what connects them to real Go.
 
@@ -1248,8 +1268,10 @@ below; this is their order and where they stand.
   - Step 3, calls and recursion, the function-literal and self-tail-call shapes, and the
     divergence theorem: in progress; 3a (direct calls and `return`), 3b (`if` used as a
     value, Go's IIFE) and 3c (the self-tail-call loop, for as many iterations as
-    galaspec's depth allows; divergence is 3d's) are proved. It also carries the order obligations steps 2a and 2b left
-    open (gc's `&&`/`||` temporaries, `untriggered_orders_agree`).
+    galaspec's depth allows; divergence is 3d's) are proved, and of 3d, GoCore's fuel
+    adequacy (`runProgramAt_adequate`) and `Inv3.sync` for every state a run reaches.
+    The order obligations steps 2a and 2b left open (gc's `&&`/`||` temporaries,
+    `untriggered_orders_agree`) are M6's.
   - Step 4: structs and sealed values on the flat layout; `match` re-proved against
     GoCore for whole programs; M3's fragment retired.
   - Step 5: package-level initialization and printing, then the theorems for whole

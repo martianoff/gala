@@ -30,7 +30,7 @@
     shift), the first in that order decides on both sides. The GoCore fixtures
     `panic_order_divide` and `panic_order_shift` pin gc 1.25.5 to the same order on the
     shapes they test; that gc's order agrees in general (with its `&&`/`||` temporaries)
-    is carried to step 3 (`Gala/M5/StmtOrder.lean`).
+    is carried to M6 (`Gala/M5/StmtOrder.lean`).
   * **Shifts.** A shift's left operand is a typed `int`: the lowering rejects a literal
     there, as Go gives an untyped constant shifted by a variable count the type its
     context would give it, which this lowering does not track. The count is a typed `int`
