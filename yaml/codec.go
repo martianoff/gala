@@ -954,7 +954,12 @@ func takeLiteralBlock(raw []string, start, parentIndent int, indicator string, l
 	for i := start; i < len(raw); i++ {
 		line := strings.TrimRight(raw[i], "\r")
 		indent := countLeadingSpaces(line)
-		if strings.TrimLeft(line, " \t") == "" {
+		// A line of only spaces is held as a blank line. So is a line of
+		// white space whose first tab falls within the indentation, where
+		// a tab cannot indent. A tab after the indentation is text, so such
+		// a line is read as a text line.
+		if strings.TrimLeft(line, " \t") == "" &&
+			(indent == len(line) || indent <= parentIndent || (bodyIndent >= 0 && indent < bodyIndent)) {
 			blanks++
 			consumed++
 			continue
