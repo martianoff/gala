@@ -13,8 +13,8 @@
 
   This is **gc 1.25.5's choice, not the spec's**, kept apart like `GcRuntime` and checked
   by the same version guard (`GcRuntime.goVersion`). It is pinned by the `go run`
-  fixtures `eval_order`, `eval_order2`, `eval_order3`, `eval_order4` and `eval_order_call`
-  (tests/gocore/src).
+  fixtures `eval_order`, `eval_order2`, `eval_order3`, `eval_order4`, `eval_order_call` and
+  `eval_order_iife` (tests/gocore/src).
 
   What order.go copies into a temporary at its lexical place (an *O-node*):
   * a call of a function, method or function value (`OCALLFUNC`, `OCALLINTER`);

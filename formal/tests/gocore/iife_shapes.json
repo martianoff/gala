@@ -1,0 +1,1903 @@
+{
+  "gocore": 2,
+  "packages": [
+    {
+      "path": "main",
+      "name": "main",
+      "files": [
+        {
+          "kind": "file",
+          "pos": {
+            "line": 5,
+            "col": 1
+          },
+          "name": "iife_shapes.go",
+          "imports": [
+            {
+              "name": "",
+              "path": "fmt"
+            }
+          ],
+          "decls": [
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 9,
+                "col": 1
+              },
+              "name": "g",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 9,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "x"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 9,
+                        "col": 10
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 9,
+                        "col": 15
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 9,
+                  "col": 19
+                },
+                "stmts": [
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 10,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 10,
+                          "col": 9
+                        },
+                        "op": "*",
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 10,
+                            "col": 9
+                          },
+                          "name": "x"
+                        },
+                        "y": {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 10,
+                            "col": 13
+                          },
+                          "value": "2"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 13,
+                "col": 1
+              },
+              "name": "pick",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 13,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "b"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 13,
+                        "col": 13
+                      },
+                      "name": "bool"
+                    },
+                    "tag": ""
+                  },
+                  {
+                    "names": [
+                      "x"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 13,
+                        "col": 21
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 13,
+                        "col": 26
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 13,
+                  "col": 30
+                },
+                "stmts": [
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 14,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 14,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "y"
+                          ],
+                          "type": null,
+                          "values": [
+                            {
+                              "kind": "call",
+                              "pos": {
+                                "line": 14,
+                                "col": 10
+                              },
+                              "fun": {
+                                "kind": "func-lit",
+                                "pos": {
+                                  "line": 14,
+                                  "col": 10
+                                },
+                                "type": {
+                                  "kind": "func-type",
+                                  "pos": {
+                                    "line": 14,
+                                    "col": 10
+                                  },
+                                  "params": [],
+                                  "results": [
+                                    {
+                                      "names": [],
+                                      "type": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 14,
+                                          "col": 17
+                                        },
+                                        "name": "int"
+                                      },
+                                      "tag": ""
+                                    }
+                                  ],
+                                  "variadic": false
+                                },
+                                "body": {
+                                  "kind": "block",
+                                  "pos": {
+                                    "line": 14,
+                                    "col": 21
+                                  },
+                                  "stmts": [
+                                    {
+                                      "kind": "if",
+                                      "pos": {
+                                        "line": 15,
+                                        "col": 3
+                                      },
+                                      "init": null,
+                                      "cond": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 15,
+                                          "col": 6
+                                        },
+                                        "name": "b"
+                                      },
+                                      "body": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 15,
+                                          "col": 8
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 16,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "ident",
+                                                "pos": {
+                                                  "line": 16,
+                                                  "col": 11
+                                                },
+                                                "name": "x"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      "else": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 17,
+                                          "col": 10
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 18,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "call",
+                                                "pos": {
+                                                  "line": 18,
+                                                  "col": 11
+                                                },
+                                                "fun": {
+                                                  "kind": "ident",
+                                                  "pos": {
+                                                    "line": 18,
+                                                    "col": 11
+                                                  },
+                                                  "name": "g"
+                                                },
+                                                "args": [
+                                                  {
+                                                    "kind": "ident",
+                                                    "pos": {
+                                                      "line": 18,
+                                                      "col": 13
+                                                    },
+                                                    "name": "x"
+                                                  }
+                                                ],
+                                                "ellipsis": false
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "args": [],
+                              "ellipsis": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 21,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 21,
+                          "col": 9
+                        },
+                        "op": "+",
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 21,
+                            "col": 9
+                          },
+                          "name": "y"
+                        },
+                        "y": {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 21,
+                            "col": 13
+                          },
+                          "value": "1"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 24,
+                "col": 1
+              },
+              "name": "blk",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 24,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "x"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 24,
+                        "col": 12
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 24,
+                        "col": 17
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 24,
+                  "col": 21
+                },
+                "stmts": [
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 25,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 25,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "z"
+                          ],
+                          "type": null,
+                          "values": [
+                            {
+                              "kind": "call",
+                              "pos": {
+                                "line": 25,
+                                "col": 10
+                              },
+                              "fun": {
+                                "kind": "func-lit",
+                                "pos": {
+                                  "line": 25,
+                                  "col": 10
+                                },
+                                "type": {
+                                  "kind": "func-type",
+                                  "pos": {
+                                    "line": 25,
+                                    "col": 10
+                                  },
+                                  "params": [],
+                                  "results": [
+                                    {
+                                      "names": [],
+                                      "type": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 25,
+                                          "col": 17
+                                        },
+                                        "name": "int"
+                                      },
+                                      "tag": ""
+                                    }
+                                  ],
+                                  "variadic": false
+                                },
+                                "body": {
+                                  "kind": "block",
+                                  "pos": {
+                                    "line": 25,
+                                    "col": 21
+                                  },
+                                  "stmts": [
+                                    {
+                                      "kind": "if",
+                                      "pos": {
+                                        "line": 26,
+                                        "col": 3
+                                      },
+                                      "init": null,
+                                      "cond": {
+                                        "kind": "binary",
+                                        "pos": {
+                                          "line": 26,
+                                          "col": 6
+                                        },
+                                        "op": ">",
+                                        "x": {
+                                          "kind": "ident",
+                                          "pos": {
+                                            "line": 26,
+                                            "col": 6
+                                          },
+                                          "name": "x"
+                                        },
+                                        "y": {
+                                          "kind": "int-lit",
+                                          "pos": {
+                                            "line": 26,
+                                            "col": 10
+                                          },
+                                          "value": "0"
+                                        }
+                                      },
+                                      "body": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 26,
+                                          "col": 12
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "decl-stmt",
+                                            "pos": {
+                                              "line": 27,
+                                              "col": 4
+                                            },
+                                            "decl": {
+                                              "kind": "value-decl",
+                                              "pos": {
+                                                "line": 27,
+                                                "col": 4
+                                              },
+                                              "const": false,
+                                              "specs": [
+                                                {
+                                                  "names": [
+                                                    "t"
+                                                  ],
+                                                  "type": null,
+                                                  "values": [
+                                                    {
+                                                      "kind": "binary",
+                                                      "pos": {
+                                                        "line": 27,
+                                                        "col": 12
+                                                      },
+                                                      "op": "+",
+                                                      "x": {
+                                                        "kind": "ident",
+                                                        "pos": {
+                                                          "line": 27,
+                                                          "col": 12
+                                                        },
+                                                        "name": "x"
+                                                      },
+                                                      "y": {
+                                                        "kind": "int-lit",
+                                                        "pos": {
+                                                          "line": 27,
+                                                          "col": 16
+                                                        },
+                                                        "value": "1"
+                                                      }
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 28,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "binary",
+                                                "pos": {
+                                                  "line": 28,
+                                                  "col": 11
+                                                },
+                                                "op": "*",
+                                                "x": {
+                                                  "kind": "ident",
+                                                  "pos": {
+                                                    "line": 28,
+                                                    "col": 11
+                                                  },
+                                                  "name": "t"
+                                                },
+                                                "y": {
+                                                  "kind": "int-lit",
+                                                  "pos": {
+                                                    "line": 28,
+                                                    "col": 15
+                                                  },
+                                                  "value": "2"
+                                                }
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      "else": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 29,
+                                          "col": 10
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 30,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "int-lit",
+                                                "pos": {
+                                                  "line": 30,
+                                                  "col": 11
+                                                },
+                                                "value": "0"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "args": [],
+                              "ellipsis": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 33,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 33,
+                          "col": 9
+                        },
+                        "name": "z"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 36,
+                "col": 1
+              },
+              "name": "tailIf",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 36,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "b"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 36,
+                        "col": 15
+                      },
+                      "name": "bool"
+                    },
+                    "tag": ""
+                  },
+                  {
+                    "names": [
+                      "x"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 36,
+                        "col": 23
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 36,
+                        "col": 28
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 36,
+                  "col": 32
+                },
+                "stmts": [
+                  {
+                    "kind": "block",
+                    "pos": {
+                      "line": 37,
+                      "col": 2
+                    },
+                    "stmts": [
+                      {
+                        "kind": "if",
+                        "pos": {
+                          "line": 38,
+                          "col": 3
+                        },
+                        "init": null,
+                        "cond": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 38,
+                            "col": 6
+                          },
+                          "name": "b"
+                        },
+                        "body": {
+                          "kind": "block",
+                          "pos": {
+                            "line": 38,
+                            "col": 8
+                          },
+                          "stmts": [
+                            {
+                              "kind": "return",
+                              "pos": {
+                                "line": 39,
+                                "col": 4
+                              },
+                              "results": [
+                                {
+                                  "kind": "binary",
+                                  "pos": {
+                                    "line": 39,
+                                    "col": 11
+                                  },
+                                  "op": "+",
+                                  "x": {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 39,
+                                      "col": 11
+                                    },
+                                    "name": "x"
+                                  },
+                                  "y": {
+                                    "kind": "int-lit",
+                                    "pos": {
+                                      "line": 39,
+                                      "col": 15
+                                    },
+                                    "value": "1"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "else": {
+                          "kind": "block",
+                          "pos": {
+                            "line": 40,
+                            "col": 10
+                          },
+                          "stmts": [
+                            {
+                              "kind": "return",
+                              "pos": {
+                                "line": 41,
+                                "col": 4
+                              },
+                              "results": [
+                                {
+                                  "kind": "call",
+                                  "pos": {
+                                    "line": 41,
+                                    "col": 11
+                                  },
+                                  "fun": {
+                                    "kind": "ident",
+                                    "pos": {
+                                      "line": 41,
+                                      "col": 11
+                                    },
+                                    "name": "g"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "ident",
+                                      "pos": {
+                                        "line": 41,
+                                        "col": 13
+                                      },
+                                      "name": "x"
+                                    }
+                                  ],
+                                  "ellipsis": false
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 46,
+                "col": 1
+              },
+              "name": "argIf",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 46,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "b"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 46,
+                        "col": 14
+                      },
+                      "name": "bool"
+                    },
+                    "tag": ""
+                  },
+                  {
+                    "names": [
+                      "x"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 46,
+                        "col": 22
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 46,
+                        "col": 27
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 46,
+                  "col": 31
+                },
+                "stmts": [
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 47,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "binary",
+                        "pos": {
+                          "line": 47,
+                          "col": 9
+                        },
+                        "op": "+",
+                        "x": {
+                          "kind": "call",
+                          "pos": {
+                            "line": 47,
+                            "col": 9
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 47,
+                              "col": 9
+                            },
+                            "name": "g"
+                          },
+                          "args": [
+                            {
+                              "kind": "call",
+                              "pos": {
+                                "line": 47,
+                                "col": 11
+                              },
+                              "fun": {
+                                "kind": "func-lit",
+                                "pos": {
+                                  "line": 47,
+                                  "col": 11
+                                },
+                                "type": {
+                                  "kind": "func-type",
+                                  "pos": {
+                                    "line": 47,
+                                    "col": 11
+                                  },
+                                  "params": [],
+                                  "results": [
+                                    {
+                                      "names": [],
+                                      "type": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 47,
+                                          "col": 18
+                                        },
+                                        "name": "int"
+                                      },
+                                      "tag": ""
+                                    }
+                                  ],
+                                  "variadic": false
+                                },
+                                "body": {
+                                  "kind": "block",
+                                  "pos": {
+                                    "line": 47,
+                                    "col": 22
+                                  },
+                                  "stmts": [
+                                    {
+                                      "kind": "if",
+                                      "pos": {
+                                        "line": 48,
+                                        "col": 3
+                                      },
+                                      "init": null,
+                                      "cond": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 48,
+                                          "col": 6
+                                        },
+                                        "name": "b"
+                                      },
+                                      "body": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 48,
+                                          "col": 8
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 49,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "ident",
+                                                "pos": {
+                                                  "line": 49,
+                                                  "col": 11
+                                                },
+                                                "name": "x"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      "else": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 50,
+                                          "col": 10
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 51,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "int-lit",
+                                                "pos": {
+                                                  "line": 51,
+                                                  "col": 11
+                                                },
+                                                "value": "0"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "args": [],
+                              "ellipsis": false
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        "y": {
+                          "kind": "int-lit",
+                          "pos": {
+                            "line": 53,
+                            "col": 9
+                          },
+                          "value": "1"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 56,
+                "col": 1
+              },
+              "name": "armNest",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 56,
+                  "col": 1
+                },
+                "params": [
+                  {
+                    "names": [
+                      "b"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 56,
+                        "col": 16
+                      },
+                      "name": "bool"
+                    },
+                    "tag": ""
+                  },
+                  {
+                    "names": [
+                      "x"
+                    ],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 56,
+                        "col": 24
+                      },
+                      "name": "int"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "results": [
+                  {
+                    "names": [],
+                    "type": {
+                      "kind": "ident",
+                      "pos": {
+                        "line": 56,
+                        "col": 29
+                      },
+                      "name": "string"
+                    },
+                    "tag": ""
+                  }
+                ],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 56,
+                  "col": 36
+                },
+                "stmts": [
+                  {
+                    "kind": "decl-stmt",
+                    "pos": {
+                      "line": 57,
+                      "col": 2
+                    },
+                    "decl": {
+                      "kind": "value-decl",
+                      "pos": {
+                        "line": 57,
+                        "col": 2
+                      },
+                      "const": false,
+                      "specs": [
+                        {
+                          "names": [
+                            "y"
+                          ],
+                          "type": null,
+                          "values": [
+                            {
+                              "kind": "call",
+                              "pos": {
+                                "line": 57,
+                                "col": 10
+                              },
+                              "fun": {
+                                "kind": "func-lit",
+                                "pos": {
+                                  "line": 57,
+                                  "col": 10
+                                },
+                                "type": {
+                                  "kind": "func-type",
+                                  "pos": {
+                                    "line": 57,
+                                    "col": 10
+                                  },
+                                  "params": [],
+                                  "results": [
+                                    {
+                                      "names": [],
+                                      "type": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 57,
+                                          "col": 17
+                                        },
+                                        "name": "string"
+                                      },
+                                      "tag": ""
+                                    }
+                                  ],
+                                  "variadic": false
+                                },
+                                "body": {
+                                  "kind": "block",
+                                  "pos": {
+                                    "line": 57,
+                                    "col": 24
+                                  },
+                                  "stmts": [
+                                    {
+                                      "kind": "if",
+                                      "pos": {
+                                        "line": 58,
+                                        "col": 3
+                                      },
+                                      "init": null,
+                                      "cond": {
+                                        "kind": "ident",
+                                        "pos": {
+                                          "line": 58,
+                                          "col": 6
+                                        },
+                                        "name": "b"
+                                      },
+                                      "body": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 58,
+                                          "col": 8
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "decl-stmt",
+                                            "pos": {
+                                              "line": 59,
+                                              "col": 4
+                                            },
+                                            "decl": {
+                                              "kind": "value-decl",
+                                              "pos": {
+                                                "line": 59,
+                                                "col": 4
+                                              },
+                                              "const": false,
+                                              "specs": [
+                                                {
+                                                  "names": [
+                                                    "t"
+                                                  ],
+                                                  "type": null,
+                                                  "values": [
+                                                    {
+                                                      "kind": "binary",
+                                                      "pos": {
+                                                        "line": 59,
+                                                        "col": 12
+                                                      },
+                                                      "op": "+",
+                                                      "x": {
+                                                        "kind": "ident",
+                                                        "pos": {
+                                                          "line": 59,
+                                                          "col": 12
+                                                        },
+                                                        "name": "x"
+                                                      },
+                                                      "y": {
+                                                        "kind": "int-lit",
+                                                        "pos": {
+                                                          "line": 59,
+                                                          "col": 16
+                                                        },
+                                                        "value": "1"
+                                                      }
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "kind": "block",
+                                            "pos": {
+                                              "line": 60,
+                                              "col": 4
+                                            },
+                                            "stmts": [
+                                              {
+                                                "kind": "if",
+                                                "pos": {
+                                                  "line": 61,
+                                                  "col": 5
+                                                },
+                                                "init": null,
+                                                "cond": {
+                                                  "kind": "binary",
+                                                  "pos": {
+                                                    "line": 61,
+                                                    "col": 8
+                                                  },
+                                                  "op": ">",
+                                                  "x": {
+                                                    "kind": "ident",
+                                                    "pos": {
+                                                      "line": 61,
+                                                      "col": 8
+                                                    },
+                                                    "name": "t"
+                                                  },
+                                                  "y": {
+                                                    "kind": "int-lit",
+                                                    "pos": {
+                                                      "line": 61,
+                                                      "col": 12
+                                                    },
+                                                    "value": "2"
+                                                  }
+                                                },
+                                                "body": {
+                                                  "kind": "block",
+                                                  "pos": {
+                                                    "line": 61,
+                                                    "col": 14
+                                                  },
+                                                  "stmts": [
+                                                    {
+                                                      "kind": "return",
+                                                      "pos": {
+                                                        "line": 62,
+                                                        "col": 6
+                                                      },
+                                                      "results": [
+                                                        {
+                                                          "kind": "string-lit",
+                                                          "pos": {
+                                                            "line": 62,
+                                                            "col": 13
+                                                          },
+                                                          "value": "big"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                "else": {
+                                                  "kind": "block",
+                                                  "pos": {
+                                                    "line": 63,
+                                                    "col": 12
+                                                  },
+                                                  "stmts": [
+                                                    {
+                                                      "kind": "return",
+                                                      "pos": {
+                                                        "line": 64,
+                                                        "col": 6
+                                                      },
+                                                      "results": [
+                                                        {
+                                                          "kind": "string-lit",
+                                                          "pos": {
+                                                            "line": 64,
+                                                            "col": 13
+                                                          },
+                                                          "value": "small"
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      "else": {
+                                        "kind": "block",
+                                        "pos": {
+                                          "line": 67,
+                                          "col": 10
+                                        },
+                                        "stmts": [
+                                          {
+                                            "kind": "return",
+                                            "pos": {
+                                              "line": 68,
+                                              "col": 4
+                                            },
+                                            "results": [
+                                              {
+                                                "kind": "string-lit",
+                                                "pos": {
+                                                  "line": 68,
+                                                  "col": 11
+                                                },
+                                                "value": "none"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "args": [],
+                              "ellipsis": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "return",
+                    "pos": {
+                      "line": 71,
+                      "col": 2
+                    },
+                    "results": [
+                      {
+                        "kind": "ident",
+                        "pos": {
+                          "line": 71,
+                          "col": 9
+                        },
+                        "name": "y"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "func-decl",
+              "pos": {
+                "line": 74,
+                "col": 1
+              },
+              "name": "main",
+              "recv": null,
+              "typeParams": [],
+              "type": {
+                "kind": "func-type",
+                "pos": {
+                  "line": 74,
+                  "col": 1
+                },
+                "params": [],
+                "results": [],
+                "variadic": false
+              },
+              "body": {
+                "kind": "block",
+                "pos": {
+                  "line": 74,
+                  "col": 13
+                },
+                "stmts": [
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 75,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 75,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 75,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 75,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 75,
+                            "col": 14
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 75,
+                              "col": 14
+                            },
+                            "name": "pick"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 75,
+                                "col": 19
+                              },
+                              "name": "true"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 75,
+                                "col": 25
+                              },
+                              "value": "3"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 75,
+                            "col": 29
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 75,
+                              "col": 29
+                            },
+                            "name": "blk"
+                          },
+                          "args": [
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 75,
+                                "col": 33
+                              },
+                              "value": "4"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 75,
+                            "col": 37
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 75,
+                              "col": 37
+                            },
+                            "name": "tailIf"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 75,
+                                "col": 44
+                              },
+                              "name": "false"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 75,
+                                "col": 51
+                              },
+                              "value": "5"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 75,
+                            "col": 55
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 75,
+                              "col": 55
+                            },
+                            "name": "argIf"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 75,
+                                "col": 61
+                              },
+                              "name": "true"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 75,
+                                "col": 67
+                              },
+                              "value": "2"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 75,
+                            "col": 71
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 75,
+                              "col": 71
+                            },
+                            "name": "armNest"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 75,
+                                "col": 79
+                              },
+                              "name": "true"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 75,
+                                "col": 85
+                              },
+                              "value": "3"
+                            }
+                          ],
+                          "ellipsis": false
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  },
+                  {
+                    "kind": "expr-stmt",
+                    "pos": {
+                      "line": 76,
+                      "col": 2
+                    },
+                    "x": {
+                      "kind": "call",
+                      "pos": {
+                        "line": 76,
+                        "col": 2
+                      },
+                      "fun": {
+                        "kind": "selector",
+                        "pos": {
+                          "line": 76,
+                          "col": 2
+                        },
+                        "x": {
+                          "kind": "ident",
+                          "pos": {
+                            "line": 76,
+                            "col": 2
+                          },
+                          "name": "fmt"
+                        },
+                        "sel": "Println"
+                      },
+                      "args": [
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 76,
+                            "col": 14
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 76,
+                              "col": 14
+                            },
+                            "name": "pick"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 76,
+                                "col": 19
+                              },
+                              "name": "false"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 26
+                              },
+                              "value": "3"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 76,
+                            "col": 30
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 76,
+                              "col": 30
+                            },
+                            "name": "blk"
+                          },
+                          "args": [
+                            {
+                              "kind": "unary",
+                              "pos": {
+                                "line": 76,
+                                "col": 34
+                              },
+                              "op": "-",
+                              "x": {
+                                "kind": "int-lit",
+                                "pos": {
+                                  "line": 76,
+                                  "col": 35
+                                },
+                                "value": "1"
+                              }
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 76,
+                            "col": 39
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 76,
+                              "col": 39
+                            },
+                            "name": "tailIf"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 76,
+                                "col": 46
+                              },
+                              "name": "true"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 52
+                              },
+                              "value": "5"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 76,
+                            "col": 56
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 76,
+                              "col": 56
+                            },
+                            "name": "argIf"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 76,
+                                "col": 62
+                              },
+                              "name": "false"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 69
+                              },
+                              "value": "2"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 76,
+                            "col": 73
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 76,
+                              "col": 73
+                            },
+                            "name": "armNest"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 76,
+                                "col": 81
+                              },
+                              "name": "true"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 87
+                              },
+                              "value": "0"
+                            }
+                          ],
+                          "ellipsis": false
+                        },
+                        {
+                          "kind": "call",
+                          "pos": {
+                            "line": 76,
+                            "col": 91
+                          },
+                          "fun": {
+                            "kind": "ident",
+                            "pos": {
+                              "line": 76,
+                              "col": 91
+                            },
+                            "name": "armNest"
+                          },
+                          "args": [
+                            {
+                              "kind": "ident",
+                              "pos": {
+                                "line": 76,
+                                "col": 99
+                              },
+                              "name": "false"
+                            },
+                            {
+                              "kind": "int-lit",
+                              "pos": {
+                                "line": 76,
+                                "col": 106
+                              },
+                              "value": "9"
+                            }
+                          ],
+                          "ellipsis": false
+                        }
+                      ],
+                      "ellipsis": false
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

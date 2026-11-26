@@ -24,7 +24,7 @@ import Gala.AlphaEval
 import Gala.AlphaProg
 import Gala.M5.Expr
 import Gala.M5.StmtOrder
-import Gala.M5.CallInst
+import Gala.M5.IifeInst
 
 namespace Gala.Statements
 
@@ -578,7 +578,7 @@ theorem leftToRight_runsStep2 : RunsStep2AsWritten Order.leftToRight :=
 
 open Gala Gala.M5 GoCore.Full in
 theorem calls_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
-    FunRel K sg ds cx P → 7 ≤ K → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind) (le : Expr),
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (κ : String → Option Kind) (e : Spec.Expr) (k : Kind) (le : Expr),
     lowerC K sg κ e = some (k, le) → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
     ∀ N ≥ K * d, ERes3 k (isLitE e) s g ((Spec.eval ds d e).run.run s) ((evalExpr cx N env le).run.run g) :=
@@ -586,7 +586,7 @@ theorem calls_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) 
 
 open Gala Gala.M5 GoCore.Full in
 theorem body_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
-    FunRel K sg ds cx P → 7 ≤ K → ∀ (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (lb : List Stmt),
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (F : Spec.Func) (xks : List (String × Kind)) (ρ : Kind) (lb : List Stmt),
     sigOf F = some (xks, ρ) → lowerBody K sg F = some lb → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg (paramKinds xks) s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
     ∀ N ≥ K * d + 3, ResB ρ s g ((Spec.eval ds d F.body).run.run s) ((execStmts cx N env lb).run.run g) :=
@@ -594,7 +594,7 @@ theorem body_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (
 
 open Gala Gala.M5 GoCore.Full in
 theorem stmts3_correct : ∀ (ds : Spec.Decls) (cx : Ctx) (P : String) (K : Nat) (sg : Sigs),
-    FunRel K sg ds cx P → 7 ≤ K → ∀ (ρ : Kind) (κ κ' : String → Option Kind) (ss : List Spec.Expr)
+    FunRel K sg ds cx P → 11 ≤ K → ∀ (ρ : Kind) (κ κ' : String → Option Kind) (ss : List Spec.Expr)
     (ls : List Stmt), lowerSs3 K sg ρ κ ss = some (κ', ls) → ∀ (s : Spec.St) (g : St) (env : Env),
     Inv3 cx P sg κ s.toCore g env → s.steps ≤ g.steps → ∀ (d : Nat),
     ∀ N ≥ K * d + 1, ResL3 cx P sg ρ κ' s g ((Spec.evalBlock ds d ss).run.run s)
@@ -625,7 +625,7 @@ theorem leftToRight_runs3 : RunsAsWritten3 Order.leftToRight :=
 
 open Gala Gala.M5 GoCore.Full in
 theorem calls_correct_instance : ∀ (steps d : Nat), steps ≤ 10 →
-    ∀ N ≥ 8 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
+    ∀ N ≥ 11 * d, ERes3 .int (isLitE incCall) { incCore with steps } incSt
       ((Spec.eval incDs d incCall).run.run { incCore with steps })
       ((evalExpr incCtx N incEnv incCallG).run.run incSt) :=
   Gala.M5.calls_correct_instance
@@ -636,7 +636,7 @@ theorem inc_spec_ok : (Spec.eval incDs 4 incCall).run.run { incCore with steps :
   Gala.M5.inc_spec_ok
 
 open Gala Gala.M5 GoCore.Full in
-theorem inc_gocore_ok : ∀ (N : Nat), N ≥ 32 →
+theorem inc_gocore_ok : ∀ (N : Nat), N ≥ 44 →
     ∃ w g', (evalExpr incCtx N incEnv incCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 6) w :=
   Gala.M5.inc_gocore_ok
 
@@ -661,5 +661,74 @@ theorem body3_div_inside_call :
     Body3 [.ret [.binary "+" (.call (.ident "f") [.binary "/" (.ident "x") (.ident "z")] false)
       (.call (.ident "g") [] false)]] :=
   Gala.M5.body3_div_inside_call
+
+open Gala Gala.M5 GoCore.Full in
+theorem tailIf_lowerBody : lowerBody 11 shapeSg tailIfF = some tailIfG :=
+  Gala.M5.tailIf_lowerBody
+
+open Gala Gala.M5 GoCore.Full in
+theorem armNest_lowerBody : lowerBody 11 shapeSg armNestF = some armNestG :=
+  Gala.M5.armNest_lowerBody
+
+open Gala Gala.M5 GoCore.Full in
+theorem retInArm_not_lowered :
+    lowerC 11 shapeSg (fun _ => none) (.ifExpr (.lit (.bool true)) (.block [.ret (some (iL 1)), iL 2]) (iL 3)) = none :=
+  Gala.M5.retInArm_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem iife_correct_instance : ∀ (steps d : Nat), steps ≤ 10 →
+    ∀ N ≥ 11 * d, ERes3 .int false { incCore with steps } incSt
+      ((Spec.eval incDs d ifCall).run.run { incCore with steps })
+      ((evalExpr incCtx N incEnv ifCallG).run.run incSt) :=
+  Gala.M5.iife_correct_instance
+
+open Gala Gala.M5 GoCore.Full in
+theorem if_spec_ok : (Spec.eval incDs 3 ifCall).run.run { incCore with steps := 10 } =
+    (.ok (.int 4), { incCore with steps := 5 }) :=
+  Gala.M5.if_spec_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem iife_gocore_ok : ∀ (N : Nat), N ≥ 33 →
+    ∃ w g', (evalExpr incCtx N incEnv ifCallG).run.run incSt = (.ok w, g') ∧ VRel (.int 4) w ∧ ¬ UInt w :=
+  Gala.M5.iife_gocore_ok
+
+open Gala Gala.M5 GoCore.Full in
+theorem iifeProg_gc : declAt (Order.gc iifeProg) 0 0 1 = some (.func "pick" none [] pickSig (some pickG)) :=
+  Gala.M5.iifeProg_gc
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_div_iife :
+    ¬ Body3 [.ret [.binary "+" (.binary "/" (.ident "x") (.ident "z"))
+      (iife .int (ifT (.ident "b") [.ret [.intLit 1]] [.ret [.intLit 2]]))]] :=
+  Gala.M5.body3_div_iife
+
+open Gala Gala.M5 GoCore.Full in
+theorem body3_iife_div_inside :
+    Body3 [.ret [.binary "+" (.ident "x")
+      (iife .int (ifT (.ident "b") [.ret [.binary "/" (.ident "x") (.ident "z")]] [.ret [.intLit 2]]))]] :=
+  Gala.M5.body3_iife_div_inside
+
+open Gala Gala.M5 GoCore.Full in
+theorem nestedBlock_not_lowered :
+    lowerC 11 shapeSg (fun _ => none) (.ifExpr (.lit (.bool true))
+      (.block [.decl .val ["t"] false none [iL 1], .block [.decl .val ["t"] false none [iL 2], .name "t"]])
+      (iL 3)) = none :=
+  Gala.M5.nestedBlock_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem paramShadow_not_lowered : lowerBody 11 shapeSg shadowF = none :=
+  Gala.M5.paramShadow_not_lowered
+
+open Gala Gala.M5 GoCore.Full in
+theorem scopeOK_redecl_in_arm :
+    scopeOK [] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]),
+      .decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]] [.ret [.intLit 0]]] = false :=
+  Gala.M5.scopeOK_redecl_in_arm
+
+open Gala Gala.M5 GoCore.Full in
+theorem scopeOK_sibling_arms :
+    scopeOK ["t"] [ifT (.ident "b") [.decl (.value false [.mk ["t"] none [.intLit 1]]), .ret [.ident "t"]]
+      [.decl (.value false [.mk ["t"] none [.intLit 2]]), .ret [.ident "t"]]] = true :=
+  Gala.M5.scopeOK_sibling_arms
 
 end Gala.Statements

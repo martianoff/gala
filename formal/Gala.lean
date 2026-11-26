@@ -29,6 +29,7 @@ import Gala.M5.StmtOrder
 import Gala.M5.Call
 import Gala.M5.CallOrder
 import Gala.M5.CallInst
+import Gala.M5.IifeInst
 import Gala.Gala2Lean.Prelude
 import Gala.Gala2Lean.Examples.Match
 import Gala.Gala2Lean.Theorems

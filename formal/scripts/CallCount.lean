@@ -1,17 +1,20 @@
 /-
-  # How much of a corpus step 3a covers
+  # How much of a corpus steps 3a and 3b cover
 
       lake env lean --run scripts/CallCount.lean <file.json or directory>...
 
   For each Core JSON document (as `galacore` exports a `.gala` file), each function is
-  sorted by the first reason step 3a leaves it out, in this order, or counted as lowered:
+  sorted by the first reason the lowering leaves it out, in this order, or counted as lowered:
   `unit-result` (no result), `signature` (a parameter or result not `int`, `bool` or
   `string`), `param-names`, then, for a body the lowering rejects: `reads-package-level`
   (it names a package-level variable), `named-args-or-defaults` (a call of a program
   function names an argument or leaves one out), `calls-outside` (it calls something not
   lowered: another function left out, `Println`, a constructor, a lambda, ...),
-  `body-shape` (anything else). A lowered body is `order-predicate` when `Body3` fails
-  (`Gala/M5/CallOrder.lean`), else `lowered`. The functions the lowering calls are the
+  `match-expression` (a `match`, step 4), `return-in-iife` (a `return` inside an arm of an
+  `if` used as a value: Go's would leave the IIFE, GALA's the function), `body-shape`
+  (anything else). A lowered body is `order-predicate` when `Body3` fails
+  (`Gala/M5/CallOrder.lean`), else `lowered-step3b` when it needs step 3b (an `if` used as
+  a value, or one as its last value), else `lowered`. The functions the lowering calls are the
   greatest set whose bodies lower calling only each other. Run on constant-folded
   programs, as galaspec runs them. A development tool for `formal/COVERAGE.md`.
 -/
@@ -37,6 +40,32 @@ partial def subs (e : Expr) : List Expr :=
   | .decl _ _ _ _ vs => vs.flatMap subs
   | _ => []
 
+/-- The arms of the `if`s used as values (IIFEs) in `e`; with `tail`, `e` is a tail (a
+    function's last value, or an arm's), whose own `if` is no IIFE. Lambdas are not
+    entered. -/
+partial def iifeArms (tail : Bool) (e : Expr) : List Expr :=
+  match e with
+  | .ifExpr c a b => (if tail then [] else [a, b]) ++ iifeArms false c ++ iifeArms tail a ++ iifeArms tail b
+  | .ifStmt c a b => iifeArms false c ++ iifeArms tail a ++ ((b.map (iifeArms tail)).getD [])
+  | .block es => match es.reverse with
+    | [] => []
+    | l :: rest => rest.flatMap (iifeArms false) ++ iifeArms tail l
+  | .ret v => (v.map (iifeArms false)).getD []
+  | .lambda .. => []
+  | e => (subs e).tail.flatMap fun x => match x with
+    | .ifExpr .. => iifeArms false x
+    | _ => []
+
+/-- A body that needs step 3b: an `if` used as a value, or one as its last value. -/
+def usesIf (body : Expr) : Bool :=
+  (subs body).any (fun | .ifExpr .. => true | _ => false) ||
+  match body with
+  | .block ss => match ss.getLast? with
+    | some (.ifStmt _ _ (some _)) => true
+    | _ => false
+  | .ifStmt _ _ (some _) => true
+  | _ => false
+
 def K : Nat := 1000000
 
 /-- The functions the lowering calls: start from every function with a signature of the
@@ -58,7 +87,8 @@ def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String 
     let names := xks.map (·.1)
     if !decide (ParamsOK names) then "param-names"
     else match lowerBody K sg F with
-    | some lb => if body3Ss lb then "lowered" else "order-predicate"
+    | some lb =>
+      if !body3Ss lb then "order-predicate" else if usesIf F.body then "lowered-step3b" else "lowered"
     | none =>
       let es := subs F.body
       -- A name the body declares (`val`, `var`) is a local, shadowing a package-level one.
@@ -74,6 +104,9 @@ def reason (ds : Decls) (globals : List String) (sg : Sigs) (F : Func) : String 
           | .call (.name g) _ => (sg g).isNone
           | .call _ _ => true
           | _ => false) then "calls-outside"
+      else if es.any (fun | .mtch .. => true | _ => false) then "match-expression"
+      else if (iifeArms true F.body).any (fun a => (subs a).any (fun | .ret _ => true | _ => false)) then
+        "return-in-iife"
       else "body-shape"
 
 def main (args : List String) : IO UInt32 := do

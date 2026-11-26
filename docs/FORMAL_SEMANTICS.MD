@@ -548,17 +548,39 @@ column lists what each milestone's claim rests on beyond them.
   same value, and an expression never ends with a `return`. The claim is for every GoCore
   depth from `K * d` on, `d` galaspec's depth and `K` a constant of the program. A
   recursive call's GoCore depth is not bounded by the program's text, and each galaspec
-  level costs GoCore at most `K` levels when `K` is at least 7 and at least the depth of
-  each call-free part. The lowering at `K` checks the second; a larger `K` lowers the same
-  (`lowerC_mono`, `lowerBody_mono`), so `K` excludes no program. Nothing is claimed when
-  galaspec runs out of fuel or depth or stops `stuck` or `unsupported`; GoCore never runs
-  out at the depths claimed. `calls_correct_instance` meets every hypothesis on `inc(5)`,
-  and `inc_gocore_ok` shows GoCore's run of it ends with a related value, galaspec's
-  having been computed to end with `6`. Of the 188 functions of `examples/` with
-  signatures of the three kinds, 33 lower (`formal/COVERAGE.md` gives the reasons for the
-  rest). The order result (`gc_runs3`) holds for bodies that fit the scope gc's rewrite
-  gives them; that lowered programs' bodies fit is owed by step 3d (see [Evaluation
-  order](#evaluation-order)).
+  level costs GoCore at most `K` levels when `K` is at least 11 (an IIFE, step 3b, takes
+  the most) and at least the depth of each call-free part. The lowering at `K` checks the
+  second; a larger `K` lowers the same (`lowerC_mono`, `lowerBody_mono`), so `K` excludes
+  no program. Nothing is claimed when galaspec runs out of fuel or depth or stops `stuck`
+  or `unsupported`; GoCore never runs out at the depths claimed.
+  `calls_correct_instance` meets every hypothesis on `inc(5)`, and `inc_gocore_ok` shows
+  GoCore's run of it ends with a related value, galaspec's having been computed to end
+  with `6`. The order result (`gc_runs3`) holds for bodies that fit the scope gc's
+  rewrite gives them; that lowered programs' bodies fit is owed by step 3d (see
+  [Evaluation order](#evaluation-order)).
+  Step 3b is proved: `if` used as a value (the same theorems, the lowering widened). The
+  transformer emits such an `if` as Go's function literal called at once (an IIFE),
+  `func() T { if c { .. } else { .. } }()`, and the reference lowering does the same: each
+  arm is a tail (`tailOf`), its statements and then `return` of its last value, an arm
+  that is itself an `if` as `{ if .. }`; a function's last value that is an `if` is that
+  tail directly, with no IIFE. Both arms have one kind, and the IIFE's value has its type,
+  never an untyped constant. A `return` inside an arm is not lowered: GALA's leaves the
+  function, Go's would leave only the literal (`retInArm_not_lowered`). A body that would declare
+  a name twice in one Go scope is not lowered either: a block whose last element is a
+  block (`nestedBlock_not_lowered`), or a `val` named as a parameter at the body's top
+  (`paramShadow_not_lowered`): the lowering checks that no Go scope declares a name twice
+  (`scopeOK`), which Go rejects and GoCore does not check, and refuses bodies that do. The
+  check rejects a second `t` in one `if` arm and accepts one `t` in each of two arms
+  (`scopeOK_redecl_in_arm`, `scopeOK_sibling_arms`). The statement
+  lowering takes the kind `return` may have, none inside an IIFE. GoCore's IIFE adds a
+  closure to the state and takes one step for the call, which galaspec's step at the `if`
+  pays for. On five functions the lowering gives exactly the transpiler's Go
+  (`formal/Gala/M5/IifeInst.lean`, each next to `gala transpile`'s output, compared
+  as GoCore syntax with the exporter's; the fixture `iife_shapes` runs that Go against
+  `go run`); `iife_gocore_ok` runs `(if (true) 1 else 2) + 3` to a typed `4`. `match`
+  used as a value is step 4's. Of the 194 functions of `examples/` with signatures of the
+  three kinds, 49 lower, 16 of them through step 3b (`formal/COVERAGE.md` gives the
+  reasons for the rest).
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
   order](#evaluation-order)); fuel adequacy is not proved yet.
@@ -745,6 +767,14 @@ with `f` changing `a`, reads the new `a` under gc. The transformer wraps such re
   recursive `fact` and `fact(x) + 1`, in the scopes the rewrite really builds. Like step
   2's, this is about GoCore's model of gc, not real gc, which copies every call into a
   temporary; that full hoisting agrees with left to right is carried to step 3d.
+  Step 3b widens `Body3` to IIFEs: the call of a function literal is a call like any
+  other, so `x / z + func() int { .. }()` is out (the fixture `eval_order_iife` pins it:
+  the literal's body prints before the division panics), and the IIFE's body is checked
+  the same way, a level of its own, in the scope the rewrite gives it. `iifeProg_gc`
+  meets `gc_runs3` on `pick`'s lowering, the transpiler's own Go. An IIFE body that
+  changed a variable of the function around it would make that variable one a call may
+  change, so the body would not fit; the lowering has no assignment, so no lowered body
+  does this.
   Then `EvalOperand` carries weight: without it, some allowed order breaks the theorem,
   which is how a #996-class bug shows. If the parameter proves too heavy, the theorems
   fall back to gc's order and say "for gc 1.25.5's operand order".
@@ -761,8 +791,8 @@ Each step is its own pull request with a theorem.
    theorem. The counting argument above is a backward fact, which the forward
    simulation (it starts from a run galaspec finished) cannot give: it is proved as a
    fuel-indexed lock-step lemma, galaspec given `K * (m + 1)` steps simulating GoCore's
-   first `m` steps with related states. 3a (direct calls and `return`) is proved; 3b is
-   the IIFE, 3c the self-tail-call loop, 3d GoCore's M1 with the lock-step lemma and the
+   first `m` steps with related states. 3a (direct calls and `return`) and 3b (the IIFE)
+   are proved; 3c is the self-tail-call loop, 3d GoCore's M1 with the lock-step lemma and the
    whole-program theorems. 3d also owes what 3a leaves open: that the GoCore context of
    the lowered program (`buildCtx`) meets `FunRel` and that lowered bodies fit gc's scope
    (`FitsSs`), fuel adequacy, and that full hoisting agrees with left to right.
@@ -1179,7 +1209,8 @@ below; this is their order and where they stand.
     included.
   - Step 2b, `val`/`var`, `if` statements and blocks (`stmts_correct`, #1276): proved.
   - Step 3, calls and recursion, the function-literal and self-tail-call shapes, and the
-    divergence theorem: in progress, starting with 3a, direct calls and `return`. It also carries the order obligations steps 2a and 2b left
+    divergence theorem: in progress; 3a (direct calls and `return`) and 3b (`if` used as a
+    value, Go's IIFE) are proved. It also carries the order obligations steps 2a and 2b left
     open (gc's `&&`/`||` temporaries, `untriggered_orders_agree`).
   - Step 4: structs and sealed values on the flat layout; `match` re-proved against
     GoCore for whole programs; M3's fragment retired.
