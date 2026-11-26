@@ -377,7 +377,8 @@ column lists what each milestone's claim rests on beyond them.
   M1, "not out of fuel" is a property of the program, so no fuel corollary is needed.
   `lowerMatch_instance` meets every hypothesis on a match with a literal, a guarded
   wildcard and a binder whose body reads it (that the compiler accepts it is tested, by
-  `examples/formal_match_witness.gala`, not proved), and
+  `examples/formal_match_witness.gala`, not proved; its guard is a constant, and a guard
+  that reads a pattern variable is not covered yet), and
   `leaky_not_correct` restates #996 against galaspec (10 against 6).
   [formal/COVERAGE.md](../formal/COVERAGE.md#what-is-proved) states each theorem in full.
 - **Stated gap:** the subject has the static type the transformer inferred (`HasTy`);

@@ -684,7 +684,7 @@ never compared. A GoCore DISAGREE is a GoCore or exporter bug and fails the run.
 | INCONCLUSIVE | 0 | 0 |
 | RESOURCE | 0 | 0 |
 
-Programs GoCore agrees with go run on: **393** (ratchet baseline 388).
+Programs GoCore agrees with go run on: **393** (ratchet baseline 393).
 Examples where GoCore agrees with go run and galaspec agrees with go run: **30** (ratchet baseline 30).
 
 They are: `examples/complex.gala`, `examples/composite_lit_if_cond.gala`, `examples/composite_lit_if_expr_cond.gala`, `examples/constant_expressions.gala`, `examples/default_params.gala`, `examples/default_params_expr.gala`, `examples/formal_match_witness.gala`, `examples/hex_literals.gala`, `examples/if_expr_trailing_match.gala`, `examples/if_expression_block.gala`, `examples/interpolation_percent_text.gala`, `examples/lambda_explicit_ret_block.gala`, `examples/lambda_explicit_return_type.gala`, `examples/match_nested_subject_unread.gala`, `examples/match_stmt_guard_dispatch.gala`, `examples/match_stmt_mixed_void.gala`, `examples/match_stmt_true_dangle.gala`, `examples/match_void_dispatch.gala`, `examples/named_args.gala`, `examples/sealed_case_field_defaults.gala`, `examples/sealed_func_field_string.gala`, `examples/sealed_widen_call_arg.gala`, `examples/semicolon_statement_separator.gala`, `examples/shadowed_function.gala`, `examples/tco_deep_sum.gala`, `examples/tco_factorial.gala`, `examples/tco_match_self_call.gala`, `examples/trailing_comma_params.gala`, `examples/typed_val_lambda_inference.gala`, `examples/void_expression_function.gala`.
