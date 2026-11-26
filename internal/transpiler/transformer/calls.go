@@ -5587,10 +5587,43 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 	if err != nil {
 		return nil, err
 	}
+	if (lit.Type.Results == nil || len(lit.Type.Results.List) == 0) && t.slotWantsInferredResult(s, isFunc) {
+		return nil, t.valuelessLambdaError(l)
+	}
 	if err := t.checkInoutFuncSlot(lit, s.typ, l.at()); err != nil {
 		return nil, err
 	}
 	return t.finishLambda(lit, checks, s.typ, l.at(), l.expression(), b)
+}
+
+// slotWantsInferredResult reports whether slot s takes a function with one
+// result whose type the lambda filling it gives: the slot has no type but a
+// function result (slot.funcResult), or its function type's result is a type
+// parameter the call leaves to the lambda — masked as unresolved (NilType),
+// or an open slot's `any` placeholder. isFunc is whether s.typ is a function
+// type.
+func (t *galaASTTransformer) slotWantsInferredResult(s slot, isFunc bool) bool {
+	if !isFunc {
+		return s.funcResult != nil
+	}
+	ft := t.resolveTranspilerTypeAsFuncType(s.typ)
+	if ft == nil || len(ft.Results) != 1 {
+		return false
+	}
+	r := ft.Results[0]
+	return r.IsNil() || s.open && r == anyTypeArg
+}
+
+// valuelessLambdaError reports l, a lambda filling a parameter that takes a
+// function with a result (slot.funcResult), when its body has no value: a
+// void call, an assignment, or a block ending in a statement. No function
+// without a result fits the parameter, so Go would reject the call.
+func (t *galaASTTransformer) valuelessLambdaError(l lambdaSrc) error {
+	msg := fmt.Sprintf("this lambda has no value, but %s takes a function with a result here; end the lambda in the value to return", t.lambdaArgCalleeOr(l, "the function it is passed to"))
+	if block := l.block(); block.ok() {
+		return t.errorAtBlockEnd(block, msg)
+	}
+	return t.semanticErrorAtNode(l.at(), msg)
 }
 
 // declaresAnyResult reports whether slot s is a function type whose results the

@@ -52,6 +52,14 @@ func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Exp
 	return ret, ft.Params, true
 }
 
+// lambdaArgCalleeOr is lambdaArgCallee, or fallback when that names no call.
+func (t *galaASTTransformer) lambdaArgCalleeOr(l lambdaSrc, fallback string) string {
+	if callee := t.lambdaArgCallee(l); callee != "" {
+		return callee
+	}
+	return fallback
+}
+
 // lambdaArgCallee names the call l is written directly as an argument of —
 // the method or function name as written, `f` in `f(…)` or `x.f(…)` — for
 // diagnostics. It is "" for any other shape (a lambda nested in a match arm or
@@ -240,10 +248,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 					hint = fmt.Sprintf("give the lambda %d parameters", len(expectedParamTypes))
 				}
 				if unresolvedSlot {
-					callee := t.lambdaArgCallee(l)
-					if callee == "" {
-						callee = "the function it is passed to"
-					}
+					callee := t.lambdaArgCalleeOr(l, "the function it is passed to")
 					msg = fmt.Sprintf("lambda parameter %q has no type: %s expects a function here whose parameter %d has a type that could not be resolved", name, callee, i+1)
 					hint = fmt.Sprintf("check that the package declaring %s type-checks — every package it imports must resolve — or annotate the parameter (e.g. `(%s T) => …`)", callee, name)
 				}
