@@ -1408,9 +1408,6 @@ func (t *galaASTTransformer) dotImportedGoTypeKeyOf(name string) string {
 		if key := entry.Path + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
 			return key
 		}
-		if key := entry.PkgName + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
-			return key
-		}
 	}
 	return ""
 }

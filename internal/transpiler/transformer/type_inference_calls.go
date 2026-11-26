@@ -240,17 +240,19 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 
 	// A conversion to an opaque type, `UserID(n)` or `billing.UserID(n)`, has
 	// that type.
-	if t.opaqueConversionCallee(e.Fun) != nil {
-		return t.astTypeToTranspilerType(e.Fun)
+	// A conversion is read through parentheses: `(UserID)(n)` as `UserID(n)`.
+	convFun := ast.Unparen(e.Fun)
+	if t.opaqueConversionCallee(convFun) != nil {
+		return t.astTypeToTranspilerType(convFun)
 	}
 	// So has a conversion to a Go type, `sort.StringSlice(xs)` or
 	// `pkg.Bag[string](xs)`.
-	if len(e.Args) == 1 && t.namesGoType(e.Fun) {
-		return t.astTypeToTranspilerType(ast.Unparen(e.Fun))
+	if len(e.Args) == 1 && t.namesGoType(convFun) {
+		return t.astTypeToTranspilerType(convFun)
 	}
 	// So has a conversion to a type parameter of the enclosing declaration,
 	// `T(v)`.
-	if id, ok := e.Fun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
+	if id, ok := convFun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
 		return t.resolveType(id.Name)
 	}
 	// And a conversion to a generic Go function type written with its type

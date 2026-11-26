@@ -87,16 +87,23 @@ func isUntypedStringConst(expr ast.Expr) bool {
 }
 
 // goOperandUnderlying is the underlying type of typ, a Go type an index or
-// a receive reads through: a package-qualified one (goNamedUnderlying) or
-// the bare name of a dot-imported one (`Values` under `import . "net/url"`).
+// a receive reads through: a package-qualified one (goNamedUnderlying), or
+// one written bare: a dot-imported one (`Values` under `import . "net/url"`)
+// or one of the package's own .go files, through Go aliases.
 func (t *galaASTTransformer) goOperandUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
 	if u, ok := t.goNamedUnderlying(typ); ok {
 		return u, true
 	}
-	if name, bare := bareTypeName(typ); bare && t.goTypeInfo != nil {
-		if td := t.goTypeInfo.GetTypeData(t.dotImportedGoTypeKey(name)); td != nil && td.Kind == "named" && td.Underlying != nil {
-			return td.Underlying, true
-		}
+	if _, bare := bareTypeName(typ); !bare {
+		return nil, false
+	}
+	switch td, target := t.goTypeDataThroughAliases(typ); {
+	case td == nil:
+	case td.Kind == "named" && td.Underlying != nil && len(td.TypeParams) == 0:
+		return td.Underlying, true
+	case td.Kind == "alias" && target != nil:
+		// An alias of an unnamed type (`= map[string][]string`).
+		return target, true
 	}
 	return nil, false
 }

@@ -116,6 +116,27 @@ func main() {
     Println(f())
 }
 `, []string{"func() []string"}},
+		{"comma-ok index of a dot-imported Go map type", `package main
+
+import . "net/url"
+
+func main() {
+    val q = Values{}
+    vs, ok := q["a"]
+    val f = () => vs
+    Println(f(), ok)
+}
+`, []string{"func() []string"}},
+		{"parenthesized conversion to an opaque type", `package main
+
+opaque type UserID int
+
+func main() {
+    val id = (UserID)(42)
+    val f = () => id
+    Println(f())
+}
+`, []string{"func() UserID"}},
 		{"index of a string", `package main
 
 func main() {
