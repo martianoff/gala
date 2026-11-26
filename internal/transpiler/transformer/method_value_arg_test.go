@@ -160,6 +160,12 @@ func names() List[string] = ListOf("a")
 			want: "return Box_Empty[string, int](__recv_",
 		},
 		{
+			name:    "Sendable slot of a generic method over a var receiver",
+			decl:    "func (b Box[T]) Run[U any](u U, f Sendable[func(T) Option[U]]) Option[U] = f(b.V)\n\n",
+			main:    "var b = Box(1)\n    b = Box(2)\n    Println(b.Run(\"s\", b.Empty))",
+			wantErr: "GALA-E0037",
+		},
+		{
 			name: "type parameter only the result gives",
 			main: "val b = Box(1)\n    val f func(int) Option[bool] = b.Empty\n    Println(f(2))",
 			want: "return Box_Empty[bool, int](__recv_",

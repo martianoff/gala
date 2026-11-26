@@ -43,6 +43,11 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 	if !ok || !mm.IsGeneric && len(mm.TypeParams) == 0 || mm.GoResults != nil {
 		return nil, false, nil
 	}
+	if len(mm.TypeParams) == 0 {
+		// A slot types only a method's own type parameters: one without
+		// is lowered as before, whatever slot its name took.
+		slot = nil
+	}
 	line, col := at.start()
 	if len(typeArgs) > len(mm.TypeParams) {
 		return nil, false, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(

@@ -800,16 +800,26 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					return t.transformArgument(v.expr, slot{typ: param, open: true}, false)
 				})
 				// A member named like such a method that is none (a field
-				// `Map`), or one that fails to lower here, is lowered as
-				// any other argument below, never adapted to a slot
-				// naming the renamed placeholders.
-				if txErr == nil && !t.mentionsUnboundTypeParam(t.getExprTypeName(expr)) {
+				// `Map`) is lowered as any other argument below, never
+				// adapted to a slot naming the renamed placeholders. One
+				// that fails to lower is left to the main loop.
+				if txErr != nil {
+					continue
+				}
+				if !t.mentionsUnboundTypeParam(t.getExprTypeName(expr)) {
 					renamedSlot, renamedParams = param, unbound
 				}
 			}
 			switch ft := t.resolveTranspilerTypeAsFuncType(byNameType); {
 			case renamedSlot != nil:
-				// Lowered as a method value above.
+				// Lowered as a method value above: a closure over its
+				// receiver crossing a Sendable boundary is checked as a
+				// lambda there is.
+				if sendable {
+					if err := t.enforceSendableCapturesInArg(v); err != nil {
+						return true, nil, err
+					}
+				}
 			case !v.spread && ft != nil && len(ft.Params) == 0 && !t.namesNullaryGenericFunc(v.expr):
 				// Lift a by-name argument (`func() U`) to its thunk, as
 				// transformArgument does for a generic function; the
