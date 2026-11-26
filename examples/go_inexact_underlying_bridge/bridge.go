@@ -17,3 +17,6 @@ type IntBox func(*Box[int]) error
 
 // Use takes a Box[int].
 func Use(b *Box[int]) error { return nil }
+
+// PairOf makes a two-element array.
+func PairOf[T any](a, b T) [2]T { return [2]T{a, b} }
