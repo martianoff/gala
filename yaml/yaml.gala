@@ -38,10 +38,10 @@ import (
 // nested structures. Indentation is spaces only. Out of scope: anchors,
 // aliases, flow collections that span lines or use a collection as a key,
 // custom tags, plain and quoted scalars that span lines, and document
-// markers (--- and ...), which are an error. Block scalars and non-empty flow collections are read only: the
-// encoder writes a multi-line string double-quoted, and a collection in
-// block style unless it is empty ([] or {}). See
-// https://martianov.dev/docs/yaml/.
+// markers (--- and ...), which are an error. Block scalars and non-empty
+// flow collections are read only: the encoder writes a multi-line string
+// double-quoted, and a collection in block style unless it is empty ([] or
+// {}). See https://martianov.dev/docs/yaml/.
 type Codec[T any] struct {}
 
 // Apply creates a typed YamlEncoder[T].

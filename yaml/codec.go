@@ -804,9 +804,9 @@ func parseYAML(input string) *yNode {
 		return &yNode{kind: yMap, nullish: true}
 	}
 	// A document whose first line is neither a sequence item nor a
-	// "key: value" pair is a bare scalar ("42", "abc", null) or an empty
-	// flow container ("[]", "{}"), the forms the encoder writes for a
-	// non-struct root; parseBlock reads it as a scalar.
+	// "key: value" pair is a bare scalar ("42", "abc", null) or a flow
+	// collection on one line, such as the empty "[]" and "{}" the encoder
+	// writes for a non-struct root; parseBlock reads it as one value.
 	node, pos := parseBlock(lines, 0, lines[0].indent)
 	if pos != len(lines) {
 		panic(fmt.Sprintf("yaml: unexpected content at line %d", lines[pos].lineNum))
@@ -1220,18 +1220,21 @@ func parseBlock(lines []pLine, start, expectedIndent int) (*yNode, int) {
 		// such as a block scalar whose header stands on a line of its own.
 		// A scalar is the whole block, so when the block goes on below it
 		// the line was meant as a pair, and the error names it.
-		// The scalar is read first, so a flow collection that is not closed
-		// on its line reports that.
-		node := parseInlineScalar(withoutComment(first.raw))
-		if start+1 < len(lines) && lines[start+1].indent >= expectedIndent {
-			if node.kind != yScalar {
-				// A flow collection is a whole value, so the next line is
-				// what does not belong.
+		more := start+1 < len(lines) && lines[start+1].indent >= expectedIndent
+		if c := first.raw[0]; c == '[' || c == '{' {
+			// A flow collection is a whole value, read first so one that is
+			// not closed on its line reports that; then the next line is
+			// what does not belong.
+			node := parseInlineScalar(withoutComment(first.raw))
+			if more {
 				panic(fmt.Sprintf("yaml: unexpected content at line %d after a flow collection", lines[start+1].lineNum))
 			}
+			return node, start + 1
+		}
+		if more {
 			splitKeyValue(first.raw, first.lineNum)
 		}
-		return node, start + 1
+		return parseInlineScalar(withoutComment(first.raw)), start + 1
 	}
 	return parseCompactMapping(lines, start, expectedIndent, key, value)
 }
@@ -1710,7 +1713,7 @@ func (p *flowParser) quoted() string {
 	start := p.i
 	end := closingQuote(p.s[start:])
 	if end < 0 {
-		panic(fmt.Sprintf("yaml: unterminated quoted scalar %q", p.s[start:]))
+		p.notClosed() // the quote does not close on this line
 	}
 	p.i += end + 1
 	if p.s[start] == '"' {
@@ -1739,16 +1742,16 @@ scan:
 		}
 	}
 	text := trimYamlSpace(p.s[start:p.i])
-	if text == "" || text[0] == '#' {
+	if text == "" {
 		p.i = start
 		p.fail("expected a value")
 	}
-	// YAML 1.2 (ns-plain-first): a plain scalar cannot start with a
-	// reserved indicator, nor with '?', '-' or ':' that white space or a
-	// flow indicator follows ("? a" is an explicit key, "- a" a block
+	// YAML 1.2 (ns-plain-first): a plain scalar cannot start with an
+	// indicator such as '@', '#' or '|', nor with '?', '-' or ':' that white
+	// space or a flow indicator follows ("? a" is an explicit key, "- a" a block
 	// sequence entry, neither allowed here).
 	switch c := text[0]; c {
-	case '@', '`', '%':
+	case '@', '`', '%', '#', '|', '>':
 		p.i = start
 		p.fail(fmt.Sprintf("a plain scalar cannot start with '%c'", c))
 	case '?', '-', ':':
