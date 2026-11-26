@@ -334,7 +334,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 		// as it was before Apply took every value call.
 		bl, bc, _ := c.calleePos()
 		if callee, ok := t.valueApplyCallee(base); ok && !takesArgs(t.calleeApplyType(base)) {
-			addressed, err := t.addressedApplyCallee(callee, bl, bc)
+			addressed, err := t.addressedApplyCallee(callee, c, bl, bc)
 			if err != nil {
 				return nil, err
 			}
@@ -357,7 +357,7 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 			// A struct field whose type has an Apply is called through it.
 			if callee, ok := t.fieldApplyCallee(base, zeroArgRecvType, zeroArgLookupBase, sel.Sel.Name); ok && !t.isImportIdent(sel.X) && !takesArgs(t.fieldApplyType(zeroArgRecvType, zeroArgLookupBase, sel.Sel.Name)) {
-				addressed, err := t.addressedApplyCallee(callee, bl, bc)
+				addressed, err := t.addressedApplyCallee(callee, c, bl, bc)
 				if err != nil {
 					return nil, err
 				}
@@ -369,9 +369,14 @@ func (t *galaASTTransformer) lowerCallSuffix(base ast.Expr, c callSrc) (ast.Expr
 			if sel, ok := inner.(*ast.SelectorExpr); ok && !t.isImportIdent(sel.X) {
 				recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 				// A generic Apply lowers to a free function, which addresses
-				// its receiver itself (loweredMethodReceiver).
+				// its receiver itself (loweredMethodReceiver); the receiver
+				// checks still apply (addressedApplyCallee).
 				if callee, ok := t.fieldApplyCallee(base, recvType, lookupBaseName, sel.Sel.Name); ok {
-					base = callee
+					checked, err := t.addressedApplyCallee(callee, c, bl, bc)
+					if err != nil {
+						return nil, err
+					}
+					base = checked
 				}
 			}
 		}
@@ -3242,6 +3247,11 @@ func (t *galaASTTransformer) bindingApplyType(fun ast.Expr) *transpiler.TypeMeta
 	if !ok || b.typ.IsNil() {
 		return nil
 	}
+	// A pointer is called through the Apply of the type it points to
+	// (applyTypeOf), looked up as a val of that type is.
+	if p, isPtr := t.pointee(b.typ); isPtr {
+		return t.pointeeApplyType(t.applyTypeMeta, p)
+	}
 	return t.applyTypeMeta(b.typ.BaseName())
 }
 
@@ -3389,13 +3399,25 @@ func (t *galaASTTransformer) resultApplyType(fun ast.Expr) *transpiler.TypeMetad
 // literal), recv becomes a pointer to a copy (addressableReceiver), or the
 // call is GALA-E0110 when Apply can change its receiver; an inout place
 // whose address Apply could keep is GALA-E0113 (checkInoutReceiverUse).
-func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, c callSrc, line, col int) (ast.Expr, error) {
 	base, typeArgs := splitCallFunTypeArgs(callee)
 	sel, ok := base.(*ast.SelectorExpr)
 	if !ok {
 		return callee, nil
 	}
 	recvType := t.getExprTypeName(sel.X)
+	// A pointer that may be nil fills no Ptr receiver (GALA-E0080).
+	source := func() (srcNode, srcNode, string) {
+		at := c.post.primaryAt()
+		text := c.calleeText()
+		if text == "" {
+			text = "(...)"
+		}
+		return at, at, text
+	}
+	if err := t.checkPtrReceiverIn(sel.X, t.followAliasChain(unwrapValueMarkers(recvType)), "Apply", source); err != nil {
+		return nil, err
+	}
 	recv := sel.X
 	if t.hasPointerReceiverMethod(recvType, "Apply") {
 		var err error
@@ -3430,38 +3452,80 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 		return nil
 	}
 	fieldType = unwrapValueMarkers(fieldType)
-	if i := slices.Index(meta.TypeParams, fieldType.BaseName()); i >= 0 {
-		if args := t.getReceiverTypeArgTypes(recvType); i < len(args) {
-			return t.applyTypeOf(args[i])
+	// A pointer is looked up by the type it points to (applyTypeOf).
+	named := fieldType
+	elem, isPtr := t.pointee(fieldType)
+	if isPtr {
+		named = elem
+	}
+	if i := slices.Index(meta.TypeParams, named.BaseName()); i >= 0 {
+		args := t.getReceiverTypeArgTypes(recvType)
+		switch {
+		case i >= len(args):
+			return nil
+		case isPtr:
+			return t.pointeeApplyType(t.applyTypeByName, unwrapValueMarkers(args[i]))
 		}
-		return nil
+		return t.applyTypeOf(args[i])
 	}
 	// Another package's struct names its field's type as that package does:
 	// a bare name is its own type, never a same-named one of this package.
-	if meta.Package != "" && meta.Package != t.packageName && fieldType.GetPackage() == "" &&
-		!strings.Contains(fieldType.BaseName(), ".") && !transpiler.IsPrimitiveType(fieldType.BaseName()) {
-		name := fieldType.BaseName()
-		if t.getTypeMeta(meta.Package+"."+name) != nil {
-			return t.applyTypeByName(meta.Package + "." + name)
+	if meta.Package != "" && meta.Package != t.packageName && named.GetPackage() == "" &&
+		!strings.Contains(named.BaseName(), ".") && !transpiler.IsPrimitiveType(named.BaseName()) {
+		name := named.BaseName()
+		own := meta.Package + "." + name
+		if t.getTypeMeta(own) == nil {
+			// Else a std type; one it dot-imports is not known here, so the
+			// call is left as written.
+			own = registry.StdPackageName + "." + name
 		}
-		// Else a std type; one it dot-imports is not known here, so the call
-		// is left as written.
-		return t.applyTypeByName(registry.StdPackageName + "." + name)
+		if isPtr {
+			return t.pointeeApplyType(t.applyTypeByName, transpiler.NamedType{Name: own})
+		}
+		return t.applyTypeByName(own)
 	}
 	return t.applyTypeOf(fieldType)
 }
 
 // applyTypeOf is the metadata of typ, a value's type, when it has an Apply
-// method; nil for a pointer or a type not known.
+// method; nil for a type not known. A pointer is called through the Apply of
+// the type it points to, as `p.Apply(...)` written out is (Go selects it
+// through the pointer); one that may be nil is GALA-E0080 for an Apply on a
+// Ptr receiver (addressedApplyCallee).
 func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMetadata {
 	typ = unwrapValueMarkers(typ)
+	if elem, isPtr := t.pointee(typ); isPtr {
+		return t.pointeeApplyType(t.applyTypeByName, elem)
+	}
 	if transpiler.IsUnusable(typ) {
 		return nil
 	}
-	if _, isPtr := typ.(transpiler.PointerType); isPtr {
+	return t.applyTypeByName(typ.BaseName())
+}
+
+// pointee is the type typ points to, through value markers, and false when
+// typ is no pointer. A pointer alias (`type NodeRef *Node`) is not followed:
+// a value of one is called as written (#1461).
+func (t *galaASTTransformer) pointee(typ transpiler.Type) (transpiler.Type, bool) {
+	ptr, isPtr := unwrapValueMarkers(typ).(transpiler.PointerType)
+	if !isPtr {
+		return nil, false
+	}
+	return unwrapValueMarkers(ptr.Elem), true
+}
+
+// pointeeApplyType is the metadata lookup finds for elem, a pointer's element
+// type, unless elem is an interface: Go selects no method through a pointer
+// to one.
+func (t *galaASTTransformer) pointeeApplyType(lookup func(string) *transpiler.TypeMetadata, elem transpiler.Type) *transpiler.TypeMetadata {
+	if transpiler.IsUnusable(elem) {
 		return nil
 	}
-	return t.applyTypeByName(typ.BaseName())
+	meta := lookup(elem.BaseName())
+	if meta == nil || meta.IsInterface {
+		return nil
+	}
+	return meta
 }
 
 // applyTypeByName is applyTypeMeta for the type named name, except a type
@@ -3622,7 +3686,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 		}
-		addressed, err := t.addressedApplyCallee(callee, fl, fc)
+		addressed, err := t.addressedApplyCallee(callee, c, fl, fc)
 		if err != nil {
 			return nil, err
 		}
@@ -3649,7 +3713,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, c callSrc) (
 				return nil, err
 			}
 		}
-		addressed, err := t.addressedApplyCallee(callee, fl, fc)
+		addressed, err := t.addressedApplyCallee(callee, c, fl, fc)
 		if err != nil {
 			return nil, err
 		}

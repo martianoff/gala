@@ -340,6 +340,93 @@ func main() {
 `)
 	require.ErrorContains(t, err, "GALA-E0053")
 
+	// A pointer is called through the Apply of the type it points to, as
+	// `p.Apply(...)` written out is; one that may be nil fills no Ptr
+	// receiver (GALA-E0080, #1445).
+	out, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int) int = n.v + x
+
+struct Plain(var v int)
+
+func (n Plain) Apply(x int) int = n.v + x
+
+struct Hold(var p *Node, var q *Plain)
+
+func ptrOf(n Node) *Node {
+    var c = n
+    &c
+}
+
+func main() {
+    var n = Node(1)
+    var m = Plain(2)
+    val h = Hold(&n, &m)
+    val r = &n
+    Println(h.p(1), h.q(3), r(5), ptrOf(Node(7))(1))
+}
+`)
+	require.NoError(t, err)
+	for _, w := range []string{"h.p.Apply(1)", "h.q.Apply(3)", "r.Apply(5)", "ptrOf(Node{v: 7}).Apply(1)"} {
+		require.Contains(t, out, w)
+	}
+	// Through a generic struct's field typed by a pointer to its type
+	// parameter.
+	out, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int) int = n.v + x
+
+struct Box[T any](var p *T)
+
+func main() {
+    var n = Node(1)
+    val b = Box[Node](&n)
+    Println(b.p(3))
+}
+`)
+	require.NoError(t, err)
+	require.Contains(t, out, "b.p.Apply(3)")
+
+	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)", "Gen(mkG()).g[int]()"} {
+		_, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n Ptr[Node]) Apply(x int) int = n.v + x
+
+struct Zero(var v int)
+
+func (z Ptr[Zero]) Apply() int = z.v
+
+struct Hold(var p *Node)
+
+struct Box[T any](var p *T)
+
+struct G(var v int)
+
+func (g Ptr[G]) Apply[A any]() Option[A] = None[A]()
+
+struct Gen(var g *G)
+
+func mkG() *G = nil
+
+func mk() *Node = nil
+
+func mkZero() *Zero = nil
+
+func main() {
+    val r = mk()
+    val z = mkZero()
+    Println(`+call+`)
+}
+`)
+		require.ErrorContains(t, err, "GALA-E0080", call)
+	}
+
 	// So do they with no arguments.
 	out, err = transpileBareVariant(t, `package main
 
@@ -420,7 +507,7 @@ struct Plain(n int)
 
 func (p Plain) Apply(f func(int) int) int = f(p.n)
 
-struct Holder(var P Plain, Q Plain)
+struct Holder(var P Plain, Q Plain, var R *Plain)
 `,
 		"main.gala": `package main
 
@@ -431,8 +518,9 @@ struct Plain(s string)
 func (p Plain) Apply(x string) string = p.s + x
 
 func main() {
-    val h = lib.Holder(lib.Plain(1), lib.Plain(2))
-    Println(h.P((x) => x + 1), h.Q((x) => x * 2), Plain("a")("b"))
+    var p = lib.Plain(3)
+    val h = lib.Holder(lib.Plain(1), lib.Plain(2), &p)
+    Println(h.P((x) => x + 1), h.Q((x) => x * 2), h.R((x) => x - 1), Plain("a")("b"))
 }
 `,
 	}
@@ -440,4 +528,5 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "h.P.Apply(func(x int) int")
 	require.Contains(t, out, "h.Q.Get().Apply(func(x int) int")
+	require.Contains(t, out, "h.R.Apply(func(x int) int")
 }
