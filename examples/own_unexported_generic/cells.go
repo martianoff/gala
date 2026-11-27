@@ -18,3 +18,9 @@ func value(c *cell[int]) int { return c.v }
 // Each calls f with a cell holding 5: a method of this file on the GALA type
 // Repo.
 func (r Repo) Each(f func(*cell[int]) int) int { return f(&cell[int]{v: 5}) }
+
+// cells is an alias of a fixed-length array of cells.
+type cells = [2]cell[int]
+
+// pairAlias calls f with two cells holding n and n+2, typed through cells.
+func pairAlias(n int, f func(cells) int) int { return f(cells{{v: n}, {v: n + 2}}) }

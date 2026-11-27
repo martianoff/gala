@@ -4808,6 +4808,15 @@ gala_exec_test(
     deps = [":own_go_func_multi_results"],
 )
 
+# Lambdas and results whose Go types are written through Go aliases of a
+# generic struct instance or a fixed-length array (#1456).
+gala_exec_test(
+    name = "go_alias_exact",
+    src = "go_alias_exact/main.gala",
+    expected = "go_alias_exact/main.out",
+    deps = ["//examples/go_alias_exact_bridge"],
+)
+
 # A lambda passed to a function of the package's own .go file is spelled with
 # the generic instances and array lengths its unexported types name (#1456).
 gala_library(

@@ -2735,23 +2735,93 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 	}
 }
 
-// aliasSpellsExactly is spellsExactly of an alias obj of target. An alias is
-// spelled as the type it names. A package's alias of a named type may name
-// one another package cannot write (an internal package's type), so it has
-// no exact form; an unnamed target (`type Key = [32]byte`, or the universe's
-// `any`) is written out as Go has it.
+// aliasSpellsExactly reports whether the alias obj, of target, spells exactly
+// in Go written in package home: it is spelled as its target (Go aliases are
+// the same type), so it does when the target does and every package the
+// target names is one GALA code can import, which an internal package of
+// another module tree is not (`os.FileMode` is `fs.FileMode`; an alias of
+// an internal package's type is not spelled).
 func aliasSpellsExactly(obj *types.TypeName, target types.Type, home *types.Package) bool {
-	if _, named := target.(*types.Named); named && obj.Pkg() != nil {
+	return spellsExactlyIn(target, home) && importableFrom(target, home)
+}
+
+// importableFrom reports whether every package t names is one Go written in
+// package home may import: not an internal package (`a/internal/b`) unless
+// home is inside the tree rooted at its parent (`a/...`).
+func importableFrom(t types.Type, home *types.Package) bool {
+	switch t := t.(type) {
+	case *types.Named:
+		if pkg := t.Obj().Pkg(); pkg != nil && !internalVisible(pkg.Path(), home) {
+			return false
+		}
+		for i := 0; i < t.TypeArgs().Len(); i++ {
+			if !importableFrom(t.TypeArgs().At(i), home) {
+				return false
+			}
+		}
+		return true
+	case *types.Alias:
+		if pkg := t.Obj().Pkg(); pkg != nil && !internalVisible(pkg.Path(), home) {
+			return false
+		}
+		return importableFrom(types.Unalias(t), home)
+	case *types.Pointer:
+		return importableFrom(t.Elem(), home)
+	case *types.Slice:
+		return importableFrom(t.Elem(), home)
+	case *types.Array:
+		return importableFrom(t.Elem(), home)
+	case *types.Chan:
+		return importableFrom(t.Elem(), home)
+	case *types.Map:
+		return importableFrom(t.Key(), home) && importableFrom(t.Elem(), home)
+	case *types.Signature:
+		return importableFrom(t.Params(), home) && importableFrom(t.Results(), home)
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if !importableFrom(t.At(i).Type(), home) {
+				return false
+			}
+		}
+	case *types.Struct:
+		for i := 0; i < t.NumFields(); i++ {
+			if !importableFrom(t.Field(i).Type(), home) {
+				return false
+			}
+		}
+	case *types.Interface:
+		for i := 0; i < t.NumMethods(); i++ {
+			if !importableFrom(t.Method(i).Type(), home) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// internalVisible reports whether a package at path may be imported from
+// home by Go's internal-package rule.
+func internalVisible(path string, home *types.Package) bool {
+	idx := strings.LastIndex("/"+path+"/", "/internal/")
+	if idx < 0 {
+		return true
+	}
+	if home == nil {
 		return false
 	}
-	return spellsExactlyIn(target, home)
+	if idx == 0 {
+		return false // the standard library's own internal packages
+	}
+	parent := path[:idx-1]
+	return home.Path() == parent || strings.HasPrefix(home.Path(), parent+"/")
 }
 
 // spellsExactly reports whether convertGoType, exact, types t as Go has it,
 // so that the type names the same Go type: every array length, type
 // argument and interface method is kept. A name only t's own package can
-// write (an unexported field, method or type), a package's alias of a named
-// type and unsafe.Pointer have no exact form in the type model.
+// write (an unexported field, method or type), an alias naming a package GALA
+// code cannot import (aliasSpellsExactly) and unsafe.Pointer have no exact
+// form in the type model.
 func spellsExactly(t types.Type) bool { return spellsExactlyIn(t, nil) }
 
 // spellsExactlyIn is spellsExactly for Go written in package home, which

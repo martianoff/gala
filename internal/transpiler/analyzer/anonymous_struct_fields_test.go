@@ -75,3 +75,28 @@ func TopLevel() [3]int
 		assert.Equal(t, tt.want, got.String(), tt.fn)
 	}
 }
+
+// TestInternalVisible pins Go's internal-package rule as aliasSpellsExactly
+// reads it: an alias whose target names an internal package spells exactly
+// only in Go that may import that package (#1456, #1488).
+func TestInternalVisible(t *testing.T) {
+	tests := []struct {
+		path, home string
+		want       bool
+	}{
+		{"io/fs", "", true},
+		{"internal/poll", "", false},
+		{"internal/poll", "example.com/app", false},
+		{"example.com/lib/internal/x", "example.com/lib", true},
+		{"example.com/lib/internal/x", "example.com/lib/sub", true},
+		{"example.com/lib/internal/x", "example.com/other", false},
+		{"example.com/lib/internal/x", "", false},
+	}
+	for _, tt := range tests {
+		var home *types.Package
+		if tt.home != "" {
+			home = types.NewPackage(tt.home, "home")
+		}
+		assert.Equal(t, tt.want, internalVisible(tt.path, home), "%s from %q", tt.path, tt.home)
+	}
+}
