@@ -35,19 +35,19 @@ func runS[U any](f Sendable[func() U]) Option[U] = Some(f())
 			name: "generic function, int64 slot",
 			main: `val p Option[int64] = lazy(5, true)
     Println(p)`,
-			contains: "lazy[int64](func() int64 {\n\t\treturn 5\n\t}, true)",
+			contains: "lazy(func() int64 {\n\t\treturn 5\n\t}, true)",
 		},
 		{
 			name: "shift constant, float64 slot",
 			main: `val p Option[float64] = lazy(1 << 3, true)
     Println(p)`,
-			contains: "lazy[float64](func() float64 {\n\t\treturn 1 << 3\n\t}, true)",
+			contains: "lazy(func() float64 {\n\t\treturn 1 << 3\n\t}, true)",
 		},
 		{
 			name: "Sendable thunk",
 			main: `val s Option[int64] = runS(5)
     Println(s)`,
-			contains: "runS[int64](func() int64 {\n\t\treturn 5\n\t})",
+			contains: "runS(func() int64 {\n\t\treturn 5\n\t})",
 		},
 		{
 			name: "companion Apply",

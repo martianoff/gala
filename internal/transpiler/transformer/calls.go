@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -6861,6 +6862,7 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 	inferredMap := make(map[string]transpiler.Type)
 	var lowered []ast.Expr
 	var slotTypes []transpiler.Type
+	var byName []bool // a typed value passed by name, which binds after the bare ones
 	for _, a := range args {
 		pi := paramIndex(a.slot, paramTypes, variadic)
 		if a.lambda.ok() || pi < 0 || t.isPlaceholderLambdaArg(a.expr, paramTypes[pi]) {
@@ -6880,11 +6882,33 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if err != nil {
 			continue
 		}
+		// A value passed by name (`func() U`, through Sendable or an alias)
+		// binds U as the thunk's result: a constant weakly, a typed value
+		// as itself (`or(0, x64)` binds int64), after the bare typed
+		// arguments, which keep the binding they made before. A function
+		// value is the function, and one whose type the slot gives (an if,
+		// a match, `None()`) binds nothing.
+		passedByName := false
+		if ft := t.aliasedFuncType(unwrapValueMarkers(paramType)); ft != nil && len(ft.Params) == 0 && len(ft.Results) == 1 && !t.needsExpectedType(a.expr) {
+			argType := t.getExprTypeNameManual(expr)
+			// A Go call's results are the thunk's (a Try thunk returns the
+			// value), not the Try it converts to on its own.
+			isGoCall := t.goResults[asCall(ast.Unparen(expr))] != nil
+			if !isGoCall && !transpiler.IsUnusableOrAny(argType) && !t.mentionsUnboundTypeParam(argType) && t.resolveTranspilerTypeAsFuncType(unwrapValueMarkers(argType)) == nil {
+				paramType = ft.Results[0]
+				passedByName = !t.isUntypedConstArg(expr)
+			}
+		}
 		lowered = append(lowered, expr)
 		slotTypes = append(slotTypes, paramType)
+		byName = append(byName, passedByName)
 	}
-	// Untyped constants bind last, as in Go (constantsLast).
+	// Untyped constants bind last, as in Go (constantsLast), and typed
+	// values passed by name just before them.
 	order, firstConst := constantsLast(lowered, t.isUntypedConstArg)
+	slices.SortStableFunc(order[:firstConst], func(a, b int) int {
+		return cmp.Compare(boolRank(byName[a]), boolRank(byName[b]))
+	})
 	var bound map[string]transpiler.Type
 	for n, i := range order {
 		if n == firstConst {
@@ -6899,7 +6923,10 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if n >= firstConst {
 			t.widenConstBinding(expr, paramType, typeParams, bound, inferredMap)
 		}
-		if typed != nil {
+		// A thunk's value is lowered against the slot, so the call's own
+		// slot may still replace what it binds (a `func() any` in an
+		// Option[any] one).
+		if typed != nil && !byName[i] {
 			t.unifyGoParam(paramType, t.typedPartType(expr, argType), typeParams, typed)
 		}
 	}
@@ -7368,4 +7395,12 @@ func (t *galaASTTransformer) byNameCallValue(e exprSrc, s slot, byName *goResult
 	restore()
 	t.tempVarCount = temps
 	return nil, false
+}
+
+// boolRank orders false before true.
+func boolRank(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
