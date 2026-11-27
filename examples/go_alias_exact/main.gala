@@ -1,0 +1,16 @@
+package main
+
+import "martianoff/gala/examples/go_alias_exact_bridge"
+
+// A lambda whose Go parameter type is written through a Go alias of a
+// generic struct instance (`IntBox = Box[int]`) or of a fixed-length array
+// (`Pair = [2]int`), and a value a Go function returns of one, keep the
+// alias target's type arguments and length (#1456), as does an array of a
+// package's alias of a named type (`[2]os.FileMode`, #1488).
+
+func main() {
+    Println(go_alias_exact_bridge.TakeBox((b) => b.V + 1))
+    Println(go_alias_exact_bridge.TakePair((p) => p[0] + p[1]))
+    Println(Some(go_alias_exact_bridge.NewBox()).Get().V)
+    Println(go_alias_exact_bridge.RunModes(() => go_alias_exact_bridge.Modes()))
+}

@@ -286,7 +286,11 @@ import (
 // type with the array's length, an alias of an unnamed type spells exactly,
 // and a defined type over an array keeps its length when its element is
 // spelled lossily. A v59 payload holds the slice spelling.
-const CacheVersion = "v60"
+//
+// v61: a package's alias of a named type (`os.FileMode`, `IntBox = Box[int]`)
+// spells exactly as its target when GALA code can import every package the
+// target names. A v60 payload holds the lossy spelling.
+const CacheVersion = "v61"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

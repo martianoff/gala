@@ -10,3 +10,5 @@ func Sum(n int) int = pair(n, (cs) => at(cs, 0) + at(cs, 1))
 struct Repo(n int)
 
 func Five() int = Repo(1).Each((c) => value(c))
+
+func Spread(n int) int = viaAlias(n, (c) => value(c) - n)

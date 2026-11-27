@@ -18,3 +18,9 @@ func value(c *cell[int]) int { return c.v }
 // Each calls f with a cell holding 5: a method of this file on the GALA type
 // Repo.
 func (r Repo) Each(f func(*cell[int]) int) int { return f(&cell[int]{v: 5}) }
+
+// intCell is an alias of a generic instance of the package's own type.
+type intCell = cell[int]
+
+// viaAlias calls f with a cell holding n+2, typed through intCell.
+func viaAlias(n int, f func(*intCell) int) int { return f(&intCell{v: n + 2}) }
