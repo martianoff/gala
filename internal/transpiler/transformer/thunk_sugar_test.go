@@ -625,16 +625,40 @@ func main() {
 	}
 	// #1466: `(nil)` is the same nil, and a Go signature's `struct{}`
 	// result is a struct.
-	calls := []struct{ name, call, want, notWant string }{
-		{"a parenthesized nil", "b((nil), 2)", "b((nil), 2)", "func() state"},
-		{"a parenthesized nil for several results", "Pair((nil), 2)", "Pair((nil), 2)", "func() ("},
-		{"a Go anonymous struct result", "Run(nil, 2)", "Run(nil, 2)", "return nil"},
+	calls := []struct{ name, param, call, want, notWant string }{
+		{"a parenthesized nil", "func() state", "b((nil), 2)", "b((nil), 2)", "func() state"},
+		{"a parenthesized nil for a pointer result", "func() *state", "b((nil), 2)", "return (nil)", "b((nil), 2)"},
+		{"a parenthesized nil for several results", "func() state", "Pair((nil), 2)", "Pair((nil), 2)", "func() ("},
+		{"a Go anonymous struct result", "func() state", "Run(nil, 2)", "Run(nil, 2)", "return nil"},
 	}
 	for _, c := range calls {
 		t.Run(c.name, func(t *testing.T) {
-			got := body(t, "func() state", c.call)
+			got := body(t, c.param, c.call)
 			assert.Contains(t, got, c.want)
 			assert.NotContains(t, got, c.notWant)
 		})
 	}
+}
+
+// TestThunkSugar_ParenthesizedNilInAGenericCall pins #1466: a `(nil)`
+// argument to a generic function binds no type parameter, as a bare `nil`
+// does not, so both lower alike.
+func TestThunkSugar_ParenthesizedNilInAGenericCall(t *testing.T) {
+	lower := func(arg string) string {
+		input := `package main
+
+struct Box[T any](v T)
+
+func mk[T any](f func() Box[T]) Option[Box[T]] = if (f == nil) None() else Some(f())
+
+func main() {
+    val b Option[Box[int]] = mk(` + arg + `)
+    Println(b.IsEmpty())
+}`
+		out, err := newThunkSugarTranspiler().Transpile(input, "")
+		require.NoError(t, err)
+		return mainBodyOf(t, out)
+	}
+	bare := lower("nil")
+	assert.Equal(t, bare, strings.ReplaceAll(lower("(nil)"), "(nil)", "nil"))
 }
