@@ -1917,9 +1917,12 @@ func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) (td *
 		return nil, nil
 	}
 	// An instance of a generic Go type (`lib.Iter[int]`) is what the type is:
-	// its record is filed under the type's name.
+	// its record is filed under the type's name. A GALA type's instance is
+	// not looked up: a Go type may share its `pkg.Name` key.
 	if gen, isGeneric := typ.(transpiler.GenericType); isGeneric {
-		typ = gen.Base
+		if nt, named := gen.Base.(transpiler.NamedType); named && (t.isGoTyped(nt) || t.getTypeMeta(nt.BaseName()) == nil) {
+			typ = gen.Base
+		}
 	}
 	key, td := t.goTypeDataFor(typ)
 	// The hop bound stops an alias chain that refers back to itself.

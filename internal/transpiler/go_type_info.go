@@ -38,10 +38,10 @@ type GoFuncSignature struct {
 	Returns    []Type    // return types (supports multi-return)
 	IsVariadic bool      // true if last param is ...T
 	// Inexact is true when a parameter or result is recorded in the lossy
-	// spelling and loses part of its type there: one GALA cannot spell
-	// exactly, or one holding an anonymous struct or a non-empty interface
-	// literal (spelled any), with a channel or a generic type instance inside.
-	// Go written from the signature would not match the declaration.
+	// spelling (GALA cannot spell it exactly, or it holds an anonymous struct
+	// or a non-empty interface literal) and that spelling loses part of it
+	// (the analyzer's inexactGoType). Go written from the signature would not
+	// match the declaration.
 	Inexact bool
 	// TypeParams holds the declared type-parameter names of a generic Go
 	// function, in declaration order (empty for a non-generic function).
