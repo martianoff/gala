@@ -3560,12 +3560,22 @@ func (t *galaASTTransformer) pointerOfIn(pkg string, typ transpiler.Type) (trans
 		}
 		if qual != "" {
 			pkg = qual
+			// The qualifier as written may be an import alias.
+			if actual, ok := t.importManager.ResolveAlias(qual); ok {
+				pkg = actual
+			}
 		}
 		if pkg == t.packageName {
 			pkg = ""
 		}
 		key := bare
 		if pkg != "" {
+			// Another package's generic alias would substitute this
+			// package's type arguments into names spelled in that one
+			// (#1469); it is not followed.
+			if _, isGeneric := cur.(transpiler.GenericType); isGeneric {
+				return transpiler.PointerType{}, false
+			}
 			key = pkg + "." + bare
 		}
 		// A generic alias's target with its type arguments substituted, or
@@ -3576,7 +3586,11 @@ func (t *galaASTTransformer) pointerOfIn(pkg string, typ transpiler.Type) (trans
 		}
 		cur = unwrapValueMarkers(target)
 		if ptr, isPtr := cur.(transpiler.PointerType); isPtr {
-			ptr.Elem = qualifyBareIn(unwrapValueMarkers(ptr.Elem), pkg)
+			elem, ok := t.qualifyBareIn(unwrapValueMarkers(ptr.Elem), pkg)
+			if !ok {
+				return transpiler.PointerType{}, false
+			}
+			ptr.Elem = elem
 			return ptr, true
 		}
 		if transpiler.IsUnusable(cur) {
@@ -3587,14 +3601,25 @@ func (t *galaASTTransformer) pointerOfIn(pkg string, typ transpiler.Type) (trans
 }
 
 // qualifyBareIn is typ, a type package pkg spells, with the package named
-// when typ is a bare name of one of its own types; typ itself for this
-// package ("") and for any other type.
-func qualifyBareIn(typ transpiler.Type, pkg string) transpiler.Type {
-	named, ok := typ.(transpiler.NamedType)
-	if !ok || pkg == "" || named.Package != "" || strings.Contains(named.Name, ".") || transpiler.IsPrimitiveType(named.Name) {
-		return typ
+// when typ is a bare name of one of its own types (or of std, which every
+// package names bare); typ itself for this package ("") and for a qualified
+// or predeclared name. False for any other shape of another package's type
+// (a generic one, say), whose inner names are not re-spelled here (#1469).
+func (t *galaASTTransformer) qualifyBareIn(typ transpiler.Type, pkg string) (transpiler.Type, bool) {
+	if pkg == "" {
+		return typ, true
 	}
-	return transpiler.NamedType{Package: pkg, Name: named.Name}
+	named, ok := typ.(transpiler.NamedType)
+	if !ok {
+		return nil, false
+	}
+	if named.Package != "" || strings.Contains(named.Name, ".") || transpiler.IsPrimitiveType(named.Name) {
+		return typ, true
+	}
+	if t.getTypeMeta(pkg+"."+named.Name) == nil && t.getTypeMeta(registry.StdPackageName+"."+named.Name) != nil {
+		pkg = registry.StdPackageName
+	}
+	return transpiler.NamedType{Package: pkg, Name: named.Name}, true
 }
 
 // pointeeApplyType is the metadata lookup finds for elem, a pointer's element
