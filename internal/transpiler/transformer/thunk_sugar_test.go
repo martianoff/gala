@@ -523,6 +523,7 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go named complex result", "func() Phase", "b(nil, 2)", "return nil"},
 		{"a Go alias of a named array result", "func() IDAlias", "b(nil, 2)", "return nil"},
 		{"a Go alias of an anonymous struct result", "func() Unit", "b(nil, 2)", "return nil"},
+		{"a generic Go alias of a pointer result", "func() Ref[Spot]", "return nil", ""},
 	}
 	const bridge = `package main
 
@@ -550,6 +551,8 @@ type Phase complex64
 type IDAlias = ID
 
 type Unit = struct{}
+
+type Ref[T any] = *T
 
 func Run(f func() struct{}, n int) int {
 	if f == nil {
