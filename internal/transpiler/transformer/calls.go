@@ -3488,8 +3488,14 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 	named, isPtr := fieldType, false
 	if ptr, ok := fieldType.(transpiler.PointerType); ok {
 		named, isPtr = unwrapValueMarkers(ptr.Elem), true
-	} else if elem, ok := t.pointee(fieldType); ok && !foreign {
-		named, isPtr = elem, true
+	} else if !foreign {
+		if elem, ok := t.pointee(fieldType); ok {
+			named, isPtr = elem, true
+		}
+	} else if ptr, ok := t.pointerOfIn(meta.Package, unwrapValueMarkers(fieldType)); ok {
+		// Its own package's alias of a pointer, its element qualified with
+		// that package (pointerOfIn).
+		return t.pointeeApplyType(t.applyTypeByName, unwrapValueMarkers(ptr.Elem))
 	}
 	if i := slices.Index(meta.TypeParams, named.BaseName()); isPtr && i >= 0 {
 		if a := args(); i < len(a) {
@@ -3512,6 +3518,15 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 			return t.pointeeApplyType(t.applyTypeByName, transpiler.NamedType{Name: own})
 		}
 		return t.applyTypeByName(own)
+	}
+	if foreign && !isPtr {
+		// Not its package's pointer alias (pointerOfIn): its qualifier is
+		// spelled with that package's imports, not this file's, so it is
+		// not followed as an alias here.
+		if transpiler.IsUnusable(fieldType) {
+			return nil
+		}
+		return t.applyTypeByName(fieldType.BaseName())
 	}
 	return t.applyTypeOf(fieldType)
 }
@@ -3553,26 +3568,66 @@ func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerT
 	if transpiler.IsUnusable(typ) || t.isActiveTypeParam(typ.BaseName()) {
 		return transpiler.PointerType{}, false
 	}
-	// This package's aliases only, each by its bare or its own qualified
-	// name: another package's alias names its target as that package does,
-	// which a lookup here could misread, so the walk stops at one.
+	return t.pointerOfIn("", typ)
+}
+
+// pointerOfIn is pointerOf for typ as package pkg spells it ("" for this
+// package): this package's alias is keyed by its bare name, another's by
+// `pkg.Name` (aliasTargetByKey), and the names another package's alias
+// target spells bare are that package's, so the pointer's element is
+// qualified with it (`*Node` in lib is `*lib.Node`).
+func (t *galaASTTransformer) pointerOfIn(pkg string, typ transpiler.Type) (transpiler.PointerType, bool) {
 	cur := typ
 	for range len(t.typeAliases) + 1 { // an alias cycle in malformed input cannot loop
-		pkg, bare := splitPackageQualifier(cur.BaseName())
-		if pkg == "" {
-			pkg = cur.GetPackage()
+		qual, bare := splitPackageQualifier(cur.BaseName())
+		if qual == "" {
+			qual = cur.GetPackage()
 		}
-		if pkg != "" && pkg != t.packageName {
+		switch {
+		case qual == "" || qual == pkg:
+		case pkg != "":
+			// A qualifier in another package's alias target is spelled
+			// with that package's imports, which this file cannot
+			// resolve; it is not followed.
 			return transpiler.PointerType{}, false
+		default:
+			// A qualifier this file wrote may be one of its import aliases.
+			pkg = qual
+			if actual, isImport := t.importManager.ResolveAlias(qual); isImport {
+				if actual == t.packageName {
+					// An import sharing this package's name is not this
+					// package; aliases are keyed by package name (#1469).
+					return transpiler.PointerType{}, false
+				}
+				pkg = actual
+			}
 		}
-		// A generic alias's target with its type arguments substituted
-		// (aliasTargetByKey), or none when they are not given.
-		target, isAlias := t.aliasTargetByKey(bare, cur)
+		if pkg == t.packageName {
+			pkg = ""
+		}
+		key := bare
+		if pkg != "" {
+			// Another package's generic alias would substitute this
+			// package's type arguments into names spelled in that one
+			// (#1469); it is not followed.
+			if _, isGeneric := cur.(transpiler.GenericType); isGeneric {
+				return transpiler.PointerType{}, false
+			}
+			key = pkg + "." + bare
+		}
+		// A generic alias's target with its type arguments substituted, or
+		// none when they are not given.
+		target, isAlias := t.aliasTargetByKey(key, cur)
 		if !isAlias {
 			return transpiler.PointerType{}, false
 		}
 		cur = unwrapValueMarkers(target)
 		if ptr, isPtr := cur.(transpiler.PointerType); isPtr {
+			elem, ok := t.qualifyBareIn(unwrapValueMarkers(ptr.Elem), pkg)
+			if !ok {
+				return transpiler.PointerType{}, false
+			}
+			ptr.Elem = elem
 			return ptr, true
 		}
 		if transpiler.IsUnusable(cur) {
@@ -3580,6 +3635,38 @@ func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerT
 		}
 	}
 	return transpiler.PointerType{}, false
+}
+
+// qualifyBareIn is typ, a type package pkg spells, with the package named
+// when typ is a bare name of one of its own types (or of std, which every
+// package names bare); typ itself for this package (""), for a predeclared
+// name and for one qualified with pkg. False for any other qualifier and any
+// other shape of another package's type (a generic one, say), whose names
+// are not re-spelled here (#1469).
+func (t *galaASTTransformer) qualifyBareIn(typ transpiler.Type, pkg string) (transpiler.Type, bool) {
+	if pkg == "" {
+		return typ, true
+	}
+	named, ok := typ.(transpiler.NamedType)
+	if !ok {
+		return nil, false
+	}
+	if transpiler.IsPrimitiveType(named.Name) {
+		return typ, true
+	}
+	qual, _ := splitPackageQualifier(named.Name)
+	if qual == "" {
+		qual = named.Package
+	}
+	if qual != "" {
+		// A qualifier pkg wrote is spelled with its imports, which this
+		// file's do not resolve; only its own name is read here.
+		return typ, qual == pkg
+	}
+	if t.getTypeMeta(pkg+"."+named.Name) == nil && t.getTypeMeta(registry.StdPackageName+"."+named.Name) != nil {
+		pkg = registry.StdPackageName
+	}
+	return transpiler.NamedType{Package: pkg, Name: named.Name}, true
 }
 
 // pointeeApplyType is the metadata lookup finds for elem, a pointer's element
