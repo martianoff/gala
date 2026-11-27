@@ -2254,10 +2254,10 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 // lambda for a `func(*Box[int]) error` is a `func(*Box[int]) error`, a
 // `Some` of a `*Box[int]` an `Option[*Box[int]]`). A type GALA cannot spell
 // exactly (an unexported name, an alias naming a package GALA code cannot
-// import), or that holds an
-// anonymous struct or a non-empty interface literal (which GALA does not
-// write; the lossy spelling keeps them as before), keeps the lossy spelling,
-// which still reads its elements and results. It records the types values
+// import), or that holds an anonymous struct or a non-empty interface
+// literal (which GALA does not write; the lossy spelling keeps them as
+// before), keeps the lossy spelling, which still reads its elements and
+// results. It records the types values
 // are written with: package variables, struct fields, and function
 // parameters and results. A defined type's underlying type keeps type
 // literals too (definedUnderlying).
@@ -2736,13 +2736,13 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 	}
 }
 
-// aliasSpellsExactly reports whether the alias obj, of target, spells exactly
+// aliasSpellsExactly reports whether an alias of target spells exactly
 // in Go written in package home: it is spelled as its target (Go aliases are
 // the same type), so it does when the target does and every package the
 // target names is one GALA code can import, which an internal package of
 // another module tree is not (`os.FileMode` is `fs.FileMode`; an alias of
 // an internal package's type is not spelled).
-func aliasSpellsExactly(obj *types.TypeName, target types.Type, home *types.Package) bool {
+func aliasSpellsExactly(target types.Type, home *types.Package) bool {
 	return spellsExactlyIn(target, home) && importableFrom(target, home)
 }
 
@@ -2799,10 +2799,11 @@ func importableFrom(t types.Type, home *types.Package) bool {
 }
 
 // internalVisible reports whether a package at path may be imported from
-// home by Go's internal-package rule; a vendored package (`vendor/...`) never
-// is, its path not being one an import names.
+// home by Go's internal-package rule; the standard library's vendored
+// packages (`vendor/...`) never are, their paths not being ones an import
+// names.
 func internalVisible(path string, home *types.Package) bool {
-	if strings.HasPrefix(path, "vendor/") || strings.Contains(path, "/vendor/") {
+	if strings.HasPrefix(path, "vendor/") {
 		return false
 	}
 	idx := strings.LastIndex("/"+path+"/", "/internal/")
@@ -2836,11 +2837,11 @@ func spellsExactlyIn(t types.Type, home *types.Package) bool {
 	case *types.TypeParam:
 		return true
 	case *types.Alias:
-		return aliasSpellsExactly(t.Obj(), types.Unalias(t), home)
+		return aliasSpellsExactly(types.Unalias(t), home)
 	case *types.Named:
 		obj := t.Obj()
 		if obj.IsAlias() {
-			return aliasSpellsExactly(obj, types.Unalias(t), home)
+			return aliasSpellsExactly(types.Unalias(t), home)
 		}
 		if obj.Pkg() != nil && !obj.Exported() && obj.Pkg() != home {
 			return false
