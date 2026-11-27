@@ -77,6 +77,7 @@ go_test(
         "fanout_methods_test.go",
         "foreign_gen_go_test.go",
         "go_cgo_test.go",
+        "go_dot_decl_collision_test.go",
         "go_dot_import_exports_test.go",
         "go_dot_imported_type_test.go",
         "go_export_importer_test.go",
