@@ -1,0 +1,12 @@
+package own_unexported_generic
+
+// A lambda passed to a function of this package's own .go file is spelled
+// with the generic instance its unexported parameter type names (#1456).
+
+func Double(n int) int = visit(n, (c) => value(c) * 2)
+
+func Sum(n int) int = pair(n, (cs) => at(cs, 0) + at(cs, 1))
+
+struct Repo(n int)
+
+func Five() int = Repo(1).Each((c) => value(c))

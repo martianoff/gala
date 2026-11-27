@@ -276,7 +276,12 @@ import (
 // a generic Go type's methods without receiver type parameters of their own
 // record the type's when they name them. A v57 payload holds the lossy
 // spelling.
-const CacheVersion = "v58"
+//
+// v59: the package being compiled records its own unexported types in its Go
+// functions, struct fields, variables and defined types exactly, as Go
+// written in that package can spell them. A v58 payload holds the lossy
+// spelling.
+const CacheVersion = "v59"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

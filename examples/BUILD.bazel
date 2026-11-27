@@ -4808,6 +4808,23 @@ gala_exec_test(
     deps = [":own_go_func_multi_results"],
 )
 
+# A lambda passed to a function of the package's own .go file is spelled with
+# the generic instances and array lengths its unexported types name (#1456).
+gala_library(
+    name = "own_unexported_generic",
+    srcs = ["own_unexported_generic/cells.gala"],
+    go_srcs = ["own_unexported_generic/cells.go"],
+    importpath = "martianoff/gala/examples/own_unexported_generic",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "own_unexported_generic_test",
+    src = "own_unexported_generic_test.gala",
+    expected = "own_unexported_generic_test.out",
+    deps = [":own_unexported_generic"],
+)
+
 # Retry combinator with backoff strategies
 gala_exec_test(
     name = "retry_backoff",

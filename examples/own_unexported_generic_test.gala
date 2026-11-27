@@ -1,0 +1,9 @@
+package main
+
+import "martianoff/gala/examples/own_unexported_generic"
+
+func main() {
+    Println(own_unexported_generic.Double(3))
+    Println(own_unexported_generic.Sum(4))
+    Println(own_unexported_generic.Five())
+}
