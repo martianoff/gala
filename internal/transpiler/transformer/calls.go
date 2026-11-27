@@ -3623,9 +3623,10 @@ func (t *galaASTTransformer) pointerOfIn(pkg string, typ transpiler.Type) (trans
 
 // qualifyBareIn is typ, a type package pkg spells, with the package named
 // when typ is a bare name of one of its own types (or of std, which every
-// package names bare); typ itself for this package ("") and for a qualified
-// or predeclared name. False for any other shape of another package's type
-// (a generic one, say), whose inner names are not re-spelled here (#1469).
+// package names bare); typ itself for this package (""), for a predeclared
+// name and for one qualified with pkg. False for any other qualifier and any
+// other shape of another package's type (a generic one, say), whose names
+// are not re-spelled here (#1469).
 func (t *galaASTTransformer) qualifyBareIn(typ transpiler.Type, pkg string) (transpiler.Type, bool) {
 	if pkg == "" {
 		return typ, true
@@ -3634,8 +3635,17 @@ func (t *galaASTTransformer) qualifyBareIn(typ transpiler.Type, pkg string) (tra
 	if !ok {
 		return nil, false
 	}
-	if named.Package != "" || strings.Contains(named.Name, ".") || transpiler.IsPrimitiveType(named.Name) {
+	if transpiler.IsPrimitiveType(named.Name) {
 		return typ, true
+	}
+	qual, _ := splitPackageQualifier(named.Name)
+	if qual == "" {
+		qual = named.Package
+	}
+	if qual != "" {
+		// A qualifier pkg wrote is spelled with its imports, which this
+		// file's do not resolve; only its own name is read here.
+		return typ, qual == pkg
 	}
 	if t.getTypeMeta(pkg+"."+named.Name) == nil && t.getTypeMeta(registry.StdPackageName+"."+named.Name) != nil {
 		pkg = registry.StdPackageName
