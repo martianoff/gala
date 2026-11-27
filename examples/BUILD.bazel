@@ -2364,6 +2364,16 @@ gala_exec_test(
     deps = ["//examples/go_generic_alias_bridge"],
 )
 
+# Lambdas passed to Go functions or stored in Go struct fields, and Go
+# function results, whose types name a generic struct instance or a
+# fixed-length array (#1456).
+gala_exec_test(
+    name = "go_exact_signature",
+    src = "go_exact_signature/main.gala",
+    expected = "go_exact_signature/main.out",
+    deps = ["//examples/go_exact_signature_bridge"],
+)
+
 # Lambdas typed by Go defined function types whose signatures name a generic
 # struct instance or a fixed-length array (#1431).
 gala_exec_test(

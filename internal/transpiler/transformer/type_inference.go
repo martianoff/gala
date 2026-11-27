@@ -1169,9 +1169,10 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 	patternArr, patternIsArr := pattern.(transpiler.ArrayType)
 	concreteArr, concreteIsArr := concrete.(transpiler.ArrayType)
 	if patternIsArr && concreteIsArr {
-		// Arrays of two lengths never unify. A Go signature reads an array
-		// parameter as a slice (see goTypeToTranspilerType), so a slice
-		// pattern still takes an array's element type.
+		// Arrays of two lengths never unify. A Go signature recorded in the
+		// lossy spelling reads an array parameter as a slice (see
+		// goTypeToTranspilerType), so a slice pattern still takes an array's
+		// element type.
 		if patternArr.Fixed && concreteArr.Fixed && patternArr.Len != concreteArr.Len {
 			return false
 		}
@@ -2122,6 +2123,11 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 	}
 	if !declaredBySibling {
 		sig = t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(gen.Base), method)
+	}
+	if sig != nil && len(sig.TypeParams) == 0 {
+		// A method that names none of the type's parameters (one promoted
+		// from an embedded non-generic field): nothing to substitute.
+		return sig
 	}
 	if sig == nil || len(sig.TypeParams) != len(gen.Params) {
 		return nil

@@ -1,0 +1,35 @@
+package main
+
+import "martianoff/gala/examples/go_exact_signature_bridge"
+
+// A lambda passed to a Go function, or stored in a Go struct field, whose
+// type names a generic struct instance or a fixed-length array is spelled
+// with them, and so is a value a Go function returns of one (#1456).
+
+struct Maker(n int)
+
+func (m Maker) Make() *go_exact_signature_bridge.Box[int] = go_exact_signature_bridge.First()
+
+func main() {
+    Println(go_exact_signature_bridge.Take((b) => b.V + 1))
+    Println(go_exact_signature_bridge.SumPair((xs) => xs[0] + xs[1]))
+
+    val first = Some(go_exact_signature_bridge.First())
+    Println(first.Get().V)
+
+    val h = go_exact_signature_bridge.Handlers(OnBox = (b) => b.V * 10)
+    Println(h.Run())
+
+    Println(Some(go_exact_signature_bridge.DefaultBox).Get().V)
+    Println(go_exact_signature_bridge.UseMaker(Maker(1)))
+
+    val next = go_exact_signature_bridge.Ints().Next()
+    val plus = () => next + 1
+    Println(plus())
+
+    val o = go_exact_signature_bridge.NewOuter()
+    val got = o.Get()
+    val size = o.Len()
+    val both = () => got + size
+    Println(both())
+}
