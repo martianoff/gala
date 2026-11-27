@@ -238,6 +238,7 @@ go_test(
         "generic_method_arg_order_test.go",
         "generic_method_named_args_test.go",
         "generic_method_variadic_test.go",
+        "generic_method_weak_const_args_test.go",
         "generic_sealed_exhaustive_test.go",
         "generic_struct_extractor_test.go",
         "generics_test.go",
