@@ -796,7 +796,7 @@ func (t *galaASTTransformer) namesType(fun ast.Expr) bool {
 	base, _ := splitCallFunTypeArgs(fun)
 	switch b := base.(type) {
 	case *ast.Ident:
-		return t.resolveTypeMetaName(b.Name) != ""
+		return t.resolveTypeMetaName(b.Name) != "" || t.namesGoType(b)
 	case *ast.SelectorExpr:
 		pkg, ok := b.X.(*ast.Ident)
 		if !ok || !t.isPackageQualifier(pkg.Name) {

@@ -207,8 +207,10 @@ func (t *galaASTTransformer) namesGoType(fun ast.Expr) bool {
 	// `import . "sort"`) that no binding, type parameter or GALA type hides,
 	// or one the package's own .go files declare (`type Names []string`).
 	if id, isIdent := base.(*ast.Ident); isIdent {
+		// The cheap rejections first: this runs for every index of a local.
 		name := id.Name
-		return (t.dotImportedGoTypeKey(name) != "" || t.isOwnGoType(name)) && !t.isActiveTypeParam(name) && t.shadowingScope(name) == nil
+		return t.shadowingScope(name) == nil && !t.isActiveTypeParam(name) &&
+			(t.isOwnGoType(name) || t.dotImportedGoTypeKey(name) != "")
 	}
 	sel, ok := base.(*ast.SelectorExpr)
 	if !ok {

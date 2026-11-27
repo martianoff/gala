@@ -1,0 +1,19 @@
+package main
+
+import . "martianoff/gala/examples/go_bare_generic"
+import gg "martianoff/gala/examples/go_bare_generic"
+import "martianoff/gala/go_interop"
+
+// A conversion to an instance of a generic Go type is a conversion, and the
+// .Size() of the result its length, whether the type is written bare (in its
+// own package, or dot-imported) or package-qualified (#1446).
+
+func main() {
+    Println(BagSize())
+    Println(BoxSize(), BoxFirst())
+    Println(PairSize())
+
+    val b = Bag[string](go_interop.SliceOf("x", "y"))
+    Println(b.Size(), b[1])
+    Println(gg.Bag[int](go_interop.SliceOf(1, 2, 3, 4)).Size())
+}

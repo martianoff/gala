@@ -396,7 +396,9 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, ix indexSrc) (ast
 	// find it typeless until instantiated.
 	written := base // as written, for markIndex
 	genericMethod := false
-	instantiates := t.namesFunction(base)
+	// A generic Go type, bare (`Bag[int]`, of the package's own .go files or
+	// a dot-imported package) or qualified, is instantiated too.
+	instantiates := t.namesFunction(base) || t.namesGoType(base)
 	if !instantiates {
 		if genericMethod = t.namesGenericMethod(base); !genericMethod {
 			base = t.unwrapImmutable(base)

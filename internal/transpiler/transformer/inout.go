@@ -687,22 +687,26 @@ func (t *galaASTTransformer) goUnderlying(typ transpiler.Type) (under transpiler
 // named type, or the basic type a GALA declaration names a Go type by,
 // given type arguments (args) or not. data is nil when Go type information
 // has no record of it, or typ is a GALA type or a type parameter (in
-// scope, or of free): those are never looked up as Go types.
+// scope, or of free): those are never looked up as Go types. A type of the
+// package's own .go files, written bare or qualified by the package, is Go's
+// though GALA declares methods on it, which give it metadata too (as
+// goBareUnderlying reads it).
 func (t *galaASTTransformer) goDeclaredType(typ transpiler.Type, free []string) (key string, data *transpiler.GoTypeData, args []transpiler.Type) {
 	if gen, isGen := typ.(transpiler.GenericType); isGen {
 		typ, args = gen.Base, gen.Params
 	}
 	var name string
-	var qualified bool
+	var qualified, own bool
 	switch v := typ.(type) {
 	case transpiler.NamedType:
-		name, qualified = v.Name, v.Package != ""
+		name, qualified, own = v.Name, v.Package != "", v.Package == "" || v.Package == t.packageName
 	case transpiler.BasicType:
-		name = v.Name
+		name, own = v.Name, true
 	default:
 		return "", nil, nil
 	}
-	if t.getTypeMeta(typ.BaseName()) != nil || !qualified && (slices.Contains(free, name) || t.isActiveTypeParam(name)) {
+	ownGo := own && t.isOwnGoType(name)
+	if !ownGo && t.getTypeMeta(typ.BaseName()) != nil || !qualified && (slices.Contains(free, name) || t.isActiveTypeParam(name)) {
 		return "", nil, nil
 	}
 	key, data = t.goTypeDataFor(typ)
