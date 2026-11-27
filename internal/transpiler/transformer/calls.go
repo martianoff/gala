@@ -6132,10 +6132,13 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	}
 	// A Go alias is the type it names, as Go spells it (`type P = *time.Time`
 	// a pointer, `type IDAlias = ID` the named array): its own record keeps
-	// neither a pointer nor an array's length. A generic one's target may be
-	// its type parameter (`type Id[T any] = T`), so it is not known.
-	if target, isAlias := t.goAliasTarget(base); isAlias {
-		return !generic && target != nil && t.nilCannotBe(target)
+	// neither a pointer nor an array's length. A generic one's target may
+	// name its type parameters (`type Id[T any] = T`), which its instance
+	// would have to fill in: it is settled by its record, as before.
+	if !generic {
+		if target, isAlias := t.goAliasTarget(base); isAlias {
+			return target != nil && t.nilCannotBe(target)
+		}
 	}
 	end, kind, via := t.resolveScalar(base)
 	if kind != scalarNone || via != nil {
