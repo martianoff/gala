@@ -1159,7 +1159,7 @@ func extractMethodsOnForeignTypes(files []*ast.File, typesInfo *types.Info, pkg 
 			}
 			sig := &transpiler.GoFuncSignature{}
 			if fn, ok := typesInfo.Defs[fd.Name].(*types.Func); ok {
-				sig = convertSignature(fn.Type().(*types.Signature))
+				sig = convertSignatureIn(fn.Type().(*types.Signature), ownPackage(pkg, own))
 				repairSignature(sig, fd, imports, galaQualifier)
 			}
 			data.Methods[fd.Name.Name] = sig
@@ -2007,7 +2007,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		under := typ.Underlying()
 		_, isParam := types.Unalias(typ).(*types.TypeParam)
 		_, isIface := under.(*types.Interface)
-		if isParam || isIface || !spellsExactly(under) {
+		if isParam || isIface || !spellsExactlyIn(under, ownPackage(tn.Pkg(), own)) {
 			data.Underlying = transpiler.BasicType{Name: "any"}
 		} else {
 			data.Underlying = convertGoType(under, true)
@@ -2027,7 +2027,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		if core := interfaceCoreType(iface); core != nil {
 			// An unresolved core (types.Typ[Invalid]) converts to NilType:
 			// none is recorded.
-			if ct := spelledGoType(core); ct != nil && !ct.IsNil() {
+			if ct := spelledGoTypeIn(core, ownPackage(tn.Pkg(), own)); ct != nil && !ct.IsNil() {
 				data.CoreType = ct
 			}
 		}
@@ -2463,10 +2463,10 @@ func mentionsTypeParam(t types.Type) bool {
 	return false
 }
 
-// lossyTuple reports whether a parameter or result of t is recorded in a
-// spelling that may lose part of it: one GALA cannot spell exactly
-// (spelledGoType) and the lossy conversion does not keep whole
-// (inexactGoType).
+// lossyTuple reports whether a parameter or result of t, a signature of a
+// function of package home, is recorded in a spelling that may lose part of
+// it: one spelledGoTypeIn leaves lossy that the lossy conversion does not
+// keep whole (inexactGoType).
 func lossyTuple(t *types.Tuple, home *types.Package) bool {
 	for i := 0; i < t.Len(); i++ {
 		if pt := t.At(i).Type(); (!spellsExactlyIn(pt, home) || holdsTypeLiteral(pt)) && inexactGoType(pt) {
