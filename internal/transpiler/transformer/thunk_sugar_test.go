@@ -5,6 +5,8 @@ import (
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -487,7 +489,10 @@ func main() {
 // function parameter whose thunk could not return nil (`func() state`, a
 // struct result, or a void `func()`) is the function itself, passed as is.
 // For a result nil can be (`func() *state`, `func() any`), the thunk
-// returning nil stays, as before.
+// returning nil stays, as before. #1466 adds complex numbers, Go named arrays,
+// Go aliases (followed to their target, a pointer one keeping the thunk), an
+// anonymous Go `struct{}` and a parenthesized `(nil)`, with the Go types in a
+// bridge.go file of the package.
 func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 	cases := []struct {
 		name, param, want, notWant string
@@ -510,10 +515,74 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go named map result", "func() http.Header", "return nil", ""},
 		{"a Go interface result", "func() io.Reader", "return nil", ""},
 		{"a function result", "func() func() int", "return nil", ""},
+		// #1466: more types nil cannot be, from the package's .go file.
+		{"a complex result", "func() complex128", "b(nil, 2)", "return nil"},
+		{"a Go named array result", "func() ID", "b(nil, 2)", "return nil"},
+		{"a Go alias of a struct result", "func() Stamp", "b(nil, 2)", "return nil"},
+		{"a Go alias of a named map result", "func() Header", "return nil", ""},
+		{"a Go named slice result", "func() Names", "return nil", ""},
+		{"a Go alias of a pointer to a struct result", "func() StampRef", "return nil", ""},
+		{"a Go alias of a pointer to a local struct result", "func() SpotRef", "return nil", ""},
+		{"a Go named complex result", "func() Phase", "b(nil, 2)", "return nil"},
+		{"a Go alias of a named array result", "func() IDAlias", "b(nil, 2)", "return nil"},
+		{"a Go alias of an anonymous struct result", "func() Unit", "b(nil, 2)", "return nil"},
+		{"a generic Go alias of a pointer result", "func() Ref[Spot]", "return nil", ""},
+		{"a generic Go alias of a scalar result", "func() Num[int]", "b(nil, 2)", "return nil"},
+		{"a Go alias of a generic struct instance result", "func() IntBox", "b(nil, 2)", "return nil"},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			input := `package main
+	const bridge = `package main
+
+import (
+	"net/http"
+	"time"
+)
+
+type ID [16]byte
+
+type Stamp = time.Time
+
+type Header = http.Header
+
+type Names []string
+
+type StampRef = *time.Time
+
+type Spot struct{ X int }
+
+type SpotRef = *Spot
+
+type Phase complex64
+
+type IDAlias = ID
+
+type Unit = struct{}
+
+type Ref[T any] = *T
+
+type Num[T any] = int64
+
+type GBox[T any] struct{ V T }
+
+type IntBox = GBox[int]
+
+func Run(f func() struct{}, n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+
+func Pair(f func() (int, error), n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+`
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bridge.go"), []byte(bridge), 0o600))
+	body := func(t *testing.T, param, call string) string {
+		input := `package main
 
 import "io"
 import "net/http"
@@ -539,18 +608,63 @@ type Shower interface {
 var _r io.Reader = nil
 var _h http.Header = nil
 
-func b(f ` + c.param + `, n int) int = if (f == nil) n else 0
+func b(f ` + param + `, n int) int = if (f == nil) n else 0
 
 func main() {
-    Println(b(nil, 2))
+    Println(` + call + `)
 }`
-			out, err := newThunkSugarTranspiler().Transpile(input, "")
-			require.NoError(t, err)
-			body := mainBodyOf(t, out)
-			assert.Contains(t, body, c.want)
+		mainPath := filepath.Join(dir, "main.gala")
+		require.NoError(t, os.WriteFile(mainPath, []byte(input), 0o600))
+		out, err := newThunkSugarTranspiler().Transpile(input, mainPath)
+		require.NoError(t, err)
+		return mainBodyOf(t, out)
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := body(t, c.param, "b(nil, 2)")
+			assert.Contains(t, got, c.want)
 			if c.notWant != "" {
-				assert.NotContains(t, body, c.notWant)
+				assert.NotContains(t, got, c.notWant)
 			}
 		})
 	}
+	// #1466: `(nil)` is the same nil, and a Go signature's `struct{}`
+	// result is a struct.
+	calls := []struct{ name, param, call, want, notWant string }{
+		{"a parenthesized nil", "func() state", "b((nil), 2)", "b((nil), 2)", "func() state"},
+		{"a parenthesized nil for a pointer result", "func() *state", "b((nil), 2)", "return (nil)", "b((nil), 2)"},
+		{"a parenthesized nil for several results", "func() state", "Pair((nil), 2)", "Pair((nil), 2)", "func() ("},
+		{"a Go anonymous struct result", "func() state", "Run(nil, 2)", "Run(nil, 2)", "return nil"},
+	}
+	for _, c := range calls {
+		t.Run(c.name, func(t *testing.T) {
+			got := body(t, c.param, c.call)
+			assert.Contains(t, got, c.want)
+			assert.NotContains(t, got, c.notWant)
+		})
+	}
+}
+
+// TestThunkSugar_ParenthesizedNilInAGenericCall pins #1466: a `(nil)`
+// argument to a generic function binds no type parameter, as a bare `nil`
+// does not, so both lower alike.
+func TestThunkSugar_ParenthesizedNilInAGenericCall(t *testing.T) {
+	lower := func(arg string) string {
+		input := `package main
+
+struct Box[T any](v T)
+
+func mk[T any](f func() Box[T]) Option[Box[T]] = if (f == nil) None() else Some(f())
+
+func main() {
+    val b Option[Box[int]] = mk(` + arg + `)
+    Println(b.IsEmpty())
+}`
+		out, err := newThunkSugarTranspiler().Transpile(input, "")
+		require.NoError(t, err)
+		return mainBodyOf(t, out)
+	}
+	bare := lower("nil")
+	assert.Contains(t, bare, "mk[int](nil)")
+	assert.Equal(t, bare, strings.ReplaceAll(lower("(nil)"), "(nil)", "nil"))
 }

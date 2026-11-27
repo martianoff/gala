@@ -844,6 +844,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	// arguments it names are spelled.
 	if !hasSpread {
 		for i, arg := range args {
+			arg = ast.Unparen(arg) // `(nil)` is the same nil
 			if !isNilIdent(arg) {
 				continue
 			}
@@ -875,7 +876,8 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 // phantom as one only the result does (`first[T any](p *T = nil)` called as
 // `first()`). A spread argument is no bare nil, so it binds.
 func inferringParamTypes(paramTypes []transpiler.Type, variadic bool, args []ast.Expr) []transpiler.Type {
-	if !slices.ContainsFunc(args, isNilIdent) {
+	isNil := func(arg ast.Expr) bool { return isNilIdent(ast.Unparen(arg)) } // `(nil)` is the same nil
+	if !slices.ContainsFunc(args, isNil) {
 		return paramTypes
 	}
 	// A parameter binds unless an argument reaches it and every one that
@@ -885,7 +887,7 @@ func inferringParamTypes(paramTypes []transpiler.Type, variadic bool, args []ast
 	for i, arg := range args {
 		if pi := paramIndex(i, paramTypes, variadic); pi >= 0 {
 			reached[pi] = true
-			binds[pi] = binds[pi] || !isNilIdent(arg)
+			binds[pi] = binds[pi] || !isNil(arg)
 		}
 	}
 	out := make([]transpiler.Type, 0, len(paramTypes))

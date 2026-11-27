@@ -6052,7 +6052,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// is checked as a Go-results body's (see lowerGoResultsValue).
 	// A `nil` is no such value but the function itself, typed as the slot.
 	byName := t.byNameGoResults(funcSlot).withBody(e)
-	nilFunc := byName != nil && e.isNil()
+	nilFunc := byName != nil && t.isParenthesizedNil(e)
 	if nilFunc {
 		byName = nil
 	}
@@ -6065,7 +6065,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 		return nil, err
 	}
 	if nilFunc && !s.open && !t.hasTypeParams(s.typ) {
-		t.typeNilAs(expr, s.typ)
+		t.typeNilAs(ast.Unparen(expr), s.typ)
 	}
 
 	// Lift bare T value to Immutable[T] when the expected param type is
@@ -6135,12 +6135,13 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 
 	// A `nil` that the thunk could not hold is the function itself: `func()`
 	// cannot evaluate it as a statement, and `func() T` cannot return it
-	// when T is known to hold no nil (nilCannotBe: a scalar, a GALA struct
-	// or sealed type, a Go struct) (#1448). Any other T keeps the thunk
-	// returning nil, as before.
-	if isNilIdent(expr) {
+	// when T is known to hold no nil (nilCannotBe: a scalar, a fixed array,
+	// a GALA struct or sealed type, a Go struct, or a Go type declared over
+	// one) (#1448, #1466). Any other T keeps the thunk returning nil, as
+	// before. A parenthesized `(nil)` is the same nil.
+	if bare := ast.Unparen(expr); isNilIdent(bare) {
 		if len(ft.Results) == 0 || t.nilCannotBe(ft.Results[0]) {
-			t.typeNilAs(expr, expectedType)
+			t.typeNilAs(bare, expectedType)
 			return expr, false
 		}
 		// A concrete result other than a function type: typing the nil as it
@@ -6148,7 +6149,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		// function value, a type-parameter one as an inferable result).
 		if r := ft.Results; len(r) == 1 && !t.hasTypeParams(r[0]) && !t.mentionsUnboundTypeParam(r[0]) &&
 			t.resolveTranspilerTypeAsFuncType(r[0]) == nil {
-			t.typeNilAs(expr, r[0])
+			t.typeNilAs(bare, r[0])
 		}
 	}
 
@@ -6177,7 +6178,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// them as a lambda's is (see spreadLambdaGoResults). A `nil` the slot
 	// left untyped (an open one) is the function itself: no Try or Tuple is.
 	if len(ft.Results) > 1 {
-		if isNilIdent(expr) {
+		if isNilIdent(ast.Unparen(expr)) {
 			return expr, false
 		}
 		return t.goResultsThunk(expr, exprType, ft.Results, mark, goResults)
@@ -6243,27 +6244,53 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 }
 
 // nilCannotBe reports whether typ is known to be a type no `nil` can have: a
-// scalar (a predeclared number, string or bool, or a Go or opaque type over
-// one), a GALA struct or sealed type, or a Go struct type, generic ones with
-// any type arguments included (`Option[T]`). Anything else, including a Go
-// type whose type information is missing, may hold nil.
+// scalar (a predeclared number, complex number, string or bool, or a Go or
+// opaque type over one), a fixed-length array, a GALA struct or sealed type,
+// or a Go struct type, generic ones with any type arguments included
+// (`Option[T]`), or a Go defined type or alias over one of these. Anything
+// else, including a Go type whose type information is missing, may hold nil.
 func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() {
 		return false
 	}
 	base := t.followAliasChain(typ)
-	if g, isGen := base.(transpiler.GenericType); isGen {
+	g, generic := base.(transpiler.GenericType)
+	if generic {
 		base = g.Base // its type arguments do not decide whether nil is one
 	}
 	// A type parameter may be instantiated with a type nil can be.
 	if t.hasTypeParams(base) || t.mentionsUnboundTypeParam(base) {
 		return false
 	}
-	if _, kind, via := t.resolveScalar(base); kind != scalarNone || via != nil {
+	// A Go alias is the type it names, as Go spells it (`type P = *time.Time`
+	// a pointer, `type IDAlias = ID` the named array): its own record keeps
+	// neither a pointer nor an array's length. A generic one's target may
+	// name its type parameters (`type Id[T any] = T`), which its instance
+	// would have to fill in: it is settled by its record, as before.
+	if !generic {
+		if target, isAlias := t.goAliasTarget(base); isAlias {
+			return target != nil && t.nilCannotBe(target)
+		}
+	}
+	end, kind, via := t.resolveScalar(base)
+	if kind != scalarNone || via != nil {
 		return true // an opaque type is declared over a scalar (checkOpaqueUnderlying)
+	}
+	// What a Go defined type is declared over, which resolveScalar does not
+	// count as a scalar: a fixed-length array (`type ID [16]byte`, as
+	// uuid.UUID is) or a complex number.
+	switch e := end.(type) {
+	case transpiler.ArrayType:
+		return e.Fixed
+	case transpiler.BasicType:
+		if isConstantNumericType(e.Name) {
+			return true
+		}
 	}
 	var nt transpiler.NamedType
 	switch b := base.(type) {
+	case transpiler.StructType: // a Go signature's `struct{}`
+		return true
 	case transpiler.NamedType:
 		nt = b
 	case transpiler.BasicType: // a local type by its bare name
@@ -6285,6 +6312,31 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	meta := t.getTypeMeta(nt.BaseName())
 	return meta != nil && !meta.IsInterface &&
 		(meta.IsSealed || meta.IsShorthand || meta.DefinedIn != "" || len(meta.FieldNames) > 0)
+}
+
+// goAliasTarget is the type typ, a Go alias (`type Stamp = time.Time`),
+// names, through further aliases, as Go type info records it; isAlias is
+// false when typ is no Go alias. target is nil when the alias's target is
+// not recorded, or the chain refers back to itself.
+func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type) (target transpiler.Type, isAlias bool) {
+	for hop := 0; hop < 16; hop++ {
+		var key string
+		var data *transpiler.GoTypeData
+		switch typ.(type) {
+		case transpiler.NamedType, transpiler.BasicType: // a pointer's lookup would find what it points to
+			key, data = t.goTypeDataFor(typ)
+		}
+		if data == nil || data.Kind != "alias" {
+			if hop == 0 {
+				return nil, false
+			}
+			return typ, true
+		}
+		if typ = t.goTypeInfo.ResolveTypeAlias(key); typ == nil || typ.IsNil() {
+			return nil, true
+		}
+	}
+	return nil, true
 }
 
 // constThunkArg is the by-name thunk expr is, of an untyped constant whose
