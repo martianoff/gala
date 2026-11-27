@@ -1566,7 +1566,7 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 		switch obj := obj.(type) {
 		case *types.Func:
 			sig := obj.Type().(*types.Signature)
-			info.Functions[qualName] = convertSignature(sig)
+			info.Functions[qualName] = convertSignatureIn(sig, ownPackage(pkg, own))
 
 		case *types.TypeName:
 			if obj.IsAlias() {
@@ -1590,7 +1590,7 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 			}
 
 		case *types.Var:
-			info.Variables[qualName] = spelledGoType(obj.Type())
+			info.Variables[qualName] = spelledGoTypeIn(obj.Type(), ownPackage(pkg, own))
 
 		case *types.Const:
 			info.Constants[qualName] = goTypeToTranspilerType(obj.Type())
@@ -2013,7 +2013,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 			data.Underlying = convertGoType(under, true)
 		}
 	} else if _, isIface := typ.Underlying().(*types.Interface); !isIface && forceKind != "alias" {
-		data.Underlying = definedUnderlying(typ.Underlying())
+		data.Underlying = definedUnderlying(typ.Underlying(), ownPackage(tn.Pkg(), own))
 	} else {
 		data.Underlying = goTypeToTranspilerType(typ.Underlying())
 	}
@@ -2045,7 +2045,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		for i := 0; i < s.NumFields(); i++ {
 			f := s.Field(i)
 			if visible(f) {
-				data.Fields[f.Name()] = spelledGoType(f.Type())
+				data.Fields[f.Name()] = spelledGoTypeIn(f.Type(), ownPackage(tn.Pkg(), own))
 				data.FieldOrder = append(data.FieldOrder, f.Name())
 			}
 		}
@@ -2076,7 +2076,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		if !visible(fn) {
 			continue
 		}
-		data.Methods[fn.Name()] = goMethodSignature(fn, typ)
+		data.Methods[fn.Name()] = goMethodSignature(fn, typ, ownPackage(tn.Pkg(), own))
 	}
 
 	// Also include value receiver methods
@@ -2090,7 +2090,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		}
 		valueMethods[fn.Name()] = true
 		if _, exists := data.Methods[fn.Name()]; !exists {
-			data.Methods[fn.Name()] = goMethodSignature(fn, typ)
+			data.Methods[fn.Name()] = goMethodSignature(fn, typ, ownPackage(tn.Pkg(), own))
 		}
 	}
 
@@ -2126,7 +2126,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 				continue
 			}
 			sig := fn.Type().(*types.Signature)
-			data.Methods[fn.Name()] = goMethodSignature(fn, typ)
+			data.Methods[fn.Name()] = goMethodSignature(fn, typ, ownPackage(tn.Pkg(), own))
 			// The method-set difference above sees nothing here (both sets
 			// are empty for an uninstantiated generic), so read the receiver.
 			if recv := sig.Recv(); recv != nil {
@@ -2147,9 +2147,9 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 // type's metadata is read against its declared names. A Go method has no type
 // parameters of its own, so no rename can capture one. A method promoted from
 // an embedded field keeps its signature as is.
-func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignature {
+func goMethodSignature(fn *types.Func, typ types.Type, home *types.Package) *transpiler.GoFuncSignature {
 	sig := fn.Type().(*types.Signature)
-	result := convertSignature(sig)
+	result := convertSignatureIn(sig, home)
 	named, ok := typ.(*types.Named)
 	recv := sig.RecvTypeParams()
 	// A generic alias's method (`Next() T` of `type Src[T any] = Iter[T]`,
@@ -2253,8 +2253,21 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 // are written with: package variables, struct fields, and function
 // parameters and results. A defined type's underlying type keeps type
 // literals too (definedUnderlying).
-func spelledGoType(t types.Type) transpiler.Type {
-	if spellsExactly(t) && !holdsTypeLiteral(t) {
+func spelledGoType(t types.Type) transpiler.Type { return spelledGoTypeIn(t, nil) }
+
+// ownPackage is pkg when it is the package being compiled (own), whose Go
+// code GALA writes in, and nil otherwise.
+func ownPackage(pkg *types.Package, own bool) *types.Package {
+	if own {
+		return pkg
+	}
+	return nil
+}
+
+// spelledGoTypeIn is spelledGoType for Go written in package home (see
+// spellsExactlyIn): the package's own unexported types spell exactly there.
+func spelledGoTypeIn(t types.Type, home *types.Package) transpiler.Type {
+	if spellsExactlyIn(t, home) && !holdsTypeLiteral(t) {
 		return convertGoType(t, true)
 	}
 	return goTypeToTranspilerType(t)
@@ -2265,8 +2278,8 @@ func spelledGoType(t types.Type) transpiler.Type {
 // spell it, type literals included (a lambda for `type WithBox[T any]
 // func(*Box[T]) error` is a `func(*Box[int]) error`), else the lossy
 // spelling.
-func definedUnderlying(under types.Type) transpiler.Type {
-	if spellsExactly(under) {
+func definedUnderlying(under types.Type, home *types.Package) transpiler.Type {
+	if spellsExactlyIn(under, home) {
 		return convertGoType(under, true)
 	}
 	return goTypeToTranspilerType(under)
@@ -2348,9 +2361,16 @@ func inexactGoType(t types.Type) bool {
 
 // convertSignature converts a types.Signature to a transpiler.GoFuncSignature.
 func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
+	return convertSignatureIn(sig, nil)
+}
+
+// convertSignatureIn is convertSignature for a function of package home,
+// whose own unexported types its parameters and results spell exactly (nil:
+// any other package).
+func convertSignatureIn(sig *types.Signature, home *types.Package) *transpiler.GoFuncSignature {
 	result := &transpiler.GoFuncSignature{
 		IsVariadic: sig.Variadic(),
-		Inexact:    lossyTuple(sig.Params()) || lossyTuple(sig.Results()),
+		Inexact:    lossyTuple(sig.Params(), home) || lossyTuple(sig.Results(), home),
 	}
 
 	// Record the declared type-parameter names so a call site can instantiate
@@ -2364,7 +2384,7 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 				if result.CoreTypes == nil {
 					result.CoreTypes = make(map[string]transpiler.Type)
 				}
-				result.CoreTypes[tp.Obj().Name()] = spelledGoType(core)
+				result.CoreTypes[tp.Obj().Name()] = spelledGoTypeIn(core, home)
 			}
 		}
 	}
@@ -2382,14 +2402,14 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 		}
 		result.Params = append(result.Params, transpiler.GoParam{
 			Name: p.Name(),
-			Type: spelledGoType(paramType),
+			Type: spelledGoTypeIn(paramType, home),
 		})
 	}
 
 	// Convert return types
 	results := sig.Results()
 	for i := 0; i < results.Len(); i++ {
-		result.Returns = append(result.Returns, spelledGoType(results.At(i).Type()))
+		result.Returns = append(result.Returns, spelledGoTypeIn(results.At(i).Type(), home))
 	}
 
 	return result
@@ -2447,9 +2467,9 @@ func mentionsTypeParam(t types.Type) bool {
 // spelling that may lose part of it: one GALA cannot spell exactly
 // (spelledGoType) and the lossy conversion does not keep whole
 // (inexactGoType).
-func lossyTuple(t *types.Tuple) bool {
+func lossyTuple(t *types.Tuple, home *types.Package) bool {
 	for i := 0; i < t.Len(); i++ {
-		if pt := t.At(i).Type(); (!spellsExactly(pt) || holdsTypeLiteral(pt)) && inexactGoType(pt) {
+		if pt := t.At(i).Type(); (!spellsExactlyIn(pt, home) || holdsTypeLiteral(pt)) && inexactGoType(pt) {
 			return true
 		}
 	}
@@ -2699,7 +2719,11 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 // argument and interface method is kept. A name only t's own package can
 // write (an unexported field, method or type), a type reached through a
 // package's alias and unsafe.Pointer have no exact form in the type model.
-func spellsExactly(t types.Type) bool {
+func spellsExactly(t types.Type) bool { return spellsExactlyIn(t, nil) }
+
+// spellsExactlyIn is spellsExactly for Go written in package home, which
+// spells its own unexported names (nil: any other package).
+func spellsExactlyIn(t types.Type, home *types.Package) bool {
 	switch t := t.(type) {
 	case *types.Basic:
 		return t.Kind() != types.Invalid && t.Kind() != types.UnsafePointer && t.Info()&types.IsUntyped == 0
@@ -2709,36 +2733,36 @@ func spellsExactly(t types.Type) bool {
 		// An alias is spelled as the type it names, which another package
 		// may not be able to write (an internal package's type); only the
 		// universe's `any` is kept.
-		return t.Obj().Pkg() == nil && spellsExactly(types.Unalias(t))
+		return t.Obj().Pkg() == nil && spellsExactlyIn(types.Unalias(t), home)
 	case *types.Named:
 		obj := t.Obj()
 		if obj.IsAlias() {
-			return obj.Pkg() == nil && spellsExactly(types.Unalias(t))
+			return obj.Pkg() == nil && spellsExactlyIn(types.Unalias(t), home)
 		}
-		if obj.Pkg() != nil && !obj.Exported() {
+		if obj.Pkg() != nil && !obj.Exported() && obj.Pkg() != home {
 			return false
 		}
 		for i := 0; i < t.TypeArgs().Len(); i++ {
-			if !spellsExactly(t.TypeArgs().At(i)) {
+			if !spellsExactlyIn(t.TypeArgs().At(i), home) {
 				return false
 			}
 		}
 		return true
 	case *types.Pointer:
-		return spellsExactly(t.Elem())
+		return spellsExactlyIn(t.Elem(), home)
 	case *types.Slice:
-		return spellsExactly(t.Elem())
+		return spellsExactlyIn(t.Elem(), home)
 	case *types.Array:
-		return spellsExactly(t.Elem())
+		return spellsExactlyIn(t.Elem(), home)
 	case *types.Map:
-		return spellsExactly(t.Key()) && spellsExactly(t.Elem())
+		return spellsExactlyIn(t.Key(), home) && spellsExactlyIn(t.Elem(), home)
 	case *types.Chan:
-		return spellsExactly(t.Elem())
+		return spellsExactlyIn(t.Elem(), home)
 	case *types.Signature:
-		return spellsExactly(t.Params()) && spellsExactly(t.Results())
+		return spellsExactlyIn(t.Params(), home) && spellsExactlyIn(t.Results(), home)
 	case *types.Tuple:
 		for i := 0; i < t.Len(); i++ {
-			if !spellsExactly(t.At(i).Type()) {
+			if !spellsExactlyIn(t.At(i).Type(), home) {
 				return false
 			}
 		}
@@ -2748,14 +2772,14 @@ func spellsExactly(t types.Type) bool {
 			return false
 		}
 		for i := 0; i < t.NumMethods(); i++ {
-			if m := t.Method(i); !m.Exported() || !spellsExactly(m.Type()) {
+			if m := t.Method(i); !m.Exported() && m.Pkg() != home || !spellsExactlyIn(m.Type(), home) {
 				return false
 			}
 		}
 		return true
 	case *types.Struct:
 		for i := 0; i < t.NumFields(); i++ {
-			if f := t.Field(i); !f.Exported() || !spellsExactly(f.Type()) {
+			if f := t.Field(i); !f.Exported() && f.Pkg() != home || !spellsExactlyIn(f.Type(), home) {
 				return false
 			}
 		}
