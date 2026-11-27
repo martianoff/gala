@@ -1571,8 +1571,10 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 		case *types.TypeName:
 			if obj.IsAlias() {
 				// Go type alias: type X = Y
-				// Resolve to the aliased type for transparent type inference.
-				underlying := goTypeToTranspilerType(obj.Type())
+				// Resolve to the aliased type for transparent type inference,
+				// exactly when GALA can spell it (`type Gen = func() [4]byte`
+				// keeps the array's length), as a value of it is written.
+				underlying := spelledGoTypeIn(obj.Type(), ownPackage(pkg, own))
 				info.TypeAliases[qualName] = underlying
 				// Also create type data so methods can be looked up on the alias
 				// name (e.g. "os.DirEntry").
@@ -2012,6 +2014,11 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		} else {
 			data.Underlying = convertGoType(under, true)
 		}
+	} else if _, isArr := typ.Underlying().(*types.Array); isArr && forceKind == "alias" {
+		// An alias over an array (`type Key = [32]byte`) keeps its length
+		// as a defined type does, so a slot of it is known to hold no nil,
+		// also when its element is spelled lossily (`[4]os.FileMode`).
+		data.Underlying = definedUnderlying(typ.Underlying(), ownPackage(tn.Pkg(), own))
 	} else if _, isIface := typ.Underlying().(*types.Interface); !isIface && forceKind != "alias" {
 		data.Underlying = definedUnderlying(typ.Underlying(), ownPackage(tn.Pkg(), own))
 	} else {
@@ -2246,7 +2253,7 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 // it, so an instance keeps its type arguments and an array its length (a
 // lambda for a `func(*Box[int]) error` is a `func(*Box[int]) error`, a
 // `Some` of a `*Box[int]` an `Option[*Box[int]]`). A type GALA cannot spell
-// exactly (an unexported name, an internal package's alias), or that holds an
+// exactly (an unexported name, a package's alias of a named type), or that holds an
 // anonymous struct or a non-empty interface literal (which GALA does not
 // write; the lossy spelling keeps them as before), keeps the lossy spelling,
 // which still reads its elements and results. It records the types values
@@ -2282,7 +2289,21 @@ func definedUnderlying(under types.Type, home *types.Package) transpiler.Type {
 	if spellsExactlyIn(under, home) {
 		return convertGoType(under, true)
 	}
-	return goTypeToTranspilerType(under)
+	return withArrayLengths(under, goTypeToTranspilerType(under))
+}
+
+// withArrayLengths is lossy, the lossy spelling of t, with the lengths of the
+// arrays t is made of (`[3][3]os.FileMode`) put back: an array is one
+// whatever its element, so it is never taken for a slice nil can be.
+func withArrayLengths(t types.Type, lossy transpiler.Type) transpiler.Type {
+	arr, isArr := types.Unalias(t).(*types.Array)
+	a, ok := lossy.(transpiler.ArrayType)
+	if !isArr || !ok {
+		return lossy
+	}
+	a.Elem = withArrayLengths(arr.Elem(), a.Elem)
+	a.Len, a.Fixed = arr.Len(), true
+	return a
 }
 
 // holdsTypeLiteral reports whether t holds an anonymous struct or a
@@ -2714,11 +2735,23 @@ func convertGoType(t types.Type, exact bool) transpiler.Type {
 	}
 }
 
+// aliasSpellsExactly is spellsExactly of an alias obj of target. An alias is
+// spelled as the type it names. A package's alias of a named type may name
+// one another package cannot write (an internal package's type), so it has
+// no exact form; an unnamed target (`type Key = [32]byte`, or the universe's
+// `any`) is written out as Go has it.
+func aliasSpellsExactly(obj *types.TypeName, target types.Type, home *types.Package) bool {
+	if _, named := target.(*types.Named); named && obj.Pkg() != nil {
+		return false
+	}
+	return spellsExactlyIn(target, home)
+}
+
 // spellsExactly reports whether convertGoType, exact, types t as Go has it,
 // so that the type names the same Go type: every array length, type
 // argument and interface method is kept. A name only t's own package can
-// write (an unexported field, method or type), a type reached through a
-// package's alias and unsafe.Pointer have no exact form in the type model.
+// write (an unexported field, method or type), a package's alias of a named
+// type and unsafe.Pointer have no exact form in the type model.
 func spellsExactly(t types.Type) bool { return spellsExactlyIn(t, nil) }
 
 // spellsExactlyIn is spellsExactly for Go written in package home, which
@@ -2730,14 +2763,11 @@ func spellsExactlyIn(t types.Type, home *types.Package) bool {
 	case *types.TypeParam:
 		return true
 	case *types.Alias:
-		// An alias is spelled as the type it names, which another package
-		// may not be able to write (an internal package's type); only the
-		// universe's `any` is kept.
-		return t.Obj().Pkg() == nil && spellsExactlyIn(types.Unalias(t), home)
+		return aliasSpellsExactly(t.Obj(), types.Unalias(t), home)
 	case *types.Named:
 		obj := t.Obj()
 		if obj.IsAlias() {
-			return obj.Pkg() == nil && spellsExactlyIn(types.Unalias(t), home)
+			return aliasSpellsExactly(obj, types.Unalias(t), home)
 		}
 		if obj.Pkg() != nil && !obj.Exported() && obj.Pkg() != home {
 			return false

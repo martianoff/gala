@@ -281,7 +281,12 @@ import (
 // functions, struct fields, variables and defined types exactly, as Go
 // written in that package can spell them. A v58 payload holds the lossy
 // spelling.
-const CacheVersion = "v59"
+//
+// v60: a Go alias over an array (`type Key = [32]byte`) records its underlying
+// type with the array's length, an alias of an unnamed type spells exactly,
+// and a defined type over an array keeps its length when its element is
+// spelled lossily. A v59 payload holds the slice spelling.
+const CacheVersion = "v60"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

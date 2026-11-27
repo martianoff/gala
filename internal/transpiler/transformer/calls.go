@@ -6356,8 +6356,8 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 		return false
 	}
 	// A Go alias is the type it names, as Go spells it (`type P = *time.Time`
-	// a pointer, `type IDAlias = ID` the named array): its own record keeps
-	// neither a pointer nor an array's length. A generic one's target may
+	// a pointer, `type Key = [32]byte` the array with its length;
+	// goAliasTarget), rather than its own record's kind. A generic one's target may
 	// name its type parameters (`type Id[T any] = T`), which its instance
 	// would have to fill in: it is settled by its record, as before.
 	if !generic {
@@ -6409,8 +6409,10 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 
 // goAliasTarget is the type typ, a Go alias (`type Stamp = time.Time`),
 // names, through further aliases, as Go type info records it; isAlias is
-// false when typ is no Go alias. target is nil when the alias's target is
-// not recorded, or the chain refers back to itself.
+// false when typ is no Go alias. An alias over an array is the array, with
+// its length, rather than a named array it may name (`type IDAlias = ID`).
+// target is nil when the alias's target is not recorded, or the chain refers
+// back to itself.
 func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type) (target transpiler.Type, isAlias bool) {
 	for hop := 0; hop < 16; hop++ {
 		var key string
@@ -6424,6 +6426,11 @@ func (t *galaASTTransformer) goAliasTarget(typ transpiler.Type) (target transpil
 				return nil, false
 			}
 			return typ, true
+		}
+		// An alias over an array is recorded with its length, also when
+		// the alias table cannot spell it exactly (`[4]os.FileMode`).
+		if arr, isArr := data.Underlying.(transpiler.ArrayType); isArr && arr.Fixed {
+			return arr, true
 		}
 		if typ = t.goTypeInfo.ResolveTypeAlias(key); typ == nil || typ.IsNil() {
 			return nil, true
