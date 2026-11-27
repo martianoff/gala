@@ -1,8 +1,8 @@
 // Package nil_function_argument_bridge declares Go types no nil can be,
 // though GALA cannot spell them: a named fixed-length array, aliases of a
 // struct type and of the array (and, for contrast, an alias of a pointer),
-// and Go functions taking a `func() struct{}`
-// and a `func() (int, error)`.
+// generic aliases of a type parameter, a struct and an array, and Go
+// functions taking a `func() struct{}` and a `func() (int, error)`.
 package nil_function_argument_bridge
 
 import "time"
@@ -23,6 +23,15 @@ func RunArr(f func() [4]byte, n int) int {
 	}
 	return 0
 }
+
+// Id is a generic alias of its type parameter.
+type Id[T any] = T
+
+// Moment is a generic alias of a struct type.
+type Moment[T any] = time.Time
+
+// Quad is a generic alias of an array.
+type Quad[T any] = [4]T
 
 // Stamp is an alias of a struct type.
 type Stamp = time.Time

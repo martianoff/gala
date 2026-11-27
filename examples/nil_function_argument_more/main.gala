@@ -8,8 +8,9 @@ import (
 // `nil` for a zero-argument function parameter whose result nil cannot be is
 // the function itself (#1448), also for a Go named array or an alias of one,
 // a Go alias of a struct, a complex number, a Go `struct{}`, and a
-// parenthesized `(nil)` (#1466), and a Go alias of an unnamed array or a Go
-// `func() [4]byte` parameter (#1476). For a Go alias of a pointer, which nil
+// parenthesized `(nil)` (#1466), a Go alias of an unnamed array or a Go
+// `func() [4]byte` parameter (#1476), and an instance of a generic Go alias
+// whose target nil cannot be (#1478). For a Go alias of a pointer, which nil
 // can be, by-name sugar still lifts `nil` into a thunk returning nil.
 
 struct state(n int)
@@ -24,6 +25,12 @@ func viaAlias(f func() nil_function_argument_bridge.Stamp, n int) int = if (f ==
 
 func viaRef(f func() nil_function_argument_bridge.StampRef) string =
     if (f == nil) "nil function" else if (f() == nil) "nil pointer" else "pointer"
+
+func viaId(f func() nil_function_argument_bridge.Id[int], n int) int = if (f == nil) n else f()
+
+func viaQuad(f func() nil_function_argument_bridge.Quad[int], n int) int = if (f == nil) n else 0
+
+func viaMoment(f func() nil_function_argument_bridge.Moment[string], n int) int = if (f == nil) n else 0
 
 func viaComplex(f func() complex128, n int) int = if (f == nil) n else 0
 
@@ -42,4 +49,8 @@ func main() {
     Println(nil_function_argument_bridge.Pair((nil), 8))
     Println(viaKey(nil, 9))
     Println(nil_function_argument_bridge.RunArr(nil, 10))
+    Println(viaId(nil, 13))
+    Println(viaId(() => 11, 13))
+    Println(viaMoment(nil, 14))
+    Println(viaQuad(nil, 12))
 }
