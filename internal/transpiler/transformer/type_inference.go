@@ -32,11 +32,13 @@ func (t *galaASTTransformer) arithmeticResultType(e *ast.BinaryExpr) transpiler.
 	// An expression built purely from untyped constants has a default type of
 	// its own, and untypedNumericConstDefault already knows how the kinds
 	// combine (`1 * 1.5` is a float64) and that a shift takes its LEFT
-	// operand's default whatever the count is (`1 << n` is an int).
-	if def, ok := untypedNumericConstDefault(e); ok {
+	// operand's default whatever the count is (`1 << n` is an int). A Go
+	// package's untyped constant counts as one: `2 * math.Pi` is a float64,
+	// `math.MaxInt8 << n` an int.
+	if def, ok := t.untypedNumericConstExprDefault(e); ok {
 		return transpiler.BasicType{Name: def}
 	}
-	if gov := governingOperand(e); gov != e.X {
+	if gov := t.governingOperand(e); gov != e.X {
 		// Only accept a resolved answer. Leaving the expression unresolved when
 		// the typed operand cannot be typed would be a regression: before this
 		// rule existed the left operand always answered, and dropping to
@@ -53,10 +55,15 @@ func (t *galaASTTransformer) arithmeticResultType(e *ast.BinaryExpr) transpiler.
 // expression takes: the typed one, when the other is an untyped constant.
 //
 // Shifts need no case here. `x << n` takes x's type whatever n is, and the only
-// shape where that could differ — an untyped constant shifted by something — is
-// answered by untypedNumericConstDefault before this is reached.
-func governingOperand(e *ast.BinaryExpr) ast.Expr {
-	if isUntypedConstExpr(e.X) && !isUntypedConstExpr(e.Y) {
+// shape where that could differ — an untyped constant (a literal or a Go
+// package's) shifted by something — is answered by
+// untypedNumericConstExprDefault before this is reached.
+//
+// An untyped constant of a Go package (`math.MaxInt8`, `http.StatusOK`) is
+// untyped too: `math.MaxInt8 * time.Second` is a time.Duration, as in Go, not
+// the constant's default int (#1440).
+func (t *galaASTTransformer) governingOperand(e *ast.BinaryExpr) ast.Expr {
+	if t.isUntypedConstArg(e.X) && !t.isUntypedConstArg(e.Y) {
 		return e.Y
 	}
 	return e.X

@@ -299,6 +299,15 @@ gala_exec_test(
     expected = "bind_in_branches.out",
 )
 
+# Arithmetic between an untyped Go constant and a typed operand has the
+# typed operand's type (#1440)
+gala_exec_test(
+    name = "go_const_arith_type",
+    src = "go_const_arith_type.gala",
+    expected = "go_const_arith_type.out",
+    deps = ["//collection_immutable"],
+)
+
 # An if or match of untyped constants takes the basic type of the slot it
 # fills (#1342)
 gala_exec_test(

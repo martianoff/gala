@@ -1,0 +1,22 @@
+package main
+
+import "time"
+import "math"
+import "net/http"
+import . "martianoff/gala/collection_immutable"
+
+// Arithmetic between an untyped Go constant and a typed operand has the typed
+// operand's type, as in Go: `math.MaxInt8 * time.Second` is a time.Duration.
+
+func apply[T any](v T, f func(T) T) T = f(v)
+
+func main() {
+    val total = ArrayOf(1, 2).FoldLeft(math.MaxInt8 * time.Second, (acc, x) => acc + time.Duration(x) * time.Second)
+    Println(total)
+
+    val doubled = apply(http.StatusOK * time.Millisecond, (d) => d * 2)
+    Println(doubled)
+
+    val minutes = (math.MaxInt8 * time.Second).Minutes()
+    Println(minutes)
+}
