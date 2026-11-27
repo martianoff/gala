@@ -391,7 +391,44 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "b.p.Apply(3)")
 
-	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)", "Gen(mkG()).g[int]()"} {
+	// Through a pointer alias too (#1461), as `w.Apply(...)` written out.
+	out, err = transpileBareVariant(t, `package main
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int = 4) int = n.v + x
+
+struct Gen(var v int)
+
+func (g *Gen) Apply[U any](u U) U = u
+
+type NodeRef *Node
+
+type GenRef *Gen
+
+type PtrOf[T any] *T
+
+struct Hold(var r NodeRef)
+
+struct Box[T any](var v T)
+
+func main() {
+    var n = Node(1)
+    val w NodeRef = &n
+    val h = Hold(&n)
+    var g = Gen(1)
+    val gr GenRef = &g
+    val b = Box[NodeRef](&n)
+    val pw PtrOf[Node] = &n
+    Println(w(2), w(), h.r(3), gr("x"), b.v(5), pw(6))
+}
+`)
+	require.NoError(t, err)
+	for _, want := range []string{"w.Apply(2)", "w.Apply(4)", "h.r.Apply(3)", `Gen_Apply(gr, "x")`, "b.v.Apply(5)", "pw.Apply(6)"} {
+		require.Contains(t, out, want)
+	}
+
+	for _, call := range []string{"Hold(mk()).p(1)", "r(1)", "mk()(1)", "z()", "Box[Node](mk()).p(1)", "Gen(mkG()).g[int]()", "wr(1)"} {
 		_, err = transpileBareVariant(t, `package main
 
 struct Node(var v int)
@@ -414,6 +451,8 @@ struct Gen(var g *G)
 
 func mkG() *G = nil
 
+type NodeRef *Node
+
 func mk() *Node = nil
 
 func mkZero() *Zero = nil
@@ -421,6 +460,7 @@ func mkZero() *Zero = nil
 func main() {
     val r = mk()
     val z = mkZero()
+    val wr NodeRef = mk()
     Println(`+call+`)
 }
 `)
@@ -529,4 +569,36 @@ func main() {
 	require.Contains(t, out, "h.P.Apply(func(x int) int")
 	require.Contains(t, out, "h.Q.Get().Apply(func(x int) int")
 	require.Contains(t, out, "h.R.Apply(func(x int) int")
+
+	// A pointer alias of a library package, and an alias of it, called in
+	// that package.
+	libFiles := map[string]string{
+		"go.mod":   "module example.com/aliases\n\ngo 1.25\n",
+		"gala.mod": "module example.com/aliases\n",
+		"lib/lib.gala": `package lib
+
+struct Node(var v int)
+
+func (n *Node) Apply(x int) int = n.v + x
+
+type NodeRef *Node
+
+type Again NodeRef
+
+func Use(w NodeRef, a Again) int = w(2) + a(3)
+`,
+		"main.gala": `package main
+
+import "example.com/aliases/lib"
+
+func main() {
+    var n = lib.Node(1)
+    Println(lib.Use(&n, &n))
+}
+`,
+	}
+	out, err = transpileInModule(t, libFiles, "lib/lib.gala")
+	require.NoError(t, err)
+	require.Contains(t, out, "w.Apply(2)")
+	require.Contains(t, out, "a.Apply(3)")
 }

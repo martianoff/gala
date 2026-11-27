@@ -3406,6 +3406,12 @@ func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, c callSrc, li
 		return callee, nil
 	}
 	recvType := t.getExprTypeName(sel.X)
+	recv := sel.X
+	// A pointer alias (`type NodeRef *Node`) is checked as the pointer it
+	// names.
+	if ptr, isPtr := t.pointerOf(recvType); isPtr {
+		recvType = ptr
+	}
 	// A pointer that may be nil fills no Ptr receiver (GALA-E0080).
 	source := func() (srcNode, srcNode, string) {
 		at := c.post.primaryAt()
@@ -3415,13 +3421,12 @@ func (t *galaASTTransformer) addressedApplyCallee(callee ast.Expr, c callSrc, li
 		}
 		return at, at, text
 	}
-	if err := t.checkPtrReceiverIn(sel.X, t.followAliasChain(unwrapValueMarkers(recvType)), "Apply", source); err != nil {
+	if err := t.checkPtrReceiverIn(recv, unwrapValueMarkers(recvType), "Apply", source); err != nil {
 		return nil, err
 	}
-	recv := sel.X
 	if t.hasPointerReceiverMethod(recvType, "Apply") {
 		var err error
-		if recv, err = t.addressableReceiver(sel.X, recvType, "Apply", line, col); err != nil {
+		if recv, err = t.addressableReceiver(recv, recvType, "Apply", line, col); err != nil {
 			return nil, err
 		}
 	}
@@ -3452,25 +3457,33 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 		return nil
 	}
 	fieldType = unwrapValueMarkers(fieldType)
-	// A pointer is looked up by the type it points to (applyTypeOf).
-	named := fieldType
-	elem, isPtr := t.pointee(fieldType)
-	if isPtr {
-		named = elem
-	}
-	if i := slices.Index(meta.TypeParams, named.BaseName()); i >= 0 {
-		args := t.getReceiverTypeArgTypes(recvType)
-		switch {
-		case i >= len(args):
-			return nil
-		case isPtr:
-			return t.pointeeApplyType(t.applyTypeByName, unwrapValueMarkers(args[i]))
+	args := func() []transpiler.Type { return t.getReceiverTypeArgTypes(recvType) }
+	// A field typed by the struct's type parameter, never an alias of its
+	// name.
+	if i := slices.Index(meta.TypeParams, fieldType.BaseName()); i >= 0 {
+		if a := args(); i < len(a) {
+			return t.applyTypeOf(a[i])
 		}
-		return t.applyTypeOf(args[i])
+		return nil
+	}
+	// A pointer is looked up by the type it points to (applyTypeOf); another
+	// package's alias of one is not known here by its bare name.
+	foreign := meta.Package != "" && meta.Package != t.packageName
+	named, isPtr := fieldType, false
+	if ptr, ok := fieldType.(transpiler.PointerType); ok {
+		named, isPtr = unwrapValueMarkers(ptr.Elem), true
+	} else if elem, ok := t.pointee(fieldType); ok && !foreign {
+		named, isPtr = elem, true
+	}
+	if i := slices.Index(meta.TypeParams, named.BaseName()); isPtr && i >= 0 {
+		if a := args(); i < len(a) {
+			return t.pointeeApplyType(t.applyTypeByName, unwrapValueMarkers(a[i]))
+		}
+		return nil
 	}
 	// Another package's struct names its field's type as that package does:
 	// a bare name is its own type, never a same-named one of this package.
-	if meta.Package != "" && meta.Package != t.packageName && named.GetPackage() == "" &&
+	if foreign && named.GetPackage() == "" &&
 		!strings.Contains(named.BaseName(), ".") && !transpiler.IsPrimitiveType(named.BaseName()) {
 		name := named.BaseName()
 		own := meta.Package + "." + name
@@ -3503,15 +3516,54 @@ func (t *galaASTTransformer) applyTypeOf(typ transpiler.Type) *transpiler.TypeMe
 	return t.applyTypeByName(typ.BaseName())
 }
 
-// pointee is the type typ points to, through value markers, and false when
-// typ is no pointer. A pointer alias (`type NodeRef *Node`) is not followed:
-// a value of one is called as written (#1461).
+// pointee is the type typ points to, through value markers and a pointer
+// alias (pointerOf), and false when typ is no pointer.
 func (t *galaASTTransformer) pointee(typ transpiler.Type) (transpiler.Type, bool) {
-	ptr, isPtr := unwrapValueMarkers(typ).(transpiler.PointerType)
+	ptr, isPtr := t.pointerOf(typ)
 	if !isPtr {
 		return nil, false
 	}
 	return unwrapValueMarkers(ptr.Elem), true
+}
+
+// pointerOf is typ as a pointer type, through value markers and an alias of
+// one this package declares (`type NodeRef *Node`), and false when typ is no
+// pointer. A type parameter is never read as an alias of its name.
+func (t *galaASTTransformer) pointerOf(typ transpiler.Type) (transpiler.PointerType, bool) {
+	typ = unwrapValueMarkers(typ)
+	if ptr, isPtr := typ.(transpiler.PointerType); isPtr {
+		return ptr, true
+	}
+	if transpiler.IsUnusable(typ) || t.isActiveTypeParam(typ.BaseName()) {
+		return transpiler.PointerType{}, false
+	}
+	// This package's aliases only, each by its bare or its own qualified
+	// name: another package's alias names its target as that package does,
+	// which a lookup here could misread, so the walk stops at one.
+	cur := typ
+	for range len(t.typeAliases) + 1 { // an alias cycle in malformed input cannot loop
+		pkg, bare := splitPackageQualifier(cur.BaseName())
+		if pkg == "" {
+			pkg = cur.GetPackage()
+		}
+		if pkg != "" && pkg != t.packageName {
+			return transpiler.PointerType{}, false
+		}
+		// A generic alias's target with its type arguments substituted
+		// (aliasTargetByKey), or none when they are not given.
+		target, isAlias := t.aliasTargetByKey(bare, cur)
+		if !isAlias {
+			return transpiler.PointerType{}, false
+		}
+		cur = unwrapValueMarkers(target)
+		if ptr, isPtr := cur.(transpiler.PointerType); isPtr {
+			return ptr, true
+		}
+		if transpiler.IsUnusable(cur) {
+			return transpiler.PointerType{}, false
+		}
+	}
+	return transpiler.PointerType{}, false
 }
 
 // pointeeApplyType is the metadata lookup finds for elem, a pointer's element
