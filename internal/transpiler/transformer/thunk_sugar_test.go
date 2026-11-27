@@ -489,7 +489,10 @@ func main() {
 // function parameter whose thunk could not return nil (`func() state`, a
 // struct result, or a void `func()`) is the function itself, passed as is.
 // For a result nil can be (`func() *state`, `func() any`), the thunk
-// returning nil stays, as before.
+// returning nil stays, as before. #1466 adds complex numbers, Go named arrays,
+// Go aliases (followed to their target, a pointer one keeping the thunk), an
+// anonymous Go `struct{}` and a parenthesized `(nil)`, with the Go types in a
+// bridge.go file of the package.
 func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 	cases := []struct {
 		name, param, want, notWant string

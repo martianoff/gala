@@ -8,7 +8,8 @@ import (
 // `nil` for a zero-argument function parameter whose result nil cannot be is
 // the function itself (#1448), also for a Go named array or an alias of one,
 // a Go alias of a struct, a complex number, a Go `struct{}`, and a
-// parenthesized `(nil)` (#1466).
+// parenthesized `(nil)` (#1466). For a Go alias of a pointer, which nil can
+// be, by-name sugar still lifts `nil` into a thunk returning nil.
 
 struct state(n int)
 
@@ -17,6 +18,9 @@ func viaArray(f func() nil_function_argument_bridge.ID, n int) int = if (f == ni
 func viaArrayAlias(f func() nil_function_argument_bridge.IDAlias, n int) int = if (f == nil) n else 0
 
 func viaAlias(f func() nil_function_argument_bridge.Stamp, n int) int = if (f == nil) n else f().Year()
+
+func viaRef(f func() nil_function_argument_bridge.StampRef) string =
+    if (f == nil) "nil function" else if (f() == nil) "nil pointer" else "pointer"
 
 func viaComplex(f func() complex128, n int) int = if (f == nil) n else 0
 
@@ -27,6 +31,7 @@ func main() {
     Println(viaArrayAlias(nil, 2))
     Println(viaAlias(nil, 3))
     Println(viaAlias(time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), 3))
+    Println(viaRef(nil))
     Println(viaComplex(nil, 4))
     Println(nil_function_argument_bridge.Run(nil, 5))
     Println(viaParen((nil), 6))

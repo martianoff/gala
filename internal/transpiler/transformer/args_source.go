@@ -92,6 +92,19 @@ func (t *galaASTTransformer) parenthesized(e exprSrc) (first exprSrc, n int) {
 	return exprSrc{}, 0
 }
 
+// isParenthesizedNil reports whether e is the literal `nil`, bare or in
+// parentheses (`(nil)`).
+func (t *galaASTTransformer) isParenthesizedNil(e exprSrc) bool {
+	for !e.isNil() {
+		first, n := t.parenthesized(e)
+		if n != 1 {
+			return false
+		}
+		e = first
+	}
+	return true
+}
+
 // lambdaIn is the lambda e is, with no suffix applied to it, and the zero
 // lambdaSrc otherwise.
 func (t *galaASTTransformer) lambdaIn(e exprSrc) lambdaSrc {

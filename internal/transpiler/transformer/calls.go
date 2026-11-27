@@ -5920,7 +5920,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	// is checked as a Go-results body's (see lowerGoResultsValue).
 	// A `nil` is no such value but the function itself, typed as the slot.
 	byName := t.byNameGoResults(funcSlot).withBody(e)
-	nilFunc := byName != nil && e.isNil()
+	nilFunc := byName != nil && t.isParenthesizedNil(e)
 	if nilFunc {
 		byName = nil
 	}
@@ -5933,7 +5933,7 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 		return nil, err
 	}
 	if nilFunc && !s.open && !t.hasTypeParams(s.typ) {
-		t.typeNilAs(expr, s.typ)
+		t.typeNilAs(ast.Unparen(expr), s.typ)
 	}
 
 	// Lift bare T value to Immutable[T] when the expected param type is

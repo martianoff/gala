@@ -1,6 +1,7 @@
 // Package nil_function_argument_bridge declares Go types no nil can be,
 // though GALA cannot spell them: a named fixed-length array, aliases of a
-// struct type and of the array, and Go functions taking a `func() struct{}`
+// struct type and of the array (and, for contrast, an alias of a pointer),
+// and Go functions taking a `func() struct{}`
 // and a `func() (int, error)`.
 package nil_function_argument_bridge
 
@@ -14,6 +15,9 @@ type IDAlias = ID
 
 // Stamp is an alias of a struct type.
 type Stamp = time.Time
+
+// StampRef is an alias of a pointer, which nil can be.
+type StampRef = *time.Time
 
 // Run is n when f is nil, else 0.
 func Run(f func() struct{}, n int) int {
