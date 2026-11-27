@@ -600,7 +600,7 @@ column lists what each milestone's claim rests on beyond them.
   agree for as many iterations as galaspec's depth allows**: each iteration is a galaspec
   call one level deeper, so the theorems speak of runs galaspec ends within its depth.
   That a galaspec run diverging at every depth is a GoCore run that never ends normally
-  (the divergence theorem) is step 3d's. Of the 194 functions of `examples/` with
+  (the divergence theorem) is proved in step 3d, below. Of the 194 functions of `examples/` with
   signatures of the three kinds, 49 lower: 33 directly, 10 through step 3b and 6 as
   self-tail-call loops (step 3c). Before step 3c those 6 counted as step 3b's, lowered as
   recursion, which is not the Go the transpiler emits for them (`formal/COVERAGE.md`
@@ -642,6 +642,35 @@ column lists what each milestone's claim rests on beyond them.
   that does not lower yet (none is refused for its names or for a body that does not
   fit). `Inv3`'s hypothesis that no galaspec global is named after a lowered
   function stays a hypothesis, which step 5 discharges from the initial state.
+  Step 3d's third part is proved: divergence. If galaspec diverges on a lowered
+  expression (a call of a lowered function included), GoCore's run of the lowering never
+  ends normally, at any depth or step budget (`calls_diverge`); whole programs come with
+  step 5. It rests on a lower bound on GoCore's steps, proved beside the forward
+  simulation: where galaspec ends with a value, it has spent at most `Q` times the steps
+  GoCore spent, plus the expression's size (`calls_stutter`), for any `Q` larger than
+  every function body's size (`KszOK`; `kszOf` computes one, the largest body's size plus
+  one, `kszOf_ok`). GoCore takes a step per call and per loop iteration, and
+  galaspec spends at most a body's size between two of them. So where galaspec, with
+  `Q * (m + 1)` steps or more beyond the expression's size and its depth no smaller than
+  its steps, runs out of fuel, GoCore given `m` steps runs out too (`calls_fuel`). That
+  claim gives GoCore a smaller budget than the forward theorems allow, so a part
+  galaspec finishes is related at a larger budget and brought back down by fuel adequacy
+  (`simAll`): with fewer steps GoCore either runs out on that part or ends it the same
+  way. GoCore therefore never stops `stuck` or `unsupported` where galaspec is still
+  running. `calls_diverge` follows: with `n := kszOf ds * (m + 1) + esz e`, galaspec runs
+  out at depth and budget `n`, so GoCore runs out with `m` steps at every depth from
+  `K * n` on, and at a smaller depth too, since were it to end otherwise there, adequacy
+  would end the run the same way at the larger depth. The relations of the forward
+  theorems are unchanged; the bound and the fuel claim are their own statements. The
+  instances: `spin(n) = if (false) 0 else spin(n)`, which the lowering loops (`loopGate`), diverges
+  in galaspec at every budget (`spin_spec_diverges`), so GoCore's loop never ends normally
+  (`spin_gocore_diverges`); on `sw(1, 2, 2)`, whose `kszOf` is 15 (`spin`'s is 7),
+  galaspec's 31 steps mean GoCore spends at least 2 (`sw_gocore_steps`), and
+  galaspec running out with 20 steps means GoCore runs out with none (`sw_gocore_fuel`;
+  true by itself, since no call is made without a step: for `sw`, with `Q = 15`, `m = 0` is
+  the only budget `calls_fuel` reaches, so it shows only that the hypotheses can be met).
+  The bound is sound but loose: its factor is the largest body's size. A pinned
+  non-tail instance (`f(n) = f(n) + 1`) is not given; recursion is covered by the theorem.
   Of step 1, the uncapped run and the order parameter are in place: GoCore runs in
   gc's order of evaluation, and `runProgramAt` takes the order (see [Evaluation
   order](#evaluation-order)); fuel adequacy is step 3d's, above.
@@ -756,10 +785,12 @@ a call or a loop iteration: the source has no loops, but the emitted Go does. Be
 two source calls galaspec spends at most `K` steps, `K` fixed by the program's size, and
 each source call costs GoCore at least one step (its call, or an iteration of a
 self-tail-call loop; the lowering's other calls, `Get`, `Apply`, the function literals,
-only add steps); so `Spec.run p (K * (m + 1))` ending in `fuel` forces
+only add steps); so, with `Q` that constant (`kszOf`) and the expression's size `esz e`,
+galaspec ending in `fuel` with `Q * (m + 1) + esz e` steps forces
 `runProgramAt ord q m m` to end in `fuel` too. That needs, besides, that the lowered program
-does not stop `stuck` or `unsupported` in GoCore while galaspec is still running, which
-the lock-step lemma (step 3) carries as part of its state relation.
+does not stop `stuck` or `unsupported` in GoCore while galaspec is still running: every
+part galaspec finishes, GoCore finishes the same way (the forward simulation), and fuel
+adequacy carries that to GoCore's smaller budget (step 3d).
 
 ##### Evaluation order
 
@@ -860,18 +891,17 @@ Each step is its own pull request with a theorem.
 2. Pure expressions, `val`/`var`, `if` and blocks, with no calls: the forward simulation
    for one function body.
 3. Calls and recursion, the IIFE and self-tail-call loop shapes, and the divergence
-   theorem. The counting argument above is a backward fact, which the forward
-   simulation (it starts from a run galaspec finished) cannot give: it is proved as a
-   fuel-indexed lock-step lemma, galaspec given `K * (m + 1)` steps simulating GoCore's
-   first `m` steps with related states. 3a (direct calls and `return`) and 3b (the IIFE)
-   are proved, and 3c (the self-tail-call loop); 3d is GoCore's M1 with the lock-step lemma
-   and the whole-program theorems. 3d also owes what 3a to 3c leave open. Proved: fuel
-   adequacy, and that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s
-   states, and the whole-program lowering (`lowerProg`), whose context meets `FunRel` and
-   whose bodies fit gc's scope. Open: the divergence theorem for the tail loop: a
-   galaspec run that diverges at every depth is a GoCore run that does not end normally.
-   That full hoisting agrees with left to right is M6's, not 3d's: it needs a model of
-   real gc's copying of every call.
+   theorem. The counting argument above is proved beside the forward simulation, not as
+   a separate backward lemma: a lower bound on GoCore's steps, its own statement
+   (`calls_stutter`), and fuel adequacy compares GoCore's runs at different budgets.
+   3a (direct calls and `return`), 3b (the IIFE) and 3c (the self-tail-call loop) are
+   proved; 3d is GoCore's M1 and what 3a to 3c leave open, and is proved: fuel
+   adequacy, that `Inv3.sync` (as many cell types as cells) holds of `runProgram`'s
+   states, the whole-program lowering (`lowerProg`), whose context meets `FunRel` and
+   whose bodies fit gc's scope, and the divergence theorem (`calls_diverge`): if galaspec
+   diverges on a lowered expression, GoCore's run of the lowering never ends normally,
+   at any depth or step budget. That full hoisting agrees with left to right is M6's,
+   not 3d's: it needs a model of real gc's copying of every call.
 4. Structs and sealed values on the flat layout; `match` re-proved against `Full`; the
    M3 fragment retired.
 5. Package-level initialization (galaspec's `mentions` order against GoCore's
@@ -1298,15 +1328,19 @@ below; this is their order and where they stand.
     included.
   - Step 2b, `val`/`var`, `if` statements and blocks (`stmts_correct`, #1276): proved.
   - Step 3, calls and recursion, the function-literal and self-tail-call shapes, and the
-    divergence theorem: in progress; 3a (direct calls and `return`), 3b (`if` used as a
-    value, Go's IIFE) and 3c (the self-tail-call loop, for as many iterations as
-    galaspec's depth allows; divergence is 3d's) are proved, and of 3d, GoCore's fuel
-    adequacy (`runProgramAt_adequate`), `Inv3.sync` for every state a run reaches, and
-    the whole-program lowering (`lowerProg_funRel`, `lowerProg_gc`).
+    divergence theorem: proved; 3a (direct calls and `return`), 3b (`if` used as a
+    value, Go's IIFE), 3c (the self-tail-call loop, for as many iterations as
+    galaspec's depth allows) and 3d: GoCore's fuel adequacy (`runProgramAt_adequate`),
+    `Inv3.sync` for every state a run reaches, the whole-program lowering
+    (`lowerProg_funRel`, `lowerProg_gc`) and divergence (`calls_diverge`: galaspec
+    diverging on a lowered expression, GoCore never ends normally). Of `examples/`, 49
+    of 194 functions of the lowered kinds lower, and 21 of the 93 files with a function of
+    those kinds lower whole.
     The order obligations steps 2a and 2b left open (gc's `&&`/`||` temporaries,
-    `untriggered_orders_agree`) are M6's.
-  - Step 4: structs and sealed values on the flat layout; `match` re-proved against
-    GoCore for whole programs; M3's fragment retired.
+    `untriggered_orders_agree`) and full hoisting are M6's.
+  - Step 4 (next): structs and sealed values on the flat layout; `match` re-proved
+    against GoCore for whole programs (22 of the functions above wait on `match` as a
+    value); M3's fragment retired.
   - Step 5: package-level initialization and printing, then the theorems for whole
     programs.
 - **M6:** per-program translation validation, with the six normalization lemmas M3 left,
