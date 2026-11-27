@@ -1,0 +1,9 @@
+package holder
+
+import . "martianoff/gala/examples/gala_dot_go_field/lib"
+
+// Holder's field has Bare, a Go type of the dot-imported GALA package lib's
+// .go files, written bare: it is lib's Bare, not one of holder's own.
+struct Holder(B Bare)
+
+func Make() Holder = Holder(B = NewBare())

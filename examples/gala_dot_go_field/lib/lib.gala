@@ -1,0 +1,4 @@
+package lib
+
+// Entries is the number of entries of b.
+func Entries(b Bare) int = b.Size()

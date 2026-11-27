@@ -2460,7 +2460,8 @@ func (a *galaAnalyzer) resolveBaseName(typeName string, pkgName string) transpil
 	}
 
 	// A type of a dot-imported Go package (`Duration` under `import .
-	// "time"`), which is no type of the package's own.
+	// "time"`), or of a dot-imported GALA package's .go files, which is no
+	// type of the package's own.
 	if goType, ok := a.currentQualifiers.goDotImportedType(typeName, a.currentGoTypeInfo()); ok {
 		return goType
 	}

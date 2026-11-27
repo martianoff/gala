@@ -1,0 +1,13 @@
+package main
+
+import "martianoff/gala/examples/gala_dot_go_field/holder"
+
+// A field whose type comes from the .go files of a dot-imported GALA package,
+// written bare, is read from another package as that type: a map, whose
+// .Size() is its number of entries and whose elements index (#1452).
+
+func main() {
+    val h = holder.Make()
+    Println(h.B.Size())
+    Println(h.B["b"])
+}

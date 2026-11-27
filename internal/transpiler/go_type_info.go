@@ -299,8 +299,9 @@ func (g *GoTypeInfo) GetFuncSignature(qualifiedName string) *GoFuncSignature {
 	return g.Functions[qualifiedName]
 }
 
-// DeclaresType reports whether the Go package filed under pkgName declares a
-// type (or type alias) called name.
+// DeclaresType reports whether the Go package filed under pkgName, a name or
+// an import path (see AddImportPathKeys), declares a type (or type alias)
+// called name.
 func (g *GoTypeInfo) DeclaresType(pkgName, name string) bool {
 	if g == nil {
 		return false

@@ -1,6 +1,10 @@
 package analyzer
 
-import "martianoff/gala/internal/transpiler"
+import (
+	"go/token"
+
+	"martianoff/gala/internal/transpiler"
+)
 
 // importBinding is one import of a file.
 type importBinding struct {
@@ -124,11 +128,32 @@ func (q fileQualifiers) qualify(t transpiler.Type, gi *transpiler.GoTypeInfo) tr
 }
 
 // goDotImportedType is the type named name a Go package the file dot-imports
-// declares, tied to that import as qualify ties a type written `pkg.Name`;
-// false when none does, or none's type info was loaded.
+// declares, or the hand-written .go files of a GALA one, tied to that import
+// as qualify ties a type written `pkg.Name`; false when none does, or none's
+// type info was loaded.
 func (q fileQualifiers) goDotImportedType(name string, gi *transpiler.GoTypeInfo) (transpiler.Type, bool) {
+	// A dot import brings in exported names only, and a GALA package's Go
+	// type info holds its unexported types too.
+	if !token.IsExported(name) {
+		return nil, false
+	}
 	for _, b := range q.dots {
-		if !b.IsGala && b.PkgName != "" && gi.DeclaresType(b.PkgName, name) {
+		if b.PkgName == "" {
+			continue
+		}
+		// A type of a GALA package's .go files is looked up by its import
+		// path (GoTypeInfo.AddImportPathKeys), which no Go package of its
+		// name (io/fs beside GALA's fs) shares, as the transformer looks it
+		// up (dotImportedGoTypeKeyOf); a path that is the name (a module's
+		// root package) is the name's key. The type is recorded as qualify
+		// records one written `pkg.Name`.
+		if b.IsGala {
+			if gi.DeclaresType(b.Path, name) {
+				return transpiler.NamedType{Package: b.PkgName, Name: name}, true
+			}
+			continue
+		}
+		if gi.DeclaresType(b.PkgName, name) {
 			return transpiler.NamedType{Package: b.PkgName, Name: name, ImportPath: b.Path}, true
 		}
 	}
