@@ -19,8 +19,8 @@ func value(c *cell[int]) int { return c.v }
 // Repo.
 func (r Repo) Each(f func(*cell[int]) int) int { return f(&cell[int]{v: 5}) }
 
-// cells is an alias of a fixed-length array of cells.
-type cells = [2]cell[int]
+// intCell is an alias of a generic instance of the package's own type.
+type intCell = cell[int]
 
-// pairAlias calls f with two cells holding n and n+2, typed through cells.
-func pairAlias(n int, f func(cells) int) int { return f(cells{{v: n}, {v: n + 2}}) }
+// viaAlias calls f with a cell holding n+2, typed through intCell.
+func viaAlias(n int, f func(*intCell) int) int { return f(&intCell{v: n + 2}) }

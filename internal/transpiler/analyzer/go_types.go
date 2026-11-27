@@ -2253,7 +2253,8 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 // it, so an instance keeps its type arguments and an array its length (a
 // lambda for a `func(*Box[int]) error` is a `func(*Box[int]) error`, a
 // `Some` of a `*Box[int]` an `Option[*Box[int]]`). A type GALA cannot spell
-// exactly (an unexported name, a package's alias of a named type), or that holds an
+// exactly (an unexported name, an alias naming a package GALA code cannot
+// import), or that holds an
 // anonymous struct or a non-empty interface literal (which GALA does not
 // write; the lossy spelling keeps them as before), keeps the lossy spelling,
 // which still reads its elements and results. It records the types values
@@ -2761,9 +2762,7 @@ func importableFrom(t types.Type, home *types.Package) bool {
 		}
 		return true
 	case *types.Alias:
-		if pkg := t.Obj().Pkg(); pkg != nil && !internalVisible(pkg.Path(), home) {
-			return false
-		}
+		// Written as its target: its own package never appears.
 		return importableFrom(types.Unalias(t), home)
 	case *types.Pointer:
 		return importableFrom(t.Elem(), home)
@@ -2800,8 +2799,12 @@ func importableFrom(t types.Type, home *types.Package) bool {
 }
 
 // internalVisible reports whether a package at path may be imported from
-// home by Go's internal-package rule.
+// home by Go's internal-package rule; a vendored package (`vendor/...`) never
+// is, its path not being one an import names.
 func internalVisible(path string, home *types.Package) bool {
+	if strings.HasPrefix(path, "vendor/") || strings.Contains(path, "/vendor/") {
+		return false
+	}
 	idx := strings.LastIndex("/"+path+"/", "/internal/")
 	if idx < 0 {
 		return true

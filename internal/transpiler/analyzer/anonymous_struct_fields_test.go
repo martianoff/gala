@@ -91,6 +91,7 @@ func TestInternalVisible(t *testing.T) {
 		{"example.com/lib/internal/x", "example.com/lib/sub", true},
 		{"example.com/lib/internal/x", "example.com/other", false},
 		{"example.com/lib/internal/x", "", false},
+		{"vendor/golang.org/x/net/http2/hpack", "", false},
 	}
 	for _, tt := range tests {
 		var home *types.Package

@@ -11,4 +11,4 @@ struct Repo(n int)
 
 func Five() int = Repo(1).Each((c) => value(c))
 
-func Spread(n int) int = pairAlias(n, (cs) => at(cs, 1) - at(cs, 0))
+func Spread(n int) int = viaAlias(n, (c) => value(c) - n)
