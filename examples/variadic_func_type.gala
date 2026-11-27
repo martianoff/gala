@@ -1,0 +1,32 @@
+package main
+
+import "fmt"
+import . "martianoff/gala/collection_immutable"
+
+// A variadic function's type keeps its `...` wherever GALA infers it: as a
+// type argument, a lambda's result, a struct field, a collection element, a
+// method value's parameter, and in a lambda filling a variadic slot.
+
+func sum(xs ...int) int = ArrayOf(xs...).FoldLeft(0, (a, x) => a + x)
+
+func twice(f func(...int) int) int = f(1, 2) * 2
+
+struct Box[T any](V T)
+
+func (b Box[T]) Pair[U any](u U) Tuple[T, U] = (b.V, u)
+
+func (b Box[T]) Run[U any](g func(...int) int, u U) Tuple[int, U] = (g(1, 2, 3), u)
+
+func main() {
+    val o = Some(sum)
+    val h = () => sum
+    Println(o.Map((f) => f(1, 1)), h()(4, 5))
+    val b = Box(sum)
+    Println(b.V(3, 4), b.Pair("a").V1(5))
+    val p = Box(1).Pair[func(...int) int]
+    val r = Box(1).Run[string]
+    Println(p(sum).V2(1, 2), r(sum, "z"))
+    Println(twice((xs) => ArrayOf(xs...).Size()), ListOf(sum).Map((f) => f(1, 2, 3)))
+    val sp = Some(fmt.Sprint)
+    Println(sp.Map((f) => f(1, "a")))
+}

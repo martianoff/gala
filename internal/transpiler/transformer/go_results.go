@@ -256,20 +256,20 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 	case *ast.Ident:
 		if t.shadowingScope(f.Name) != nil {
 			if ft := t.resolveTranspilerTypeAsFuncType(t.getType(f.Name)); ft != nil && len(ft.Results) >= 2 {
-				return goResultsSignature(ft.Params, nil, ft.Results, nil)
+				return goResultsSignature(ft.Params, nil, ft.Variadic, ft.Results, nil)
 			}
 			return nil
 		}
 		if fm := t.getFunction(f.Name); fm != nil {
 			if fm.GoResults != nil {
-				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
+				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.Variadic, fm.GoResults, fm.TypeParams)
 			}
 			return nil
 		}
 	case *ast.SelectorExpr:
 		if id, ok := f.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
 			if fm := t.getFunction(id.Name + "." + f.Sel.Name); fm != nil && fm.GoResults != nil {
-				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
+				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.Variadic, fm.GoResults, fm.TypeParams)
 			}
 			return nil
 		}
@@ -280,7 +280,7 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 					// The receiver's type arguments in place of its
 					// type's parameters (`T` of a `Box[int]`).
 					subst := t.receiverTypeArgSubst(recvType, meta)
-					return goResultsSignature(t.substituteGoTypeParamsIn(m.ParamTypes, subst), m.ParamNames, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
+					return goResultsSignature(t.substituteGoTypeParamsIn(m.ParamTypes, subst), m.ParamNames, m.Variadic, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
 				}
 				return nil
 			}
@@ -291,7 +291,7 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 	// of these, so the type is probed without counting a give-up as an
 	// inference failure.
 	if ft := t.resolveTranspilerTypeAsFuncType(t.probeExprType(fun)); ft != nil && len(ft.Results) >= 2 {
-		return goResultsSignature(ft.Params, nil, ft.Results, nil)
+		return goResultsSignature(ft.Params, nil, ft.Variadic, ft.Results, nil)
 	}
 	return nil
 }
@@ -313,9 +313,10 @@ func (t *galaASTTransformer) receiverTypeArgSubst(recvType transpiler.Type, meta
 }
 
 // goResultsSignature is the signature of a callee with these parameters
-// (names may be nil) that declares the Go result list results.
-func goResultsSignature(params []transpiler.Type, names []string, results []transpiler.Type, typeParams []string) *transpiler.GoFuncSignature {
-	return &transpiler.GoFuncSignature{Params: goParams(params, names), Returns: results, TypeParams: typeParams}
+// (names may be nil; the last one variadic when variadic) that declares the
+// Go result list results.
+func goResultsSignature(params []transpiler.Type, names []string, variadic bool, results []transpiler.Type, typeParams []string) *transpiler.GoFuncSignature {
+	return &transpiler.GoFuncSignature{Params: goParams(params, names), IsVariadic: variadic && len(params) > 0, Returns: results, TypeParams: typeParams}
 }
 
 // goParams pairs parameter types with their names (names may be nil).

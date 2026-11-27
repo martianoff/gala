@@ -34,7 +34,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x0D}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x0E}
 
 const (
 	typeTagNil        uint8 = 0 // nil interface
@@ -306,6 +306,7 @@ func (e *encoder) writeType(t transpiler.Type) {
 			e.writeType(p)
 		}
 		e.writeBoolSlice(v.Inout)
+		e.writeBool(v.Variadic)
 	case transpiler.NilType:
 		e.writeByte(typeTagNilType)
 	case transpiler.VoidType:
@@ -877,7 +878,8 @@ func (d *decoder) readType() transpiler.Type {
 				results[i] = d.readType()
 			}
 		}
-		return transpiler.FuncType{Params: params, Results: results, Inout: d.readBoolSlice()}
+		inout := d.readBoolSlice()
+		return transpiler.FuncType{Params: params, Results: results, Inout: inout, Variadic: d.readBool()}
 	case typeTagNilType:
 		return transpiler.NilType{}
 	case typeTagVoid:

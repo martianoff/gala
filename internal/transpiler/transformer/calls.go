@@ -1527,7 +1527,7 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
 	}
 	params := append([]transpiler.Type{loweredReceiverType(recvType, m)}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
-	t.genericGoResultCalls[call] = goResultsSignature(params, nil, t.substituteGoTypeParamsIn(m.GoResults, subst), typeParams)
+	t.genericGoResultCalls[call] = goResultsSignature(params, nil, m.Variadic, t.substituteGoTypeParamsIn(m.GoResults, subst), typeParams)
 }
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
@@ -4774,7 +4774,7 @@ func (t *galaASTTransformer) unifyThroughInterface(result, slotType transpiler.T
 		return
 	}
 	signature := func(m *transpiler.MethodMetadata, params []string, typeArgs []transpiler.Type) transpiler.Type {
-		ft := transpiler.FuncType{Params: m.ParamTypes}
+		ft := transpiler.FuncType{Params: m.ParamTypes, Variadic: m.Variadic && len(m.ParamTypes) > 0}
 		if transpiler.HasResult(m.ReturnType) {
 			ft.Results = []transpiler.Type{m.ReturnType}
 		}
@@ -5205,7 +5205,7 @@ func (t *galaASTTransformer) goInstanceSlot(param transpiler.Type, subst typeSub
 	if sub, isSubFunc := t.substituteGoTypeParams(u, subst).(transpiler.FuncType); isSubFunc && len(subst) > 0 {
 		inst = sub
 	}
-	return transpiler.FuncType{Params: inst.Params, Results: maskOpenResults(u.Results, inst.Results, open)}, true
+	return transpiler.FuncType{Params: inst.Params, Results: maskOpenResults(u.Results, inst.Results, open), Variadic: inst.Variadic}, true
 }
 
 // goStructFuncField is the function type of td's field name, directly or
@@ -5773,7 +5773,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		t.tryThunkLambda = l
 		defer func() { t.tryThunkLambda = prev }()
 	}
-	expectedRetType, expectedParamTypes, isFunc := t.lambdaExpectation(s.typ)
+	expectedRetType, expectedParamTypes, variadic, isFunc := t.lambdaExpectation(s.typ)
 	declaredResult := t.declaresAnyResult(s)
 	if !isFunc && s.funcResult != nil {
 		// A result is expected: the parameter's own type, which may spell
@@ -5788,7 +5788,7 @@ func (t *galaASTTransformer) lowerLambdaArg(l lambdaSrc, s slot, strict bool) (a
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, l.paramCount())
 	}
 	b := t.goResultsBodyFor(s.typ, "this lambda").withBody(l.expression())
-	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, strict, declaredResult, b)
+	lit, checks, err := t.lowerLambda(l, expectedRetType, expectedParamTypes, variadic, strict, declaredResult, b)
 	if err != nil {
 		return nil, err
 	}
@@ -6606,33 +6606,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 	if !ok || fnLit.Type == nil {
 		return transpiler.NilType{}
 	}
-	var params []transpiler.Type
-	if fnLit.Type.Params != nil {
-		for _, field := range fnLit.Type.Params.List {
-			paramType := t.astTypeToTranspilerType(field.Type)
-			if len(field.Names) == 0 {
-				params = append(params, paramType)
-				continue
-			}
-			for range field.Names {
-				params = append(params, paramType)
-			}
-		}
-	}
-	var results []transpiler.Type
-	if fnLit.Type.Results != nil {
-		for _, field := range fnLit.Type.Results.List {
-			resultType := t.astTypeToTranspilerType(field.Type)
-			if len(field.Names) == 0 {
-				results = append(results, resultType)
-				continue
-			}
-			for range field.Names {
-				results = append(results, resultType)
-			}
-		}
-	}
-	return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(fnLit.Type.Params)}
+	return t.astTypeToTranspilerType(fnLit.Type)
 }
 
 // inferFuncTypeSubstFromArgs pre-scans non-lambda arguments of a generic function call
@@ -6855,9 +6829,10 @@ func (t *galaASTTransformer) genericCtorLambdaExpectation(expected transpiler.Ty
 		return expected, false
 	}
 	return transpiler.FuncType{
-		Params:  maskTypeParamResults(ft.Params, unbound),
-		Results: maskTypeParamResults(ft.Results, unbound),
-		Inout:   ft.Inout,
+		Params:   maskTypeParamResults(ft.Params, unbound),
+		Results:  maskTypeParamResults(ft.Results, unbound),
+		Inout:    ft.Inout,
+		Variadic: ft.Variadic,
 	}, funcTypeParamsMentionTypeParams(ft.Params, unbound)
 }
 

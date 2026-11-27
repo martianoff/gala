@@ -63,9 +63,9 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 		}
 		// A Go method value (`file.Close`): its Go signature, as for a Go
 		// function reference below — when the signature spells the method's
-		// type exactly. A FuncType has no variadic marker, and an inexact or
-		// generic signature would not match what Go infers for the value.
-		if sig := t.lookupGoCallSignature(&ast.CallExpr{Fun: e}); sig != nil && !sig.IsVariadic && !sig.Inexact && len(sig.TypeParams) == 0 {
+		// type exactly. An inexact or generic signature would not match what
+		// Go infers for the value.
+		if sig := t.lookupGoCallSignature(&ast.CallExpr{Fun: e}); sig != nil && !sig.Inexact && len(sig.TypeParams) == 0 {
 			return goSignatureFuncType(sig)
 		}
 	}
@@ -133,7 +133,7 @@ func goSignatureFuncType(sig *transpiler.GoFuncSignature) transpiler.FuncType {
 	for _, p := range sig.Params {
 		params = append(params, p.Type)
 	}
-	return transpiler.FuncType{Params: params, Results: sig.Returns}
+	return transpiler.FuncType{Params: params, Results: sig.Returns, Variadic: sig.IsVariadic && len(params) > 0}
 }
 
 // methodValueType is the type of a method value — a GALA method named without
@@ -177,7 +177,7 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 	if mm.IsGeneric || len(mm.TypeParams) > 0 {
 		return nil, false
 	}
-	ft := signatureType(mm.ParamTypes, mm.InoutParams, mm.ReturnType, mm.GoResults)
+	ft := signatureType(mm.ParamTypes, mm.InoutParams, mm.Variadic, mm.ReturnType, mm.GoResults)
 	gen, isGeneric := recvType.(transpiler.GenericType)
 	if len(meta.TypeParams) == 0 && !isGeneric {
 		return ft, true

@@ -375,6 +375,9 @@ func (t *galaASTTransformer) spellType(typ transpiler.Type) ast.Expr {
 			if v.IsInout(i) {
 				t.markOperand(pt, operandInoutParam)
 			}
+			if v.IsVariadicParam(i) {
+				pt = &ast.Ellipsis{Elt: pt}
+			}
 			params.List = append(params.List, &ast.Field{Type: pt})
 		}
 		var results *ast.FieldList
@@ -617,9 +620,16 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		// Handle function types like func(S) Option[Tuple[T, S]]
 		var params []transpiler.Type
 		var results []transpiler.Type
+		variadic := false
 		if e.Params != nil {
 			for _, field := range e.Params.List {
-				paramType := t.astTypeToTranspilerType(field.Type)
+				typ := field.Type
+				// A variadic `...T` is recorded element-wise, as a
+				// declaration's is.
+				if ell, ok := typ.(*ast.Ellipsis); ok {
+					typ, variadic = ell.Elt, true
+				}
+				paramType := t.astTypeToTranspilerType(typ)
 				// If there are multiple names, repeat the type for each
 				if len(field.Names) > 0 {
 					for range field.Names {
@@ -642,7 +652,7 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 				}
 			}
 		}
-		return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(e.Params)}
+		return transpiler.FuncType{Params: params, Results: results, Inout: t.inoutFuncParams(e.Params), Variadic: variadic}
 	}
 	return transpiler.NilType{}
 }

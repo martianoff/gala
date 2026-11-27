@@ -55,7 +55,7 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 			stripPackagePrefix(meta.Name), method, len(mm.TypeParams), len(typeArgs)))
 	}
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(base, method)
-	var sig transpiler.Type = signatureType(mm.ParamTypes, mm.InoutParams, mm.ReturnType, nil)
+	var sig transpiler.Type = signatureType(mm.ParamTypes, mm.InoutParams, mm.Variadic, mm.ReturnType, nil)
 	// The method's own type parameters, renamed apart from the receiver's
 	// type arguments first: in `func f[U any](b Box[U])`, `b.Pair`'s U is
 	// not f's. Their prefix is their own, apart from the placeholders
@@ -153,7 +153,7 @@ func (t *galaASTTransformer) loweredMethodValue(base ast.Expr, xType transpiler.
 	for i, p := range ft.Params {
 		name := t.freshTempName("__arg_", &t.tempVarCount)
 		var typ ast.Expr = t.typeToExpr(p)
-		if mm.Variadic && i == len(ft.Params)-1 {
+		if ft.IsVariadicParam(i) {
 			typ = &ast.Ellipsis{Elt: typ}
 		}
 		params.List = append(params.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}, Type: typ})
@@ -226,11 +226,11 @@ func (t *galaASTTransformer) slotFuncType(slot transpiler.Type) *transpiler.Func
 
 // unspellableMethodValueError reports a method value of typeName.method whose
 // closure signature has a part the generated Go cannot be given as written:
-// a variadic function type (`func(...int) int`) would come out as `any`, a
-// different type, so it is an error rather than wrong Go.
+// a part that did not resolve would come out as `any`, a different type, so
+// it is an error rather than wrong Go.
 func unspellableMethodValueError(typeName, method string, line, col int) error {
 	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-		"the method value %s.%s cannot be written as a function value: its function type has a part that cannot be spelled here (such as a variadic function type); call the method instead, or wrap the call in a lambda",
+		"the method value %s.%s cannot be written as a function value: its function type has a part that cannot be spelled here; call the method instead, or wrap the call in a lambda",
 		stripPackagePrefix(typeName), method))
 }
 

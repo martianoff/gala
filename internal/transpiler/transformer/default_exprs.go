@@ -700,7 +700,7 @@ func (t *galaASTTransformer) recordDefaultLambdaHints(def exprSrc, declared tran
 	if len(params) == 0 {
 		return
 	}
-	_, expected, ok := t.lambdaExpectation(declared)
+	_, expected, variadic, ok := t.lambdaExpectation(declared)
 	if !ok {
 		return
 	}
@@ -708,12 +708,18 @@ func (t *galaASTTransformer) recordDefaultLambdaHints(def exprSrc, declared tran
 		if p.typ.ok() || !p.nameAt.ok() || i >= len(expected) || transpiler.IsUnusableOrAny(expected[i]) {
 			continue
 		}
+		typ := expected[i]
+		// The `...T` parameter of a variadic slot is a slice of T in the
+		// body, as lowerLambda binds it.
+		if variadic && i == len(expected)-1 && i == len(params)-1 {
+			typ = transpiler.ArrayType{Elem: typ}
+		}
 		line, col := p.nameAt.start()
 		t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
 			Line:   line,
 			Column: col,
 			Name:   p.name,
-			Type:   expected[i],
+			Type:   typ,
 		})
 	}
 }
