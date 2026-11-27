@@ -568,7 +568,8 @@ func (t *galaASTTransformer) goUntypedNumericConstDefault(expr ast.Expr) (string
 		return "", false
 	}
 	qualifier, ok := sel.X.(*ast.Ident)
-	if !ok {
+	// A binding that shadows the package name is a value, not the package.
+	if !ok || t.shadowingScope(qualifier.Name) != nil {
 		return "", false
 	}
 	entry, isGala, ok := t.importForQualifier(qualifier.Name)

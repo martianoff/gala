@@ -51,6 +51,34 @@ func main() {
     val d = apply(time.Second * math.MaxInt8, (x) => x * 2)
     Println(d)
 }`, []string{"func(x time.Duration) time.Duration {"}},
+		{"a literal times a Go float constant is a float64", `package main
+
+import "math"
+
+func apply[T any](v T, f func(T) T) T = f(v)
+
+func main() {
+    Println(apply(2 * math.Pi, (x) => x / 3))
+}`, []string{"func(x float64) float64 {"}},
+		{"a Go constant times a float literal is a float64", `package main
+
+import "math"
+
+func apply[T any](v T, f func(T) T) T = f(v)
+
+func main() {
+    Println(apply(math.MaxInt8 * 0.5, (x) => x))
+}`, []string{"func(x float64) float64 {"}},
+		{"a Go constant shifted by a typed count keeps its default", `package main
+
+import "math"
+
+func apply[T any](v T, f func(T) T) T = f(v)
+
+func main() {
+    val n uint = 3
+    Println(apply(math.MaxInt8 << n, (x) => x + 1))
+}`, []string{"func(x int) int {"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
