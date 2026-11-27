@@ -72,6 +72,12 @@ type Outer[A, B any] struct {
 
 func NewOuter() *Outer[int, string] { return &Outer[int, string]{} }
 
+type Src[T any] = Iter[T]
+
+type Plain struct{ Inner[int] }
+
+func NewPlain() *Plain { return &Plain{} }
+
 type IntNamed = Named[int]
 
 func NewAliased() *IntNamed { return &Named[int]{} }
@@ -96,6 +102,8 @@ func NewAliased() *IntNamed { return &Named[int]{} }
 		{"a method promoted from an embedded generic field, naming its parameter", "val x = lib.NewOuter().Get()\n    val f = () => x + 1\n    Println(f())", "func() int"},
 		{"a method promoted from an embedded generic field, naming none", "val n = lib.NewOuter().Len()\n    val f = () => n + 1\n    Println(f())", "func() int"},
 		{"a type pattern on a generic Go interface a Go function returns", "val n = lib.Ints() match {\n        case it: lib.IntIter => it.Next()\n        case _ => 0\n    }\n    Println(n)", "any(_subj).(type)"},
+		{"a method of an instance of a generic alias of a generic Go interface", "val s lib.Src[int] = lib.Ints()\n    val x = s.Next()\n    val f = () => x + 1\n    Println(f())", "func() int"},
+		{"a method value promoted from a generic field into a non-generic Go struct", "val g = lib.NewPlain().Get\n    val f = () => g() + 1\n    Println(f())", "func() int"},
 		{"lambda in a Go struct field", "Println(lib.Handlers(OnBox = (b) => b.V))", "func(b *lib.Box[int]) int"},
 	}
 	for _, tt := range tests {

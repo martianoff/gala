@@ -1985,6 +1985,18 @@ func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignatu
 	result := convertSignature(sig)
 	named, ok := typ.(*types.Named)
 	recv := sig.RecvTypeParams()
+	// A generic alias's method (`Next() T` of `type Src[T any] = Iter[T]`,
+	// `Get() U` of `type B[U any] = Box[U]`) names the alias's type
+	// parameters: it takes them when it names any, and none otherwise.
+	if alias, isAlias := typ.(*types.Alias); isAlias && alias.TypeParams().Len() > 0 {
+		result.TypeParams, result.CoreTypes = nil, nil
+		if mentionsTypeParam(sig) {
+			for i := 0; i < alias.TypeParams().Len(); i++ {
+				result.TypeParams = append(result.TypeParams, alias.TypeParams().At(i).Obj().Name())
+			}
+		}
+		return result
+	}
 	// A generic interface's method has no receiver type parameters of its
 	// own in go/types but names the interface's (`Next() T` of
 	// `Iter[T any]`): it takes them, so an instance (`Iter[int]`)
@@ -2003,15 +2015,14 @@ func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignatu
 	// go/types, but its signature already names the outer type's: it takes
 	// the outer type's when it names any, and none otherwise.
 	if ok && recv.Len() > 0 && !declaresMethod(named.Origin(), fn.Origin()) {
-		if declared := named.Origin().TypeParams(); declared.Len() > 0 {
-			result.TypeParams, result.CoreTypes = nil, nil
-			if mentionsTypeParam(sig) {
-				for i := 0; i < declared.Len(); i++ {
-					result.TypeParams = append(result.TypeParams, declared.At(i).Obj().Name())
-				}
+		declared := named.Origin().TypeParams()
+		result.TypeParams, result.CoreTypes = nil, nil
+		if mentionsTypeParam(sig) {
+			for i := 0; i < declared.Len(); i++ {
+				result.TypeParams = append(result.TypeParams, declared.At(i).Obj().Name())
 			}
-			return result
 		}
+		return result
 	}
 	if !ok || recv == nil || fn.Origin().Pkg() != named.Obj().Pkg() || !declaresMethod(named.Origin(), fn.Origin()) {
 		return result
