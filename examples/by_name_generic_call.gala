@@ -1,0 +1,32 @@
+package main
+
+// A call passed by name (to a `func() R` parameter) is the thunk's value, of
+// type R: a generic call whose type argument only the slot fixes takes R. A
+// call whose value is a function is that function, passed as it is.
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Or[U any](a U, b func() U) U = b()
+
+func zero[V any]() V {
+    var z V
+    z
+}
+
+func run(d func() int) int = d()
+
+func three() int = 3
+
+func mk() func() int = three
+
+func main() {
+    val c = Cell(0)
+    // zero[int](), not a nil zero[func() int]().
+    Println(c.Or(0, zero()))
+    Println(c.Or(0, (zero())))
+    // U is int64 from x64, and the inner call's constants take it.
+    val x64 int64 = 3
+    Println(c.Or(x64, c.Or(1, 2)) + x64)
+    // mk() returns the function run calls.
+    Println(run(mk()))
+}

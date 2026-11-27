@@ -177,6 +177,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "by_name_generic_call",
+    src = "by_name_generic_call.gala",
+    expected = "by_name_generic_call.out",
+)
+
+gala_exec_test(
     name = "receiver_type_param_rename",
     src = "receiver_type_param_rename.gala",
     expected = "receiver_type_param_rename.out",

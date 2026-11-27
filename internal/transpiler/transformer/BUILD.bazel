@@ -163,6 +163,7 @@ go_test(
         "block_function_tail_test.go",
         "branch_constants_slot_type_test.go",
         "branch_tail_values_test.go",
+        "by_name_generic_call_test.go",
         "by_name_untyped_const_test.go",
         "call_arity_test.go",
         "chained_flatmap_test.go",

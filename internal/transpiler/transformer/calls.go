@@ -6059,8 +6059,14 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 	s.goResults = byName
 
 	// Check mode: an if-expression or match lowers its branches against the
-	// slot type; anything else sees it pushed for downward inference.
-	expr, err := t.lowerAgainst(e, s, strict)
+	// slot type; anything else sees it pushed for downward inference. A call
+	// passed by name is its thunk's value, so it is lowered against the
+	// thunk's result (byNameCallValue).
+	expr, ok := t.byNameCallValue(e, s, byName, nilFunc)
+	var err error
+	if !ok {
+		expr, err = t.lowerAgainst(e, s, strict)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -7168,4 +7174,59 @@ func (t *galaASTTransformer) hasOwnByNameType(expr exprSrc, weakSlot transpiler.
 		}
 	}
 	return true
+}
+
+// byNameCallValue lowers e, an argument in a by-name slot s (`func() R`), as
+// the thunk's value when it is a call: against R, so a type argument the call
+// takes from its slot is R's (`zero()` is `zero[int]()`, not a
+// `zero[func() int]()` passed as the function), and reports whether it did.
+// A call whose value is a function even against R (`mkThunk()`) is the
+// function itself, lowered against the slot as before; so is anything that
+// fails against R. byName and nilFunc are transformArgument's: a Go-results
+// thunk and a `nil` are never lowered here.
+func (t *galaASTTransformer) byNameCallValue(e exprSrc, s slot, byName *goResultsBody, nilFunc bool) (ast.Expr, bool) {
+	if byName != nil || nilFunc {
+		return nil, false
+	}
+	ft, isFunc := s.typ.(transpiler.FuncType)
+	// A result naming an enclosing declaration's type parameter can be
+	// spelled; one nothing binds cannot. In an open slot a type parameter
+	// may be the callee's, left to Go, though it is spelled like an
+	// enclosing one, and `any` anywhere in it is a placeholder: those keep
+	// the slot.
+	if !isFunc || len(ft.Params) != 0 || len(ft.Results) != 1 || transpiler.IsUnusable(ft.Results[0]) || t.mentionsUnboundTypeParam(ft.Results[0]) {
+		return nil, false
+	}
+	if s.open && (t.hasTypeParams(ft.Results[0]) || typeNameMatches(ft.Results[0], func(name string) bool { return name == "any" })) {
+		return nil, false
+	}
+	// Through parentheses: `(zero())` is the call.
+	call := e
+	for f := t.classifyExpr(call); f.grouped.ok(); f = t.classifyExpr(call) {
+		call = f.grouped
+	}
+	p := call.solePostfix()
+	if !p.ok() || p.hasCases() {
+		return nil, false
+	}
+	var buf [4]suffixSrc
+	suffixes := p.appendSuffixes(buf[:0])
+	if len(suffixes) == 0 || suffixes[len(suffixes)-1].opener() != "(" {
+		return nil, false
+	}
+	restore := t.captureScopedState()
+	undo := t.snapshotTrialLowering()
+	temps := t.tempVarCount
+	expr, err := t.lowerAgainst(e, slot{typ: ft.Results[0]}, false)
+	if err == nil {
+		if typ := t.getExprTypeName(expr); !transpiler.ContainsUnusable(typ) && t.resolveTranspilerTypeAsFuncType(typ) == nil {
+			return expr, true
+		}
+	}
+	// A function value after all, or a failure: lowered as before, with the
+	// temporaries it numbers as before.
+	undo()
+	restore()
+	t.tempVarCount = temps
+	return nil, false
 }
