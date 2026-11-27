@@ -2289,6 +2289,27 @@ gala_exec_test(
     deps = ["//go_interop"],
 )
 
+# #1446: a conversion to an instance of a generic Go type written bare, of the
+# package's own .go files or dot-imported, and its .Size().
+gala_library(
+    name = "go_bare_generic",
+    srcs = ["go_bare_generic/bags.gala"],
+    go_srcs = ["go_bare_generic/bag.go"],
+    importpath = "martianoff/gala/examples/go_bare_generic",
+    visibility = ["//visibility:public"],
+    deps = ["//go_interop"],
+)
+
+gala_exec_test(
+    name = "go_bare_generic_test",
+    src = "go_bare_generic_test.gala",
+    expected = "go_bare_generic_test.out",
+    deps = [
+        ":go_bare_generic",
+        "//go_interop",
+    ],
+)
+
 # #1399: Go named types written bare, dot-imported or of the package's own
 # .go files: .Size() on a slice or map one, and a numeric one an untyped
 # constant fills.

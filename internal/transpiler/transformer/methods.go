@@ -75,20 +75,18 @@ func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Typ
 
 // goNamedUnderlying resolves a NAMED Go type to its underlying type via the
 // analyzer's Go type info — e.g. time.Duration -> int64, url.Values ->
-// map[string][]string; an instance of a generic one (`pkg.Bag[string]`) to
-// its underlying with the type arguments substituted. The type is written
-// package-qualified, or bare (goBareUnderlying): a dot-imported one, or one
-// of the package's own .go files. Returns (nil, false) when goTypeInfo is
+// map[string][]string; an instance of a generic one (`pkg.Bag[string]`,
+// `Bag[string]`) to its underlying with the type arguments substituted. The
+// type is written package-qualified, or bare (goBareUnderlying, or
+// goDeclaredType for an instance): a dot-imported one, or one of the
+// package's own .go files. Returns (nil, false) when goTypeInfo is
 // absent, the type is unusable, or it is no resolvable Go named type. Every
 // read through a Go named type goes through it.
 func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
 	if t.goTypeInfo == nil || transpiler.IsUnusable(typ) {
 		return nil, false
 	}
-	named, ok := goNamedBase(typ)
-	if !ok || named.Package == "" {
-		return t.goBareUnderlying(typ)
-	}
+	// An instance, its base qualified or bare (goDeclaredType reads either).
 	if _, isGeneric := typ.(transpiler.GenericType); isGeneric {
 		// Only an instance of a generic function, slice, map or channel
 		// type: a struct's or an interface's underlying is no type of its own.
@@ -98,20 +96,15 @@ func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.
 		u := t.goDefinedUnderlying(typ, nil)
 		return u, u != nil
 	}
+	named, ok := typ.(transpiler.NamedType)
+	if !ok || named.Package == "" {
+		return t.goBareUnderlying(typ)
+	}
 	td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(named))
 	if td == nil || td.Underlying == nil {
 		return nil, false
 	}
 	return td.Underlying, true
-}
-
-// goNamedBase is the NamedType typ is, or is an instance of.
-func goNamedBase(typ transpiler.Type) (transpiler.NamedType, bool) {
-	if gen, isGeneric := typ.(transpiler.GenericType); isGeneric {
-		typ = gen.Base
-	}
-	named, ok := typ.(transpiler.NamedType)
-	return named, ok
 }
 
 // resolveNamedGoCollectionUnderlying resolves a NAMED Go type whose underlying is

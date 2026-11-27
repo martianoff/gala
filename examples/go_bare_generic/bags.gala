@@ -1,0 +1,26 @@
+package go_bare_generic
+
+import "martianoff/gala/go_interop"
+
+// BagSize converts to an instance of Bag, a generic Go type of this
+// package's own bag.go, written bare: a conversion, and its .Size() the
+// length of the slice.
+func BagSize() int = Bag[int](go_interop.SliceOf(1, 2, 3)).Size()
+
+// First is a method GALA declares on Box, a Go type.
+func (b Box[T]) First() T = b[0]
+
+// BoxSize is the .Size() of a Box, its length, though GALA gives Box a
+// method; BoxFirst calls that method.
+func BoxSize() int = NewBox(1, 2, 3, 4, 5).Size()
+
+func BoxFirst() string = NewBox("p", "q").First()
+
+// PairSize is the .Size() of an instance of Pair, a generic Go map type,
+// written bare: its number of entries.
+func PairSize() int {
+    val p = Pair[string, int]{}
+    p["a"] = 1
+    p["b"] = 2
+    p.Size()
+}
