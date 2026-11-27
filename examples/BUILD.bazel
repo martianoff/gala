@@ -6283,3 +6283,28 @@ gala_exec_test(
     expected = "inout_lend_receiver_test.out",
     deps = [":inout_lend_receiver"],
 )
+
+# #1452: a field type from the .go files of a dot-imported GALA package,
+# written bare, is that package's type, read so from another package.
+gala_library(
+    name = "gala_dot_go_field_lib",
+    srcs = ["gala_dot_go_field/lib/lib.gala"],
+    go_srcs = ["gala_dot_go_field/lib/names.go"],
+    importpath = "martianoff/gala/examples/gala_dot_go_field/lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "gala_dot_go_field_holder",
+    srcs = ["gala_dot_go_field/holder/holder.gala"],
+    importpath = "martianoff/gala/examples/gala_dot_go_field/holder",
+    visibility = ["//visibility:public"],
+    deps = [":gala_dot_go_field_lib"],
+)
+
+gala_exec_test(
+    name = "gala_dot_go_field_test",
+    src = "gala_dot_go_field_test.gala",
+    expected = "gala_dot_go_field_test.out",
+    deps = [":gala_dot_go_field_holder"],
+)
