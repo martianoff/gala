@@ -269,7 +269,14 @@ import (
 // v57: a function type records a variadic last parameter (FuncType.Variadic),
 // so `func(...int) int` and `func(int) int` stay distinct. A v56 payload
 // lacks it.
-const CacheVersion = "v57"
+//
+// v58: a Go function's parameters and results, a Go struct's fields, a Go
+// package variable and a constraint's core type are recorded exactly when
+// GALA can spell them, as v56 does for a defined type's underlying type, and
+// a generic Go type's methods without receiver type parameters of their own
+// record the type's when they name them. A v57 payload holds the lossy
+// spelling.
+const CacheVersion = "v58"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

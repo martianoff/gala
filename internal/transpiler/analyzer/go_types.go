@@ -1590,7 +1590,7 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own boo
 			}
 
 		case *types.Var:
-			info.Variables[qualName] = goTypeToTranspilerType(obj.Type())
+			info.Variables[qualName] = spelledGoType(obj.Type())
 
 		case *types.Const:
 			info.Constants[qualName] = goTypeToTranspilerType(obj.Type())
@@ -2027,7 +2027,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		if core := interfaceCoreType(iface); core != nil {
 			// An unresolved core (types.Typ[Invalid]) converts to NilType:
 			// none is recorded.
-			if ct := goTypeToTranspilerType(core); ct != nil && !ct.IsNil() {
+			if ct := spelledGoType(core); ct != nil && !ct.IsNil() {
 				data.CoreType = ct
 			}
 		}
@@ -2045,7 +2045,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		for i := 0; i < s.NumFields(); i++ {
 			f := s.Field(i)
 			if visible(f) {
-				data.Fields[f.Name()] = goTypeToTranspilerType(f.Type())
+				data.Fields[f.Name()] = spelledGoType(f.Type())
 				data.FieldOrder = append(data.FieldOrder, f.Name())
 			}
 		}
@@ -2152,6 +2152,45 @@ func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignatu
 	result := convertSignature(sig)
 	named, ok := typ.(*types.Named)
 	recv := sig.RecvTypeParams()
+	// A generic alias's method (`Next() T` of `type Src[T any] = Iter[T]`,
+	// `Get() U` of `type B[U any] = Box[U]`) names the alias's type
+	// parameters: it takes them when it names any, and none otherwise.
+	if alias, isAlias := typ.(*types.Alias); isAlias && alias.TypeParams().Len() > 0 {
+		result.TypeParams, result.CoreTypes = nil, nil
+		if mentionsTypeParam(sig) {
+			for i := 0; i < alias.TypeParams().Len(); i++ {
+				result.TypeParams = append(result.TypeParams, alias.TypeParams().At(i).Obj().Name())
+			}
+		}
+		return result
+	}
+	// A generic interface's method has no receiver type parameters of its
+	// own in go/types but names the interface's (`Next() T` of
+	// `Iter[T any]`): it takes them, so an instance (`Iter[int]`)
+	// substitutes them. One that names none (`String()` promoted from an
+	// embedded strings.Builder) is left as it is.
+	if ok && recv.Len() == 0 && len(result.TypeParams) == 0 && mentionsTypeParam(sig) {
+		if declared := named.Origin().TypeParams(); declared.Len() > 0 {
+			for i := 0; i < declared.Len(); i++ {
+				result.TypeParams = append(result.TypeParams, declared.At(i).Obj().Name())
+			}
+			return result
+		}
+	}
+	// A method promoted from an embedded generic field (`Get() T` of an
+	// embedded `Inner[T]`) keeps that field's receiver type parameters in
+	// go/types, but its signature already names the outer type's: it takes
+	// the outer type's when it names any, and none otherwise.
+	if ok && recv.Len() > 0 && !declaresMethod(named.Origin(), fn.Origin()) {
+		declared := named.Origin().TypeParams()
+		result.TypeParams, result.CoreTypes = nil, nil
+		if mentionsTypeParam(sig) {
+			for i := 0; i < declared.Len(); i++ {
+				result.TypeParams = append(result.TypeParams, declared.At(i).Obj().Name())
+			}
+		}
+		return result
+	}
 	if !ok || recv == nil || fn.Origin().Pkg() != named.Obj().Pkg() || !declaresMethod(named.Origin(), fn.Origin()) {
 		return result
 	}
@@ -2203,18 +2242,73 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 	return false
 }
 
+// spelledGoType is t as GALA writes it in Go: exactly when GALA can spell
+// it, so an instance keeps its type arguments and an array its length (a
+// lambda for a `func(*Box[int]) error` is a `func(*Box[int]) error`, a
+// `Some` of a `*Box[int]` an `Option[*Box[int]]`). A type GALA cannot spell
+// exactly (an unexported name, an internal package's alias), or that holds an
+// anonymous struct or a non-empty interface literal (which GALA does not
+// write; the lossy spelling keeps them as before), keeps the lossy spelling,
+// which still reads its elements and results. It records the types values
+// are written with: package variables, struct fields, and function
+// parameters and results. A defined type's underlying type keeps type
+// literals too (definedUnderlying).
+func spelledGoType(t types.Type) transpiler.Type {
+	if spellsExactly(t) && !holdsTypeLiteral(t) {
+		return convertGoType(t, true)
+	}
+	return goTypeToTranspilerType(t)
+}
+
 // definedUnderlying is the underlying type of a Go defined type other than a
-// struct or an interface, as its record keeps it. A value of the defined type
-// is written as one of it (a lambda for `type WithBox[T any] func(*Box[T])
-// error` is a `func(*Box[int]) error`), so it is spelled exactly: an instance
-// keeps its type arguments and an array its length. One GALA cannot spell
-// exactly (a variadic function, an unexported name) keeps the lossy
-// spelling, which still reads its elements and results.
+// struct or an interface, as its record keeps it: exactly whenever GALA can
+// spell it, type literals included (a lambda for `type WithBox[T any]
+// func(*Box[T]) error` is a `func(*Box[int]) error`), else the lossy
+// spelling.
 func definedUnderlying(under types.Type) transpiler.Type {
 	if spellsExactly(under) {
 		return convertGoType(under, true)
 	}
 	return goTypeToTranspilerType(under)
+}
+
+// holdsTypeLiteral reports whether t holds an anonymous struct or a
+// non-empty interface literal, anywhere inside it.
+func holdsTypeLiteral(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Struct:
+		return true
+	case *types.Interface:
+		return !t.Empty()
+	case *types.Named:
+		for i := 0; i < t.TypeArgs().Len(); i++ {
+			if holdsTypeLiteral(t.TypeArgs().At(i)) {
+				return true
+			}
+		}
+		return false
+	case *types.Alias:
+		return holdsTypeLiteral(types.Unalias(t))
+	case *types.Pointer:
+		return holdsTypeLiteral(t.Elem())
+	case *types.Slice:
+		return holdsTypeLiteral(t.Elem())
+	case *types.Array:
+		return holdsTypeLiteral(t.Elem())
+	case *types.Chan:
+		return holdsTypeLiteral(t.Elem())
+	case *types.Map:
+		return holdsTypeLiteral(t.Key()) || holdsTypeLiteral(t.Elem())
+	case *types.Signature:
+		return holdsTypeLiteral(t.Params()) || holdsTypeLiteral(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if holdsTypeLiteral(t.At(i).Type()) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // inexactGoType reports whether goTypeToTranspilerType may lose part of t: a
@@ -2256,7 +2350,7 @@ func inexactGoType(t types.Type) bool {
 func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 	result := &transpiler.GoFuncSignature{
 		IsVariadic: sig.Variadic(),
-		Inexact:    inexactGoType(sig.Params()) || inexactGoType(sig.Results()),
+		Inexact:    lossyTuple(sig.Params()) || lossyTuple(sig.Results()),
 	}
 
 	// Record the declared type-parameter names so a call site can instantiate
@@ -2270,7 +2364,7 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 				if result.CoreTypes == nil {
 					result.CoreTypes = make(map[string]transpiler.Type)
 				}
-				result.CoreTypes[tp.Obj().Name()] = goTypeToTranspilerType(core)
+				result.CoreTypes[tp.Obj().Name()] = spelledGoType(core)
 			}
 		}
 	}
@@ -2288,17 +2382,78 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 		}
 		result.Params = append(result.Params, transpiler.GoParam{
 			Name: p.Name(),
-			Type: goTypeToTranspilerType(paramType),
+			Type: spelledGoType(paramType),
 		})
 	}
 
 	// Convert return types
 	results := sig.Results()
 	for i := 0; i < results.Len(); i++ {
-		result.Returns = append(result.Returns, goTypeToTranspilerType(results.At(i).Type()))
+		result.Returns = append(result.Returns, spelledGoType(results.At(i).Type()))
 	}
 
 	return result
+}
+
+// mentionsTypeParam reports whether t names a type parameter anywhere
+// inside it.
+func mentionsTypeParam(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.TypeParam:
+		return true
+	case *types.Named:
+		for i := 0; i < t.TypeArgs().Len(); i++ {
+			if mentionsTypeParam(t.TypeArgs().At(i)) {
+				return true
+			}
+		}
+	case *types.Alias:
+		return mentionsTypeParam(types.Unalias(t))
+	case *types.Pointer:
+		return mentionsTypeParam(t.Elem())
+	case *types.Slice:
+		return mentionsTypeParam(t.Elem())
+	case *types.Array:
+		return mentionsTypeParam(t.Elem())
+	case *types.Chan:
+		return mentionsTypeParam(t.Elem())
+	case *types.Map:
+		return mentionsTypeParam(t.Key()) || mentionsTypeParam(t.Elem())
+	case *types.Signature:
+		return mentionsTypeParam(t.Params()) || mentionsTypeParam(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if mentionsTypeParam(t.At(i).Type()) {
+				return true
+			}
+		}
+	case *types.Struct:
+		for i := 0; i < t.NumFields(); i++ {
+			if mentionsTypeParam(t.Field(i).Type()) {
+				return true
+			}
+		}
+	case *types.Interface:
+		for i := 0; i < t.NumMethods(); i++ {
+			if mentionsTypeParam(t.Method(i).Type()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// lossyTuple reports whether a parameter or result of t is recorded in a
+// spelling that may lose part of it: one GALA cannot spell exactly
+// (spelledGoType) and the lossy conversion does not keep whole
+// (inexactGoType).
+func lossyTuple(t *types.Tuple) bool {
+	for i := 0; i < t.Len(); i++ {
+		if pt := t.At(i).Type(); (!spellsExactly(pt) || holdsTypeLiteral(pt)) && inexactGoType(pt) {
+			return true
+		}
+	}
+	return false
 }
 
 // keepsTypeArgs reports whether convertGoType keeps the type arguments of
@@ -2306,8 +2461,9 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 // function, slice, map or channel type whose type arguments that mode
 // converts without loss (no array, generic instance, channel, anonymous
 // struct or non-empty interface in them), so each is typed as it is
-// anywhere else. A struct's or an interface's stays the bare type name its
-// fields and methods are looked up by.
+// anywhere else. In the lossy spelling a struct's or an interface's stays the
+// bare type name its fields and methods are looked up by; the exact spelling
+// (spelledGoType) keeps its type arguments.
 func keepsTypeArgs(t *types.Named) bool {
 	switch t.Underlying().(type) {
 	case *types.Signature, *types.Slice, *types.Map, *types.Chan:

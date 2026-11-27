@@ -1171,9 +1171,10 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 	patternArr, patternIsArr := pattern.(transpiler.ArrayType)
 	concreteArr, concreteIsArr := concrete.(transpiler.ArrayType)
 	if patternIsArr && concreteIsArr {
-		// Arrays of two lengths never unify. A Go signature reads an array
-		// parameter as a slice (see goTypeToTranspilerType), so a slice
-		// pattern still takes an array's element type.
+		// Arrays of two lengths never unify. A Go signature recorded in the
+		// lossy spelling reads an array parameter as a slice (see
+		// goTypeToTranspilerType), so a slice pattern still takes an array's
+		// element type.
 		if patternArr.Fixed && concreteArr.Fixed && patternArr.Len != concreteArr.Len {
 			return false
 		}
@@ -1917,6 +1918,14 @@ func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) (td *
 	if t.goTypeInfo == nil {
 		return nil, nil
 	}
+	// An instance of a generic Go type (`lib.Iter[int]`) is what the type is:
+	// its record is filed under the type's name. A GALA type's instance is
+	// not looked up: a Go type may share its `pkg.Name` key.
+	if gen, isGeneric := typ.(transpiler.GenericType); isGeneric {
+		if nt, named := gen.Base.(transpiler.NamedType); named && (t.isGoTyped(nt) || t.getTypeMeta(nt.BaseName()) == nil) {
+			typ = gen.Base
+		}
+	}
 	key, td := t.goTypeDataFor(typ)
 	// The hop bound stops an alias chain that refers back to itself.
 	for hop := 0; hop < 16 && td != nil && td.Kind == "alias"; hop++ {
@@ -2125,6 +2134,11 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 	if !declaredBySibling {
 		sig = t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(gen.Base), method)
 	}
+	if sig != nil && len(sig.TypeParams) == 0 {
+		// A method that names none of the type's parameters (one promoted
+		// from an embedded non-generic field): nothing to substitute.
+		return sig
+	}
 	if sig == nil || len(sig.TypeParams) != len(gen.Params) {
 		return nil
 	}
@@ -2136,6 +2150,7 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		Params:     make([]transpiler.GoParam, len(sig.Params)),
 		Returns:    t.substituteGoTypeParamsIn(sig.Returns, subst),
 		IsVariadic: sig.IsVariadic,
+		Inexact:    sig.Inexact,
 	}
 	for i, p := range sig.Params {
 		inst.Params[i] = transpiler.GoParam{Name: p.Name, Type: p.Type}
