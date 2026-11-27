@@ -528,6 +528,7 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go alias of an anonymous struct result", "func() Unit", "b(nil, 2)", "return nil"},
 		{"a generic Go alias of a pointer result", "func() Ref[Spot]", "return nil", ""},
 		{"a generic Go alias of a scalar result", "func() Num[int]", "b(nil, 2)", "return nil"},
+		{"a Go alias of a generic struct instance result", "func() IntBox", "b(nil, 2)", "return nil"},
 	}
 	const bridge = `package main
 
@@ -559,6 +560,10 @@ type Unit = struct{}
 type Ref[T any] = *T
 
 type Num[T any] = int64
+
+type GBox[T any] struct{ V T }
+
+type IntBox = GBox[int]
 
 func Run(f func() struct{}, n int) int {
 	if f == nil {
@@ -660,5 +665,6 @@ func main() {
 		return mainBodyOf(t, out)
 	}
 	bare := lower("nil")
+	assert.Contains(t, bare, "mk[int](nil)")
 	assert.Equal(t, bare, strings.ReplaceAll(lower("(nil)"), "(nil)", "nil"))
 }
