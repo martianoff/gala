@@ -64,13 +64,30 @@ func (t *galaASTTransformer) tryTransformSizeSugar(sel *ast.SelectorExpr) (ast.E
 // receiver, reading through an Immutable[T] wrapper so `val s = "x"` (typed
 // Immutable[string]) resolves to string.
 func (t *galaASTTransformer) sizeSugarReceiverType(recv ast.Expr) transpiler.Type {
-	recvType := t.getExprTypeNameManual(recv)
-	if t.isImmutableType(recvType) {
-		if gt, ok := recvType.(transpiler.GenericType); ok && len(gt.Params) == 1 {
-			recvType = gt.Params[0]
+	return t.resolveNamedGoCollectionUnderlying(t.unboxedExprType(recv))
+}
+
+// elementBaseType is the type of x in an element read `x[i]`: read through
+// an Immutable[T] wrapper and a Go named type to its underlying. Unlike the
+// .Size() receiver, a named type with a Size method of its own is read
+// through too: its elements are its underlying's.
+func (t *galaASTTransformer) elementBaseType(x ast.Expr) transpiler.Type {
+	typ := t.unboxedExprType(x)
+	if u, ok := t.goNamedUnderlying(typ); ok {
+		return u
+	}
+	return typ
+}
+
+// unboxedExprType is the type of expr, read through an Immutable[T] wrapper.
+func (t *galaASTTransformer) unboxedExprType(expr ast.Expr) transpiler.Type {
+	typ := t.getExprTypeNameManual(expr)
+	if t.isImmutableType(typ) {
+		if gt, ok := typ.(transpiler.GenericType); ok && len(gt.Params) == 1 {
+			typ = gt.Params[0]
 		}
 	}
-	return t.resolveNamedGoCollectionUnderlying(recvType)
+	return typ
 }
 
 // goNamedUnderlying resolves a NAMED Go type to its underlying type via the
@@ -129,13 +146,11 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 	case transpiler.ArrayType, transpiler.MapType:
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
-		// The key Go type info files it under, a bare name's included; a type
-		// of the package's own .go files may have one GALA declares.
+		// The key Go type info files it under, a bare name's included; or one
+		// GALA declares on it, in any package.
 		base := receiverBase(typ)
-		if key, _ := t.goTypeDataFor(base); t.goTypeInfo.GetMethodSignature(key, "Size") != nil {
-			return typ
-		}
-		if t.galaDeclaresOwnGoTypeMethod(base, "Size") {
+		if key, _ := t.goTypeDataFor(base); t.goTypeInfo.GetMethodSignature(key, "Size") != nil ||
+			t.galaDeclaresGoTypeMethod(base, "Size") {
 			return typ
 		}
 		return u
@@ -143,21 +158,52 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 	return typ
 }
 
-// galaDeclaresOwnGoTypeMethod reports whether GALA declares method on typ, a
-// type of the package's own .go files, written bare or qualified by the
-// package. Its metadata holds only the methods GALA gives it, filed under the
-// name the analyzer records the receiver by: bare in main and test, qualified
-// by the package elsewhere.
-func (t *galaASTTransformer) galaDeclaresOwnGoTypeMethod(typ transpiler.Type, method string) bool {
+// galaDeclaresGoTypeMethod reports whether GALA declares method on typ, a Go
+// type: Go type info, read from the .go files, does not hold it, the
+// declaring package's GALA metadata does. main and test file the receiver
+// of a type of their own .go files bare, which getTypeMeta would read as
+// qualified. A type of a Go package has none, though a GALA type of its name
+// may (GALA `http.Header` beside net/http's).
+func (t *galaASTTransformer) galaDeclaresGoTypeMethod(typ transpiler.Type, method string) bool {
 	name, bare := bareTypeName(typ)
-	if nt, isNamed := typ.(transpiler.NamedType); isNamed && nt.Package == t.packageName {
+	nt, isNamed := typ.(transpiler.NamedType)
+	if isNamed && nt.Package == t.packageName {
 		name, bare = nt.Name, true
 	}
-	if !bare || !t.isOwnGoType(name) || t.richAST == nil {
+	if bare && t.isOwnGoType(name) {
+		if meta := t.typeMetas[name]; meta != nil && meta.Methods[method] != nil {
+			return true
+		}
+	}
+	if isNamed && nt.Package != "" {
+		// The type's package by the path it carries, else by the import its
+		// qualifier names here.
+		path := nt.ImportPath
+		if path == "" && t.importManager != nil {
+			path, _ = t.importManager.PathForQualifier(nt.Package)
+		}
+		if path != "" && !t.isGalaPackagePath(path) {
+			return false
+		}
+	}
+	return t.typeHasMethod(typ.String(), method)
+}
+
+// isGalaPackagePath reports whether path, a Go import path, is a GALA
+// package's: its own, or the Go module path a GALA one maps to (see
+// RichAST.ImportPathMap).
+func (t *galaASTTransformer) isGalaPackagePath(path string) bool {
+	if t.galaPkgPaths[path] {
+		return true
+	}
+	if t.richAST == nil {
 		return false
 	}
-	for _, key := range []string{name, t.packageName + "." + name} {
-		if meta := t.richAST.Types[key]; meta != nil && meta.Methods[method] != nil {
+	if path == t.richAST.OwnImportPath {
+		return true
+	}
+	for galaPath, goPath := range t.richAST.ImportPathMap {
+		if goPath == path && t.galaPkgPaths[galaPath] {
 			return true
 		}
 	}

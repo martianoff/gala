@@ -2311,6 +2311,19 @@ gala_exec_test(
     ],
 )
 
+# #1451: a Size method GALA declares on a Go type is called from another
+# package that dot-imports or aliases it, not lowered to len(); an element of
+# a Go type with a Size method is still read left to right.
+gala_exec_test(
+    name = "go_bare_named_size_dot_test",
+    src = "go_bare_named_size_dot_test.gala",
+    expected = "go_bare_named_size_dot_test.out",
+    deps = [
+        ":go_bare_named_size",
+        "//go_interop",
+    ],
+)
+
 # #1322: the strings iterators (SplitSeq, Lines, FieldsSeq) range over strings.
 # Bazel reads its own Go SDK, so this covers the range typing only; the
 # decision to follow the toolchain switch a go on PATH older than 1.25 makes

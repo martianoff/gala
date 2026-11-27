@@ -32,4 +32,8 @@ func main() {
     // declaration records it as that Go type, not as one of its package's.
     val w = go_bare_named_size.Wait(D = 6)
     Println(int64(w.D) + 7)
+
+    // The Size method GALA declares on a Go type of another package is
+    // called from here too, not its length (#1451).
+    Println(go_bare_named_size.NewTagged("t").Size())
 }
