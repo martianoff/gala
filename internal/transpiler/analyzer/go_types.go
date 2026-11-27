@@ -666,11 +666,27 @@ func findGoOnPath() (string, error) {
 	return "", os.ErrNotExist
 }
 
-// goPackageCache caches AnalyzeGoPackage results to avoid redundant go/importer calls.
+// goPackageCache caches AnalyzeGoPackage results to avoid redundant go/importer
+// calls, and, by import path, the exported names each package declares
+// (scopeExports).
 var goPackageCache = struct {
-	mu    sync.Mutex
-	cache map[string]*transpiler.GoTypeInfo
-}{cache: make(map[string]*transpiler.GoTypeInfo)}
+	mu      sync.Mutex
+	cache   map[string]*transpiler.GoTypeInfo
+	exports map[string][]string
+}{cache: make(map[string]*transpiler.GoTypeInfo), exports: make(map[string][]string)}
+
+// scopeExports lists, sorted, the exported package-level names pkg declares.
+// Its GoTypeInfo cannot tell them: it also holds the types its API reaches,
+// filed under their own packages' names, which may be pkg's name too.
+func scopeExports(pkg *types.Package) []string {
+	var names []string
+	for _, name := range pkg.Scope().Names() {
+		if token.IsExported(name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
 
 // forgetGoPackages drops the cached AnalyzeGoPackage results of paths, or of
 // every package when all is set.
@@ -679,10 +695,12 @@ func forgetGoPackages(paths []string, all bool) {
 	defer goPackageCache.mu.Unlock()
 	if all {
 		clear(goPackageCache.cache)
+		clear(goPackageCache.exports)
 		return
 	}
 	for _, p := range paths {
 		delete(goPackageCache.cache, p)
+		delete(goPackageCache.exports, p)
 	}
 }
 
@@ -700,10 +718,19 @@ func goTypeInfoNonEmpty(info *transpiler.GoTypeInfo) bool {
 // Uses go/importer to resolve installed packages (stdlib and third-party).
 // Returns empty GoTypeInfo if Go SDK is not available (e.g., Bazel sandbox).
 func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
+	info, _ := analyzeGoPackage(importPath)
+	return info
+}
+
+// analyzeGoPackage is AnalyzeGoPackage, with the exported names the package
+// declares (scopeExports), read together with its type info; nil when it did
+// not load.
+func analyzeGoPackage(importPath string) (*transpiler.GoTypeInfo, []string) {
 	goPackageCache.mu.Lock()
 	if cached, ok := goPackageCache.cache[importPath]; ok {
+		exports := goPackageCache.exports[importPath]
 		goPackageCache.mu.Unlock()
-		return cached
+		return cached, exports
 	}
 	goPackageCache.mu.Unlock()
 
@@ -711,22 +738,24 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 
 	imp := getGoImporter()
 	if !goImporterAvailable {
-		return info
+		return info, nil
 	}
 
 	pkg, err := imp.Import(importPath)
 	if err != nil {
-		return info
+		return info, nil
 	}
 
 	extractPackageInfo(pkg, info, false)
 	info.AddImportPathKeys(pkg.Name(), pkg.Path())
+	exports := scopeExports(pkg)
 
 	goPackageCache.mu.Lock()
 	goPackageCache.cache[importPath] = info
+	goPackageCache.exports[importPath] = exports
 	goPackageCache.mu.Unlock()
 
-	return info
+	return info, exports
 }
 
 // goFilesCache memoizes AnalyzeGoFiles results across worker requests.
@@ -749,6 +778,8 @@ type goFilesResult struct {
 	info     *transpiler.GoTypeInfo
 	ownTypes map[string]bool
 	imports  []string // the import paths of the files that took part
+	// exports is the package's portableExports.
+	exports []string
 	// builtinRefs are the Go predeclared identifiers (`len`, `print`, …)
 	// the files refer to.
 	builtinRefs map[string]bool
@@ -901,6 +932,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string, goSrcDirs map[string]st
 	extractMethodsOnForeignTypes(files, typesInfo, pkg, info, own)
 	recordReadOnlyMethods(files, pkg, info)
 	info.AddImportPathKeys(pkg.Name(), importPath)
+	result.exports = portableExports(pkg, fset, files)
 	result.ownTypes = make(map[string]bool)
 	for _, name := range pkg.Scope().Names() {
 		if tn, ok := pkg.Scope().Lookup(name).(*types.TypeName); ok && (own || tn.Exported()) {
@@ -909,6 +941,158 @@ func analyzeGoFiles(dirPath, importPath, pkgName string, goSrcDirs map[string]st
 	}
 	return result
 }
+
+// portableExports is the scopeExports of pkg, type-checked from files, that
+// every target in portableTargets builds: the files declaring a name build
+// on each of them between them (open_unix.go and open_windows.go). The files
+// are those of every platform (neverBuilt), so a name only some targets get
+// (foo_windows.go alone, `//go:build linux`) may be absent from the build;
+// it is left out.
+func portableExports(pkg *types.Package, fset *token.FileSet, files []*ast.File) []string {
+	declaredIn := make(map[string][]fileBuild)
+	for _, f := range files {
+		fb := newFileBuild(f, fset.Position(f.Package).Filename)
+		for _, name := range topLevelNames(f) {
+			declaredIn[name] = append(declaredIn[name], fb)
+		}
+	}
+	return slices.DeleteFunc(scopeExports(pkg), func(name string) bool {
+		for _, target := range portableTargets {
+			for _, cgo := range []bool{true, false} {
+				if !slices.ContainsFunc(declaredIn[name], func(fb fileBuild) bool {
+					return fb.buildsOn(target[0], target[1], cgo)
+				}) {
+					return true
+				}
+			}
+		}
+		return false
+	})
+}
+
+// portableTargets are the GOOS/GOARCH pairs portableExports requires a name
+// on: the platforms the transpiled programs are built for.
+var portableTargets = [][2]string{
+	{"linux", "amd64"}, {"linux", "arm64"},
+	{"darwin", "amd64"}, {"darwin", "arm64"},
+	{"windows", "amd64"}, {"windows", "arm64"},
+}
+
+// topLevelNames lists the package-level names f declares: its functions (not
+// methods), types, vars and consts.
+func topLevelNames(f *ast.File) []string {
+	var names []string
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				names = append(names, d.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					names = append(names, s.Name.Name)
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						names = append(names, n.Name)
+					}
+				}
+			}
+		}
+	}
+	return names
+}
+
+// fileBuild is what decides, as go/build does, which targets build a file.
+type fileBuild struct {
+	ignored bool   // go/build skips it by name (`_x.go`, `.x.go`)
+	goos    string // the GOOS its name requires, or ""
+	goarch  string // the GOARCH its name requires, or ""
+	cgo     bool   // it imports "C", so only a cgo build has it
+	unknown bool   // a legacy `// +build` line only, or an unparseable `//go:build`
+	expr    constraint.Expr
+}
+
+func newFileBuild(f *ast.File, path string) fileBuild {
+	base := filepath.Base(path)
+	fb := fileBuild{ignored: strings.HasPrefix(base, "_") || strings.HasPrefix(base, ".")}
+	name, _, _ := strings.Cut(base, ".")
+	if parts := strings.Split(strings.TrimSuffix(name, "_test"), "_"); len(parts) >= 2 {
+		last := parts[len(parts)-1]
+		switch {
+		case knownGOARCH[last]:
+			fb.goarch = last
+			if len(parts) >= 3 && knownGOOS[parts[len(parts)-2]] {
+				fb.goos = parts[len(parts)-2]
+			}
+		case knownGOOS[last]:
+			fb.goos = last
+		}
+	}
+	fb.cgo = slices.ContainsFunc(f.Imports, func(s *ast.ImportSpec) bool { return s.Path.Value == `"C"` })
+	expr, plusBuild, invalid := buildConstraint(f)
+	fb.expr, fb.unknown = expr, invalid || (expr == nil && plusBuild)
+	return fb
+}
+
+// buildsOn reports whether a build for goos/goarch, with cgo as given,
+// compiles the file. go/build matches a linux file on android, a solaris one
+// on illumos and a darwin one on ios.
+func (fb fileBuild) buildsOn(goos, goarch string, cgo bool) bool {
+	osMatches := fb.goos == "" || fb.goos == goos ||
+		(fb.goos == "linux" && goos == "android") || (fb.goos == "solaris" && goos == "illumos") ||
+		(fb.goos == "darwin" && goos == "ios")
+	switch {
+	case fb.ignored || fb.unknown || !osMatches || (fb.goarch != "" && fb.goarch != goarch) || (fb.cgo && !cgo):
+		return false
+	case fb.expr != nil:
+		return buildsFor(fb.expr, goos, goarch, cgo)
+	}
+	return true
+}
+
+// buildConstraint is f's `//go:build` expression, nil when it has none,
+// whether it has a legacy `// +build` line, and whether its `//go:build`
+// line does not parse.
+func buildConstraint(f *ast.File) (expr constraint.Expr, plusBuild, invalid bool) {
+	for _, group := range f.Comments {
+		if group.Pos() >= f.Package {
+			break
+		}
+		for _, c := range group.List {
+			if constraint.IsGoBuild(c.Text) {
+				if e, err := constraint.Parse(c.Text); err == nil {
+					expr = e
+				} else {
+					invalid = true
+				}
+			}
+			plusBuild = plusBuild || constraint.IsPlusBuild(c.Text)
+		}
+	}
+	return expr, plusBuild, invalid
+}
+
+// unixGOOS holds the GOOS values the `unix` build tag matches.
+var unixGOOS = map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "illumos": true, "ios": true, "linux": true, "netbsd": true, "openbsd": true, "solaris": true}
+
+// buildsFor reports whether expr holds for goos/goarch built by gc, with every
+// Go release on and cgo as given.
+func buildsFor(expr constraint.Expr, goos, goarch string, cgo bool) bool {
+	return expr.Eval(func(tag string) bool {
+		return tag == goos || tag == goarch || (tag == "cgo" && cgo) || tag == "gc" ||
+			(tag == "unix" && unixGOOS[goos]) || strings.HasPrefix(tag, "go1.")
+	})
+}
+
+// knownGOOS and knownGOARCH are every GOOS and GOARCH go/build matches in a
+// file name (name_GOOS.go, name_GOARCH.go, name_GOOS_GOARCH.go), the
+// unsupported ones included.
+var (
+	knownGOOS   = map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "hurd": true, "illumos": true, "ios": true, "js": true, "linux": true, "nacl": true, "netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "wasip1": true, "windows": true, "zos": true}
+	knownGOARCH = map[string]bool{"386": true, "amd64": true, "amd64p32": true, "arm": true, "armbe": true, "arm64": true, "arm64be": true, "loong64": true, "mips": true, "mipsle": true, "mips64": true, "mips64le": true, "mips64p32": true, "mips64p32le": true, "ppc": true, "ppc64": true, "ppc64le": true, "riscv": true, "riscv64": true, "s390": true, "s390x": true, "sparc": true, "sparc64": true, "wasm": true}
+)
 
 // goosList and goarchList are the configurations neverBuilt tries.
 var (
@@ -921,30 +1105,13 @@ var (
 // on a generator, a custom tag nothing sets. A file built only for some
 // platforms is kept: the transpiler serves every target, not just its host.
 func neverBuilt(f *ast.File) bool {
-	var expr constraint.Expr
-	for _, group := range f.Comments {
-		if group.Pos() >= f.Package {
-			break
-		}
-		for _, c := range group.List {
-			if constraint.IsGoBuild(c.Text) {
-				if e, err := constraint.Parse(c.Text); err == nil {
-					expr = e
-				}
-			}
-		}
-	}
+	expr, _, _ := buildConstraint(f)
 	if expr == nil {
 		return false
 	}
-	unix := map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "illumos": true, "ios": true, "linux": true, "netbsd": true, "openbsd": true, "solaris": true}
 	for _, goos := range goosList {
 		for _, goarch := range goarchList {
-			ok := expr.Eval(func(tag string) bool {
-				return tag == goos || tag == goarch || tag == "cgo" || tag == "gc" ||
-					(tag == "unix" && unix[goos]) || strings.HasPrefix(tag, "go1.")
-			})
-			if ok {
+			if buildsFor(expr, goos, goarch, true) {
 				return false
 			}
 		}

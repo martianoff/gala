@@ -932,57 +932,78 @@ func inspectReferences(file *ast.File, visit func(*ast.Ident) bool) {
 // line and col provide the source position of the import block for error reporting.
 // Returns a SemanticError listing all clashing symbols, or nil if no clashes found.
 func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, col int) error {
-	dotPkgs := m.GetDotImports()
-	if len(dotPkgs) < 2 {
+	if len(m.dotImports) < 2 {
 		return nil // need at least 2 dot imports for a clash
 	}
 
-	dotPkgSet := make(map[string]bool, len(dotPkgs))
-	for _, pkg := range dotPkgs {
-		dotPkgSet[pkg] = true
+	// Each source is a dot import's path, so two packages of one name (a
+	// GALA `strings` and Go's, math/rand and crypto/rand) are two sources;
+	// label is the name the error shows it by.
+	symbolSources := make(map[string]map[string]bool) // symbol name -> {path1, path2, ...}
+	note := func(sym, path string) {
+		// A dot import brings in exported names only.
+		if !ast.IsExported(sym) {
+			return
+		}
+		if symbolSources[sym] == nil {
+			symbolSources[sym] = make(map[string]bool)
+		}
+		symbolSources[sym][path] = true
 	}
-
-	// Collect symbol -> set of source packages
-	symbolSources := make(map[string]map[string]bool) // symbol name -> {pkg1, pkg2, ...}
+	label := make(map[string]string, len(m.dotImports))
+	// A GALA package's names are filed under its name, or its key
+	// (transpiler.PackageKey) when another package of its name is loaded too.
+	galaByKey := make(map[string]string)
+	galaByName := make(map[string]string)
+	for _, entry := range m.dotImports {
+		label[entry.Path] = transpiler.PackageDisplayName(entry.PkgName)
+		// A Go package's exports, which the analyzer reads from the package
+		// itself: it has no GALA metadata.
+		if exports, isGo := richAST.GoDotImportExports[entry.Path]; isGo {
+			for _, sym := range exports {
+				note(sym, entry.Path)
+			}
+			continue
+		}
+		key := entry.PkgName
+		if k := richAST.PackageKeys[entry.Path]; k != "" {
+			key = k
+		}
+		// An empty name would claim the metadata of no package at all.
+		if key != "" {
+			galaByKey[key] = entry.Path
+		}
+		// Its Go files' exports are renamed to the key with its metadata.
+		for _, name := range []string{entry.PkgName, key} {
+			if name != "" {
+				galaByName[name] = entry.Path
+			}
+		}
+	}
 
 	// Check GALA-analyzed metadata (Types, Functions, CompanionObjects)
 	for _, meta := range richAST.Types {
-		if meta.Package != "" && dotPkgSet[meta.Package] {
-			if symbolSources[meta.Name] == nil {
-				symbolSources[meta.Name] = make(map[string]bool)
-			}
-			symbolSources[meta.Name][meta.Package] = true
+		if path, ok := galaByKey[meta.Package]; ok {
+			note(meta.Name, path)
 		}
 	}
-
 	for _, meta := range richAST.Functions {
-		if meta.Package != "" && dotPkgSet[meta.Package] {
-			if symbolSources[meta.Name] == nil {
-				symbolSources[meta.Name] = make(map[string]bool)
-			}
-			symbolSources[meta.Name][meta.Package] = true
+		if path, ok := galaByKey[meta.Package]; ok {
+			note(meta.Name, path)
 		}
 	}
-
 	for _, meta := range richAST.CompanionObjects {
-		if meta.Package != "" && dotPkgSet[meta.Package] {
-			if symbolSources[meta.Name] == nil {
-				symbolSources[meta.Name] = make(map[string]bool)
-			}
-			symbolSources[meta.Name][meta.Package] = true
+		if path, ok := galaByKey[meta.Package]; ok {
+			note(meta.Name, path)
 		}
 	}
 
 	// Check Go-only package exports (from GoExports field)
 	for pkg, symbols := range richAST.GoExports {
-		if !dotPkgSet[pkg] {
-			continue
-		}
-		for _, sym := range symbols {
-			if symbolSources[sym] == nil {
-				symbolSources[sym] = make(map[string]bool)
+		if path, ok := galaByName[pkg]; ok {
+			for _, sym := range symbols {
+				note(sym, path)
 			}
-			symbolSources[sym][pkg] = true
 		}
 	}
 
@@ -998,11 +1019,15 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, co
 	for _, symbol := range symbolNames {
 		sources := symbolSources[symbol]
 		if len(sources) > 1 {
+			// Each by its name, or all by their paths when two share a name.
 			pkgs := make([]string, 0, len(sources))
-			for pkg := range sources {
-				pkgs = append(pkgs, pkg)
+			for path := range sources {
+				pkgs = append(pkgs, label[path])
 			}
 			sort.Strings(pkgs)
+			if len(slices.Compact(slices.Clone(pkgs))) < len(pkgs) {
+				pkgs = slices.Sorted(maps.Keys(sources))
+			}
 			clashes = append(clashes, fmt.Sprintf("  - symbol %q is exported by multiple dot-imported packages: %s", symbol, strings.Join(pkgs, ", ")))
 		}
 	}

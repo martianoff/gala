@@ -88,7 +88,7 @@ func (a *galaAnalyzer) newGoDotLoader(richAST *transpiler.RichAST) *goDotLoader 
 func (l *goDotLoader) use(path, text string) string {
 	pkg, ok := l.pkgs[path]
 	if !ok {
-		goInfo := l.a.analyzeGoImport(path)
+		goInfo, _ := l.a.analyzeGoImport(path)
 		pkg = &goDotPkg{keyed: goInfo.KeyedByPath(path), name: goPackageName(goInfo, path)}
 		l.pkgs[path] = pkg
 	}
@@ -125,7 +125,8 @@ func (a *galaAnalyzer) loadDefaultScopeGoTypes(imports []fileImport, richAST *tr
 		for _, path := range def.Scope.Imports {
 			if foreignGo(path) && !loaded[path] {
 				loaded[path] = true
-				mergeGoTypesByPath(a.analyzeGoImport(path).KeyedByPath(path), richAST)
+				goInfo, _ := a.analyzeGoImport(path)
+				mergeGoTypesByPath(goInfo.KeyedByPath(path), richAST)
 			}
 		}
 		for path := range def.Scope.DotImports {

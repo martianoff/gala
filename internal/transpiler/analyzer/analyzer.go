@@ -592,16 +592,20 @@ func (a *galaAnalyzer) resolveGoSrcDir(importPath string) (string, bool) {
 // Bazel), it is parsed directly — the same path that already resolves
 // hand-written local .go files, yielding concrete types instead of falling
 // back to `any`.
-func (a *galaAnalyzer) analyzeGoImport(path string) *transpiler.GoTypeInfo {
-	goInfo := AnalyzeGoPackage(path)
+//
+// It also returns the exported names the package declares (scopeExports),
+// which its type info cannot tell (see RichAST.GoDotImportExports).
+func (a *galaAnalyzer) analyzeGoImport(path string) (*transpiler.GoTypeInfo, []string) {
+	goInfo, exports := analyzeGoPackage(path)
 	if !goTypeInfoNonEmpty(goInfo) {
 		if dir, ok := a.resolveGoSrcDir(path); ok {
-			if srcInfo := analyzeGoFilesMemo(dir, path, "", a.goSrcDirs).info; goTypeInfoNonEmpty(srcInfo) {
-				goInfo = srcInfo
+			// A package of constants only has exports but no info that counts.
+			if src := analyzeGoFilesMemo(dir, path, "", a.goSrcDirs); goTypeInfoNonEmpty(src.info) || len(src.exports) > 0 {
+				goInfo, exports = src.info, src.exports
 			}
 		}
 	}
-	return goInfo
+	return goInfo, exports
 }
 
 // ResolveGoSrcDir maps a Go import path to its on-disk .go source directory
@@ -1035,17 +1039,21 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	// GALA imports were handled above. The importer resolves the Go ones in
 	// one batch first where it can.
 	var goImports []string
+	goDotImports := make(map[string]bool)
 	for _, imp := range fileImports {
 		if !a.isGalaImport(imp.Path) {
 			if err := a.checkGoModuleRequired(imp, filePath); err != nil {
 				return nil, err
 			}
 			goImports = append(goImports, imp.Path)
+			if imp.IsDot {
+				goDotImports[imp.Path] = true
+			}
 		}
 	}
 	prefetchGoPackages(goImports)
 	for _, path := range goImports {
-		goInfo := a.analyzeGoImport(path)
+		goInfo, exports := a.analyzeGoImport(path)
 		if goTypeInfoNonEmpty(goInfo) {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
@@ -1059,6 +1067,14 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 				}
 				richAST.GoImportNames[path] = name
 			}
+		}
+		// Recorded even when nothing is known of it, so the dot import
+		// counts as Go's and not as a GALA package's of its name.
+		if goDotImports[path] {
+			if richAST.GoDotImportExports == nil {
+				richAST.GoDotImportExports = make(map[string][]string)
+			}
+			richAST.GoDotImportExports[path] = exports
 		}
 	}
 

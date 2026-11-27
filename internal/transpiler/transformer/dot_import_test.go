@@ -412,3 +412,74 @@ func makeFrame(s SessionInstance) string = PrintHarnessFrame(s)
 			"has only a stale .gen.go for the relocated symbols must not produce "+
 			"a phantom symbol collision; got err: %v", transpileErr)
 }
+
+// A Go package has no GALA metadata, so a name it shares with another
+// dot-imported package was not seen, and `go build` rejected the output with
+// "Slice redeclared in this block" (#1438). Its exports come from its Go type
+// info; packages sharing no exported name still dot-import together.
+func TestDotImportGoPackageClash(t *testing.T) {
+	if !analyzer.GoImporterAvailable() {
+		t.Skip("Go SDK not available: a Go package's exports come from it")
+	}
+	tests := []struct {
+		name    string
+		imports string
+		body    string
+		clashes []string // what the error names; nil when there is no clash
+	}{
+		{
+			name:    "Go package and GALA package",
+			imports: "import . \"sort\"\nimport . \"martianoff/gala/go_interop\"",
+			body:    "Println(IntsAreSorted(SliceOf(1, 2)))",
+			clashes: []string{`"Slice"`, "go_interop", "sort"},
+		},
+		{
+			name:    "two Go packages",
+			imports: "import . \"strings\"\nimport . \"bytes\"",
+			body:    "Println(ToUpper(\"a\"))",
+			clashes: []string{`"Split"`, `"Replace"`, "bytes", "strings"},
+		},
+		{
+			name:    "two Go packages of one name",
+			imports: "import . \"math/rand\"\nimport . \"crypto/rand\"",
+			body:    "Println(Intn(3) >= 0)",
+			clashes: []string{`"Read"`, "crypto/rand, math/rand"},
+		},
+		{
+			// Both are `strings`, so the error names them by path.
+			name:    "a GALA package and a Go package of one name",
+			imports: "import . \"martianoff/gala/strings\"\nimport . \"strings\"",
+			body:    "Println(TrimSpace(\" a \"))",
+			clashes: []string{`"Contains"`, "martianoff/gala/strings, strings"},
+		},
+		{
+			name:    "Go packages sharing no exported name",
+			imports: "import . \"net/url\"\nimport . \"sort\"\nimport \"martianoff/gala/go_interop\"",
+			body:    "Println(StringSlice(go_interop.SliceOf(\"b\", \"a\")).Len(), PathEscape(\"a b\"))",
+		},
+		{
+			// math/rand's New is not crypto/rand's, though both are `rand`.
+			name:    "a name of another package of the same name",
+			imports: "import \"math/rand\"\nimport . \"crypto/rand\"\nimport . \"errors\"",
+			body:    "Println(rand.Intn(1), Is(nil, nil), Reader)",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := transpiler.NewAntlrGalaParser()
+			trans := newCheckedTranspiler(p, analyzer.NewGalaAnalyzer(p, getStdSearchPath()),
+				transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+			_, err := trans.Transpile("package main\n\n"+tc.imports+"\n\nfunc main() {\n    "+tc.body+"\n}\n", "")
+			if tc.clashes == nil {
+				assert.NoError(t, err)
+				return
+			}
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "GALA-E0032")
+				for _, want := range tc.clashes {
+					assert.Contains(t, err.Error(), want)
+				}
+			}
+		})
+	}
+}
