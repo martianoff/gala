@@ -3503,6 +3503,15 @@ func (t *galaASTTransformer) fieldApplyType(recvType transpiler.Type, lookupBase
 		}
 		return t.applyTypeByName(own)
 	}
+	if foreign && !isPtr {
+		// Not its package's pointer alias (pointerOfIn): its qualifier is
+		// spelled with that package's imports, not this file's, so it is
+		// not followed as an alias here.
+		if transpiler.IsUnusable(fieldType) {
+			return nil
+		}
+		return t.applyTypeByName(fieldType.BaseName())
+	}
 	return t.applyTypeOf(fieldType)
 }
 
