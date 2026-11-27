@@ -601,4 +601,41 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, out, "w.Apply(2)")
 	require.Contains(t, out, "a.Apply(3)")
+
+	// Another package's pointer alias, as a field of its struct and as a
+	// val's type, is read in that package: its target's `Node` is lib's, not
+	// this package's same-named one (#1469).
+	foreignFiles := map[string]string{
+		"go.mod":   "module example.com/foreign\n\ngo 1.25\n",
+		"gala.mod": "module example.com/foreign\n",
+		"lib/lib.gala": `package lib
+
+struct Node(var V int)
+
+func (n *Node) Apply(f func(int) int) int = f(n.V)
+
+type NodeRef *Node
+
+struct Hold(var R NodeRef)
+`,
+		"main.gala": `package main
+
+import "example.com/foreign/lib"
+
+struct Node(var s string)
+
+func (n *Node) Apply(x string) string = n.s + x
+
+func main() {
+    var n = lib.Node(1)
+    val h = lib.Hold(&n)
+    val w lib.NodeRef = &n
+    Println(h.R((x) => x + 1), w((x) => x * 2))
+}
+`,
+	}
+	out, err = transpileInModule(t, foreignFiles, "main.gala")
+	require.NoError(t, err)
+	require.Contains(t, out, "h.R.Apply(func(x int) int")
+	require.Contains(t, out, "w.Apply(func(x int) int")
 }
