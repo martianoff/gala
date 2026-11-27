@@ -1916,6 +1916,11 @@ func (t *galaASTTransformer) goTypeDataThroughAliases(typ transpiler.Type) (td *
 	if t.goTypeInfo == nil {
 		return nil, nil
 	}
+	// An instance of a generic Go type (`lib.Iter[int]`) is what the type is:
+	// its record is filed under the type's name.
+	if gen, isGeneric := typ.(transpiler.GenericType); isGeneric {
+		typ = gen.Base
+	}
 	key, td := t.goTypeDataFor(typ)
 	// The hop bound stops an alias chain that refers back to itself.
 	for hop := 0; hop < 16 && td != nil && td.Kind == "alias"; hop++ {
@@ -2140,6 +2145,7 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		Params:     make([]transpiler.GoParam, len(sig.Params)),
 		Returns:    t.substituteGoTypeParamsIn(sig.Returns, subst),
 		IsVariadic: sig.IsVariadic,
+		Inexact:    sig.Inexact,
 	}
 	for i, p := range sig.Params {
 		inst.Params[i] = transpiler.GoParam{Name: p.Name, Type: p.Type}

@@ -2004,7 +2004,7 @@ func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignatu
 	// the outer type's when it names any, and none otherwise.
 	if ok && recv.Len() > 0 && !declaresMethod(named.Origin(), fn.Origin()) {
 		if declared := named.Origin().TypeParams(); declared.Len() > 0 {
-			result.TypeParams = nil
+			result.TypeParams, result.CoreTypes = nil, nil
 			if mentionsTypeParam(sig) {
 				for i := 0; i < declared.Len(); i++ {
 					result.TypeParams = append(result.TypeParams, declared.At(i).Obj().Name())
@@ -2068,7 +2068,7 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 // it, so an instance keeps its type arguments and an array its length (a
 // lambda for a `func(*Box[int]) error` is a `func(*Box[int]) error`, a
 // `Some` of a `*Box[int]` an `Option[*Box[int]]`). A type GALA cannot spell
-// exactly (a variadic function, an unexported name), or that holds an
+// exactly (an unexported name, an internal package's alias), or that holds an
 // anonymous struct or a non-empty interface literal (which GALA does not
 // write; the lossy spelling keeps them as before), keeps the lossy spelling,
 // which still reads its elements and results. It records the types values
