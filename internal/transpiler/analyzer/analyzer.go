@@ -1178,17 +1178,26 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 	// Collect from main file AND all sibling files so that when resolving types in
 	// sibling struct fields, we correctly qualify types from their dot imports too.
 	dotImportPkgs := make(map[string]bool)
-	// Every dot import of the package, GALA or Go: package name -> paths.
+	// Every GALA dot import of the package: package name -> paths.
 	packageDotImports := make(map[string][]string)
+	// Every Go dot import of the package, by import path, with the exported
+	// names it declares, for GALA-E0066 below: a Go package carries no GALA
+	// metadata, and its name may be a GALA package's too. Only a top-level
+	// file runs that check.
+	packageGoDots := make(map[string]goDotImport)
 	for _, q := range packageQuals {
 		for _, b := range q.dots {
+			if !b.IsGala {
+				if _, seen := packageGoDots[b.Path]; isTopLevel && !seen {
+					packageGoDots[b.Path] = a.goDotImportOf(b)
+				}
+				continue
+			}
 			if b.PkgName == "" {
 				continue
 			}
 			packageDotImports[b.PkgName] = append(packageDotImports[b.PkgName], b.Path)
-			if b.IsGala {
-				dotImportPkgs[b.PkgName] = true
-			}
+			dotImportPkgs[b.PkgName] = true
 		}
 	}
 	// std is always implicitly dot-imported
@@ -1254,7 +1263,7 @@ func (a *galaAnalyzer) analyzeFile(docs galaparser.Docs, handle *galaparser.Nati
 
 	// GALA-E0066: a package-level name a dot import also brings in.
 	if isTopLevel {
-		if err := dotImportCollisions(root, packageDotImports, richAST); err != nil {
+		if err := dotImportCollisions(root, packageDotImports, packageGoDots, richAST); err != nil {
 			return nil, err
 		}
 	}

@@ -1953,6 +1953,37 @@ func main() {
 			expectContains: "package-level value ArrayOf is also exported by collection_immutable",
 		},
 		{
+			// A Go package has no GALA metadata; its exports come from its
+			// type info, and the clash reached go build (#1462).
+			name: "GALA-E0066 function named like a dot-imported Go function",
+			input: `package main
+
+import . "sort"
+import "martianoff/gala/go_interop"
+
+func Strings(x int) int = x
+
+func main() {
+    Println(IntsAreSorted(go_interop.SliceOf(1, 2)), Strings(3))
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "function Strings is also exported by sort, which this package dot-imports",
+		},
+		{
+			name: "GALA-E0066 type named like a dot-imported Go type",
+			input: `package main
+
+import . "net/url"
+
+struct Values(N int)
+
+func main() {
+    Println(Values(N = 1).N, PathEscape("a b"))
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "type Values is also exported by url, which this package dot-imports",
+		},
+		{
 			// The test's analyzer has no source for golang.org/x/term, as a
 			// build has none for a Go module it could not load. Try used to
 			// be emitted as an uninstantiated `std.Try{}.Apply(...)`.
