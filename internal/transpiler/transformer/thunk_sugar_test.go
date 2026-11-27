@@ -533,6 +533,13 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a Go alias of an unnamed array result", "func() Key", "b(nil, 2)", "return nil"},
 		{"a Go alias of a pointer to an array result", "func() KeyRef", "return nil", ""},
 		{"a Go alias of an array of a package alias's type", "func() Modes", "b(nil, 2)", "return nil"},
+		// #1478: a generic Go alias is its target with the instance's type
+		// arguments.
+		{"a generic Go alias of its type parameter, a scalar", "func() Id[int]", "b(nil, 2)", "return nil"},
+		{"a generic Go alias of its type parameter, a pointer", "func() Id[*Spot]", "return nil", ""},
+		{"a generic Go alias of a struct", "func() TBox[int]", "b(nil, 2)", "return nil"},
+		{"a generic Go alias of a generic struct", "func() Opt[int]", "b(nil, 2)", "return nil"},
+		{"a generic Go alias of an array", "func() Arr[int]", "b(nil, 2)", "return nil"},
 	}
 	const bridge = `package main
 
@@ -613,6 +620,14 @@ func UseGen(f Gen, n int) int {
 }
 
 type Modes = [4]os.FileMode
+
+type Id[T any] = T
+
+type TBox[T any] = time.Time
+
+type Opt[T any] = GBox[T]
+
+type Arr[T any] = [4]T
 
 func Run(f func() struct{}, n int) int {
 	if f == nil {

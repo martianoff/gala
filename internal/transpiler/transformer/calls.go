@@ -6340,7 +6340,9 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 // scalar (a predeclared number, complex number, string or bool, or a Go or
 // opaque type over one), a fixed-length array, a GALA struct or sealed type,
 // or a Go struct type, generic ones with any type arguments included
-// (`Option[T]`), or a Go defined type or alias over one of these. Anything
+// (`Option[T]`), or a Go defined type or alias over one of these. An instance
+// of a generic Go alias is also the type its target names with the
+// instance's type arguments (`Id[int]` of `type Id[T any] = T`). Anything
 // else, including a Go type whose type information is missing, may hold nil.
 func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	if typ.IsNil() || transpiler.IsUnusable(typ) || typ.IsAny() {
@@ -6349,7 +6351,9 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	base := t.followAliasChain(typ)
 	g, generic := base.(transpiler.GenericType)
 	if generic {
-		base = g.Base // its type arguments do not decide whether nil is one
+		// Its type arguments decide nothing, except for a generic Go alias
+		// instance, whose target they fill in (below).
+		base = g.Base
 	}
 	// A type parameter may be instantiated with a type nil can be.
 	if t.hasTypeParams(base) || t.mentionsUnboundTypeParam(base) {
@@ -6357,13 +6361,17 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	}
 	// A Go alias is the type it names, as Go spells it (`type P = *time.Time`
 	// a pointer, `type Key = [32]byte` the array with its length;
-	// goAliasTarget), rather than its own record's kind. A generic one's target may
-	// name its type parameters (`type Id[T any] = T`), which its instance
-	// would have to fill in: it is settled by its record, as before.
+	// goAliasTarget), rather than its own record's kind. A generic one's
+	// target may name its type parameters (`type Id[T any] = T`): the
+	// instance's type arguments fill them in (genericGoAliasTarget). Its
+	// record still settles what the target does not (a target of a package
+	// without type info), as before.
 	if !generic {
 		if target, isAlias := t.goAliasTarget(base); isAlias {
 			return target != nil && t.nilCannotBe(target)
 		}
+	} else if target := t.genericGoAliasTarget(g); target != nil && t.nilCannotBe(target) {
+		return true
 	}
 	end, kind, via := t.resolveScalar(base)
 	if kind != scalarNone || via != nil {
@@ -6405,6 +6413,26 @@ func (t *galaASTTransformer) nilCannotBe(typ transpiler.Type) bool {
 	meta := t.getTypeMeta(nt.BaseName())
 	return meta != nil && !meta.IsInterface &&
 		(meta.IsSealed || meta.IsShorthand || meta.DefinedIn != "" || len(meta.FieldNames) > 0)
+}
+
+// genericGoAliasTarget is the type g, an instance of a generic Go alias
+// (`Id[int]` of `type Id[T any] = T`), names: the target the alias table
+// records with g's type arguments for the alias's type parameters. nil when
+// g is no such instance or the target is not recorded.
+func (t *galaASTTransformer) genericGoAliasTarget(g transpiler.GenericType) transpiler.Type {
+	key, data := t.goTypeDataFor(g.Base)
+	if data == nil || data.Kind != "alias" || len(data.TypeParams) != len(g.Params) {
+		return nil
+	}
+	target := t.goTypeInfo.ResolveTypeAlias(key)
+	if target == nil || target.IsNil() {
+		return nil
+	}
+	args := make(map[string]transpiler.Type, len(g.Params))
+	for i, name := range data.TypeParams {
+		args[name] = g.Params[i]
+	}
+	return t.substituteGoTypeParams(target, args)
 }
 
 // goAliasTarget is the type typ, a Go alias (`type Stamp = time.Time`),
