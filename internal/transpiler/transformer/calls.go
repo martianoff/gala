@@ -3558,10 +3558,22 @@ func (t *galaASTTransformer) pointerOfIn(pkg string, typ transpiler.Type) (trans
 		if qual == "" {
 			qual = cur.GetPackage()
 		}
-		if qual != "" {
+		switch {
+		case qual == "" || qual == pkg:
+		case pkg != "":
+			// A qualifier in another package's alias target is spelled
+			// with that package's imports, which this file cannot
+			// resolve; it is not followed.
+			return transpiler.PointerType{}, false
+		default:
+			// A qualifier this file wrote may be one of its import aliases.
 			pkg = qual
-			// The qualifier as written may be an import alias.
-			if actual, ok := t.importManager.ResolveAlias(qual); ok {
+			if actual, isImport := t.importManager.ResolveAlias(qual); isImport {
+				if actual == t.packageName {
+					// An import sharing this package's name is not this
+					// package; aliases are keyed by package name (#1469).
+					return transpiler.PointerType{}, false
+				}
 				pkg = actual
 			}
 		}
