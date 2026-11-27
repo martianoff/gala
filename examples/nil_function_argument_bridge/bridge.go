@@ -13,6 +13,17 @@ type ID [16]byte
 // IDAlias is an alias of the named array.
 type IDAlias = ID
 
+// Key is an alias of an unnamed array.
+type Key = [32]byte
+
+// RunArr is n when f is nil, else 0.
+func RunArr(f func() [4]byte, n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+
 // Stamp is an alias of a struct type.
 type Stamp = time.Time
 

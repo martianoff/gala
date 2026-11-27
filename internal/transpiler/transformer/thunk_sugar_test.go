@@ -529,11 +529,16 @@ func TestThunkSugar_NilForAFunctionParam(t *testing.T) {
 		{"a generic Go alias of a pointer result", "func() Ref[Spot]", "return nil", ""},
 		{"a generic Go alias of a scalar result", "func() Num[int]", "b(nil, 2)", "return nil"},
 		{"a Go alias of a generic struct instance result", "func() IntBox", "b(nil, 2)", "return nil"},
+		// #1476: an alias of an unnamed array keeps its length.
+		{"a Go alias of an unnamed array result", "func() Key", "b(nil, 2)", "return nil"},
+		{"a Go alias of a pointer to an array result", "func() KeyRef", "return nil", ""},
+		{"a Go alias of an array of a package alias's type", "func() Modes", "b(nil, 2)", "return nil"},
 	}
 	const bridge = `package main
 
 import (
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -564,6 +569,50 @@ type Num[T any] = int64
 type GBox[T any] struct{ V T }
 
 type IntBox = GBox[int]
+
+type Key = [32]byte
+
+type KeyRef = *[32]byte
+
+func RunArr(f func() [4]byte, n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+
+func RunKey(f func() Key, n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+
+type GenK func() Key
+
+var G GenK = func() Key { return Key{} }
+
+func UseK(f func() [32]byte) int {
+	if f == nil {
+		return 0
+	}
+	return 1
+}
+
+func MakeArr() [4]byte { return [4]byte{} }
+
+type Opts struct{ Gen func() [4]byte }
+
+type Gen = func() [4]byte
+
+func UseGen(f Gen, n int) int {
+	if f == nil {
+		return n
+	}
+	return 0
+}
+
+type Modes = [4]os.FileMode
 
 func Run(f func() struct{}, n int) int {
 	if f == nil {
@@ -635,6 +684,13 @@ func main() {
 		{"a parenthesized nil for a pointer result", "func() *state", "b((nil), 2)", "return (nil)", "b((nil), 2)"},
 		{"a parenthesized nil for several results", "func() state", "Pair((nil), 2)", "Pair((nil), 2)", "func() ("},
 		{"a Go anonymous struct result", "func() state", "Run(nil, 2)", "Run(nil, 2)", "return nil"},
+		// #1476: a Go signature's `func() [4]byte` keeps the array's length.
+		{"a Go array result", "func() state", "RunArr(nil, 2)", "RunArr(nil, 2)", "[]byte"},
+		{"a Go alias of an array result in a Go signature", "func() state", "RunKey(nil, 2)", "RunKey(nil, 2)", "[]byte"},
+		{"a Go named function type over an array alias", "func() state", "UseK(G)", "UseK(G)", "func() [32]byte {"},
+		{"a lambda for a GALA parameter of a Go alias of a function type", "Gen", "b(() => MakeArr(), 2)", "func() [4]byte", "[]byte"},
+		{"a Go alias of a function type with an array result", "func() state", "UseGen(nil, 2)", "UseGen(nil, 2)", "[]byte"},
+		{"a lambda for a Go struct field of array result", "func() state", "Opts(Gen = () => MakeArr()).Gen == nil", "func() [4]byte", "[]byte"},
 	}
 	for _, c := range calls {
 		t.Run(c.name, func(t *testing.T) {

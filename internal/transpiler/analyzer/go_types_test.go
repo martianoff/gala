@@ -695,3 +695,61 @@ func TestAnalyzeGoFiles_SelfEqual(t *testing.T) {
 		assert.Equal(t, want, data.SelfEqual, name)
 	}
 }
+
+// TestAnalyzeGoFiles_KeepsArrayLengths pins #1476: a Go alias over an array
+// records its underlying type with the length, as a defined type does, and
+// a signature keeps every array length (a lambda or thunk filling a
+// function-typed parameter is spelled from it).
+func TestAnalyzeGoFiles_KeepsArrayLengths(t *testing.T) {
+	skipIfNoGoSDK(t)
+	dir := t.TempDir()
+	src := "package sample\n\n" +
+		"import \"os\"\n\n" +
+		"type Key = [32]byte\n\n" +
+		"type Row = [2]os.FileMode\n\n" +
+		"type Grid [3][2]os.FileMode\n\n" +
+		"type RowGrid [3]Row\n\n" +
+		"type Gen = func() [4]byte\n\n" +
+		"func Run(f func() [4]byte, a [2]int) func() [3]int { return nil }\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0o600))
+	info := analyzer.AnalyzeGoFiles(dir, "")
+	require.NotNil(t, info)
+
+	key := info.Types["sample.Key"]
+	require.NotNil(t, key)
+	assert.Equal(t, transpiler.ArrayType{Elem: transpiler.BasicType{Name: "byte"}, Len: 32, Fixed: true}, key.Underlying)
+
+	// An element GALA cannot spell exactly (a package's alias of a named
+	// type) keeps the lossy spelling, every array its length.
+	grid := info.Types["sample.Grid"]
+	require.NotNil(t, grid)
+	outer, ok := grid.Underlying.(transpiler.ArrayType)
+	require.True(t, ok)
+	assert.Equal(t, int64(3), outer.Len)
+	assert.True(t, outer.Fixed)
+	inner, ok := outer.Elem.(transpiler.ArrayType)
+	require.True(t, ok)
+	assert.Equal(t, int64(2), inner.Len)
+	assert.True(t, inner.Fixed)
+	// The same through an alias of the row.
+	rowGrid := info.Types["sample.RowGrid"]
+	require.NotNil(t, rowGrid)
+	assert.Equal(t, grid.Underlying, rowGrid.Underlying)
+
+	// The alias table spells an alias of an unnamed type exactly.
+	assert.Equal(t, transpiler.FuncType{Results: []transpiler.Type{
+		transpiler.ArrayType{Elem: transpiler.BasicType{Name: "byte"}, Len: 4, Fixed: true},
+	}}, info.TypeAliases["sample.Gen"])
+
+	run := info.Functions["sample.Run"]
+	require.NotNil(t, run)
+	require.Len(t, run.Params, 2)
+	assert.Equal(t, transpiler.FuncType{Results: []transpiler.Type{
+		transpiler.ArrayType{Elem: transpiler.BasicType{Name: "byte"}, Len: 4, Fixed: true},
+	}}, run.Params[0].Type)
+	assert.Equal(t, transpiler.ArrayType{Elem: transpiler.BasicType{Name: "int"}, Len: 2, Fixed: true}, run.Params[1].Type)
+	require.Len(t, run.Returns, 1)
+	assert.Equal(t, transpiler.FuncType{Results: []transpiler.Type{
+		transpiler.ArrayType{Elem: transpiler.BasicType{Name: "int"}, Len: 3, Fixed: true},
+	}}, run.Returns[0])
+}
