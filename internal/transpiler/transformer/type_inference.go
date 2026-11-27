@@ -36,7 +36,7 @@ func (t *galaASTTransformer) arithmeticResultType(e *ast.BinaryExpr) transpiler.
 	if def, ok := untypedNumericConstDefault(e); ok {
 		return transpiler.BasicType{Name: def}
 	}
-	if gov := governingOperand(e); gov != e.X {
+	if gov := t.governingOperand(e); gov != e.X {
 		// Only accept a resolved answer. Leaving the expression unresolved when
 		// the typed operand cannot be typed would be a regression: before this
 		// rule existed the left operand always answered, and dropping to
@@ -55,8 +55,12 @@ func (t *galaASTTransformer) arithmeticResultType(e *ast.BinaryExpr) transpiler.
 // Shifts need no case here. `x << n` takes x's type whatever n is, and the only
 // shape where that could differ — an untyped constant shifted by something — is
 // answered by untypedNumericConstDefault before this is reached.
-func governingOperand(e *ast.BinaryExpr) ast.Expr {
-	if isUntypedConstExpr(e.X) && !isUntypedConstExpr(e.Y) {
+//
+// An untyped constant of a Go package (`math.MaxInt8`, `http.StatusOK`) is
+// untyped too: `math.MaxInt8 * time.Second` is a time.Duration, as in Go, not
+// the constant's default int (#1440).
+func (t *galaASTTransformer) governingOperand(e *ast.BinaryExpr) ast.Expr {
+	if t.isUntypedConstArg(e.X) && !t.isUntypedConstArg(e.Y) {
 		return e.Y
 	}
 	return e.X

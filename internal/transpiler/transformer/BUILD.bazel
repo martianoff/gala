@@ -243,6 +243,7 @@ go_test(
         "get_generic_pointer_receiver_test.go",
         "go_alias_chain_test.go",
         "go_build_only_errors_test.go",
+        "go_const_arith_type_test.go",
         "go_constructors_test.go",
         "go_defined_exact_underlying_test.go",
         "go_generic_alias_slot_test.go",
