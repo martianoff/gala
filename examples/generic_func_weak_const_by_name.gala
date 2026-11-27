@@ -1,0 +1,52 @@
+package main
+
+import (
+    "errors"
+    "strconv"
+)
+
+// A generic function's argument passed by name (`func() U`) binds U as its
+// thunk's value does a `U` parameter: an untyped constant weakly, so a typed
+// value replaces it and a constant of a wider kind widens it.
+
+func or[U any](a U, b func() U) U = b()
+
+func both[U any](d func() U, e func() U) U = e()
+
+func pick[U any](d func() U, v U) U = d()
+
+func lazy[U any](b func() U, on bool) Option[U] = if (on) Some(b()) else None()
+
+func attempt[T any](f func() T) Try[T] = Try(f())
+
+func trace[T any](x T) T {
+    Println("evaluated")
+    x
+}
+
+struct Boom(Msg string)
+
+func (b *Boom) Error() string = b.Msg
+
+// A function value passed by name is the thunk itself, Sendable or not.
+func lazyOr(f Sendable[func() int]) int = or(0, f)
+
+func main() {
+    val x64 int64 = 3
+    // U is int64, from x64.
+    Println(or(0, x64) + x64)
+    Println(both(5, x64) + x64)
+    // U widens to float64.
+    Println(both(5, 2.5))
+    Println(or(0, 2.5))
+    Println(or(0, 5.0) / 2)
+    // A bare typed argument binds first: U is error, not *Boom.
+    val err error = errors.New("plain")
+    Println(pick(&Boom(Msg = "boom"), err).Error())
+    Println(lazyOr(() => 7))
+    // A call passed by name runs only when the thunk does.
+    Println(lazy(trace(1), false).IsDefined())
+    // A Go call's results are a Try thunk's value.
+    Println(TryApply(strconv.Atoi("12")).GetOrElse(-1))
+    Println(attempt(strconv.Atoi("8")))
+}

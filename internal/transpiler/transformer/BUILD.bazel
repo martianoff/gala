@@ -236,6 +236,7 @@ go_test(
         "generic_alias_arity_test.go",
         "generic_alias_test.go",
         "generic_field_named_like_type_test.go",
+        "generic_func_weak_const_by_name_test.go",
         "generic_funcref_chain_test.go",
         "generic_method_arg_order_test.go",
         "generic_method_named_args_test.go",
